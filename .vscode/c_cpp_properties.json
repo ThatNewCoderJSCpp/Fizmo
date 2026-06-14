@@ -1,0 +1,39 @@
+{
+    "configurations": [
+        {
+            "name": "Fizmo (g++)",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${env:FIZMO_INCLUDES}"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE",
+                "__cplusplus=201703L"
+            ],
+            "compilerPath": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-x64"
+        },
+        {
+            "name": "Fizmo (clang)",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${env:FIZMO_INCLUDES}"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE",
+                "__cplusplus=201703L"
+            ],
+            "compilerPath": "C:\\msys64\\ucrt64\\bin\\clang++.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "clang-x64"
+        }
+    ],
+    "version": 4
+}
