@@ -111,6 +111,8 @@ static inline double polygamma(double x, int n) {
 
         return (sum_term + integration::BasicIntegration::integrate_simpson(inte, 0.0, x).value) / std::tgamma(-static_cast<double>(n));
     } 
+
+    return constants::positive_infinity();
 }
 
 } // namespace math

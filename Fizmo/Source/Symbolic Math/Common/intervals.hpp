@@ -22,7 +22,7 @@ enum class InequalityType {
 struct Endpoint {
     double value;
     bool is_closed; 
-    constexpr Endpoint(double point, bool is_cls) noexcept : value(point), is_closed(std::isfinite(point) ? false : is_cls) {} 
+    constexpr Endpoint(double point, bool is_cls) noexcept : value(point), is_closed(std::isfinite(point) ? is_cls : false) {} 
     constexpr Endpoint() noexcept : value(0.0), is_closed(true) {}
     
 public:

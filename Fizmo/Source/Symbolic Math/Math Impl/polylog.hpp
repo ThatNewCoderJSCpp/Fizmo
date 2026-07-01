@@ -8,7 +8,7 @@ namespace math {
 
 static inline double dilogarithm(double x) {
     if (std::abs(x) <= constants::middle_epsilon()) { return 0.0; }
-    if (std::abs(x - 1.0) <= constants::middle_epsilon()) { return constants::pi() * constants::pi() / 6.0; }
+    if (std::abs(x - 1.0) <= constants::middle_epsilon()) { return constants::pi_6() * constants::pi(); }
     if (x > 1.0) { return constants::quiet_nan(); }
 
     if (std::abs(x) <= 1.0) {

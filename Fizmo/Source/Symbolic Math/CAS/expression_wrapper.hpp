@@ -87,7 +87,7 @@ public:
     }
 
     friend std::ostream& operator<<(std::ostream& os, const Expression& e) {
-        symbols::print_node(os, e.node(), e.vars_);
+        symbols::print_node(os, e.node(), e.vars_, nullptr);
         return os;
     }
 
@@ -110,10 +110,12 @@ public:
         collect_var_ids(expr_.get(), ids);
         std::vector<std::string> names;
         names.reserve(ids.size());
+
         for (auto id : ids) {
             const auto& n = vars_->name(id);
             if (!n.empty()) names.push_back(n);
         }
+
         return names;
     }
 
@@ -129,12 +131,14 @@ public:
         ctx.policy = policy;
         ctx.resize(vars.size());
         std::size_t i = 0;
+
         for (double v : vals) {
             if (i >= vars.size()) break;
             ctx.values[i] = v;
             ctx.assigned[i] = true;
             ++i;
         }
+
         return symbols::evaluate(expr_, ctx);
     }
 
@@ -144,13 +148,16 @@ public:
         symbols::EvalContext ctx;
         ctx.policy = policy;
         ctx.resize(vars.size());
+
         for (auto& [name, value] : named) {
             std::uint64_t id = vars.get(name);
+
             if (id != symbols::VariableTable::invalid_id && id < ctx.values.size()) {
                 ctx.values[id] = value;
                 ctx.assigned[id] = true;
             }
         }
+
         return symbols::evaluate(expr_, ctx);
     }
 
@@ -160,13 +167,16 @@ public:
         symbols::EvalContext ctx;
         ctx.policy = policy;
         ctx.resize(vars.size());
-        for (auto& [name, value] : vals) {
-            std::uint64_t id = vars.get(name);
+
+        for (auto& val : vals) {
+            std::uint64_t id = vars.get(val.first);
+
             if (id != symbols::VariableTable::invalid_id && id < ctx.values.size()) {
-                ctx.values[id] = value;
+                ctx.values[id] = val.second;
                 ctx.assigned[id] = true;
             }
         }
+
         return symbols::evaluate(expr_, ctx);
     }
 
@@ -215,10 +225,12 @@ public:
         symbols::MathExpressionSimplifier  simp(manager());
         symbols::MathExpressionSubstitutor sub(manager(), manager().variables(), simp);
         symbols::SubstitutionMap smap;
-        for (auto& [name, expr] : pairs) {
-            auto id = manager().variables().get(name);
-            if (id != symbols::VariableTable::invalid_id) smap.by_var[id] = expr.inner().get();
+
+        for (auto& pair : pairs) {
+            auto id = manager().variables().get(pair.first);
+            if (id != symbols::VariableTable::invalid_id) smap.by_var[id] = pair.second.inner().get();
         }
+
         return Expression(sub.substitute(expr_, smap), manager());
     }
 
@@ -235,7 +247,7 @@ public:
         symbols::MathExpressionSubstitutor sub(manager(), manager().variables(), simp);
         std::unordered_map<std::string, symbols::MathExpression> inner;
         inner.reserve(named.size());
-        for (auto& [k, v] : named) inner.emplace(k, v.inner());
+        for (auto& name : named) inner.emplace(name.first, name.second.inner());
         return Expression(sub.substitute(expr_, inner), manager());
     }
     
@@ -252,11 +264,13 @@ public:
         symbols::MathExpressionSubstitutor sub(manager(), manager().variables(), simp);
         symbols::SubstitutionMap smap;
         std::uint64_t id = 0;
+
         for (auto& p : positional) {
             if (id >= manager().variables().size()) break;
             smap.by_var[id] = p.inner().get();
             ++id;
         }
+
         return Expression(sub.substitute(expr_, smap), manager());
     }
 
@@ -272,7 +286,7 @@ public:
         symbols::MathExpressionSimplifier  simp(manager());
         symbols::MathExpressionSubstitutor sub(manager(), manager().variables(), simp);
         symbols::SubstitutionMap smap;
-        for (auto& [f, t] : pairs) smap.by_node[f.inner().get()] = t.inner().get();
+        for (auto& pair : pairs) smap.by_node[pair.first.inner().get()] = pair.second.inner().get();
         return Expression(sub.substitute(expr_, smap), manager());
     }
 
@@ -295,11 +309,12 @@ public:
         symbols::MathExpressionSimplifier  simp(manager());
         symbols::MathExpressionSubstitutor sub(manager(), manager().variables(), simp);
         symbols::SubstitutionMap smap;
-        for (auto& [name, val] : pairs) {
-            auto id = manager().variables().get(name);
-            if (id != symbols::VariableTable::invalid_id)
-                smap.by_var[id] = manager().constant(val).get();
+
+        for (auto& pair : pairs) {
+            auto id = manager().variables().get(pair.first);
+            if (id != symbols::VariableTable::invalid_id) smap.by_var[id] = manager().constant(pair.second).get();
         }
+
         return Expression(sub.substitute(expr_, smap), manager());
     }
     
@@ -308,10 +323,12 @@ public:
         symbols::MathExpressionSimplifier  simp(manager());
         symbols::MathExpressionSubstitutor sub(manager(), manager().variables(), simp);
         symbols::SubstitutionMap smap;
-        for (auto& [name, expr] : pairs) {
-            auto id = manager().variables().get(name);
-            if (id != symbols::VariableTable::invalid_id) smap.by_var[id] = expr.inner().get();
+
+        for (auto& pair : pairs) {
+            auto id = manager().variables().get(pair.first);
+            if (id != symbols::VariableTable::invalid_id) smap.by_var[id] = pair.second.inner().get();
         }
+
         return Expression(sub.substitute(expr_, smap), manager());
     }
 
@@ -328,7 +345,7 @@ public:
         symbols::MathExpressionSubstitutor sub(manager(), manager().variables(), simp);
         std::unordered_map<std::string, symbols::MathExpression> inner;
         inner.reserve(named.size());
-        for (auto& [k, v] : named) inner.emplace(k, v.inner());
+        for (const auto& name : named) inner.emplace(name.first, name.second.inner());
         return Expression(sub.substitute(expr_, inner), manager());
     }
 
@@ -344,7 +361,7 @@ public:
         symbols::MathExpressionSimplifier  simp(manager());
         symbols::MathExpressionSubstitutor sub(manager(), manager().variables(), simp);
         symbols::SubstitutionMap smap;
-        for (auto& [f, t] : pairs) smap.by_node[f.inner().get()] = t.inner().get();
+        for (auto& pair : pairs) smap.by_node[pair.first.inner().get()] = pair.second.inner().get();
         return Expression(sub.substitute(expr_, smap), manager());
     }
 
@@ -382,15 +399,18 @@ public:
     std::function<double(const std::vector<double>&)> to_function_runtime(EvaluationPolicy policy = {}) const {
         assert(*this);
         Expression captured = *this;
+
         return [captured, policy](const std::vector<double>& args) -> double {
             const auto& vars = captured.manager().variables();
             symbols::EvalContext ctx;
             ctx.policy = policy;
             ctx.resize(vars.size());
+
             for (std::size_t i = 0; i < args.size() && i < ctx.values.size(); ++i) {
                 ctx.values[i]   = args[i];
                 ctx.assigned[i] = true;
             }
+
             return symbols::evaluate(captured.inner(), ctx);
         };
     }
@@ -398,91 +418,104 @@ public:
 private:
     static std::size_t count_nodes(const symbols::MathExpressionNode* n) {
         if (!n) return 0;
+
         switch (n->type) {
-        case symbols::NodeType::Constant:
-        case symbols::NodeType::Variable:
-        case symbols::NodeType::PositiveInfinity:
-        case symbols::NodeType::NegativeInfinity:
-        case symbols::NodeType::NaN:
-        case symbols::NodeType::Undefined:
-        case symbols::NodeType::Indeterminate:
-            return 1;
-        case symbols::NodeType::Power:
-            return 1 + count_nodes(n->power.base) + count_nodes(n->power.exponent);
-        default:
-            if (symbols::NodeKeyHash::is_unary(n->type)) { return 1 + count_nodes(n->unary.child); }
-            if (symbols::NodeKeyHash::is_binary(n->type)) { return 1 + count_nodes(n->binary.left) + count_nodes(n->binary.right); }
-            return 1;
+            case symbols::NodeType::Constant:
+            case symbols::NodeType::Variable:
+            case symbols::NodeType::PositiveInfinity:
+            case symbols::NodeType::NegativeInfinity:
+            case symbols::NodeType::NaN:
+            case symbols::NodeType::Undefined:
+            case symbols::NodeType::Indeterminate:
+                return 1;
+            case symbols::NodeType::Power:
+                return 1 + count_nodes(n->power.base) + count_nodes(n->power.exponent);
+            default:
+                if (symbols::NodeKeyHash::is_unary(n->type)) { return 1 + count_nodes(n->unary.child); }
+                if (symbols::NodeKeyHash::is_binary(n->type)) { return 1 + count_nodes(n->binary.left) + count_nodes(n->binary.right); }
+                return 1;
         }
     }
 
     static bool contains_var(const symbols::MathExpressionNode* n, std::uint64_t vid) {
         if (!n) return false;
+
         switch (n->type) {
-        case symbols::NodeType::Variable:
-            return n->variable.var_id == vid;
-        case symbols::NodeType::Constant:
-        case symbols::NodeType::PositiveInfinity:
-        case symbols::NodeType::NegativeInfinity:
-        case symbols::NodeType::NaN:
-        case symbols::NodeType::Undefined:
-        case symbols::NodeType::Indeterminate:
-            return false;
-        case symbols::NodeType::Power:
-            return contains_var(n->power.base, vid) || contains_var(n->power.exponent, vid);
-        default:
-            if (symbols::NodeKeyHash::is_unary(n->type)) return contains_var(n->unary.child, vid);
-            if (symbols::NodeKeyHash::is_binary(n->type)) return contains_var(n->binary.left, vid) || contains_var(n->binary.right, vid);
-            return false;
+            case symbols::NodeType::Variable: 
+                return n->variable.var_id == vid;
+            case symbols::NodeType::AppliedFunction:
+                for (std::uint64_t i = 0; i < n->applied.arg_count; ++i) if (contains_var(n->applied.args[i], vid)) return true;
+                return false;
+            case symbols::NodeType::Constant:
+            case symbols::NodeType::PositiveInfinity:
+            case symbols::NodeType::NegativeInfinity:
+            case symbols::NodeType::NaN:
+            case symbols::NodeType::Undefined:
+            case symbols::NodeType::Indeterminate:
+                return false;
+            case symbols::NodeType::Power:
+                return contains_var(n->power.base, vid) || contains_var(n->power.exponent, vid);
+            default:
+                if (symbols::NodeKeyHash::is_unary(n->type)) return contains_var(n->unary.child, vid);
+                if (symbols::NodeKeyHash::is_binary(n->type)) return contains_var(n->binary.left, vid) || contains_var(n->binary.right, vid);
+                return false;
         }
     }
 
     static bool contains_node(const symbols::MathExpressionNode* n, const symbols::MathExpressionNode* target) {
         if (!n) return false;
         if (n == target) return true;
+
         switch (n->type) {
-        case symbols::NodeType::Constant:
-        case symbols::NodeType::Variable:
-        case symbols::NodeType::PositiveInfinity:
-        case symbols::NodeType::NegativeInfinity:
-        case symbols::NodeType::NaN:
-        case symbols::NodeType::Undefined:
-        case symbols::NodeType::Indeterminate:
-            return false;
-        case symbols::NodeType::Power:
-            return contains_node(n->power.base, target) || contains_node(n->power.exponent, target);
-        default:
-            if (symbols::NodeKeyHash::is_unary(n->type)) return contains_node(n->unary.child, target);
-            if (symbols::NodeKeyHash::is_binary(n->type)) return contains_node(n->binary.left, target) || contains_node(n->binary.right, target);
-            return false;
+            case symbols::NodeType::Constant:
+            case symbols::NodeType::Variable:
+            case symbols::NodeType::PositiveInfinity:
+            case symbols::NodeType::NegativeInfinity:
+            case symbols::NodeType::NaN:
+            case symbols::NodeType::Undefined:
+            case symbols::NodeType::Indeterminate:
+                return false;
+            case symbols::NodeType::AppliedFunction:
+                for (std::uint64_t i = 0; i < n->applied.arg_count; ++i) if (contains_node(n->applied.args[i], target)) return true;
+                return false;
+            case symbols::NodeType::Power:
+                return contains_node(n->power.base, target) || contains_node(n->power.exponent, target);
+            default:
+                if (symbols::NodeKeyHash::is_unary(n->type)) return contains_node(n->unary.child, target);
+                if (symbols::NodeKeyHash::is_binary(n->type)) return contains_node(n->binary.left, target) || contains_node(n->binary.right, target);
+                return false;
         }
     }
 
     static void collect_var_ids(const symbols::MathExpressionNode* n, std::vector<std::uint64_t>& out) {
         if (!n) return;
+
         switch (n->type) {
-        case symbols::NodeType::Variable:
-            if (std::find(out.begin(), out.end(), n->variable.var_id) == out.end()) out.push_back(n->variable.var_id);
-            return;
-        case symbols::NodeType::Constant:
-        case symbols::NodeType::PositiveInfinity:
-        case symbols::NodeType::NegativeInfinity:
-        case symbols::NodeType::NaN:
-        case symbols::NodeType::Undefined:
-        case symbols::NodeType::Indeterminate:
-            return;
-        case symbols::NodeType::Power:
-            collect_var_ids(n->power.base,     out);
-            collect_var_ids(n->power.exponent, out);
-            return;
-        default:
-            if (symbols::NodeKeyHash::is_binary(n->type)) {
-                collect_var_ids(n->binary.left,  out);
-                collect_var_ids(n->binary.right, out);
-            } else if (symbols::NodeKeyHash::is_unary(n->type)) {
-                collect_var_ids(n->unary.child, out);
-            }
-            return;
+            case symbols::NodeType::Variable:
+                if (std::find(out.begin(), out.end(), n->variable.var_id) == out.end()) out.push_back(n->variable.var_id);
+                return;
+            case symbols::NodeType::AppliedFunction:
+                for (std::uint64_t i = 0; i < n->applied.arg_count; ++i) collect_var_ids(n->applied.args[i], out);
+                return;
+            case symbols::NodeType::Constant:
+            case symbols::NodeType::PositiveInfinity:
+            case symbols::NodeType::NegativeInfinity:
+            case symbols::NodeType::NaN:
+            case symbols::NodeType::Undefined:
+            case symbols::NodeType::Indeterminate:
+                return;
+            case symbols::NodeType::Power:
+                collect_var_ids(n->power.base,     out);
+                collect_var_ids(n->power.exponent, out);
+                return;
+            default:
+                if (symbols::NodeKeyHash::is_binary(n->type)) {
+                    collect_var_ids(n->binary.left,  out);
+                    collect_var_ids(n->binary.right, out);
+                } else if (symbols::NodeKeyHash::is_unary(n->type)) {
+                    collect_var_ids(n->unary.child, out);
+                }
+                return;
         }
     }
 

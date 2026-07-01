@@ -19,3 +19,5 @@ Contour integrals
 Evaluation for bell polynomials
 Differentiation of bell polynomials, exp integral generalize, and log integral generalized
 Differentiating the log/exp integrals will require a new node for the nth symbolic derivative 
+
+Implicit solver

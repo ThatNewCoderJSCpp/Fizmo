@@ -155,12 +155,13 @@ inline const char* unary_fn_name(NodeType t) noexcept {
     }
 }
 
-inline void print_node(std::ostream& os, const MathExpressionNode* n, const VariableTable* vars, int parent_prec = 0, bool right_child = false);
+inline void print_node(std::ostream& os, const MathExpressionNode* n, const VariableTable* vars, const VariableTable* funcs, int parent_prec = 0, bool right_child = false);
 
 inline void print_node(
     std::ostream& os,
     const MathExpressionNode* n,
     const VariableTable* vars,
+    const VariableTable* funcs,
     int parent_prec,
     bool right_child
 ) {
@@ -176,10 +177,11 @@ inline void print_node(
             break;
 
         case NodeType::Variable:
-            if (vars && n->variable.var_id < vars->size())
-                os << vars->name(n->variable.var_id);
-            else
-                os << 'x' << n->variable.var_id;
+            if (funcs && n->applied.func_id < funcs->size()) {
+                os << funcs->name(n->applied.func_id);
+            } else {
+                os << 'f' << n->applied.func_id;
+            }
             break;
 
         case NodeType::PositiveInfinity:  os << "\u221e";        break;
@@ -190,135 +192,139 @@ inline void print_node(
 
         case NodeType::Negate:
             os << '-';
-            print_node(os, n->unary.child, vars, prec);
+            print_node(os, n->unary.child, vars, funcs, prec);
             break;
 
         case NodeType::AbsoluteValue:
             os << '|';
-            print_node(os, n->unary.child, vars, 0);
+            print_node(os, n->unary.child, vars, funcs);
             os << '|';
             break;
 
         case NodeType::Floor:
             os << "\u230a";                               
-            print_node(os, n->unary.child, vars, 0);
+            print_node(os, n->unary.child, vars, funcs);
             os << "\u230b";                               
             break;
 
         case NodeType::Ceil:
             os << "\u2308";                               
-            print_node(os, n->unary.child, vars, 0);
+            print_node(os, n->unary.child, vars, funcs);
             os << "\u2309";                               
             break;
 
         case NodeType::Round:
             os << '[';
-            print_node(os, n->unary.child, vars);
+            print_node(os, n->unary.child, vars, funcs);
             os << ']';
             break;
 
         case NodeType::Add:
-            print_node(os, n->binary.left, vars, prec);
+            print_node(os, n->binary.left, vars, funcs, prec);
             os << " + ";
-            print_node(os, n->binary.right, vars, prec);
+            print_node(os, n->binary.right, vars, funcs, prec);
             break;
 
         case NodeType::Subtract:
-            print_node(os, n->binary.left,  vars, prec);
+            print_node(os, n->binary.left,  vars, funcs, prec);
             os << " - ";
-            print_node(os, n->binary.right, vars, prec, true);   
+            print_node(os, n->binary.right, vars, funcs, prec, true);   
             break;
 
         case NodeType::Multiply:
-            print_node(os, n->binary.left,  vars, prec);
+            print_node(os, n->binary.left,  vars, funcs, prec);
             os << " * ";
-            print_node(os, n->binary.right, vars, prec);
+            print_node(os, n->binary.right, vars, funcs, prec);
             break;
 
         case NodeType::Divide:
-            print_node(os, n->binary.left,  vars, prec);
+            print_node(os, n->binary.left,  vars, funcs, prec);
             os << " / ";
-            print_node(os, n->binary.right, vars, prec, true);  
+            print_node(os, n->binary.right, vars, funcs, prec, true);  
             break;
 
         case NodeType::Modulo:
-            print_node(os, n->binary.left,  vars, prec);
+            print_node(os, n->binary.left,  vars, funcs, prec);
             os << " % ";
-            print_node(os, n->binary.right, vars, prec, true);
+            print_node(os, n->binary.right, vars, funcs, prec, true);
             break;
 
         case NodeType::Power:
-            print_node(os, n->power.base,     vars, prec);
+            print_node(os, n->power.base, vars, funcs, prec);
             os << '^';
-            print_node(os, n->power.exponent, vars, prec - 1);
+            print_node(os, n->power.exponent, vars, funcs, prec - 1);
             break;
 
         case NodeType::Log:
             os << "log(";
-            print_node(os, n->binary.left,  vars);   
+            print_node(os, n->binary.left, vars, funcs);   
             os << ", ";
-            print_node(os, n->binary.right, vars);   
+            print_node(os, n->binary.right, vars, funcs);   
             os << ')';
             break;
 
         case NodeType::Root:
             os << "root(";
-            print_node(os, n->binary.left,  vars);   
+            print_node(os, n->binary.left, vars, funcs);   
             os << ", ";
-            print_node(os, n->binary.right, vars);   
+            print_node(os, n->binary.right, vars, funcs);   
             os << ')';
             break;
 
         case NodeType::Factorial:
             os << "(";
-            print_node(os, n->unary.child, vars, prec);
+            print_node(os, n->unary.child, vars, funcs, prec);
             os << ")!";
             break;
 
         case NodeType::Polygamma: {
             os << "\u03c8";
+
             if (n->binary.right->type == NodeType::Constant) {
                 int branch = static_cast<int>(n->binary.right->constant);
                 os << to_subscript(branch);
             } else {
                 os << "_{";
-                print_node(os, n->binary.right, vars);
+                print_node(os, n->binary.right, vars, funcs);
                 os << '}';
             }
+
             os << '(';
-            print_node(os, n->binary.left, vars);     
+            print_node(os, n->binary.left, vars, funcs);     
             os << ')';
             break;
         }
 
         case NodeType::ErfGeneralized:
             os << "erf(";
-            print_node(os, n->binary.left,  vars);   
+            print_node(os, n->binary.left, vars, funcs);   
             os << ", ";
-            print_node(os, n->binary.right, vars);   
+            print_node(os, n->binary.right, vars, funcs);   
             os << ')';
             break;
 
         case NodeType::ErfcGeneralized:
             os << "erf(";
-            print_node(os, n->binary.left,  vars);   
+            print_node(os, n->binary.left, vars, funcs);   
             os << ", ";
-            print_node(os, n->binary.right, vars);   
+            print_node(os, n->binary.right, vars, funcs);   
             os << ')';
             break;
 
         case NodeType::BetaFunction:
             os << "\u03b2(";
-            print_node(os, n->binary.left,  vars);   
+            print_node(os, n->binary.left, vars, funcs);   
             os << ", ";
-            print_node(os, n->binary.right, vars);   
+            print_node(os, n->binary.right, vars, funcs);   
             os << ')';
             break;
 
         case NodeType::LambertW:
             os << 'W';
+
             if (n->binary.right->type == NodeType::Constant) {
                 int branch = static_cast<int>(n->binary.right->constant);
+
                 if (branch != 0) {                
                     os << '_';
                     if (branch < 0) os << "(" << branch << ")";
@@ -326,113 +332,155 @@ inline void print_node(
                 }
             } else {
                 os << "_{";
-                print_node(os, n->binary.right, vars);
+                print_node(os, n->binary.right, vars, funcs);
                 os << '}';
             }
+
             os << '(';
-            print_node(os, n->binary.left, vars);     
+            print_node(os, n->binary.left, vars, funcs);     
             os << ')';
             break;
 
         case NodeType::ChebyshevU: 
             os << "U(";
-            print_node(os, n->binary.left, vars);
+            print_node(os, n->binary.left, vars, funcs);
             os << ", ";
-            print_node(os, n->binary.right, vars);
+            print_node(os, n->binary.right, vars, funcs);
             os << ")";
             break;
 
         case NodeType::ChebyshevT: 
             os << "T(";
-            print_node(os, n->binary.left, vars);
+            print_node(os, n->binary.left, vars, funcs);
             os << ", ";
-            print_node(os, n->binary.right, vars);
+            print_node(os, n->binary.right, vars, funcs);
             os << ")";
             break;
 
         case NodeType::ExponentialIntegralGeneralized:
             os << "ei_";
+
             if (n->binary.right->type == NodeType::Constant) {
                 double v = n->binary.right->constant;
                 if (v == std::floor(v) && std::abs(v) < 1e15) os << static_cast<long long>(v);
-                else { os << '{'; print_node(os, n->binary.right, vars); os << '}'; }
+                else { os << '{'; print_node(os, n->binary.right, vars, funcs); os << '}'; }
             } else {
-                os << '{'; print_node(os, n->binary.right, vars); os << '}';
+                os << '{'; print_node(os, n->binary.right, vars, funcs); os << '}';
             }
+
             os << '(';
-            print_node(os, n->binary.left, vars);
+            print_node(os, n->binary.left, vars, funcs);
             os << ')';
             break;
 
         case NodeType::LogarithmicIntegralGeneralized:
             os << "li_";
+
             if (n->binary.right->type == NodeType::Constant) {
                 double v = n->binary.right->constant;
                 if (v == std::floor(v) && std::abs(v) < 1e15) os << static_cast<long long>(v);
-                else { os << '{'; print_node(os, n->binary.right, vars); os << '}'; }
+                else { os << '{'; print_node(os, n->binary.right, vars, funcs); os << '}'; }
             } else {
-                os << '{'; print_node(os, n->binary.right, vars); os << '}';
+                os << '{'; print_node(os, n->binary.right, vars, funcs); os << '}';
             }
+
             os << '(';
-            print_node(os, n->binary.left, vars);
+            print_node(os, n->binary.left, vars, funcs);
             os << ')';
             break;
 
         case NodeType::BellPolynomial:
             os << 'B';
+
             if (n->binary.right->type == NodeType::Constant) {
                 unsigned int idx = static_cast<unsigned int>(n->binary.right->constant);
                 os << to_subscript(idx);
             }
+
             os << '(';
-            print_node(os, n->binary.left, vars);
+            print_node(os, n->binary.left, vars, funcs);
             os << ')';
             break;
 
         case NodeType::Polylog: {
             os << "Li_{";
-            print_node(os, n->binary.right, vars);
+            print_node(os, n->binary.right, vars, funcs);
             os << "}(";
-            print_node(os, n->binary.left, vars);
+            print_node(os, n->binary.left, vars, funcs);
             os << ")";
             break;
         }
 
         case NodeType::Combination:
             os << "C(";
-            print_node(os, n->binary.left,  vars);
+            print_node(os, n->binary.left, vars, funcs);
             os << ", ";
-            print_node(os, n->binary.right, vars);
+            print_node(os, n->binary.right, vars, funcs);
             os << ')';
             break;
 
         case NodeType::Permutation:
             os << "P(";
-            print_node(os, n->binary.left,  vars);
+            print_node(os, n->binary.left, vars, funcs);
             os << ", ";
-            print_node(os, n->binary.right, vars);
+            print_node(os, n->binary.right, vars, funcs);
             os << ')';
             break;
 
         case NodeType::FibonacciPolynomial:
             os << "FibPoly(";
-            print_node(os, n->binary.left,  vars);   
+            print_node(os, n->binary.left, vars, funcs);   
             os << ", ";
-            print_node(os, n->binary.right, vars);   
+            print_node(os, n->binary.right, vars, funcs);   
             os << ')';
             break;
 
         case NodeType::LucasPolynomial:
             os << "LucasPoly(";
-            print_node(os, n->binary.left,  vars);   
+            print_node(os, n->binary.left, vars, funcs);   
             os << ", ";
-            print_node(os, n->binary.right, vars);   
+            print_node(os, n->binary.right, vars, funcs);   
             os << ')';
             break;
 
+        case NodeType::AppliedFunction: {
+            if (vars && n->applied.func_id < vars->size()) {
+                os << vars->name(n->applied.func_id);
+            } else {
+                os << 'f' << n->applied.func_id;
+            }
+
+            std::uint64_t total = 0;
+            for (std::uint64_t i = 0; i < n->applied.arg_count; ++i) total += n->applied.orders[i];
+
+            if (total > 0) {                       
+                os << "_{";
+                bool first = true;
+
+                for (std::uint64_t i = 0; i < n->applied.arg_count; ++i)
+                    for (std::uint64_t k = 0; k < n->applied.orders[i]; ++k) {
+                        if (!first) os << ',';
+                        print_node(os, n->applied.args[i], vars, 0);
+                        first = false;
+                    }
+
+                os << '}';
+            }
+
+            os << '(';
+
+            for (std::uint64_t i = 0; i < n->applied.arg_count; ++i) {
+                if (i) os << ", ";
+                print_node(os, n->applied.args[i], vars, 0);
+            }
+            
+            os << ')';
+            break;
+        }
+
         default:
             os << unary_fn_name(n->type) << '(';
-            print_node(os, n->unary.child, vars);
+            print_node(os, n->unary.child, vars, funcs);
             os << ')';
             break;
     }

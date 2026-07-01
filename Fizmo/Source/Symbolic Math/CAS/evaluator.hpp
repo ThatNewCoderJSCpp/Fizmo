@@ -374,8 +374,18 @@ inline double eval_node(const MathExpressionNode* n, const EvalContext& ctx) {
 
         case NodeType::FibonacciSequence:   return fibonacci(eval_node(n->unary.child, ctx));
         case NodeType::LucasSequence:       return lucas(eval_node(n->unary.child, ctx));
-        case NodeType::FibonacciPolynomial: return fibonacci_polynomial(eval_node(n->binary.left, ctx), eval_node(n->binary.right, ctx));
-        case NodeType::LucasPolynomial:     return lucas_polynomial(eval_node(n->binary.left, ctx), eval_node(n->binary.right, ctx));
+
+        case NodeType::FibonacciPolynomial: {
+            double n_ = eval_node(n->binary.right, ctx);  
+            int branch = static_cast<int>(n_);
+            return fibonacci_polynomial(eval_node(n->binary.left, ctx), n_);
+        }
+
+        case NodeType::LucasPolynomial: {
+            double n_ = eval_node(n->binary.right, ctx);  
+            int branch = static_cast<int>(n_);
+            return lucas_polynomial(eval_node(n->binary.left, ctx), n_);
+        }
 
         default:
             return std::nan("");

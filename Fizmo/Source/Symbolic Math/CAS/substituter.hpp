@@ -151,6 +151,19 @@ private:
             return mgr_.power(base, exp);
         }
 
+        case NodeType::AppliedFunction: {
+            const std::uint64_t cnt = n->applied.arg_count;
+            std::vector<MathExpression> args; args.reserve(cnt);
+            std::vector<std::uint64_t>  ords; ords.reserve(cnt);
+
+            for (std::uint64_t i = 0; i < cnt; ++i) {
+                args.push_back(walk(n->applied.args[i], smap));
+                ords.push_back(n->applied.orders[i]);
+            }
+            
+            return mgr_.applied(n->applied.func_id, args, ords);
+        }
+
         default: {
             if (NodeKeyHash::is_unary(n->type)) {
                 MathExpression child = walk(n->unary.child, smap);

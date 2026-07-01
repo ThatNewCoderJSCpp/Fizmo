@@ -637,6 +637,12 @@ OPTIONAL_CPP17_INLINE constexpr enable_if_floating_point<T> PARSEC = static_cast
 template <typename T = double>
 inline constexpr enable_if_floating_point<T> parsec() noexcept { return PARSEC<T>; }
 
+template <typename T>
+OPTIONAL_CPP17_INLINE constexpr enable_if_floating_point<T> ASTRONOMICAL_UNIT = static_cast<T>(1.495978707e11L); /*Meters*/
+
+template <typename T = double>
+inline constexpr enable_if_floating_point<T> astronomical_unit() noexcept { return ASTRONOMICAL_UNIT<T>; }
+
 // Gaussian unit constants
 template <typename T>
 OPTIONAL_CPP17_INLINE constexpr enable_if_arithmetic<T> MAGNETIC_CONSTANT_GAUSS = static_cast<T>(1); /* Gauss/Oersted */

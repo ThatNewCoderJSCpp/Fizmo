@@ -357,6 +357,30 @@ inline Expression ERFC(SymbolicContext& ctx, double a) {
     return ERFC(ctx, make_expr(ctx, a));
 }
 
+// INVERSE_ERF 
+inline Expression INVERSE_ERF(SymbolicContext& ctx, const Expression& a) {
+    return Expression(ctx.manager().unary(symbols::NodeType::InverseErf, a.inner()), ctx.manager());
+}
+inline Expression INVERSE_ERF(SymbolicContext& ctx, double a) { return INVERSE_ERF(ctx, make_expr(ctx, a)); }
+
+// INVERSE_ERFC
+inline Expression INVERSE_ERFC(SymbolicContext& ctx, const Expression& a) {
+    return Expression(ctx.manager().unary(symbols::NodeType::InverseErfc, a.inner()), ctx.manager());
+}
+inline Expression INVERSE_ERFC(SymbolicContext& ctx, double a) { return INVERSE_ERFC(ctx, make_expr(ctx, a)); }
+
+// ERFI
+inline Expression ERFI(SymbolicContext& ctx, const Expression& a) {
+    return Expression(ctx.manager().unary(symbols::NodeType::Erfi, a.inner()), ctx.manager());
+}
+inline Expression ERFI(SymbolicContext& ctx, double a) { return ERFI(ctx, make_expr(ctx, a)); }
+
+// INVERSE_ERFI
+inline Expression INVERSE_ERFI(SymbolicContext& ctx, const Expression& a) {
+    return Expression(ctx.manager().unary(symbols::NodeType::InverseErfi, a.inner()), ctx.manager());
+}
+inline Expression INVERSE_ERFI(SymbolicContext& ctx, double a) { return INVERSE_ERFI(ctx, make_expr(ctx, a)); }
+
 // ADD
 inline Expression ADD(SymbolicContext& ctx, const Expression& a, const Expression& b) {
     return Expression(ctx.manager().binary(symbols::NodeType::Add, a.inner(), b.inner()), ctx.manager());
@@ -734,20 +758,28 @@ inline Expression PERMUTATION(SymbolicContext& ctx, double n, const Expression& 
 inline Expression PERMUTATION(SymbolicContext& ctx, double n, double k)            { return PERMUTATION(ctx, make_expr(ctx, n), make_expr(ctx, k)); }
 
 // Fibonacci Polynomial(x, n)
-inline Expression FIBONACCI_POLYNOMIAL(SymbolicContext& ctx, const Expression& x, const Expression& n) {
-    return Expression(ctx.manager().binary(symbols::NodeType::FibonacciPolynomial, x.inner(), n.inner()), ctx.manager());
+inline Expression FIBONACCI_POLYNOMIAL(SymbolicContext& ctx, const Expression& x, int n) {
+    return Expression(
+        ctx.manager().binary(symbols::NodeType::FibonacciPolynomial, x.inner(), ctx.manager().constant(static_cast<double>(n))),
+        ctx.manager()
+    );
 }
-inline Expression FIBONACCI_POLYNOMIAL(SymbolicContext& ctx, const Expression& x, double n) { return FIBONACCI_POLYNOMIAL(ctx, x, make_expr(ctx, n)); }
-inline Expression FIBONACCI_POLYNOMIAL(SymbolicContext& ctx, double x, const Expression& n) { return FIBONACCI_POLYNOMIAL(ctx, make_expr(ctx, x), n); }
-inline Expression FIBONACCI_POLYNOMIAL(SymbolicContext& ctx, double x, double n)            { return FIBONACCI_POLYNOMIAL(ctx, make_expr(ctx, x), make_expr(ctx, n)); }
+
+inline Expression FIBONACCI_POLYNOMIAL(SymbolicContext& ctx, double x, int n) { 
+    return FIBONACCI_POLYNOMIAL(ctx, make_expr(ctx, x), n); 
+}
 
 // Lucas Polynomial(x, n)
-inline Expression LUCAS_POLYNOMIAL(SymbolicContext& ctx, const Expression& x, const Expression& n) {
-    return Expression(ctx.manager().binary(symbols::NodeType::LucasPolynomial, x.inner(), n.inner()), ctx.manager());
+inline Expression LUCAS_POLYNOMIAL(SymbolicContext& ctx, const Expression& x, int n) {
+    return Expression(
+        ctx.manager().binary(symbols::NodeType::LucasPolynomial, x.inner(), ctx.manager().constant(static_cast<double>(n))),
+        ctx.manager()
+    );
 }
-inline Expression LUCAS_POLYNOMIAL(SymbolicContext& ctx, const Expression& x, double n) { return LUCAS_POLYNOMIAL(ctx, x, make_expr(ctx, n)); }
-inline Expression LUCAS_POLYNOMIAL(SymbolicContext& ctx, double x, const Expression& n) { return LUCAS_POLYNOMIAL(ctx, make_expr(ctx, x), n); }
-inline Expression LUCAS_POLYNOMIAL(SymbolicContext& ctx, double x, double n)            { return LUCAS_POLYNOMIAL(ctx, make_expr(ctx, x), make_expr(ctx, n)); }
+
+inline Expression LUCAS_POLYNOMIAL(SymbolicContext& ctx, double x, int n) { 
+    return FIBONACCI_POLYNOMIAL(ctx, make_expr(ctx, x), n); 
+}
 
 // Fibonacci 
 inline Expression FIBONACCI(SymbolicContext& ctx, const Expression& x) {
@@ -858,10 +890,19 @@ inline Expression ASECH(double a)            { return ASECH(G(), a); }
 inline Expression ACOTH(const Expression& a) { return ACOTH(G(), a); }
 inline Expression ACOTH(double a)            { return ACOTH(G(), a); }
 
-inline Expression ERF(const Expression& a)  { return ERF(G(), a); }
-inline Expression ERF(double a)             { return ERF(G(), a); }
+inline Expression ERF(const Expression& a)  { return ERF(G(), a);  }
+inline Expression ERF(double a)             { return ERF(G(), a);  }
 inline Expression ERFC(const Expression& a) { return ERFC(G(), a); }
 inline Expression ERFC(double a)            { return ERFC(G(), a); }
+inline Expression ERFI(const Expression& a) { return ERFI(G(), a); }
+inline Expression ERFI(double a)            { return ERFI(G(), a); }
+
+inline Expression INVERSE_ERF(const Expression& a)  { return INVERSE_ERF(G(), a);  }
+inline Expression INVERSE_ERF(double a)             { return INVERSE_ERF(G(), a);  }
+inline Expression INVERSE_ERFC(const Expression& a) { return INVERSE_ERFC(G(), a); }
+inline Expression INVERSE_ERFC(double a)            { return INVERSE_ERFC(G(), a); }
+inline Expression INVERSE_ERFI(const Expression& a) { return INVERSE_ERFI(G(), a); }
+inline Expression INVERSE_ERFI(double a)            { return INVERSE_ERFI(G(), a); }
 
 inline Expression ADD(const Expression& a, const Expression& b) { return ADD(G(), a, b); }
 inline Expression ADD(const Expression& a, double b)            { return ADD(G(), a, b); }
@@ -995,19 +1036,15 @@ inline Expression PERMUTATION(const Expression& n, double k)            { return
 inline Expression PERMUTATION(double n, const Expression& k)            { return PERMUTATION(G(), n, k); }
 inline Expression PERMUTATION(double n, double k)                       { return PERMUTATION(G(), n, k); }
 
-inline Expression FIBONACCI_POLYNOMIAL(const Expression& x, const Expression& n)            { return FIBONACCI_POLYNOMIAL(G(), x, n); }
-inline Expression FIBONACCI_POLYNOMIAL(const Expression& x, double n) { return FIBONACCI_POLYNOMIAL(G(), x, n); }
-inline Expression FIBONACCI_POLYNOMIAL(double x, const Expression& n) { return FIBONACCI_POLYNOMIAL(G(), x, n); }
-inline Expression FIBONACCI_POLYNOMIAL(double x, double n)            { return FIBONACCI_POLYNOMIAL(G(), x, n); }
-inline Expression LUCAS_POLYNOMIAL(const Expression& x, const Expression& n)                { return LUCAS_POLYNOMIAL(G(), x, n); }
-inline Expression LUCAS_POLYNOMIAL(const Expression& x, double n)     { return LUCAS_POLYNOMIAL(G(), x, n); }
-inline Expression LUCAS_POLYNOMIAL(double x, const Expression& n)     { return LUCAS_POLYNOMIAL(G(), x, n); }
-inline Expression LUCAS_POLYNOMIAL(double x, double n)                { return LUCAS_POLYNOMIAL(G(), x, n); }
+inline Expression FIBONACCI_POLYNOMIAL(const Expression& x, int n) { return FIBONACCI_POLYNOMIAL(G(), x, n); }
+inline Expression FIBONACCI_POLYNOMIAL(double            x, int n) { return FIBONACCI_POLYNOMIAL(G(), x, n); }
+inline Expression LUCAS_POLYNOMIAL    (const Expression& x, int n) { return LUCAS_POLYNOMIAL    (G(), x, n); }
+inline Expression LUCAS_POLYNOMIAL    (double            x, int n) { return LUCAS_POLYNOMIAL    (G(), x, n); }
 
 inline Expression FIBONACCI(const Expression& x) { return FIBONACCI(G(), x); }
-inline Expression FIBONACCI(double x)            { return FIBONACCI(G(), x); }
-inline Expression LUCAS(const Expression& x)     { return LUCAS(G(), x);     }
-inline Expression LUCAS(double x)                { return LUCAS(G(), x);     }
+inline Expression FIBONACCI(double            x) { return FIBONACCI(G(), x); }
+inline Expression LUCAS    (const Expression& x) { return LUCAS    (G(), x); }
+inline Expression LUCAS    (double            x) { return LUCAS    (G(), x); }
 
 inline Expression operator+(const Expression& a, const Expression& b) { return ADD(a, b); }
 inline Expression operator+(const Expression& a, double b)            { return ADD(a, b); }
@@ -1018,13 +1055,14 @@ inline Expression operator-(double a, const Expression& b)            { return S
 inline Expression operator*(const Expression& a, const Expression& b) { return MUL(a, b); }
 inline Expression operator*(const Expression& a, double b)            { return MUL(a, b); }
 inline Expression operator*(double a, const Expression& b)            { return MUL(a, b); }
-inline Expression operator/(const Expression& a, const Expression& b) { return DIV(a, b); }
-inline Expression operator/(const Expression& a, double b)            { return DIV(a, b); }
-inline Expression operator/(double a, const Expression& b)            { return DIV(a, b); }
 inline Expression operator%(const Expression& a, const Expression& b) { return MOD(a, b); }
 inline Expression operator%(const Expression& a, double b)            { return MOD(a, b); }
 inline Expression operator%(double a, const Expression& b)            { return MOD(a, b); }
 inline Expression operator-(const Expression& a)                      { return NEGATE(a); }
+
+inline Expression operator/(const Expression& a, const Expression& b) { return DIV(a, b); }
+inline Expression operator/(const Expression& a, double b)            { return DIV(a, b); }
+inline Expression operator/(double a, const Expression& b)            { return DIV(a, b); }
 
 // --------------------------------
 // Convenience for other stuff

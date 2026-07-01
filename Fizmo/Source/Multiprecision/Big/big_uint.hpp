@@ -260,7 +260,7 @@ public:
 public:
     bool is_zero() const noexcept { return m_data.empty(); }
     bool is_even() const noexcept { return is_zero() || ((m_data[0] & 1ULL) == 0); }
-    bool is_one() const noexcept { return *this == BigUint::one(); }
+    bool is_one() const noexcept { return m_data.size() == 1 && m_data[0] == 1; }
     std::size_t limb_count() const noexcept { return m_data.size(); }
     std::uint64_t limb(std::size_t i) const noexcept { return (i < m_data.size()) ? m_data[i] : 0; }
     const std::vector<std::uint64_t>& data() const noexcept { return m_data; }
@@ -340,7 +340,7 @@ public:
         if ((x & 0xFF00000000000000ULL) == 0) { n += 8;  x <<= 8;  }
         if ((x & 0xF000000000000000ULL) == 0) { n += 4;  x <<= 4;  }
         if ((x & 0xC000000000000000ULL) == 0) { n += 2;  x <<= 2;  }
-        if ((x & 0x8000000000000000ULL) == 0) { n += 1;             }
+        if ((x & 0x8000000000000000ULL) == 0) { n += 1;            }
         return n;
     }
 
@@ -546,7 +546,7 @@ public:
         return *this;
     }
 
-    BigUint  operator+(std::uint64_t d) const { return add_small(d); }
+    BigUint operator+(std::uint64_t d) const { return add_small(d); }
 
     BigUint& operator+=(std::uint64_t d) {
         if (d == 0) return *this;
@@ -617,7 +617,7 @@ public:
         return *this;
     }
 
-    BigUint  operator-(std::uint64_t d) const { return sub_small(d); }
+    BigUint operator-(std::uint64_t d) const { return sub_small(d); }
 
     BigUint& operator-=(std::uint64_t d) {
         if (d == 0) return *this;
@@ -1016,6 +1016,12 @@ public:
         for (std::size_t i = 0; i < n; ++i) { result.m_data[i] = a.limb(i) ^ b.limb(i); }
         result.normalize();
         return result;
+    }
+
+    BigUint& operator~() noexcept {
+        for (std::size_t i = 0; i < m_data.size(); ++i) { m_data[i] = ~m_data[i]; }
+        normalize();
+        return *this;
     }
 
     BigUint& operator&=(const BigUint& other) {

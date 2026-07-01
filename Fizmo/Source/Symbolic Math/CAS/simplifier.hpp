@@ -91,6 +91,8 @@ public:
             case NodeType::Invalid:
                 return MathExpression(n);
 
+            case NodeType::AppliedFunction: return simplify_applied(n);
+
             case NodeType::Negate:     return simplify_negate(n);
             case NodeType::Add:        return simplify_add(n);
             case NodeType::Subtract:   return simplify_subtract(n);
@@ -1054,6 +1056,21 @@ public:
         }
 
         return mgr_.binary(n->type, arg, idx);
+    }
+
+    MathExpression simplify_applied(MathExpressionNode* n) {
+        const std::uint64_t cnt = n->applied.arg_count;
+        std::vector<MathExpression> args; args.reserve(cnt);
+        std::vector<std::uint64_t>  ords; ords.reserve(cnt);
+
+        for (std::uint64_t i = 0; i < cnt; ++i) {
+            MathExpression a = simplify_node(n->applied.args[i]);
+            if (is_poison(a.get())) return MathExpression(a.get());
+            args.push_back(a);
+            ords.push_back(n->applied.orders[i]);
+        }
+        
+        return mgr_.applied(n->applied.func_id, args, ords);
     }
 };
 

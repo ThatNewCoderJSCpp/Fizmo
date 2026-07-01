@@ -16,6 +16,7 @@ static inline std::function<double(double)> riemann_zeta_integrand(const double 
 }
 
 static inline double riemann_zeta(double s) {
+    if (std::abs(s - 1.0) <= constants::middle_epsilon()) { return constants::quiet_nan(); }
     if (std::abs(s) <= constants::middle_epsilon()) { return -0.5; }
 
     if (s > 1.0) {

@@ -7,6 +7,7 @@ namespace fizmo {
 namespace math {
 
 static double sin_integral(double x) {
+    if (std::abs(x) <= constants::middle_epsilon()) { return 0.0; }
     std::function<double(double)> inte = [](double t) { return (std::abs(t) <= constants::middle_epsilon()) ? 1.0 : std::sin(t) / t; };
     return integration::BasicIntegration::integrate_simpson(inte, 0.0, x).value;
 }
@@ -20,6 +21,7 @@ static double cos_integral(double x) {
 }
 
 static double sinh_integral(double x) {
+    if (std::abs(x) <= constants::middle_epsilon()) { return 0.0; }
     std::function<double(double)> inte = [](double t) { return (std::abs(t) <= constants::middle_epsilon()) ? 1.0 : std::sinh(t) / t; };
     return integration::BasicIntegration::integrate_simpson(inte, 0.0, x).value;
 }

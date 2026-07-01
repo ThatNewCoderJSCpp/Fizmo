@@ -19,13 +19,13 @@ static inline double lucas(double x) noexcept {
     return std::pow(phi, x) + std::pow(psi, x) * std::cos(constants::pi() * x);
 }
 
-static inline double fibonacci_polynomial(double x, double n) noexcept {
+static inline double fibonacci_polynomial(double x, int n) noexcept {
     const double a = 0.5 * (x + std::sqrt(x * x + 4));
     const double b = 0.5 * (x - std::sqrt(x * x + 4));
     return (std::pow(a, n) - std::pow(b, n)) / (a - b);
 }
 
-static inline double lucas_polynomial(double x, double n) noexcept {
+static inline double lucas_polynomial(double x, int n) noexcept {
     const double a = 0.5 * (x + std::sqrt(x * x + 4));
     const double b = 0.5 * (x - std::sqrt(x * x + 4));
     return std::pow(a, n) + std::pow(b, n);

@@ -10,7 +10,7 @@
 
 #include "../Vectors/vectors.hpp"
 #include "../Matrices/square_matrices.hpp"
-#include "../Converters/unit_converters.hpp"
+#include "../Converters/quantity.hpp"
 
 namespace fizmo {
 namespace physics {
@@ -463,53 +463,64 @@ inline MassData compute_capsule_mass(const CapsuleShape& c, double density) {
 
 inline MassData compute_edge_mass(const EdgeShape&, double) { return { 0.0, 0.0, {} }; }
 
-inline double convert_velocity_scalar(double val, units::VelocityUnit from, units::VelocityUnit to) {
-    return static_cast<double>(units::convert_velocity(static_cast<long double>(val), from, to));
+template <class FromU, class ToU>
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
+convert_velocity_scalar(double val, FromU from, ToU to) {
+    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
 }
 
-inline vector2d convert_velocity_vec(const vector2d& v, units::VelocityUnit from, units::VelocityUnit to) {
-    return {
-        convert_velocity_scalar(v.x, from, to),
-        convert_velocity_scalar(v.y, from, to)
-    };
+template <class FromU, class ToU>
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, vector2d>::type
+convert_velocity_vec(const vector2d& v, FromU from, ToU to) {
+    return { convert_velocity_scalar(v.x, from, to), convert_velocity_scalar(v.y, from, to) };
 }
 
-inline double convert_angular_velocity_scalar(double val, units::AngularVelocityUnit from, units::AngularVelocityUnit to) {
-    return static_cast<double>(units::convert_angular_velocity(static_cast<long double>(val), from, to));
+template <class FromU, class ToU>
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
+convert_angular_velocity_scalar(double val, FromU from, ToU to) {
+    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
 }
 
-inline double convert_force_scalar(double val, units::ForceUnit from, units::ForceUnit to) {
-    return static_cast<double>(units::convert_force(static_cast<long double>(val), from, to));
+template <class FromU, class ToU>
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
+convert_force_scalar(double val, FromU from, ToU to) {
+    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
 }
 
-inline vector2d convert_force_vec(const vector2d& v, units::ForceUnit from, units::ForceUnit to) {
-    return {
-        convert_force_scalar(v.x, from, to),
-        convert_force_scalar(v.y, from, to)
-    };
+template <class FromU, class ToU>
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, vector2d>::type
+convert_force_vec(const vector2d& v, FromU from, ToU to) {
+    return { convert_force_scalar(v.x, from, to), convert_force_scalar(v.y, from, to) };
 }
 
-inline double convert_torque_scalar(double val, units::TorqueUnit from, units::TorqueUnit to) {
-    return static_cast<double>(units::convert_torque(static_cast<long double>(val), from, to));
+template <class FromU, class ToU>
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
+convert_torque_scalar(double val, FromU from, ToU to) {
+    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
 }
 
-inline double convert_weight_scalar(double val, units::WeightUnit from, units::WeightUnit to) {
-    return static_cast<double>(units::convert_weight(static_cast<long double>(val), from, to));
+template <class FromU, class ToU>
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
+convert_weight_scalar(double val, FromU from, ToU to) {
+    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
 }
 
-inline double convert_distance_scalar(double val, units::DistanceUnit from, units::DistanceUnit to) {
-    return static_cast<double>(units::convert_distance(static_cast<long double>(val), from, to));
+template <class FromU, class ToU>
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
+convert_distance_scalar(double val, FromU from, ToU to) {
+    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
 }
 
-inline vector2d convert_position_vec(const vector2d& v, units::DistanceUnit from, units::DistanceUnit to) {
-    return {
-        convert_distance_scalar(v.x, from, to),
-        convert_distance_scalar(v.y, from, to)
-    };
+template <class FromU, class ToU>
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, vector2d>::type
+convert_position_vec(const vector2d& v, FromU from, ToU to) {
+    return { convert_distance_scalar(v.x, from, to), convert_distance_scalar(v.y, from, to) };
 }
 
-inline double convert_impulse_scalar(double val, units::ImpulseUnit from, units::ImpulseUnit to) {
-    return static_cast<double>(units::convert_impulse(static_cast<long double>(val), from, to));
+template <class FromU, class ToU>
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
+convert_impulse_scalar(double val, FromU from, ToU to) {
+    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
 }
 
 } // namespace detail
@@ -574,8 +585,14 @@ public:
     static constexpr MassSpec from_mass(double kg) noexcept { return { MassMode::Mass, kg }; }
     static constexpr MassSpec from_weight(double newtons) noexcept { return { MassMode::Weight, newtons }; }
 
-    static MassSpec from_mass(double val, units::WeightUnit unit)  { return { MassMode::Mass, detail::convert_weight_scalar(val, unit, units::WeightUnit::KILOGRAM) }; }
-    static MassSpec from_weight(double val, units::ForceUnit unit) { return { MassMode::Weight, detail::convert_force_scalar(val, unit, units::ForceUnit::SI())     }; }
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_DENSITY_2D, int>::type = 0>
+    static MassSpec from_density(double val, U unit) { return { MassMode::Density, detail::convert_weight_scalar(val, unit, (units::mass::kilogram / units::area::square_meter)) }; }
+
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_MASS, int>::type = 0>
+    static MassSpec from_mass(double val, U unit)    { return { MassMode::Mass   , detail::convert_weight_scalar(val, unit, units::mass::kilogram) }; }
+
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_FORCE, int>::type = 0>
+    static MassSpec from_weight(double val, U unit)  { return { MassMode::Weight , detail::convert_force_scalar (val, unit, units::force::newton ) }; }
 
 public:
     double resolve_density(double shape_area_m2, double gravity = STANDARD_GRAVITY) const noexcept {
@@ -592,12 +609,6 @@ public:
     }
 };
 
-inline MassData compute_mass(const Shape2D& shape, const MassSpec& spec, double gravity = MassSpec::STANDARD_GRAVITY) {
-    double area    = compute_shape_area(shape);
-    double density = spec.resolve_density(area, gravity);
-    return compute_mass(shape, density);
-}
-
 struct Material {
     MassSpec mass_spec{};                  
     double   friction    = 0.3;           // unitless [0, 1]
@@ -611,8 +622,15 @@ struct Material {
     static constexpr Material with_density(double kg_per_m2) noexcept { return Material(MassSpec::from_density(kg_per_m2)); }
     static constexpr Material with_mass(double kg) noexcept { return Material(MassSpec::from_mass(kg)); }
     static constexpr Material with_weight(double newtons) noexcept { return Material(MassSpec::from_weight(newtons)); }
-    static Material with_mass(double val, units::WeightUnit unit) { return Material(MassSpec::from_mass(val, unit)); }
-    static Material with_weight(double val, units::ForceUnit unit) { return Material(MassSpec::from_weight(val, unit)); }
+
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_DENSITY_2D, int>::type = 0>
+    static Material with_density(double val, U unit) { return Material(MassSpec::from_density(val, unit)); }
+
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_MASS, int>::type = 0>
+    static Material with_mass(double val, U unit) { return Material(MassSpec::from_mass(val, unit)); }
+
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_FORCE, int>::type = 0>
+    static Material with_weight(double val, U unit) { return Material(MassSpec::from_weight(val, unit)); }
 };
 
 struct CollisionFilter {
@@ -640,7 +658,9 @@ struct Collider2D {
     MassData        mass_data{};
 
     void recompute_mass(double gravity = MassSpec::STANDARD_GRAVITY) {
-        mass_data = compute_mass(shape, material.mass_spec, gravity);
+        const double area    = compute_shape_area(shape);
+        const double density = material.mass_spec.resolve_density(area, gravity);
+        mass_data = compute_mass(shape, density);
         mass_data.center = local_offset.apply(mass_data.center);
     }
 
@@ -886,17 +906,19 @@ public:
 public:
     vector2d position() const noexcept { return m_transform.position; }
 
-    vector2d position(units::DistanceUnit unit) const noexcept {
-        double a = units::convert_distance(m_transform.position.x, units::DistanceUnit::METER, unit);
-        double b = units::convert_distance(m_transform.position.y, units::DistanceUnit::METER, unit);
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
+    vector2d position(U distance_unit) const noexcept {
+        double a = units::convert(m_transform.position.x, units::distance::meter, distance_unit);
+        double b = units::convert(m_transform.position.y, units::distance::meter, distance_unit);
         return vector2d(a, b);
     }
 
     void set_position(const vector2d& pos) noexcept { m_transform.position = pos; }
 
-    void set_position(const vector2d& pos, units::DistanceUnit unit) noexcept {
-        m_transform.position.x = units::convert_distance(pos.x, unit, units::DistanceUnit::METER);
-        m_transform.position.y = units::convert_distance(pos.y, unit, units::DistanceUnit::METER);
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
+    void set_position(const vector2d& pos, U distance_unit) noexcept {
+        m_transform.position.x = units::convert(pos.x, distance_unit, units::distance::meter);
+        m_transform.position.y = units::convert(pos.y, distance_unit, units::distance::meter);
     }
 
 public:
@@ -910,55 +932,65 @@ public:
 public:
     vector2d linear_velocity() const noexcept { return m_linear_velocity; }
 
-    vector2d linear_velocity(units::VelocityUnit unit) const noexcept {
-        double a = units::convert_velocity(m_linear_velocity.x, units::VelocityUnit::meters_per_second(), unit);
-        double b = units::convert_velocity(m_linear_velocity.y, units::VelocityUnit::meters_per_second(), unit);
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_VELOCITY, int>::type = 0>
+    vector2d linear_velocity(U unit) const noexcept {
+        double a = units::convert(m_linear_velocity.x, units::velocity::meters_per_second, unit);
+        double b = units::convert(m_linear_velocity.y, units::velocity::meters_per_second, unit);
         return vector2d(a, b);
     }
 
     void set_linear_velocity(const vector2d& v) noexcept { m_linear_velocity = v; }
 
-    void set_linear_velocity(const vector2d& v, units::VelocityUnit unit) noexcept {
-        m_linear_velocity = detail::convert_velocity_vec(v, unit, units::VelocityUnit::meters_per_second());
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_VELOCITY, int>::type = 0>
+    void set_linear_velocity(const vector2d& v, U unit) noexcept {
+        m_linear_velocity = detail::convert_velocity_vec(v, unit, units::velocity::meters_per_second);
     }
 
 public:
     double angular_velocity() const noexcept { return m_angular_velocity; }
 
-    double angular_velocity(units::AngularVelocityUnit unit) const noexcept {
-        return detail::convert_angular_velocity_scalar(m_angular_velocity, units::AngularVelocityUnit::SI(), unit);
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_ANGULAR_VELOCITY, int>::type = 0>
+    double angular_velocity(U unit) const noexcept {
+        static constexpr auto rad_per_s = units::angle::radian / units::time::second;
+        return detail::convert_angular_velocity_scalar(m_angular_velocity, rad_per_s, unit);
     }
 
     void set_angular_velocity(double w) noexcept { m_angular_velocity = w; }
 
-    void set_angular_velocity(double w, units::AngularVelocityUnit unit) noexcept {
-        m_angular_velocity = detail::convert_angular_velocity_scalar(w, unit, units::AngularVelocityUnit::SI());
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_ANGULAR_VELOCITY, int>::type = 0>
+    void set_angular_velocity(double w, U unit) noexcept {
+        static constexpr auto rad_per_s = units::angle::radian / units::time::second;
+        m_angular_velocity = detail::convert_angular_velocity_scalar(w, unit, rad_per_s);
     }
 
 public:
     vector2d force() const noexcept { return m_force; }
 
-    vector2d force(units::ForceUnit unit) const noexcept {
-        return detail::convert_force_vec(m_force, units::ForceUnit::SI(), unit);
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_FORCE, int>::type = 0>
+    vector2d force(U force_unit) const noexcept {
+        return detail::convert_force_vec(m_force, units::force::newton, force_unit);
     }
 
     void set_force(const vector2d& f) noexcept { m_force = f; }
 
-    void set_force(const vector2d& f, units::ForceUnit unit) noexcept {
-        m_force = detail::convert_force_vec(f, unit, units::ForceUnit::SI());
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_FORCE, int>::type = 0>
+    void set_force(const vector2d& f, U unit) noexcept {
+        m_force = detail::convert_force_vec(f, unit, units::force::newton);
     }
 
 public:
     double torque() const noexcept { return m_torque; }
 
-    double torque(units::TorqueUnit unit) const noexcept {
-        return detail::convert_torque_scalar(m_torque, units::TorqueUnit::SI(), unit);
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_TORQUE, int>::type = 0>
+    double torque(U unit) const noexcept {
+        return detail::convert_torque_scalar(m_torque, units::torque::newton_meter, unit);
     }
 
     void set_torque(double t) noexcept { m_torque = t; }
 
-    void set_torque(double t, units::TorqueUnit unit) noexcept {
-        m_torque = detail::convert_torque_scalar(t, unit, units::TorqueUnit::SI());
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_TORQUE, int>::type = 0>
+    void set_torque(double t, U torque_unit) noexcept {
+        m_torque = detail::convert_torque_scalar(t, torque_unit, units::torque::newton_meter);
     }
 
 public:
@@ -967,9 +999,11 @@ public:
         return m_density;
     }
 
-    double density(units::DensityUnit_2D unit) const noexcept {
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_DENSITY_2D, int>::type = 0>
+    double density(U density_unit) const noexcept {
         ensure_mass_uptodate();
-        return units::convert_density_2d(m_density, units::DensityUnit_2D::SI(), unit);
+        static constexpr auto si_density = units::mass::kilogram / units::area::square_meter;
+        return static_cast<double>(units::convert(static_cast<long double>(m_density), si_density, density_unit));
     }
 
     void set_density(double d) noexcept {
@@ -980,8 +1014,10 @@ public:
         m_mass_dirty = false;
     }
 
-    void set_density(double d, units::DensityUnit_2D unit) noexcept {
-        d = units::convert_density_2d(d, unit, units::DensityUnit_2D::SI());
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_DENSITY_2D, int>::type = 0>
+    void set_density(double d, U density_unit) noexcept {
+        static constexpr auto si_density = units::mass::kilogram / units::area::square_meter;
+        d = units::convert(d, density_unit, si_density);
         set_density(d);
     }
 
@@ -991,9 +1027,10 @@ public:
         return m_mass; 
     }
 
-    double mass(units::WeightUnit unit, double gravity = MassSpec::STANDARD_GRAVITY) const noexcept {
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_MASS, int>::type = 0>
+    double mass(U mass_unit, double gravity = MassSpec::STANDARD_GRAVITY) const noexcept {
         ensure_mass_uptodate(gravity);
-        return detail::convert_weight_scalar(m_mass, units::WeightUnit::KILOGRAM, unit);
+        return detail::convert_weight_scalar(m_mass, units::mass::kilogram, mass_unit);
     }
 
     double inv_mass(double gravity = MassSpec::STANDARD_GRAVITY) const noexcept { 
@@ -1001,9 +1038,10 @@ public:
         return m_inv_mass; 
     }
 
-    double inv_mass(units::WeightUnit unit, double gravity = MassSpec::STANDARD_GRAVITY) const noexcept { 
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_MASS, int>::type = 0>
+    double inv_mass(U unit, double gravity = MassSpec::STANDARD_GRAVITY) const noexcept { 
         ensure_mass_uptodate(gravity);
-        return units::convert_weight(m_inv_mass, units::WeightUnit::KILOGRAM, unit); 
+        return units::convert(m_inv_mass, units::mass::kilogram, unit); 
     }
 
     void set_mass(double kg) noexcept {
@@ -1015,8 +1053,9 @@ public:
         m_mass_dirty = false;
     }
 
-    void set_mass(double val, units::WeightUnit unit) noexcept {
-        set_mass(detail::convert_weight_scalar(val, unit, units::WeightUnit::KILOGRAM));
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_MASS, int>::type = 0>
+    void set_mass(double val, U mass_unit) noexcept {
+        set_mass(detail::convert_weight_scalar(val, mass_unit, units::mass::kilogram));
     }
 
     void set_mass_from_weight(double newtons, double gravity = MassSpec::STANDARD_GRAVITY) noexcept {
@@ -1046,9 +1085,10 @@ public:
         return m_local_center;
     }
 
-    vector2d local_center(units::DistanceUnit unit) const noexcept {
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
+    vector2d local_center(U length_unit) const noexcept {
         ensure_mass_uptodate();
-        return detail::convert_position_vec(m_local_center, units::DistanceUnit::METER, unit);
+        return detail::convert_position_vec(m_local_center, units::distance::meter, length_unit);
     }
 
 public:
@@ -1061,27 +1101,33 @@ public:
 public:
     double max_linear_speed() const noexcept { return m_max_linear_speed; }
     
-    double max_linear_speed(units::VelocityUnit unit) const noexcept {
-        return detail::convert_velocity_scalar(m_max_linear_speed, units::VelocityUnit::meters_per_second(), unit);
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_VELOCITY, int>::type = 0>
+    double max_linear_speed(U velocity_unit) const noexcept {
+        return detail::convert_velocity_scalar(m_max_linear_speed, units::velocity::meters_per_second, velocity_unit);
     }
 
     void set_max_linear_speed(double s) noexcept { m_max_linear_speed = s; }
 
-    void set_max_linear_speed(double s, units::VelocityUnit unit) noexcept {
-        m_max_linear_speed = detail::convert_velocity_scalar(s, unit, units::VelocityUnit::meters_per_second());
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_VELOCITY, int>::type = 0>
+    void set_max_linear_speed(double s, U velocity_unit) noexcept {
+        m_max_linear_speed = detail::convert_velocity_scalar(s, velocity_unit, units::velocity::meters_per_second);
     }
 
 public:
     double max_angular_speed() const noexcept { return m_max_angular_speed; }
 
-    double max_angular_speed(units::AngularVelocityUnit unit) const noexcept {
-        return detail::convert_angular_velocity_scalar(m_max_angular_speed, units::AngularVelocityUnit::SI(), unit);
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_ANGULAR_VELOCITY, int>::type = 0>
+    double max_angular_speed(U angular_velocity_unit) const noexcept {
+        static constexpr auto rad_per_s = units::angle::radian / units::time::second;
+        return detail::convert_angular_velocity_scalar(m_max_angular_speed, rad_per_s, angular_velocity_unit);
     }
 
     void set_max_angular_speed(double s) noexcept { m_max_angular_speed = s; }
 
-    void set_max_angular_speed(double s, units::AngularVelocityUnit unit) noexcept {
-        m_max_angular_speed = detail::convert_angular_velocity_scalar(s, unit, units::AngularVelocityUnit::SI());
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_ANGULAR_VELOCITY, int>::type = 0>
+    void set_max_angular_speed(double s, U angular_velocity_unit) noexcept {
+        static constexpr auto rad_per_s = units::angle::radian / units::time::second;
+        m_max_angular_speed = detail::convert_angular_velocity_scalar(s, angular_velocity_unit, rad_per_s);
     }
 
 public:
@@ -1099,8 +1145,9 @@ public:
         wake();
     }
 
-    void apply_force(const vector2d& f, units::ForceUnit unit) {
-        apply_force(detail::convert_force_vec(f, unit, units::ForceUnit::SI()));
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_FORCE, int>::type = 0>
+    void apply_force(const vector2d& f, U unit) {
+        apply_force(detail::convert_force_vec(f, unit, units::force::newton));
     }
 
     void apply_force_at(const vector2d& f, const vector2d& world_point) {
@@ -1116,13 +1163,11 @@ public:
         wake();
     }
 
-    void apply_force_at(
-        const vector2d& f, units::ForceUnit f_unit,
-        const vector2d& world_point, units::DistanceUnit p_unit
-    ) {
+    template <class FU, class PU, typename std::enable_if<is_fizmo_unit_v<FU> && is_fizmo_unit_v<PU> && FU::dimension() == units::DIMENSION_FORCE && PU::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
+    void apply_force_at(const vector2d& f, FU f_unit, const vector2d& world_point, PU p_unit) {
         apply_force_at(
-            detail::convert_force_vec(f, f_unit, units::ForceUnit::SI()),
-            detail::convert_position_vec(world_point, p_unit, units::DistanceUnit::METER)
+            detail::convert_force_vec(f, f_unit, units::force::newton),
+            detail::convert_position_vec(world_point, p_unit, units::distance::meter)
         );
     }
 
@@ -1133,8 +1178,9 @@ public:
         wake();
     }
 
-    void apply_torque(double t, units::TorqueUnit unit) {
-        apply_torque(detail::convert_torque_scalar(t, unit, units::TorqueUnit::SI()));
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_TORQUE, int>::type = 0>
+    void apply_torque(double t, U torque_unit) {
+        apply_torque(detail::convert_torque_scalar(t, torque_unit, units::torque::newton_meter));
     }
 
 public:
@@ -1145,8 +1191,9 @@ public:
         wake();
     }
 
-    void apply_linear_impulse(const vector2d& impulse, units::ImpulseUnit unit) {
-        double f = detail::convert_impulse_scalar(1.0, unit, units::ImpulseUnit::SI());
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_IMPULSE, int>::type = 0>
+    void apply_linear_impulse(const vector2d& impulse, U impulse_unit) {
+        double f = detail::convert_impulse_scalar(1.0, impulse_unit, units::impulse::newton_second);
         apply_linear_impulse(impulse * f);
     }
 
@@ -1189,9 +1236,10 @@ public:
         }
     }
 
-    void integrate_forces(double dt, const vector2d& gravity, units::AccelerationUnit grav_unit) {
-        double a = units::convert_acceleration(gravity.x, grav_unit, units::AccelerationUnit(units::VelocityUnit::meters_per_second(), units::TimeUnit::SECOND));
-        double b = units::convert_acceleration(gravity.y, grav_unit, units::AccelerationUnit(units::VelocityUnit::meters_per_second(), units::TimeUnit::SECOND));
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_ACCELERATION, int>::type = 0>
+    void integrate_forces(double dt, const vector2d& gravity, U grav_accel_unit) {
+        double a = units::convert(gravity.x, grav_accel_unit, units::acceleration::meters_per_second_squared);
+        double b = units::convert(gravity.y, grav_accel_unit, units::acceleration::meters_per_second_squared);
         return integrate_forces(dt, vector2d(a, b));
     }
 
@@ -1255,8 +1303,9 @@ public:
         return m_transform.apply(m_local_center);
     }
 
-    vector2d world_center(units::DistanceUnit unit) const noexcept {
-        return detail::convert_position_vec(world_center(), units::DistanceUnit::METER, unit);
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
+    vector2d world_center(U distance_unit) const noexcept {
+        return detail::convert_position_vec(world_center(), units::distance::meter, distance_unit);
     }
 
     vector2d get_world_point(const vector2d& local)  const noexcept { return m_transform.apply(local); }
@@ -1270,13 +1319,10 @@ public:
         return m_linear_velocity + vector2d(-m_angular_velocity * r.y, m_angular_velocity * r.x);
     }
 
-    vector2d get_velocity_at(
-        const vector2d& world_point,
-        units::DistanceUnit p_unit,
-        units::VelocityUnit v_unit
-    ) const noexcept {
-        vector2d wp_si = detail::convert_position_vec(world_point, p_unit, units::DistanceUnit::METER);
-        return detail::convert_velocity_vec(get_velocity_at(wp_si), units::VelocityUnit::meters_per_second(), v_unit);
+    template <class PU, class VU, typename std::enable_if<is_fizmo_unit_v<PU> && is_fizmo_unit_v<VU> && PU::dimension() == units::DIMENSION_LENGTH && VU::dimension() == units::DIMENSION_VELOCITY, int>::type = 0>
+    vector2d get_velocity_at(const vector2d& world_point, PU position_distance_unit, VU velocity_unit) const noexcept {
+        vector2d wp_si = detail::convert_position_vec(world_point, position_distance_unit, units::distance::meter);
+        return detail::convert_velocity_vec(get_velocity_at(wp_si), units::velocity::meters_per_second, velocity_unit);
     }
 
     double kinetic_energy() const noexcept {
@@ -1286,11 +1332,12 @@ public:
         return lin + rot;
     }
 
-    double kinetic_energy(units::EnergyUnit unit) const noexcept {
+    template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_ENERGY, int>::type = 0>
+    double kinetic_energy(U energy_unit) const noexcept {
         return static_cast<double>(
-            units::convert_energy(
+            units::convert(
                 static_cast<long double>(kinetic_energy()),
-                units::EnergyUnit::SI_mechanical(), unit
+                units::energy::joule, energy_unit
             )
         );
     }
@@ -1321,8 +1368,10 @@ private:
 
         for (auto& c : m_colliders) {
             if (c.is_sensor) continue;
-            MassData md = compute_mass(c.shape, c.material.mass_spec, gravity);
-            md.center = c.local_offset.apply(md.center);
+            const double area    = compute_shape_area(c.shape);
+            const double density = c.material.mass_spec.resolve_density(area, gravity);
+            MassData md = compute_mass(c.shape, density);
+            md.center   = c.local_offset.apply(md.center);
             parts.push_back(md);
         }
 

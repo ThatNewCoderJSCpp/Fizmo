@@ -28,7 +28,7 @@ public:
         return base_days[idx];
     }
 
-    static constexpr std::uint8_t days_in_month(Month m, bool leap) noexcept { return days_in_month(m, (leap ? 1600 : 1601)); }
+    static constexpr std::uint8_t days_in_month(Month m, bool leap) noexcept { return days_in_month(m, (leap ? 1600u : 1601u)); }
 
     template<typename Y, typename = typename std::enable_if<detail::is_integer_like_v<Y>>::type>
     static constexpr std::uint16_t days_in_year(const Y& year) noexcept { return is_leap_year(year) ? 366 : 365; }

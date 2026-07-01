@@ -26,6 +26,7 @@ enum class NodeType {
     NaN,                // results in a complex number
     Undefined,          // 1/0, ln(0), etc
     Invalid,            // malformed / unsupported expression 
+    AppliedFunction,
 
     Add,
     Subtract,
@@ -253,6 +254,13 @@ struct MathExpressionNode {
             MathExpressionNode* base;
             MathExpressionNode* exponent;
         } power;
+
+        struct {
+            MathExpressionNode** args;       
+            std::uint64_t*       orders;     
+            std::uint64_t        arg_count;
+            std::uint64_t        func_id;
+        } applied;
     };
 };
 
@@ -267,6 +275,12 @@ struct NodeKey {
         struct { MathExpressionNode* left; MathExpressionNode* right; } binary;
         MathExpressionNode* child;
         struct { MathExpressionNode* base; MathExpressionNode* exponent; } power;
+        struct {
+            MathExpressionNode* const* args;
+            const std::uint64_t*       orders;
+            std::uint64_t              arg_count;
+            std::uint64_t              func_id;
+        } applied;
     };
 
     static NodeKey make_constant(double v) {
@@ -311,6 +325,20 @@ struct NodeKey {
         k.type = t; 
         return k;
     }
+
+    static NodeKey make_applied(
+        std::uint64_t fid, std::uint64_t count,
+        MathExpressionNode* const* args,
+        const std::uint64_t* orders
+    ) {
+        NodeKey k;
+        k.type = NodeType::AppliedFunction;
+        k.applied.func_id   = fid;
+        k.applied.arg_count = count;
+        k.applied.args      = args;
+        k.applied.orders    = orders;
+        return k;
+    }
 };
 
 struct NodeKeyHash {
@@ -319,30 +347,40 @@ struct NodeKeyHash {
         auto mix = [&](std::size_t v) { h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2); };
 
         switch (k.type) {
-        case NodeType::Constant: {
-            std::uint64_t bits;
-            std::memcpy(&bits, &k.constant, sizeof(bits));
-            mix(bits);
-            break;
-        }
-
-        case NodeType::Variable:
-            mix(std::hash<std::uint64_t>{}(k.var_id));
-            break;
-
-        case NodeType::Power:
-            mix(std::hash<MathExpressionNode*>{}(k.power.base));
-            mix(std::hash<MathExpressionNode*>{}(k.power.exponent));
-            break;
-
-        default:
-            if (is_binary(k.type)) {
-                mix(std::hash<MathExpressionNode*>{}(k.binary.left));
-                mix(std::hash<MathExpressionNode*>{}(k.binary.right));
-            } else if (is_unary(k.type)) {
-                mix(std::hash<MathExpressionNode*>{}(k.child));
+            case NodeType::Constant: {
+                std::uint64_t bits;
+                std::memcpy(&bits, &k.constant, sizeof(bits));
+                mix(bits);
+                break;
             }
-            break;
+
+            case NodeType::Variable:
+                mix(std::hash<std::uint64_t>{}(k.var_id));
+                break;
+
+            case NodeType::Power:
+                mix(std::hash<MathExpressionNode*>{}(k.power.base));
+                mix(std::hash<MathExpressionNode*>{}(k.power.exponent));
+                break;
+
+            case NodeType::AppliedFunction:
+                mix(std::hash<std::uint64_t>{}(k.applied.func_id));
+                mix(std::hash<std::uint64_t>{}(k.applied.arg_count));
+
+                for (std::uint64_t i = 0; i < k.applied.arg_count; ++i) {
+                    mix(std::hash<MathExpressionNode*>{}(k.applied.args[i]));
+                    mix(std::hash<std::uint64_t>{}(k.applied.orders[i]));
+                }
+                break;
+
+            default:
+                if (is_binary(k.type)) {
+                    mix(std::hash<MathExpressionNode*>{}(k.binary.left));
+                    mix(std::hash<MathExpressionNode*>{}(k.binary.right));
+                } else if (is_unary(k.type)) {
+                    mix(std::hash<MathExpressionNode*>{}(k.child));
+                }
+                break;
         }
 
         return h;
@@ -476,21 +514,32 @@ struct NodeKeyEq {
         if (a.type != b.type) return false;
 
         switch (a.type) {
-        case NodeType::Constant: {
-            std::uint64_t ba, bb;
-            std::memcpy(&ba, &a.constant, sizeof(ba));
-            std::memcpy(&bb, &b.constant, sizeof(bb));
-            return ba == bb;
-        }
+            case NodeType::Constant: {
+                std::uint64_t ba, bb;
+                std::memcpy(&ba, &a.constant, sizeof(ba));
+                std::memcpy(&bb, &b.constant, sizeof(bb));
+                return ba == bb;
+            }
 
-        case NodeType::Variable: return a.var_id == b.var_id;
-        case NodeType::Power: return a.power.base == b.power.base && a.power.exponent == b.power.exponent;
+            case NodeType::Variable: return a.var_id == b.var_id;
+            case NodeType::Power: return a.power.base == b.power.base && a.power.exponent == b.power.exponent;
+            
+            case NodeType::AppliedFunction: {
+                if (a.applied.func_id   != b.applied.func_id)   return false;
+                if (a.applied.arg_count != b.applied.arg_count) return false;
+                
+                for (std::uint64_t i = 0; i < a.applied.arg_count; ++i) {
+                    if (a.applied.args[i]   != b.applied.args[i])   return false;
+                    if (a.applied.orders[i] != b.applied.orders[i]) return false;
+                }
+                return true;
+            }
 
-        default:
-            if (NodeKeyHash::is_typed_leaf(a.type)) return true;
-            if (NodeKeyHash::is_binary(a.type)) { return a.binary.left == b.binary.left && a.binary.right == b.binary.right; }
-            if (NodeKeyHash::is_unary(a.type)) { return a.child == b.child; }
-            return false;
+            default:
+                if (NodeKeyHash::is_typed_leaf(a.type)) return true;
+                if (NodeKeyHash::is_binary(a.type)) { return a.binary.left == b.binary.left && a.binary.right == b.binary.right; }
+                if (NodeKeyHash::is_unary(a.type)) { return a.child == b.child; }
+                return false;
         }
     }
 };
@@ -566,6 +615,42 @@ public:
         }));
     }
 
+    MathExpression applied(
+        std::uint64_t func_id,
+        const std::vector<MathExpression>& args,
+        const std::vector<std::uint64_t>& orders
+    ) {
+        const std::uint64_t count = static_cast<std::uint64_t>(args.size());
+        MathExpressionNode** arg_arr = nullptr;
+        std::uint64_t*       ord_arr = nullptr;
+
+        if (count > 0) {
+            arg_arr = arena_.allocate_array<MathExpressionNode*>(count);
+            ord_arr = arena_.allocate_array<std::uint64_t>(count);
+
+            for (std::uint64_t i = 0; i < count; ++i) {
+                arg_arr[i] = args[i].get();
+                ord_arr[i] = (i < orders.size()) ? orders[i] : 0;
+            }
+        }
+
+        NodeKey key = NodeKey::make_applied(func_id, count, arg_arr, ord_arr);
+
+        return MathExpression(intern(key, [&] {
+            auto* n = arena_.make<MathExpressionNode>();
+            n->type = NodeType::AppliedFunction;
+            n->applied.func_id   = func_id;
+            n->applied.arg_count = count;
+            n->applied.args      = arg_arr;
+            n->applied.orders    = ord_arr;
+            return n;
+        }));
+    }
+
+    MathExpression applied(std::uint64_t func_id, std::uint64_t order, MathExpression arg) {
+        return applied(func_id, std::vector<MathExpression>{ arg }, std::vector<std::uint64_t>{ order });
+    }
+
     MathExpression pos_inf() { return typed_leaf(NodeType::PositiveInfinity); }
     MathExpression neg_inf() { return typed_leaf(NodeType::NegativeInfinity); }
     MathExpression nan_expr() { return typed_leaf(NodeType::NaN); }
@@ -599,6 +684,18 @@ public:
                 auto e = canonicalize(n->power.exponent);
                 return power(b, e);
             }
+            case NodeType::AppliedFunction: {
+                const std::uint64_t cnt = n->applied.arg_count;
+                std::vector<MathExpression> args; args.reserve(cnt);
+                std::vector<std::uint64_t>  ords; ords.reserve(cnt);
+
+                for (std::uint64_t i = 0; i < cnt; ++i) {
+                    args.push_back(canonicalize(n->applied.args[i]));
+                    ords.push_back(n->applied.orders[i]);
+                }
+
+                return applied(n->applied.func_id, args, ords);
+            }
             default:
                 if (NodeKeyHash::is_unary(n->type)) {
                     auto child = canonicalize(n->unary.child);
@@ -614,8 +711,14 @@ public:
     }
 
 public:
-    const VariableTable& variables() const noexcept { return vars_; }
-    VariableTable& variables() noexcept { return vars_; }
+    const VariableTable& variables() const noexcept { return vars_;  }
+          VariableTable& variables()       noexcept { return vars_;  }
+    const VariableTable& functions() const noexcept { return funcs_; }
+          VariableTable& functions()       noexcept { return funcs_; }
+
+    std::uint64_t function_id(const std::string& name) {
+        return funcs_.get_or_create(name);
+    }
 
 private:
     MathExpression typed_leaf(NodeType t) {
@@ -639,6 +742,7 @@ private:
 
     detail::ExpressionArena& arena_;
     VariableTable& vars_;
+    VariableTable  funcs_;
     std::unordered_map<NodeKey, MathExpressionNode*, NodeKeyHash, NodeKeyEq> table_;
 };
 

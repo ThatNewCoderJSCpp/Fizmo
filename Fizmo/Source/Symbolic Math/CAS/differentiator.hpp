@@ -73,6 +73,9 @@ public:
                 return false;
             case NodeType::Power:
                 return contains_var(n->power.base, vid) || contains_var(n->power.exponent, vid);
+            case NodeType::AppliedFunction:
+                for (std::uint64_t i = 0; i < n->applied.arg_count; ++i) if (contains_var(n->applied.args[i], vid)) return true;
+                return false;
             default:
                 if (NodeKeyHash::is_unary(n->type)) return contains_var(n->unary.child, vid);
                 if (NodeKeyHash::is_binary(n->type)) return contains_var(n->binary.left, vid) || contains_var(n->binary.right, vid);
@@ -121,6 +124,32 @@ private:
             case NodeType::Sign:        
             case NodeType::UnitStep: 
                 return konst(0.0);
+
+            case NodeType::AppliedFunction: {
+                const std::uint64_t cnt = n->applied.arg_count;
+                if (cnt == 0) return konst(0.0);
+                std::vector<MathExpression> args;        args.reserve(cnt);
+                std::vector<std::uint64_t>  base_orders; base_orders.reserve(cnt);
+
+                for (std::uint64_t j = 0; j < cnt; ++j) {
+                    args.push_back(wrap(n->applied.args[j]));
+                    base_orders.push_back(n->applied.orders[j]);
+                }
+
+                MathExpression sum = konst(0.0);
+                bool started = false;
+
+                for (std::uint64_t i = 0; i < cnt; ++i) {
+                    std::vector<std::uint64_t> bumped = base_orders;
+                    bumped[i] += 1;
+                    MathExpression partial = mgr_.applied(n->applied.func_id, args, bumped);
+                    MathExpression term    = mul(partial, diff(n->applied.args[i], vid));
+                    sum = started ? add(sum, term) : term;
+                    started = true;
+                }
+
+                return sum;
+            }
             
             case NodeType::Invalid: return invalid();
 

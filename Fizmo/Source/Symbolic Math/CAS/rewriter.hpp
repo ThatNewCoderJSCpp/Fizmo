@@ -93,6 +93,18 @@ private:
             return n;
         case NT::Power:
             return mgr_.power(W(rewrite_node(n->power.base)), W(rewrite_node(n->power.exponent))).get();
+        case NT::AppliedFunction: {
+            const std::uint64_t cnt = n->applied.arg_count;
+            std::vector<MathExpression> args; args.reserve(cnt);
+            std::vector<std::uint64_t>  ords; ords.reserve(cnt);
+            
+            for (std::uint64_t i = 0; i < cnt; ++i) {
+                args.push_back(W(rewrite_node(n->applied.args[i])));
+                ords.push_back(n->applied.orders[i]);
+            }
+
+            return mgr_.applied(n->applied.func_id, args, ords).get();
+        }
         default:
             if (NodeKeyHash::is_unary(n->type))
                 return mgr_.unary(n->type, W(rewrite_node(n->unary.child))).get();
