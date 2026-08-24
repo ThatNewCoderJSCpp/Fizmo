@@ -203,6 +203,8 @@ enum class NodeType {
     SphericalBesselI, // todo  
     SphericalBesselK, // todo  
 
+    GaussianGeneralized, // todo
+
     UserDefined
 };
 
@@ -256,6 +258,19 @@ struct MathExpressionNode {
         } power;
 
         struct {
+            MathExpressionNode* arg1;
+            MathExpressionNode* arg2;
+            MathExpressionNode* arg3;
+        } ternary;
+
+        struct {
+            MathExpressionNode* arg1;
+            MathExpressionNode* arg2;
+            MathExpressionNode* arg3;
+            MathExpressionNode* arg4;
+        } quaternary;
+
+        struct {
             MathExpressionNode** args;       
             std::uint64_t*       orders;     
             std::uint64_t        arg_count;
@@ -275,6 +290,9 @@ struct NodeKey {
         struct { MathExpressionNode* left; MathExpressionNode* right; } binary;
         MathExpressionNode* child;
         struct { MathExpressionNode* base; MathExpressionNode* exponent; } power;
+        struct { MathExpressionNode* arg1; MathExpressionNode* arg2; MathExpressionNode* arg3; } ternary;
+        struct { MathExpressionNode* arg1; MathExpressionNode* arg2; MathExpressionNode* arg3; MathExpressionNode* arg4; } quaternary;
+
         struct {
             MathExpressionNode* const* args;
             const std::uint64_t*       orders;
@@ -326,6 +344,25 @@ struct NodeKey {
         return k;
     }
 
+    static NodeKey make_ternary(NodeType t, MathExpressionNode* a1, MathExpressionNode* a2, MathExpressionNode* a3) {
+        NodeKey k;
+        k.type = t;
+        k.ternary.arg1 = a1;
+        k.ternary.arg2 = a2;
+        k.ternary.arg3 = a3;
+        return k;
+    }
+
+    static NodeKey make_quaternary(NodeType t, MathExpressionNode* a1, MathExpressionNode* a2, MathExpressionNode* a3, MathExpressionNode* a4) {
+        NodeKey k;
+        k.type = t;
+        k.quaternary.arg1 = a1;
+        k.quaternary.arg2 = a2;
+        k.quaternary.arg3 = a3;
+        k.quaternary.arg4 = a4;
+        return k;
+    }
+
     static NodeKey make_applied(
         std::uint64_t fid, std::uint64_t count,
         MathExpressionNode* const* args,
@@ -371,15 +408,26 @@ struct NodeKeyHash {
                     mix(std::hash<MathExpressionNode*>{}(k.applied.args[i]));
                     mix(std::hash<std::uint64_t>{}(k.applied.orders[i]));
                 }
+
                 break;
 
             default:
-                if (is_binary(k.type)) {
+                if (is_quaternary(k.type)) {
+                    mix(std::hash<MathExpressionNode*>{}(k.quaternary.arg1));
+                    mix(std::hash<MathExpressionNode*>{}(k.quaternary.arg2));
+                    mix(std::hash<MathExpressionNode*>{}(k.quaternary.arg3));
+                    mix(std::hash<MathExpressionNode*>{}(k.quaternary.arg4));
+                } else if (is_ternary(k.type)) {
+                    mix(std::hash<MathExpressionNode*>{}(k.ternary.arg1));
+                    mix(std::hash<MathExpressionNode*>{}(k.ternary.arg2));
+                    mix(std::hash<MathExpressionNode*>{}(k.ternary.arg3));
+                } else if (is_binary(k.type)) {
                     mix(std::hash<MathExpressionNode*>{}(k.binary.left));
                     mix(std::hash<MathExpressionNode*>{}(k.binary.right));
                 } else if (is_unary(k.type)) {
                     mix(std::hash<MathExpressionNode*>{}(k.child));
                 }
+
                 break;
         }
 
@@ -507,6 +555,20 @@ struct NodeKeyHash {
                 return false;
         }
     }
+
+    static bool is_ternary(NodeType t) {
+        switch (t) {
+            default:
+                return false;
+        }
+    }
+
+    static bool is_quaternary(NodeType t) {
+        switch (t) {
+            default:
+                return false;
+        }
+    }
 };
 
 struct NodeKeyEq {
@@ -537,6 +599,20 @@ struct NodeKeyEq {
 
             default:
                 if (NodeKeyHash::is_typed_leaf(a.type)) return true;
+
+                if (NodeKeyHash::is_quaternary(a.type)) {
+                    return a.quaternary.arg1 == b.quaternary.arg1 &&
+                           a.quaternary.arg2 == b.quaternary.arg2 &&
+                           a.quaternary.arg3 == b.quaternary.arg3 &&
+                           a.quaternary.arg4 == b.quaternary.arg4;
+                }
+
+                if (NodeKeyHash::is_ternary(a.type)) {
+                    return a.ternary.arg1 == b.ternary.arg1 &&
+                           a.ternary.arg2 == b.ternary.arg2 &&
+                           a.ternary.arg3 == b.ternary.arg3;
+                }
+
                 if (NodeKeyHash::is_binary(a.type)) { return a.binary.left == b.binary.left && a.binary.right == b.binary.right; }
                 if (NodeKeyHash::is_unary(a.type)) { return a.child == b.child; }
                 return false;
@@ -611,6 +687,31 @@ public:
             n->type = NodeType::Power;
             n->power.base = base.get();
             n->power.exponent = exp.get();
+            return n;
+        }));
+    }
+
+    MathExpression ternary(NodeType t, MathExpression a1, MathExpression a2, MathExpression a3) {
+        NodeKey key = NodeKey::make_ternary(t, a1.get(), a2.get(), a3.get());
+        return MathExpression(intern(key, [&] {
+            MathExpressionNode* n = arena_.make<MathExpressionNode>();
+            n->type = t;
+            n->ternary.arg1 = a1.get();
+            n->ternary.arg2 = a2.get();
+            n->ternary.arg3 = a3.get();
+            return n;
+        }));
+    }
+
+    MathExpression quaternary(NodeType t, MathExpression a1, MathExpression a2, MathExpression a3, MathExpression a4) {
+        NodeKey key = NodeKey::make_quaternary(t, a1.get(), a2.get(), a3.get(), a4.get());
+        return MathExpression(intern(key, [&] {
+            MathExpressionNode* n = arena_.make<MathExpressionNode>();
+            n->type = t;
+            n->quaternary.arg1 = a1.get();
+            n->quaternary.arg2 = a2.get();
+            n->quaternary.arg3 = a3.get();
+            n->quaternary.arg4 = a4.get();
             return n;
         }));
     }

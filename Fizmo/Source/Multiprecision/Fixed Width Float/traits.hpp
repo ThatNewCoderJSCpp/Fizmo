@@ -41,6 +41,9 @@ template <std::size_t MantissaBits>
 using Float2048 = Float<2048, MantissaBits>;
 
 template <std::size_t MantissaBits>
+using Float4096 = Float<4096, MantissaBits>;
+
+template <std::size_t MantissaBits>
 using UFloat8 = UFloat<8, MantissaBits>;
 
 template <std::size_t MantissaBits>
@@ -66,6 +69,9 @@ using UFloat1024 = UFloat<1024, MantissaBits>;
 
 template <std::size_t MantissaBits>
 using UFloat2048 = UFloat<2048, MantissaBits>;
+
+template <std::size_t MantissaBits>
+using UFloat4096 = UFloat<4096, MantissaBits>;
 
 } // namespace multiprecision
 
@@ -104,6 +110,12 @@ inline constexpr std::size_t fizmo_standard_exp_v = fizmo_standard_exp<T>::value
 
 namespace multiprecision {
 
+template <std::size_t TotalBits>
+using StandardFloat = Float<TotalBits, TotalBits - fizmo_standard_exp_for_bits_v<TotalBits>>;
+
+template <std::size_t TotalBits>
+using StandardUFloat = UFloat<TotalBits, TotalBits - fizmo_standard_exp_for_bits_v<TotalBits>>;
+
 using float8    = Float8<8       - fizmo_standard_exp_for_bits_v<8>>;
 using float16   = Float16<16     - fizmo_standard_exp_for_bits_v<16>>;
 using float32   = Float32<32     - fizmo_standard_exp_for_bits_v<32>>;
@@ -113,6 +125,7 @@ using float256  = Float256<256   - fizmo_standard_exp_for_bits_v<256>>;
 using float512  = Float512<512   - fizmo_standard_exp_for_bits_v<512>>;
 using float1024 = Float1024<1024 - fizmo_standard_exp_for_bits_v<1024>>;
 using float2048 = Float2048<2048 - fizmo_standard_exp_for_bits_v<2048>>;
+using float4096 = Float4096<4096 - fizmo_standard_exp_for_bits_v<4096>>;
 
 using ufloat8    = UFloat8<8       - fizmo_standard_exp_for_bits_v<8>>;
 using ufloat16   = UFloat16<16     - fizmo_standard_exp_for_bits_v<16>>;
@@ -123,6 +136,7 @@ using ufloat256  = UFloat256<256   - fizmo_standard_exp_for_bits_v<256>>;
 using ufloat512  = UFloat512<512   - fizmo_standard_exp_for_bits_v<512>>;
 using ufloat1024 = UFloat1024<1024 - fizmo_standard_exp_for_bits_v<1024>>;
 using ufloat2048 = UFloat2048<2048 - fizmo_standard_exp_for_bits_v<2048>>;
+using ufloat4096 = UFloat4096<4096 - fizmo_standard_exp_for_bits_v<4096>>;
 
 } // namespace multiprecision
 
@@ -160,6 +174,20 @@ struct fizmo_make_unsigned<multiprecision::floatmp<TB, MB, S>> {
     using type = multiprecision::floatmp<TB, MB, multiprecision::sign::is_unsigned>;
 };
 
+namespace fdetail {
+    template <class F, multiprecision::sign S> struct float_lowest;
+
+    template <class F>
+    struct float_lowest<F, multiprecision::sign::is_signed> {
+        static F get() noexcept { return F::lowest(); }
+    };
+
+    template <class F>
+    struct float_lowest<F, multiprecision::sign::is_unsigned> {
+        static F get() noexcept { return F::zero(); }   
+    };
+} // namespace fdetail
+
 template <typename T>
 struct fizmo_float_traits;   
 
@@ -172,7 +200,13 @@ private:
 public:
     using value_type = multiprecision::floatmp<TB, MB, S>;
     using int_type   = typename value_type::exponent_type;             
-    using uint_type  = fizmo_make_unsigned_t<int_type>;               
+    using uint_type  = fizmo_make_unsigned_t<int_type>; 
+    
+    using store_type    = typename value_type::store_t;
+    using sstore_type   = typename value_type::sstore_t;
+    using guard_type    = typename value_type::guard_t;
+    using signed_type   = fizmo_make_signed_t<value_type>;
+    using unsigned_type = fizmo_make_unsigned_t<value_type>;
 
     static constexpr multiprecision::sign signedness = S;
     static constexpr bool is_signed_float   = (S == multiprecision::sign::is_signed);
@@ -199,13 +233,47 @@ public:
 
     static constexpr int_type  min_exact_int  = -int_type(max_exact_int);           
     static constexpr int_type  min_exp        = int_type(U1) - int_type(exp_bias);
+
+    static constexpr unsigned int radix           = 2;
+    static constexpr bool         has_infinity    = true;
+    static constexpr bool         has_quiet_nan   = true;
+    static constexpr bool         has_undefined   = true;
+    static constexpr bool         has_denorm      = true;
+    static constexpr bool         has_signed_zero = is_signed_float;
+    static constexpr bool         is_exact        = false;
+    static constexpr bool         is_integer      = false;
+    static constexpr bool         is_bounded      = true;
+    static constexpr bool         is_iec559       = false;
+
+    static value_type zero()      noexcept { return value_type::zero();      }
+    static value_type one()       noexcept { return value_type(1);           }
+    static value_type min()       noexcept { return value_type::min();       }  
+    static value_type max()       noexcept { return value_type::max();       }
+    static value_type epsilon()   noexcept { return value_type::epsilon();   }
+    static value_type infinity()  noexcept { return value_type::infinity();  }
+    static value_type nan()       noexcept { return value_type::nan();       }
+    static value_type undefined() noexcept { return value_type::undefined(); }
+
+    static value_type lowest()      noexcept { return fdetail::float_lowest<value_type, S>::get(); }
+    static value_type round_error() noexcept { return value_type(0.5); }
+    static value_type denorm_min()  noexcept { return value_type::ldexp(uint_type(U1), min_exp); }
+
+    static value_type negative_zero() noexcept {
+        static_assert(is_signed_float, "negative_zero() requires a signed floatmp");
+        return value_type::zero(true);
+    }
+
+    static value_type negative_infinity() noexcept {
+        static_assert(is_signed_float, "negative_infinity() requires a signed floatmp");
+        return value_type::infinity(true);
+    }
 };
 
 template <typename Int, typename Enable = void>
 struct fizmo_float_from_int;
 
 template <typename T>
-struct fizmo_float_from_int<T, std::enable_if_t<std::is_integral_v<T>>> {
+struct fizmo_float_from_int<T, typename std::enable_if<std::is_integral<T>::value>::type> {
     using type = double;
 };
 
@@ -328,7 +396,7 @@ template <typename T, typename Enable = void>
 struct fizmo_promote;
 
 template <typename T>
-struct fizmo_promote<T, typename std::enable_if<std::is_integral_v<T>>::type> {
+struct fizmo_promote<T, typename std::enable_if<std::is_integral<T>::value>::type> {
     using type = T; 
 };
 
@@ -355,7 +423,7 @@ template <typename T, typename Enable = void>
 struct fizmo_demote;
 
 template <typename T>
-struct fizmo_demote<T, typename std::enable_if<std::is_integral_v<T>>::type> {
+struct fizmo_demote<T, typename std::enable_if<std::is_integral<T>::value>::type> {
     using type = T; 
 };
 

@@ -12,6 +12,22 @@
 #include "../../Basic/fizmo_defines.hpp"
 
 namespace fizmo { 
+
+namespace bitops {
+
+constexpr int clz64_portable(std::uint64_t x, int n = 0) noexcept {
+    return x == 0 ? 64
+         : !(x & 0xFFFFFFFF00000000ull) ? clz64_portable(x << 32, n + 32)
+         : !(x & 0xFFFF000000000000ull) ? clz64_portable(x << 16, n + 16)
+         : !(x & 0xFF00000000000000ull) ? clz64_portable(x <<  8, n +  8)
+         : !(x & 0xF000000000000000ull) ? clz64_portable(x <<  4, n +  4)
+         : !(x & 0xC000000000000000ull) ? clz64_portable(x <<  2, n +  2)
+         : !(x & 0x8000000000000000ull) ? n + 1
+         : n;
+}
+
+} // namespace bitops
+
 namespace multiprecision {
 
 enum class sign { is_unsigned = 0, is_signed };
@@ -61,6 +77,21 @@ public:
         return ((v >> i) & 1u) != 0;
     }
 
+    OPTIONAL_CPP14_CONSTEXPR long long highest_bit() const noexcept {
+        return v ? (63 - static_cast<long long>(bitops::clz64_portable(v))) : -1;
+    }
+
+    OPTIONAL_CPP14_CONSTEXPR long long count_leading_zeros() const noexcept {
+        const long long h = highest_bit();
+        return (h < 0) ? static_cast<long long>(Bits) : static_cast<long long>(Bits) - 1 - h;
+    }
+
+    constexpr bool any_bit_below(std::size_t n) const noexcept {
+        return n == 0   ? false
+            : n >= Bits ? (v != 0)
+            : (v & ((std::uint64_t(1) << n) - std::uint64_t(1))) != 0;
+    }
+
     static constexpr unsigned max_digits_base2()  noexcept { return static_cast<unsigned>(Bits); }
     static constexpr unsigned max_digits_base16() noexcept { return static_cast<unsigned>(Bits / 4); }
     static constexpr unsigned max_digits_base10() noexcept { return static_cast<unsigned>(static_cast<double>(Bits) * 0.301029995663981195) + 1; }
@@ -90,6 +121,18 @@ public:
         if (d.v == 0) { q = umag(); r = umag(); return; }  
         q = umag(v / d.v);
         r = umag(v % d.v);
+    }
+
+    OPTIONAL_CPP14_CONSTEXPR std::uint32_t
+    divmod_small(std::uint32_t d, std::uint32_t rem, umag& q) const noexcept {
+        std::uint64_t cur = (std::uint64_t(rem) << 32) | (v >> 32);
+        const std::uint64_t qh = cur / d;
+        rem = static_cast<std::uint32_t>(cur % d);
+        cur = (std::uint64_t(rem) << 32) | (v & 0xFFFFFFFFull);
+        const std::uint64_t ql = cur / d;
+        rem = static_cast<std::uint32_t>(cur % d);
+        q = umag((qh << 32) | ql);
+        return rem;
     }
 
     OPTIONAL_CPP14_CONSTEXPR umag operator/(const umag& o) const noexcept { umag q, r; divmod(o, q, r); return q; }
@@ -187,6 +230,24 @@ public:
         return false;
     }
 
+    OPTIONAL_CPP14_CONSTEXPR long long highest_bit() const noexcept {
+        const long long h = m_high.highest_bit();
+        if (h >= 0) return h + static_cast<long long>(Bits / 2);
+        return m_low.highest_bit();
+    }
+    
+    OPTIONAL_CPP14_CONSTEXPR long long count_leading_zeros() const noexcept {
+        const long long h = highest_bit();
+        return (h < 0) ? static_cast<long long>(Bits) : static_cast<long long>(Bits) - 1 - h;
+    }
+
+    OPTIONAL_CPP14_CONSTEXPR bool any_bit_below(std::size_t n) const noexcept {
+        if (n == 0)    return false;
+        if (n >= Bits) return !is_zero();
+        if (n <= Bits / 2) return m_low.any_bit_below(n);
+        return !m_low.is_zero() || m_high.any_bit_below(n - Bits / 2);
+    }
+
     static constexpr unsigned max_digits_base2()  noexcept { return static_cast<unsigned>(Bits); }
     static constexpr unsigned max_digits_base16() noexcept { return static_cast<unsigned>(Bits / 4); }
     static constexpr unsigned max_digits_base10() noexcept { return static_cast<unsigned>(static_cast<double>(Bits) * 0.301029995663981195) + 1; }
@@ -255,18 +316,34 @@ public:
 
     OPTIONAL_CPP14_CONSTEXPR void divmod(const umag& divisor, umag& quotient, umag& remainder) const noexcept {
         quotient = umag(); remainder = umag();
-        if (divisor.is_zero()) return;                  
+        if (divisor.is_zero()) return;
         if (*this <  divisor) { remainder = *this; return; }
         if (*this == divisor) { quotient = umag(std::uint64_t(1)); return; }
-        long highest = -1;
+        const long long ha = highest_bit();
+        const long long hb = divisor.highest_bit();
+        const long long shift = ha - hb;                 
+        remainder = *this >> static_cast<std::size_t>(shift);
 
-        for (long i = static_cast<long>(Bits) - 1; i >= 0; --i) if (get_bit(static_cast<std::size_t>(i))) { highest = i; break; }
-        
-        for (long i = highest; i >= 0; --i) {
-            remainder = remainder << 1;
-            if (get_bit(static_cast<std::size_t>(i))) remainder.set_bit(0, true);
-            if (!(remainder < divisor)) { remainder = remainder - divisor; quotient.set_bit(static_cast<std::size_t>(i), true); }
+        for (long long i = shift; i >= 0; --i) {
+            if (!(remainder < divisor)) {
+                remainder = remainder - divisor;
+                quotient.set_bit(static_cast<std::size_t>(i), true);
+            }
+
+            if (i > 0) {
+                remainder = remainder << 1;
+                if (get_bit(static_cast<std::size_t>(i - 1))) remainder.set_bit(0, true);
+            }
         }
+    }
+
+    OPTIONAL_CPP14_CONSTEXPR std::uint32_t
+    divmod_small(std::uint32_t d, std::uint32_t rem, umag& q) const noexcept {
+        half qh, ql;
+        rem = m_high.divmod_small(d, rem, qh);
+        rem = m_low .divmod_small(d, rem, ql);
+        q = umag(ql, qh);
+        return rem;
     }
 
     OPTIONAL_CPP14_CONSTEXPR umag operator/(const umag& o) const noexcept { umag q, r; divmod(o, q, r); return q; }
@@ -287,13 +364,12 @@ public:
     std::string to_string(unsigned base = 10) const {
         if (base < 2 || base > 36) return "";
         if (is_zero()) return "0";
-        umag tmp(*this), b(static_cast<std::uint64_t>(base));
+        umag tmp(*this);
         std::string s;
 
         while (!tmp.is_zero()) {
-            umag q, r;
-            tmp.divmod(b, q, r);
-            unsigned d = static_cast<unsigned>(r.to_u64());
+            umag q;
+            const unsigned d = static_cast<unsigned>(tmp.divmod_small(static_cast<std::uint32_t>(base), 0u, q));
             s += (d < 10) ? char('0' + d) : char('a' + (d - 10));
             tmp = q;
         }
@@ -308,6 +384,7 @@ struct wide_mul {
     using H = umag<W / 2>;
 
     static OPTIONAL_CPP14_CONSTEXPR void mul(const umag<W>& a, const umag<W>& b, umag<W>& high, umag<W>& low) noexcept {
+        if (a.is_zero() || b.is_zero()) { high = umag<W>(); low = umag<W>(); return; }
         const H a_lo = a.get_low_bits(),  a_hi = a.get_high_bits();
         const H b_lo = b.get_low_bits(),  b_hi = b.get_high_bits();
         H ll_h, ll_l; wide_mul<W / 2>::mul(a_lo, b_lo, ll_h, ll_l);
@@ -344,6 +421,46 @@ struct wide_mul<64> {
         low = umag<64>(low_u); high = umag<64>(high_u);
     }
 };
+
+template <>
+struct wide_mul<32> {
+    static OPTIONAL_CPP14_CONSTEXPR void mul(const umag<32>& a, const umag<32>& b, umag<32>& high, umag<32>& low) noexcept {
+        const std::uint64_t p = a.to_u64() * b.to_u64();
+        low  = umag<32>(p);
+        high = umag<32>(p >> 32);
+    }
+};
+
+template <>
+struct wide_mul<16> {
+    static OPTIONAL_CPP14_CONSTEXPR void mul(const umag<16>& a, const umag<16>& b, umag<16>& high, umag<16>& low) noexcept {
+        const std::uint64_t p = a.to_u64() * b.to_u64();
+        low  = umag<16>(p);
+        high = umag<16>(p >> 16);
+    }
+};
+
+template <>
+struct wide_mul<8> {
+    static OPTIONAL_CPP14_CONSTEXPR void mul(const umag<8>& a, const umag<8>& b, umag<8>& high, umag<8>& low) noexcept {
+        const std::uint64_t p = a.to_u64() * b.to_u64();
+        low  = umag<8>(p);
+        high = umag<8>(p >> 8);
+    }
+};
+
+template <std::size_t W>
+constexpr typename std::enable_if<(W >= 64), umag<W * 2>>::type
+combine_product(const umag<W>& low, const umag<W>& high) noexcept {
+    return umag<W * 2>::from_bits(low, high);
+}
+
+template <std::size_t W>
+constexpr typename std::enable_if<(W < 64), umag<W * 2>>::type
+combine_product(const umag<W>& low, const umag<W>& high) noexcept {
+    return umag<W * 2>((high.to_u64() << W) | low.to_u64());
+}
+
 
 template <std::size_t T, std::size_t F>
 constexpr typename std::enable_if<(T == F), umag<T>>::type resize_mag(const umag<F>& x) noexcept { return x; }

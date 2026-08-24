@@ -9,34 +9,39 @@ namespace multiprecision {
 namespace detail {
 
 template <std::size_t Bits>
-inline std::string scientific(const umag<Bits>& m, bool neg, unsigned precision) {
-    int highest = -1;
-    for (long i = static_cast<long>(Bits) - 1; i >= 0; --i) if (m.get_bit(static_cast<std::size_t>(i))) { highest = static_cast<int>(i); break; }
+inline std::string scientific(const umag<Bits>& m, bool neg, long long precision) {
+    const long long highest = m.highest_bit();
     if (highest < 0) return "0.0e0";
-    const std::size_t ndig = static_cast<std::size_t>(static_cast<double>(Bits) * 0.30103) + 3;
-    std::vector<unsigned char> bcd(ndig, 0);
+    const long long ndig = static_cast<long long>(static_cast<double>(Bits) * 0.30103) + 3;
+    std::vector<unsigned char> bcd(static_cast<std::size_t>(ndig), 0);
 
-    for (int bit = highest; bit >= 0; --bit) {
-        for (std::size_t i = 0; i < ndig; ++i) if (bcd[i] >= 5) bcd[i] += 3;
+    for (long long bit = highest; bit >= 0; --bit) {
+        for (long long i = 0; i < ndig; ++i) if (bcd[static_cast<std::size_t>(i)] >= 5) bcd[static_cast<std::size_t>(i)] += 3;
         unsigned char carry = m.get_bit(static_cast<std::size_t>(bit)) ? 1 : 0;
-        for (int i = static_cast<int>(ndig) - 1; i >= 0; --i) { bcd[i] = (bcd[i] << 1) | carry; carry = (bcd[i] >> 4) & 1; bcd[i] &= 0x0F; }
+        for (long long i = ndig - 1; i >= 0; --i) {
+            unsigned char& v = bcd[static_cast<std::size_t>(i)];
+            v = static_cast<unsigned char>((v << 1) | carry); carry = (v >> 4) & 1; v &= 0x0F;
+        }
     }
 
-    std::size_t first = 0; while (first < ndig && bcd[first] == 0) ++first;
+    long long first = 0; while (first < ndig && bcd[static_cast<std::size_t>(first)] == 0) ++first;
     if (first >= ndig) return "0.0e0";
-    const unsigned exp = static_cast<unsigned>(ndig - first - 1);
+    const long long exp = ndig - first - 1;
     std::string r; if (neg) r += '-';
-    r += char('0' + bcd[first]); r += '.';
-    for (unsigned k = 0; k < precision; ++k) { std::size_t idx = first + 1 + k; r += (idx < ndig) ? char('0' + bcd[idx]) : '0'; }
+    r += char('0' + bcd[static_cast<std::size_t>(first)]); r += '.';
+    for (long long k = 0; k < precision; ++k) {
+        const long long idx = first + 1 + k;
+        r += (idx < ndig) ? char('0' + bcd[static_cast<std::size_t>(idx)]) : '0';
+    }
     r += 'e'; r += std::to_string(exp);
     return r;
 }
 
 } // namespace detail
 
-template <std::size_t B> std::string integer<B, sign::is_unsigned>::to_string_scientific(unsigned p) const { return detail::scientific<B>(m, false, p); }
+template <std::size_t B> std::string integer<B, sign::is_unsigned>::to_string_scientific(long long p) const { return detail::scientific<B>(m, false, p); }
 
-template <std::size_t B> std::string integer<B, sign::is_signed>::to_string_scientific(unsigned p) const {
+template <std::size_t B> std::string integer<B, sign::is_signed>::to_string_scientific(long long p) const {
     if (is_undefined()) return "undefined";
     return detail::scientific<B>(m, neg, p);
 }

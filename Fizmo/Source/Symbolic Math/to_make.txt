@@ -21,3 +21,6 @@ Differentiation of bell polynomials, exp integral generalize, and log integral g
 Differentiating the log/exp integrals will require a new node for the nth symbolic derivative 
 
 Implicit solver
+Transforms (Laplace, inverse laplace, Mellin, Fourier)
+Meijer G, Fox H
+Hypergeometrics

@@ -40,15 +40,15 @@ private:
     static std::uint64_t mix_entropy() {
         std::uint64_t seed = 0;
         auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-        std::uint64_t tsc = rdtsc();
-        std::uint64_t pid = static_cast<std::uint64_t>(::getpid());
-        std::uint64_t tid = std::hash<std::thread::id>{}(std::this_thread::get_id());
+        std::uint64_t tsc    = rdtsc();
+        std::uint64_t pid    = static_cast<std::uint64_t>(::getpid());
+        std::uint64_t tid    = std::hash<std::thread::id>{}(std::this_thread::get_id());
         std::random_device rd;
         std::uint64_t rd_val = (static_cast<std::uint64_t>(rd()) << 32) ^ rd();
-        seed ^= now + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
-        seed ^= tsc + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
-        seed ^= pid + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
-        seed ^= tid + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
+        seed ^= now    + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
+        seed ^= tsc    + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
+        seed ^= pid    + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
+        seed ^= tid    + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
         seed ^= rd_val + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
         return seed;
     }
