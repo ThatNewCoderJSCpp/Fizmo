@@ -1,568 +1,414 @@
-#ifndef MULTIPRECISION_BIG_INT_HPP
-#define MULTIPRECISION_BIG_INT_HPP
+#ifndef FIZMO_MULTIPRECISION_BIG_INTEGER_CLASS_HPP
+#define FIZMO_MULTIPRECISION_BIG_INTEGER_CLASS_HPP
 
-#include "big_uint.hpp"
+#include <cstdint>
+#include <cstddef>
+#include <type_traits>
+#include <limits>
 #include <string>
 #include <ostream>
-#include <limits>
+#include <cmath>
+#include <utility>
+
+#include "big_uint.hpp"
+#include "BigUint Detail/big_uint_ops.hpp"
 
 namespace fizmo {
 namespace multiprecision {
 
 class BigInt {
 private:
-    BigUint m_mag;        
-    bool m_is_negative;   
-    void normalize() noexcept { if (m_mag.is_zero()) m_is_negative = false; }
+    BigUInt m_mag;
+    bool    m_neg = false;
 
-public:
-    BigInt() noexcept : m_mag(0), m_is_negative(false) {}
-    BigInt(const BigUint& u) : m_mag(u), m_is_negative(false) {}
-    BigInt(const BigInt&) = default;
-    BigInt(BigInt&&) noexcept = default;
-    BigInt& operator=(const BigInt&) = default;
-    BigInt& operator=(BigInt&&) noexcept = default;
-    BigInt& operator=(const BigUint& u) { m_mag = u; m_is_negative = false; return *this; }
-    explicit operator BigUint() { return m_mag; }
+private:
+    void normalize() noexcept {
+        if (m_mag.is_zero() || m_mag.is_undefined()) m_neg = false;
+    }
 
-    template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
-    BigInt(T value) {
-        if (value < 0) {
-            m_is_negative = true;
-            using U = typename std::make_unsigned<T>::type;
-            m_mag = BigUint(static_cast<U>(-value));
-        } else {
-            m_is_negative = false;
-            m_mag = BigUint(static_cast<typename std::make_unsigned<T>::type>(value));
-        }
-
+    BigInt& assign_from(BigUInt mag, bool neg) {
+        m_mag = std::move(mag);
+        m_neg = neg;
         normalize();
-    }
-
-    template <typename T, typename = typename std::enable_if<fizmo::is_fizmo_static_int_v<T>>::type>
-    BigInt(const T& value) {
-        using SignedT   = fizmo::fizmo_make_signed_t<T>;
-        using UnsignedT = fizmo::fizmo_make_unsigned_t<T>;
-        SignedT s = static_cast<SignedT>(value);
-
-        if (s.is_negative()) {
-            m_is_negative = true;
-            UnsignedT mag = static_cast<UnsignedT>(-s);
-            m_mag = BigUint(mag);
-        } else {
-            m_is_negative = false;
-            UnsignedT mag = static_cast<UnsignedT>(s);
-            m_mag = BigUint(mag);
-        }
-
-        normalize();
-    }
-
-    BigInt(const std::string& s) : m_is_negative(false), m_mag(BigUint::zero()) {
-        if (s.empty()) return;
-        std::size_t i = 0;
-        while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
-        if (i < s.size() && s[i] == '-') { m_is_negative = true; ++i; }
-        else if (i < s.size() && s[i] == '+') { ++i; }
-        std::string digits;
-        while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i]))) digits += s[i++];
-        long long exp10 = 0;
-
-        if (i < s.size() && (s[i] == 'e' || s[i] == 'E')) {
-            ++i;
-            bool neg_exp = false;
-            if (i < s.size() && s[i] == '-') { neg_exp = true; ++i; }
-            else if (i < s.size() && s[i] == '+') { ++i; }
-            while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i]))) exp10 = exp10 * 10 + (s[i++] - '0');
-            if (neg_exp) exp10 = -exp10;
-        }
-
-        if (digits.empty()) { normalize(); return; }
-        for (char c : digits) m_mag = m_mag * BigUint(10) + BigUint(c - '0');
-
-        if (exp10 > 0) {
-            BigUint pow10(1);
-            for (long long k = 0; k < exp10; ++k) pow10 *= BigUint(10);
-            m_mag *= pow10;
-        } else if (exp10 < 0) {
-            BigUint pow10(1);
-            for (long long k = 0; k < -exp10; ++k) pow10 *= BigUint(10);
-            m_mag = BigUint::divmod(m_mag, pow10).quotient;
-        }
-
-        normalize();
-    }
-
-    template <typename T, typename = typename std::enable_if<fizmo::is_fizmo_static_int_v<T>>::type>
-    BigInt& operator=(const T& value) {
-        *this = BigInt(value);
         return *this;
     }
 
-    template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
-    BigInt& operator=(T value) {
-        *this = BigInt(value);
-        return *this;
-    }
-
-    bool is_zero() const noexcept { return !m_is_negative && m_mag.is_zero(); }
-    bool is_one() const noexcept { return m_mag.is_one(); }
-    bool is_even() const noexcept { return m_mag.is_even(); }
-    bool is_negative() const noexcept { return m_is_negative; }
-    bool is_positive() const noexcept { return !m_is_negative && !m_mag.is_zero(); }
-    const BigUint& magnitude() const noexcept { return m_mag; }
-    bool is_error() const noexcept { return m_is_negative && m_mag.is_zero(); }
-
-    std::size_t get_exponent_base2() const noexcept {
-        if (is_zero() || is_error()) return 0;
-        return m_mag.get_exponent_base2();
-    }
-
-    std::size_t get_exponent_base10() const {
-        if (is_zero() || is_error()) return 0;
-        return m_mag.get_exponent_base10();
-    }
-
-    std::size_t count_trailing_zeros() const { return m_mag.count_trailing_zeros(); }
-
-    static BigInt error() noexcept {
-        BigInt e;
-        e.m_mag = BigUint::zero();
-        e.m_is_negative = true;
-        return e;
-    }
-
-    BigInt operator-() const noexcept {
-        BigInt r(*this);
-        r.negate();
-        return r;
-    }
-
-    BigInt abs() const noexcept {
-        BigInt r(*this);
-        r.abs_in_place();
-        return r;
-    }
-
-    BigInt& negate() noexcept {
-        if (is_error()) return *this;
-        if (!is_zero()) m_is_negative = !m_is_negative;
-        return *this;
-    }
-
-    BigInt& abs_in_place() noexcept {
-        if (is_error()) return *this;
-        m_is_negative = false;
-        return *this;
-    }
-
-    BigInt operator+() const noexcept { return *this; }
-
-    friend bool operator==(const BigInt& a, const BigInt& b) noexcept { return a.m_is_negative == b.m_is_negative && a.m_mag == b.m_mag; }
-    friend bool operator!=(const BigInt& a, const BigInt& b) noexcept { return !(a == b); }
-
-    friend bool operator<(const BigInt& a, const BigInt& b) noexcept {
-        if (a.is_error() || b.is_error()) { return false; }
-        if (a.m_is_negative != b.m_is_negative) return a.m_is_negative;
-        if (!a.m_is_negative) return a.m_mag < b.m_mag;
-        return b.m_mag < a.m_mag;
-    }
-
-    friend bool operator>(const BigInt& a, const BigInt& b) noexcept { return b < a; }
-    friend bool operator<=(const BigInt& a, const BigInt& b) noexcept { return !(b < a); }
-    friend bool operator>=(const BigInt& a, const BigInt& b) noexcept { return !(a < b); }
-
-    friend BigInt operator+(const BigInt& a, const BigInt& b) {
-        if (a.is_error() || b.is_error()) { return BigInt::error(); }
+    static BigInt make(BigUInt mag, bool neg) {
         BigInt r;
-
-        if (a.m_is_negative == b.m_is_negative) {
-            r.m_mag = a.m_mag + b.m_mag;
-            r.m_is_negative = a.m_is_negative;
-            return r;
-        }
-
-        if (a.m_mag >= b.m_mag) {
-            r.m_mag = a.m_mag - b.m_mag;
-            r.m_is_negative = a.m_is_negative;
-        } else {
-            r.m_mag = b.m_mag - a.m_mag;
-            r.m_is_negative = b.m_is_negative;
-        }
-
-        r.normalize();
+        r.assign_from(std::move(mag), neg);
         return r;
     }
 
-    BigInt& operator+=(const BigInt& other) {
-        if (is_error() || other.is_error()) { *this = error(); return *this; }
-        if (other.m_mag.is_zero()) return *this;
-
-        if (m_is_negative == other.m_is_negative) {
-            m_mag += other.m_mag;
-        } else {
-            if (m_mag >= other.m_mag) {
-                m_mag -= other.m_mag;
-            } else {
-                m_mag = other.m_mag - m_mag; 
-                m_is_negative = other.m_is_negative;
-            }
-
+    BigInt& add_signed(const BigUInt& omag, bool oneg) {
+        if (m_neg == oneg) {
+            m_mag.add_mutable(omag);
             normalize();
+            return *this;
         }
 
-        return *this;
-    }
+        const int c = m_mag.compare(omag);
+        if (c == 0) { m_mag = BigUInt::zero(); m_neg = false; return *this; }
 
-    BigInt operator+(std::uint64_t d) const {
-        if (is_error()) return error();
-
-        if (m_is_negative) {
-            if (m_mag < BigUint(d)) return BigInt(static_cast<std::int64_t>(d - m_mag.limb(0)));  
-            BigInt r; 
-            r.m_mag = m_mag - d; 
-            r.m_is_negative = !r.m_mag.is_zero(); 
-            r.normalize(); 
-            return r;
-        }
-
-        BigInt r; 
-        r.m_mag = m_mag + d; 
-        return r;
-    }
-
-    BigInt& operator+=(std::uint64_t d) { *this = *this + d; return *this; }
-
-    friend BigInt operator-(const BigInt& a, const BigInt& b) { 
-        BigInt r = a;
-        r -= b;
-        return r;
-    }
-
-    BigInt& operator-=(const BigInt& other) {
-        if (is_error() || other.is_error()) { *this = error(); return *this; }
-        if (other.m_mag.is_zero()) return *this;
-        bool other_neg = !other.m_is_negative;
-
-        if (m_is_negative == other_neg) {
-            m_mag += other.m_mag;
-        } else {
-            if (m_mag >= other.m_mag) {
-                m_mag -= other.m_mag;
-            } else {
-                m_mag = other.m_mag - m_mag;
-                m_is_negative = other_neg;
-            }
-
+        if (c > 0) {
+            m_mag.sub_mutable(omag);
             normalize();
+            return *this;
         }
 
+        BigUInt t(omag);
+        t.sub_mutable(m_mag);
+        return assign_from(std::move(t), oneg);
+    }
+
+public:
+    static constexpr std::size_t max_limbs  = BigUInt::max_limbs;
+    static constexpr std::size_t max_bits   = BigUInt::max_bits;
+    static constexpr std::size_t max_digits = BigUInt::max_digits;
+
+public:
+    BigInt() : m_mag(), m_neg(false) {}
+
+    template <typename T, typename = typename std::enable_if<std::is_integral<T>::value && std::is_unsigned<T>::value>::type>
+    BigInt(T v) : m_mag(v), m_neg(false) {}
+
+    template <typename T, typename = typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value>::type, typename = void>
+    BigInt(T v) : m_mag(), m_neg(false) {
+        const budetail::small_arg s = budetail::as_small(v);
+        m_mag = BigUInt(s.mag);
+        m_neg = s.neg && !m_mag.is_zero();
+    }
+
+    template <typename T, typename = typename std::enable_if<std::is_floating_point<T>::value>::type, typename = void, typename = void>
+    explicit BigInt(T value) : m_mag(), m_neg(false) {
+        if (!(value == value)) { *this = nan(); return; }
+        const bool neg = value < T(0);
+        long double v = std::floor(std::fabs(static_cast<long double>(value)));
+        if (!(v < std::numeric_limits<long double>::infinity())) { *this = undefined(); return; }
+        if (v < 1.0L) return;                       
+        const long double two64 = 18446744073709551616.0L;
+        budetail::limb_vec limbs;
+
+        while (v >= 1.0L) {
+            limbs.push_back(static_cast<std::uint64_t>(std::fmod(v, two64)));
+            v = std::floor(v / two64);
+        }
+
+        assign_from(BigUInt(std::move(limbs)), neg);
+    }
+
+    BigInt(const BigUInt& mag, bool neg = false) : m_mag(), m_neg(false) { assign_from(mag, neg); }
+    BigInt(BigUInt&& mag, bool neg = false)      : m_mag(), m_neg(false) { assign_from(std::move(mag), neg); }
+
+    template <std::size_t Bits, sign S, typename = typename std::enable_if<S == sign::is_unsigned>::type>
+    BigInt(const integer<Bits, S>& src) : m_mag(src), m_neg(false) {}
+
+    template <std::size_t Bits, sign S, typename = typename std::enable_if<S == sign::is_signed>::type, typename = void>
+    BigInt(const integer<Bits, S>& src) : m_mag(), m_neg(false) {
+        if (src.is_undefined()) { *this = undefined(); return; }
+        m_mag = BigUInt(src.abs());
+        m_neg = src.is_negative() && !m_mag.is_zero();
+    }
+
+    explicit BigInt(const std::string& str, long long base = 10) : m_mag(), m_neg(false) {
+        if (!parse_string(str, base)) *this = undefined();
+    }
+
+public:
+    static BigInt zero() { return BigInt(); }
+    static BigInt one()  { return make(BigUInt::one(), false); }
+    static BigInt undefined() { BigInt r; r.m_mag = BigUInt::undefined(); r.m_neg = false; return r; }
+    static BigInt nan()       { BigInt r; r.m_mag = BigUInt::undefined(); r.m_neg = true;  return r; }
+    static BigInt max() { return make(BigUInt::max(), false); }
+    static BigInt min() { return make(BigUInt::max(), true);  }
+    static BigInt from_magnitude(const BigUInt& mag, bool neg) { return make(mag, neg); }
+    static BigInt from_magnitude(BigUInt&& mag, bool neg)      { return make(std::move(mag), neg); }
+
+public:
+    const BigUInt& magnitude()   const noexcept { return m_mag; }
+    bool           is_nan()       const noexcept { return m_mag.is_undefined() && m_neg;  }
+    bool           is_undefined() const noexcept { return m_mag.is_undefined() && !m_neg; }
+    bool           is_finite()    const noexcept { return !m_mag.is_undefined(); }
+    bool           is_negative()  const noexcept { return is_finite() && m_neg; }
+    bool           is_positive()  const noexcept { return is_finite() && !m_neg && !m_mag.is_zero(); }
+    bool           is_zero()      const noexcept { return is_finite() && m_mag.is_zero(); }
+    bool           is_one()       const noexcept { return is_finite() && !m_neg && m_mag.is_one(); }
+    bool           is_even()      const noexcept { return is_finite() && m_mag.is_even(); }
+    bool           is_odd()       const noexcept { return is_finite() && m_mag.is_odd(); }
+    std::size_t    bit_length()   const noexcept { return is_finite() ? m_mag.bit_length() : 0; }
+
+    bool get_bit(std::size_t i) const noexcept { return is_finite() && m_mag.get_bit(i); }
+
+    void set_bit(std::size_t i, bool b = true) {
+        if (!is_finite()) return;
+        m_mag.set_bit(i, b);
+        normalize();
+    }
+
+public:
+    BigInt& negate_mutable() noexcept {
+        if (is_finite() && !m_mag.is_zero()) m_neg = !m_neg;
         return *this;
     }
 
-    BigInt operator-(std::uint64_t d) const {
-        if (is_error()) return error();
-
-        if (m_is_negative) {
-            BigInt r; 
-            r.m_mag = m_mag + d; 
-            r.m_is_negative = true; 
-            return r;
-        }
-
-        if (m_mag < BigUint(d)) {
-            BigInt r; 
-            r.m_mag = BigUint(d) - m_mag; 
-            r.m_is_negative = !r.m_mag.is_zero(); 
-            return r;
-        }
-
-        BigInt r; r.m_mag = m_mag - d; r.normalize(); return r;
+    BigInt& abs_mutable() noexcept {
+        if (is_finite()) m_neg = false;
+        return *this;
     }
 
-    BigInt& operator-=(std::uint64_t d) { *this = *this - d; return *this; }
-
-public:
-    friend BigInt operator+(BigInt&& a, const BigInt& b) { a += b; return a; }
-    friend BigInt operator+(const BigInt& a, BigInt&& b) { b += a; return b; }
-    friend BigInt operator+(BigInt&& a, BigInt&& b)      { a += b; return a; }
-
-    friend BigInt operator-(BigInt&& a, const BigInt& b) { a -= b; return a; }
-    friend BigInt operator-(const BigInt& a, BigInt&& b) { b -= a; b.negate(); return b; }
-    friend BigInt operator-(BigInt&& a, BigInt&& b)      { a -= b; return a; }
-
-    friend BigInt operator&(BigInt&& a, const BigInt& b) { a &= b; return a; }
-    friend BigInt operator&(const BigInt& a, BigInt&& b) { b &= a; return b; }
-    friend BigInt operator&(BigInt&& a, BigInt&& b)      { a &= b; return a; }
-
-    friend BigInt operator|(BigInt&& a, const BigInt& b) { a |= b; return a; }
-    friend BigInt operator|(const BigInt& a, BigInt&& b) { b |= a; return b; }
-    friend BigInt operator|(BigInt&& a, BigInt&& b)      { a |= b; return a; }
-
-    friend BigInt operator^(BigInt&& a, const BigInt& b) { a ^= b; return a; }
-    friend BigInt operator^(const BigInt& a, BigInt&& b) { b ^= a; return b; }
-    friend BigInt operator^(BigInt&& a, BigInt&& b)      { a ^= b; return a; }
-
-public:
-    friend BigInt operator*(const BigInt& a, const BigInt& b) {
-        if (a.is_error() || b.is_error()) { return BigInt::error(); }
-        BigInt r;
-        r.m_mag = a.m_mag * b.m_mag;
-        r.m_is_negative = (a.m_is_negative != b.m_is_negative);
-        r.normalize();
-        return r;
+    BigInt& add_mutable(const BigInt& o) {
+        if (is_nan() || o.is_nan()) return *this = nan();
+        if (!is_finite() || !o.is_finite()) return *this = undefined();
+        return add_signed(o.m_mag, o.m_neg);
     }
 
-    BigInt& operator*=(const BigInt& other) {
-        if (is_error() || other.is_error()) { *this = error(); return *this; }
-        m_is_negative = (m_is_negative != other.m_is_negative);
-        m_mag *= other.m_mag;
+    BigInt& sub_mutable(const BigInt& o) {
+        if (is_nan() || o.is_nan()) return *this = nan();
+        if (!is_finite() || !o.is_finite()) return *this = undefined();
+        if (this == &o) { m_mag = BigUInt::zero(); m_neg = false; return *this; }
+        return add_signed(o.m_mag, !o.m_neg);
+    }
+
+    BigInt& mul_mutable(const BigInt& o) {
+        if (is_nan() || o.is_nan()) return *this = nan();
+        if (!is_finite() || !o.is_finite()) return *this = undefined();
+        return assign_from(m_mag * o.m_mag, m_neg != o.m_neg);
+    }
+
+    BigInt& div_mutable(const BigInt& o) {
+        if (is_nan() || o.is_nan()) return *this = nan();
+        if (!is_finite() || !o.is_finite() || o.m_mag.is_zero()) return *this = undefined();
+        return assign_from(m_mag / o.m_mag, m_neg != o.m_neg);
+    }
+
+    BigInt& mod_mutable(const BigInt& o) {
+        if (is_nan() || o.is_nan()) return *this = nan();
+        if (!is_finite() || !o.is_finite() || o.m_mag.is_zero()) return *this = undefined();
+        return assign_from(m_mag % o.m_mag, m_neg);
+    }
+
+    BigInt& shift_left_mutable(std::size_t n) {
+        if (!is_finite()) return *this;
+        m_mag.shift_left_mutable(n);
         normalize();
         return *this;
     }
 
-    BigInt operator*(std::uint64_t d) const {
-        if (is_error()) return error();
-        BigInt r; 
-        r.m_mag = m_mag * d; 
-        r.m_is_negative = m_is_negative && !r.m_mag.is_zero(); 
-        return r;
-    }
-
-    BigInt& operator*=(std::uint64_t d) {
-        if (is_error()) return *this;
-        m_mag *= d; 
-        if (m_mag.is_zero()) m_is_negative = false; 
+    BigInt& shift_right_mutable(std::size_t n) {
+        if (!is_finite()) return *this;
+        m_mag.shift_right_mutable(n);
+        normalize();
         return *this;
     }
 
 public:
-    BigInt mul_textbook(const BigInt& other) const {
-        if (is_error() || other.is_error()) return error();
-        BigInt r;
-        r.m_mag = m_mag.mul_textbook(other.m_mag);
-        r.m_is_negative = (m_is_negative != other.m_is_negative);
-        r.normalize();
-        return r;
+    bool is_exact_division(const BigInt& o) const {
+        if (!is_finite() || !o.is_finite() || o.m_mag.is_zero()) return false;
+        return (m_mag % o.m_mag).is_zero();
     }
 
-    BigInt mul_karatsuba(const BigInt& other) const {
-        if (is_error() || other.is_error()) return error();
-        BigInt r;
-        r.m_mag = m_mag.mul_karatsuba(other.m_mag);
-        r.m_is_negative = (m_is_negative != other.m_is_negative);
-        r.normalize();
-        return r;
-    }
-
-    BigInt mul_toom3(const BigInt& other) const {
-        if (is_error() || other.is_error()) return error();
-        BigInt r;
-        r.m_mag = m_mag.mul_toom3(other.m_mag);
-        r.m_is_negative = (m_is_negative != other.m_is_negative);
-        r.normalize();
-        return r;
-    }
-
-    BigInt mul_fft(const BigInt& other) const {
-        if (is_error() || other.is_error()) return error();
-        BigInt r;
-        r.m_mag = m_mag.mul_fft(other.m_mag);
-        r.m_is_negative = (m_is_negative != other.m_is_negative);
-        r.normalize();
-        return r;
-    }
-
-public:
-    friend BigInt operator/(const BigInt& a, const BigInt& b) {
-        if (a.is_error() || b.is_error() || b.is_zero()) { return BigInt::error(); }
-        auto qr = BigUint::divmod(a.m_mag, b.m_mag);
-        BigInt q;
-        q.m_mag = qr.quotient;
-        q.m_is_negative = (a.m_is_negative != b.m_is_negative) && !q.m_mag.is_zero();
+    BigInt floor_div(const BigInt& o) const {
+        if (is_nan() || o.is_nan()) return nan();
+        if (!is_finite() || !o.is_finite() || o.m_mag.is_zero()) return undefined();
+        BigInt q = make(m_mag / o.m_mag, m_neg != o.m_neg);
+        if ((m_neg != o.m_neg) && !is_exact_division(o)) q.add_signed(BigUInt::one(), true);
         return q;
     }
 
-    friend BigInt operator%(const BigInt& a, const BigInt& b) {
-        if (a.is_error() || b.is_error() || b.is_zero()) { return BigInt::error(); }
-        auto qr = BigUint::divmod(a.m_mag, b.m_mag);
-        BigInt r;
-        r.m_mag = qr.remainder;
-        r.m_is_negative = a.m_is_negative && !r.m_mag.is_zero();
-        return r;
+public:
+    double to_double() const noexcept {
+        if (!is_finite()) return std::numeric_limits<double>::quiet_NaN();
+        double result = 0.0;
+        for (std::size_t i = m_mag.limb_count(); i > 0; --i) { result = result * 18446744073709551616.0 + static_cast<double>(m_mag.limb(i - 1)); }
+        return m_neg ? -result : result;
     }
 
-    BigInt& operator/=(const BigInt& other) {
-        if (is_error() || other.is_error() || other.is_zero()) {
-            *this = error();
-            return *this;
+    long double to_long_double() const noexcept { return static_cast<long double>(to_double()); }
+
+    std::string to_string(long long base = 10) const {
+        if (is_nan())       return "nan";
+        if (is_undefined()) return "undefined";
+        if (base < 2 || base > 36) return "";
+        if (m_mag.is_zero()) return "0";
+        BigUInt t = m_mag;
+        const std::uint64_t b = static_cast<std::uint64_t>(base);
+        std::string s;
+
+        while (!t.is_zero()) {
+            BigUInt r = t;
+            r.mod_small_mutable(b);
+            const std::uint64_t d = r.limb(0);
+            s.push_back(d < 10 ? char('0' + d) : char('a' + (d - 10)));
+            t.div_small_mutable(b);
         }
 
-        auto qr = BigUint::divmod(m_mag, other.m_mag);
-        m_is_negative = (m_is_negative != other.m_is_negative) && !qr.quotient.is_zero();
-        m_mag = std::move(qr.quotient);
-        return *this;
-    }
-
-    BigInt& operator%=(const BigInt& other) {
-        if (is_error() || other.is_error() || other.is_zero()) {
-        *this = error();
-        return *this;
-    }
-
-        auto qr = BigUint::divmod(m_mag, other.m_mag);
-        m_is_negative = m_is_negative && !qr.remainder.is_zero();
-        m_mag = std::move(qr.remainder);
-        return *this;
-    }
-
-    BigInt operator/(std::uint64_t d) const {
-        if (is_error() || d == 0) return error();
-        BigInt r; 
-        r.m_mag = m_mag / d;
-        r.m_is_negative = m_is_negative && !r.m_mag.is_zero(); 
-        return r;
-    }
-
-    BigInt& operator/=(std::uint64_t d) {
-        if (is_error() || d == 0) { *this = error(); return *this; }
-        m_mag /= d; 
-        if (m_mag.is_zero()) m_is_negative = false; 
-        return *this;
-    }
-    
-    BigInt operator%(std::uint64_t d) const {
-        if (is_error() || d == 0) return error();
-        BigUint rem = m_mag;
-        rem %= d;
-        BigInt r(rem);
-        r.m_is_negative = m_is_negative && rem != 0;
-        return r;
-    }
-    
-    BigInt& operator%=(std::uint64_t d) { *this = *this % d; return *this; }
-
-    template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
-    BigInt operator<<(T shift) const {
-        if (is_error()) return error();
-        BigInt r;
-        r.m_mag = m_mag << shift;
-        r.m_is_negative = m_is_negative;
-        return r;
-    }
-
-    template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
-    BigInt operator>>(T shift) const {
-        if (is_error()) return error();
-        BigInt r;
-        r.m_mag = m_mag >> shift;
-        r.m_is_negative = m_is_negative && !r.m_mag.is_zero();
-        return r;
-    }
-
-    template <typename T>
-    BigInt& operator<<=(T shift) {
-        if (is_error()) return *this;
-        m_mag <<= shift;
-        return *this;
-    }
-
-    template <typename T>
-    BigInt& operator>>=(T shift) { 
-        if (is_error()) return *this;
-        m_mag >>= shift;
-        if (m_is_negative && m_mag.is_zero()) m_is_negative = false;
-        return *this;
-    }
-
-    friend BigInt operator&(const BigInt& a, const BigInt& b) {
-        if (a.is_error() || b.is_error()) { return BigInt::error(); }
-        if (a.m_is_negative || b.m_is_negative) return BigInt::error();
-        return BigInt(a.m_mag & b.m_mag);
-    }
-
-    friend BigInt operator|(const BigInt& a, const BigInt& b) {
-        if (a.is_error() || b.is_error()) { return BigInt::error(); }
-        if (a.m_is_negative || b.m_is_negative) return BigInt::error();
-        return BigInt(a.m_mag | b.m_mag);
-    }
-
-    friend BigInt operator^(const BigInt& a, const BigInt& b) {
-        if (a.is_error() || b.is_error()) { return BigInt::error(); }
-        if (a.m_is_negative || b.m_is_negative) return BigInt::error();
-        return BigInt(a.m_mag ^ b.m_mag);
-    }
-
-    BigInt& operator&=(const BigInt& other) {
-        if (is_error() || other.is_error() || m_is_negative || other.m_is_negative) {
-            *this = error();
-            return *this;
-        }
-        
-        m_mag &= other.m_mag;
-        return *this;
-    }
-
-    BigInt& operator|=(const BigInt& other) {
-        if (is_error() || other.is_error() || m_is_negative || other.m_is_negative) {
-            *this = error();
-            return *this;
-        }
-
-        m_mag |= other.m_mag;
-        return *this;
-    }
-
-    BigInt& operator^=(const BigInt& other) {
-        if (is_error() || other.is_error() || m_is_negative || other.m_is_negative) {
-            *this = error();
-            return *this;
-        }
-
-        m_mag ^= other.m_mag;
-        normalize();
-        return *this;
-    }
-
-    std::string to_string() const {
-        if (is_error()) return "BigInt-error";
-        if (is_zero()) return "0";
-        std::string s = m_mag.to_string();
-        if (m_is_negative) s.insert(s.begin(), '-');
+        if (m_neg) s.push_back('-');
+        for (std::size_t i = 0, j = s.size(); i < j; ++i, --j) { char c = s[i]; s[i] = s[j - 1]; s[j - 1] = c; }
         return s;
     }
 
-    std::string to_scientific_string(std::size_t sig_figs) const {
-        if (is_error()) return "BigInt-error";
-        if (is_zero()) return "0";
-        std::string s = m_mag.to_scientific_string(sig_figs);
-        if (m_is_negative) s.insert(s.begin(), '-');
-        return s;
+    static BigInt from_hex(const std::string& s)     { return BigInt(s, 16); }
+    static BigInt from_decimal(const std::string& s) { return BigInt(s, 10); }
+    static BigInt from_binary(const std::string& s)  { return BigInt(s, 2);  }
+
+    static bool is_valid_string(const std::string& s, long long base) {
+        BigInt t;
+        return t.parse_string(s, base, true);
     }
 
-    friend std::ostream& operator<<(std::ostream& os, const BigInt& x) {
-        os << x.to_scientific_string(20);
-        return os;
+    bool parse_string(const std::string& str, long long base, bool validate_only = false) {
+        if (str.empty() || base < 2 || base > 36) return false;
+        std::size_t start = 0;
+        bool negative = false;
+        if (str[0] == '-') { negative = true; start = 1; }
+        else if (str[0] == '+') start = 1;
+        if (start >= str.size()) return false;
+        if (base == 16 && str.size() > start + 2 && str[start] == '0' && (str[start + 1] == 'x' || str[start + 1] == 'X')) start += 2;
+        BigUInt acc = BigUInt::zero();
+        const std::uint64_t b = static_cast<std::uint64_t>(base);
+        bool found = false;
+
+        for (std::size_t i = start; i < str.size(); ++i) {
+            const char c = str[i];
+            long long d = -1;
+            if (c >= '0' && c <= '9') d = c - '0';
+            else if (c >= 'a' && c <= 'z') d = c - 'a' + 10;
+            else if (c >= 'A' && c <= 'Z') d = c - 'A' + 10;
+            else if (c == '_' || c == ',' || c == '\'') continue;
+            else return false;
+            if (d < 0 || d >= base) return false;
+            found = true;
+            if (!validate_only) { acc.mul_small_mutable(b); acc.add_small_mutable(static_cast<std::uint64_t>(d)); }
+        }
+
+        if (found && !validate_only) assign_from(std::move(acc), negative);
+        return found;
     }
 };
 
-BigUint::BigUint(const BigInt& i) { *this = i.magnitude(); }
-BigUint& BigUint::operator=(const BigInt& i) { *this = i.magnitude(); return *this; }
-BigUint::operator BigInt() { return BigInt(*this); }
+inline bool operator==(const BigInt& a, const BigInt& b) noexcept {
+    if (!a.is_finite() || !b.is_finite()) return false;
+    return a.is_negative() == b.is_negative() && a.magnitude() == b.magnitude();
+}
+
+inline bool operator!=(const BigInt& a, const BigInt& b) noexcept {
+    if (!a.is_finite() || !b.is_finite()) return false;
+    return !(a.is_negative() == b.is_negative() && a.magnitude() == b.magnitude());
+}
+
+inline bool operator<(const BigInt& a, const BigInt& b) noexcept {
+    if (!a.is_finite() || !b.is_finite()) return false;
+    if (a.is_negative() != b.is_negative()) return a.is_negative();
+    return a.is_negative() ? (b.magnitude() < a.magnitude()) : (a.magnitude() < b.magnitude());
+}
+
+inline bool operator>(const BigInt& a, const BigInt& b) noexcept {
+    if (!a.is_finite() || !b.is_finite()) return false;
+    return b < a;
+}
+
+inline bool operator<=(const BigInt& a, const BigInt& b) noexcept {
+    if (!a.is_finite() || !b.is_finite()) return false;
+    return !(b < a);
+}
+
+inline bool operator>=(const BigInt& a, const BigInt& b) noexcept {
+    if (!a.is_finite() || !b.is_finite()) return false;
+    return !(a < b);
+}
+
+inline BigInt operator+(const BigInt& a) { return a; }
+inline BigInt operator+(BigInt&& a)      { return std::move(a); }
+
+inline BigInt operator-(const BigInt& a) { BigInt r(a); r.negate_mutable(); return r; }
+inline BigInt operator-(BigInt&& a)      { a.negate_mutable(); return std::move(a); }
+
+inline BigInt operator+(const BigInt& a, const BigInt& b) { BigInt r(a); r.add_mutable(b); return r; }
+inline BigInt operator+(BigInt&& a,      const BigInt& b) { a.add_mutable(b); return std::move(a); }
+inline BigInt operator+(const BigInt& a, BigInt&& b)      { b.add_mutable(a); return std::move(b); }
+inline BigInt operator+(BigInt&& a,      BigInt&& b)      { a.add_mutable(b); return std::move(a); }
+
+inline BigInt operator-(const BigInt& a, const BigInt& b) { BigInt r(a); r.sub_mutable(b); return r; }
+inline BigInt operator-(BigInt&& a,      const BigInt& b) { a.sub_mutable(b); return std::move(a); }
+inline BigInt operator-(BigInt&& a,      BigInt&& b)      { a.sub_mutable(b); return std::move(a); }
+
+inline BigInt operator-(const BigInt& a, BigInt&& b) {
+    if (&a == &b) { b.sub_mutable(a); return std::move(b); }
+    b.negate_mutable();
+    b.add_mutable(a);
+    return std::move(b);
+}
+
+inline BigInt operator*(const BigInt& a, const BigInt& b) { BigInt r(a); r.mul_mutable(b); return r; }
+inline BigInt operator*(BigInt&& a,      const BigInt& b) { a.mul_mutable(b); return std::move(a); }
+inline BigInt operator*(const BigInt& a, BigInt&& b)      { b.mul_mutable(a); return std::move(b); }
+inline BigInt operator*(BigInt&& a,      BigInt&& b)      { a.mul_mutable(b); return std::move(a); }
+
+inline BigInt operator/(const BigInt& a, const BigInt& b) { BigInt r(a); r.div_mutable(b); return r; }
+inline BigInt operator/(BigInt&& a,      const BigInt& b) { a.div_mutable(b); return std::move(a); }
+
+inline BigInt operator%(const BigInt& a, const BigInt& b) { BigInt r(a); r.mod_mutable(b); return r; }
+inline BigInt operator%(BigInt&& a,      const BigInt& b) { a.mod_mutable(b); return std::move(a); }
+
+inline BigInt& operator+=(BigInt& a, const BigInt& b) { return a.add_mutable(b); }
+inline BigInt& operator-=(BigInt& a, const BigInt& b) { return a.sub_mutable(b); }
+inline BigInt& operator*=(BigInt& a, const BigInt& b) { return a.mul_mutable(b); }
+inline BigInt& operator/=(BigInt& a, const BigInt& b) { return a.div_mutable(b); }
+inline BigInt& operator%=(BigInt& a, const BigInt& b) { return a.mod_mutable(b); }
+
+inline BigInt& operator++(BigInt& a)    { return a.add_mutable(BigInt(std::uint64_t(1))); }
+inline BigInt& operator--(BigInt& a)    { return a.sub_mutable(BigInt(std::uint64_t(1))); }
+inline BigInt  operator++(BigInt& a, int) { BigInt t(a); ++a; return t; }
+inline BigInt  operator--(BigInt& a, int) { BigInt t(a); --a; return t; }
+
+inline BigInt  operator<<(const BigInt& a, std::size_t n) { BigInt r(a); r.shift_left_mutable(n); return r; }
+inline BigInt  operator<<(BigInt&& a,      std::size_t n) { a.shift_left_mutable(n); return std::move(a); }
+inline BigInt  operator>>(const BigInt& a, std::size_t n) { BigInt r(a); r.shift_right_mutable(n); return r; }
+inline BigInt  operator>>(BigInt&& a,      std::size_t n) { a.shift_right_mutable(n); return std::move(a); }
+inline BigInt& operator<<=(BigInt& a, std::size_t n) { return a.shift_left_mutable(n); }
+inline BigInt& operator>>=(BigInt& a, std::size_t n) { return a.shift_right_mutable(n); }
+
+#define FIZMO_BIGINT_BINOP(OP)                                                        \
+    template <class T>                                                                \
+    typename std::enable_if<std::is_integral<T>::value, BigInt>::type                 \
+    operator OP(const BigInt& a, T v) { BigInt r(a); r OP##= BigInt(v); return r; }   \
+                                                                                      \
+    template <class T>                                                                \
+    typename std::enable_if<std::is_integral<T>::value, BigInt>::type                 \
+    operator OP(BigInt&& a, T v) { a OP##= BigInt(v); return std::move(a); }          \
+                                                                                      \
+    template <class T>                                                                \
+    typename std::enable_if<std::is_integral<T>::value, BigInt>::type                 \
+    operator OP(T v, const BigInt& a) { BigInt r(v); r OP##= a; return r; }
+
+FIZMO_BIGINT_BINOP(+)
+FIZMO_BIGINT_BINOP(-)
+FIZMO_BIGINT_BINOP(*)
+FIZMO_BIGINT_BINOP(/)
+FIZMO_BIGINT_BINOP(%)
+
+#undef FIZMO_BIGINT_BINOP
+
+#define FIZMO_BIGINT_CMP(OP)                                                          \
+    template <class T>                                                                \
+    typename std::enable_if<std::is_integral<T>::value, bool>::type                   \
+    operator OP(const BigInt& a, T v) noexcept { return a OP BigInt(v); }             \
+                                                                                      \
+    template <class T>                                                                \
+    typename std::enable_if<std::is_integral<T>::value, bool>::type                   \
+    operator OP(T v, const BigInt& a) noexcept { return BigInt(v) OP a; }
+
+FIZMO_BIGINT_CMP(==)
+FIZMO_BIGINT_CMP(!=)
+FIZMO_BIGINT_CMP(<)
+FIZMO_BIGINT_CMP(>)
+FIZMO_BIGINT_CMP(<=)
+FIZMO_BIGINT_CMP(>=)
+
+#undef FIZMO_BIGINT_CMP
+
+inline std::ostream& operator<<(std::ostream& os, const BigInt& x) { return os << x.to_string(); }
 
 } // namespace multiprecision
-
-template<> struct is_fizmo_int<multiprecision::BigUint> : std::true_type{};
-template<> struct is_fizmo_int<multiprecision::BigInt> : std::true_type{};
-template <> struct fizmo_make_unsigned<multiprecision::BigUint> { using type = multiprecision::BigUint; };
-template <> struct fizmo_make_unsigned<multiprecision::BigInt>  { using type = multiprecision::BigUint; };
-template <> struct fizmo_make_signed<multiprecision::BigUint>   { using type = multiprecision::BigInt;  };
-template <> struct fizmo_make_signed<multiprecision::BigInt>    { using type = multiprecision::BigInt;  };
-template<> struct is_fizmo_signed<multiprecision::BigInt> : std::true_type{};
-template<> struct is_fizmo_unsigned<multiprecision::BigUint> : std::true_type{};
-template <> struct integer_rank<multiprecision::BigUint> : std::integral_constant<int, std::numeric_limits<int>::max() - 3> {};
-template <> struct integer_rank<multiprecision::BigInt> : std::integral_constant<int, std::numeric_limits<int>::max() - 2> {};
-
 } // namespace fizmo
 
-#endif
+#endif // FIZMO_MULTIPRECISION_BIG_INTEGER_CLASS_HPP

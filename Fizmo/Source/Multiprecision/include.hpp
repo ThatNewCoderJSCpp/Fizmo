@@ -7,6 +7,8 @@
 #include "Fixed Width Float/Math/ntrig.hpp"
 #include "Fixed Width Float/Math/htrig.hpp"
 
-//#include "Big/Big Complex/big_complex.hpp"
+#include "Big/BigUint Detail/big_uint_ops.hpp"
+#include "Big/BigUint Detail/big_uint_mul_select.hpp"
+#include "Big/BigFloat Math/big_float_consts.hpp"
 
 #endif // MULTIPRECISION_INCLUDE_FILE_HPP

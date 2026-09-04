@@ -13,20 +13,36 @@
 
 namespace fizmo { 
 
-namespace bitops {
-
-constexpr int clz64_portable(std::uint64_t x, int n = 0) noexcept {
+constexpr int clz64_recursive(std::uint64_t x, int n = 0) noexcept {
     return x == 0 ? 64
-         : !(x & 0xFFFFFFFF00000000ull) ? clz64_portable(x << 32, n + 32)
-         : !(x & 0xFFFF000000000000ull) ? clz64_portable(x << 16, n + 16)
-         : !(x & 0xFF00000000000000ull) ? clz64_portable(x <<  8, n +  8)
-         : !(x & 0xF000000000000000ull) ? clz64_portable(x <<  4, n +  4)
-         : !(x & 0xC000000000000000ull) ? clz64_portable(x <<  2, n +  2)
+         : !(x & 0xFFFFFFFF00000000ull) ? clz64_recursive(x << 32, n + 32)
+         : !(x & 0xFFFF000000000000ull) ? clz64_recursive(x << 16, n + 16)
+         : !(x & 0xFF00000000000000ull) ? clz64_recursive(x <<  8, n +  8)
+         : !(x & 0xF000000000000000ull) ? clz64_recursive(x <<  4, n +  4)
+         : !(x & 0xC000000000000000ull) ? clz64_recursive(x <<  2, n +  2)
          : !(x & 0x8000000000000000ull) ? n + 1
          : n;
 }
 
-} // namespace bitops
+constexpr int ctz64_recursive(std::uint64_t x) noexcept {          
+    return 63 - clz64_recursive(x & (~x + std::uint64_t(1)));
+}
+
+constexpr inline int clz64(std::uint64_t x) noexcept {
+    if (x == 0) return 64;
+    int n = 0;
+    if (!(x & 0xFFFFFFFF00000000ull)) { x <<= 32; n += 32; }
+    if (!(x & 0xFFFF000000000000ull)) { x <<= 16; n += 16; }
+    if (!(x & 0xFF00000000000000ull)) { x <<=  8; n +=  8; }
+    if (!(x & 0xF000000000000000ull)) { x <<=  4; n +=  4; }
+    if (!(x & 0xC000000000000000ull)) { x <<=  2; n +=  2; }
+    if (!(x & 0x8000000000000000ull)) {           n +=  1; }
+    return n;
+}
+
+constexpr int ctz64(std::uint64_t x) noexcept {          
+    return 63 - clz64(x & (~x + std::uint64_t(1)));
+}
 
 namespace multiprecision {
 
@@ -78,7 +94,7 @@ public:
     }
 
     OPTIONAL_CPP14_CONSTEXPR long long highest_bit() const noexcept {
-        return v ? (63 - static_cast<long long>(bitops::clz64_portable(v))) : -1;
+        return v ? (63 - static_cast<long long>(clz64_recursive(v))) : -1;
     }
 
     OPTIONAL_CPP14_CONSTEXPR long long count_leading_zeros() const noexcept {

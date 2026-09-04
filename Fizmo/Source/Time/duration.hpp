@@ -1,924 +1,294 @@
-#ifndef FIZMO_DURATION_CLASS_HPP
-#define FIZMO_DURATION_CLASS_HPP
+#ifndef FIZMO_TIME_DURATION_CLASS_HPP
+#define FIZMO_TIME_DURATION_CLASS_HPP
 
-#include "chrono_defines.hpp"
-#include "conversions.hpp"
+#include "time_unit.hpp"
+#include <sstream>
 
 namespace fizmo {
 namespace time {
 
-class CompleteDuration;
-class Duration;
+template<Unit Tag, typename ValueType, typename Enable = void>
+class Duration;   
 
-#if defined(ARCH_ARM32)
-    #define DURATION_PARAM const Duration&
-#else
-    #define DURATION_PARAM const Duration
-#endif
-
-class Duration {
+template<Unit Tag, typename ValueType>
+class Duration<Tag, ValueType, typename std::enable_if<detail::is_signed_integer_like_v<ValueType>>::type> {
 public:
-    enum class unit : std::uint8_t {
-        nanosecond,
-        microsecond,
-        millisecond,
-        centisecond,
-        decisecond,
-        second,
-        minute,
-        hour,
-        day,
-        week,
-        year,
-        decade,
-        century,
-        millennium
-    };
+    using value_type = ValueType;
+    using traits     = unit_traits<Tag>;
+    static constexpr Unit tag = Tag;
 
 private:
-    std::uint64_t value_;
-    unit unit_;
+    ValueType m_value;
 
 public:
-    constexpr Duration() noexcept : value_(0), unit_(unit::second) {}
-    constexpr Duration(const unit u) noexcept : value_(0), unit_(u) {}
-    
-    template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
-    constexpr Duration(const T v, const unit u) noexcept : value_(static_cast<std::uint64_t>(fizmo::abs_constexpr(v))), unit_(u) {}
+    constexpr Duration() noexcept : m_value(0) {}
+    constexpr explicit Duration(const ValueType& v) noexcept : m_value(v) {}
+    constexpr explicit Duration(ValueType&& v) noexcept : m_value(std::move(v)) {}
 
-    template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
-    constexpr Duration(const T v) noexcept : value_(static_cast<std::uint64_t>(fizmo::abs_constexpr(v))), unit_(unit::millisecond) {}
+    template <typename U, typename = typename std::enable_if<std::is_integral<U>::value>::type, typename = void>
+    constexpr explicit Duration(const U v) noexcept : m_value(ValueType(v)) {}
 
-    constexpr explicit Duration(const nanosecond ns) noexcept : value_(ns.value()), unit_(unit::nanosecond) {}
-    constexpr explicit Duration(const microsecond us) noexcept : value_(us.value()), unit_(unit::microsecond) {}
-    constexpr explicit Duration(const millisecond ms) noexcept : value_(ms.value()), unit_(unit::millisecond) {}
-    constexpr explicit Duration(const centisecond cs) noexcept : value_(cs.value()), unit_(unit::centisecond) {}
-    constexpr explicit Duration(const decisecond ds) noexcept : value_(ds.value()), unit_(unit::decisecond) {}
-    constexpr explicit Duration(const second s) noexcept : value_(s.value()), unit_(unit::second) {}
-    constexpr explicit Duration(const minute m) noexcept : value_(m.value()), unit_(unit::minute) {}
-    constexpr explicit Duration(const hour h) noexcept : value_(h.value()), unit_(unit::hour) {}
-    constexpr explicit Duration(const day d) noexcept : value_(d.value()), unit_(unit::day) {}
-    constexpr explicit Duration(const week w) noexcept : value_(w.value()), unit_(unit::week) {}
-    constexpr explicit Duration(const year y) noexcept : value_(y.value()), unit_(unit::year) {}
-    constexpr explicit Duration(const decade d) noexcept : value_(d.value()), unit_(unit::decade) {}
-    constexpr explicit Duration(const century c) noexcept : value_(c.value()), unit_(unit::century) {}
-    constexpr explicit Duration(const millennium m) noexcept : value_(m.value()), unit_(unit::millennium) {}
-    constexpr Duration(const Duration& d) noexcept : value_(d.value_), unit_(d.unit_) {}
-    constexpr Duration(Duration&& d) noexcept : value_(d.value_), unit_(d.unit_) { d.value_ = 0; }
-    constexpr Duration(const CompleteDuration& d, unit un = unit::nanosecond) noexcept;
-    OPTIONAL_CPP14_CONSTEXPR Duration& operator=(const CompleteDuration& d) noexcept;
-    
-    OPTIONAL_CPP14_CONSTEXPR Duration& operator=(const Duration& d) noexcept {
-        if (this != &d) { 
-            value_ = d.value_; 
-            unit_ = d.unit_;
-        }
-        return *this;
-    }
-    
-    OPTIONAL_CPP14_CONSTEXPR Duration& operator=(Duration&& d) noexcept {
-        if (this != &d) {
-            value_ = d.value_;
-            unit_ = d.unit_;
-            d.value_ = 0;
-        }
+    template<typename U, typename = typename std::enable_if<detail::is_integer_like_v<U> && !std::is_same<U, ValueType>::value>::type>
+    constexpr explicit Duration(const U& v) noexcept : m_value(static_cast<ValueType>(v)) {}
+
+    constexpr Duration(const Duration&) noexcept = default;
+    constexpr Duration(Duration&&) noexcept = default;
+    constexpr Duration& operator=(const Duration&) noexcept = default;
+    constexpr Duration& operator=(Duration&&) noexcept = default;
+
+    template<Unit OTag, typename OV, typename = typename std::enable_if<(OTag != Tag || !std::is_same<OV, ValueType>::value)>::type>
+    constexpr explicit Duration(const TimeUnit<OTag, OV>& tu) noexcept { m_value = convert_from(tu); }
+
+    template<Unit OTag, typename OV, typename = typename std::enable_if<(OTag != Tag || !std::is_same<OV, ValueType>::value)>::type>
+    constexpr Duration& operator=(const TimeUnit<OTag, OV>& tu) noexcept {
+        m_value = convert_from(tu);
         return *this;
     }
 
-    template <typename T, typename = typename std::enable_if<is_fizmo_time_v<T>>::type>
-    OPTIONAL_CPP14_CONSTEXPR Duration& operator=(const T v) noexcept {
-        *this = Duration(v);
+    template<Unit OTag, typename OV>
+    constexpr explicit Duration(const Duration<OTag, OV>& other) noexcept : m_value(convert_from(other)) {}
+
+    template<Unit OTag, typename OV>
+    constexpr Duration& operator=(const Duration<OTag, OV>& other) noexcept {
+        m_value = convert_from(other);
         return *this;
     }
 
-public:
-    constexpr std::uint64_t count() const noexcept { return value_; }
-    constexpr std::uint64_t& count() noexcept { return value_; }
-    constexpr unit get_unit() const noexcept { return unit_; }
-    constexpr unit& get_unit() noexcept { return unit_; }
-    
-public:
-    constexpr nanosecond to_nanoseconds() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return nanosecond(value_);
-            case unit::microsecond: return conversions::microseconds_to_nanoseconds(microsecond(value_));
-            case unit::millisecond: return conversions::milliseconds_to_nanoseconds(millisecond(value_));
-            case unit::centisecond: return conversions::centiseconds_to_nanoseconds(centisecond(value_));
-            case unit::decisecond: return conversions::deciseconds_to_nanoseconds(decisecond(value_));
-            case unit::second: return conversions::seconds_to_nanoseconds(second(value_));
-            case unit::minute: return conversions::minutes_to_nanoseconds(minute(value_));
-            case unit::hour: return conversions::hours_to_nanoseconds(hour(value_));
-            case unit::day: return conversions::days_to_nanoseconds(day(value_));
-            case unit::week: return conversions::weeks_to_nanoseconds(week(value_));
-            case unit::year: return conversions::years_to_nanoseconds(year(value_));
-            case unit::decade: return conversions::decades_to_nanoseconds(decade(value_));
-            case unit::century: return conversions::centuries_to_nanoseconds(century(value_));
-            case unit::millennium: return conversions::millennia_to_nanoseconds(millennium(value_));
-            default: return nanosecond(0);
-        }
-    }
-    
-    constexpr microsecond to_microseconds() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return conversions::nanoseconds_to_microseconds(nanosecond(value_));
-            case unit::microsecond: return microsecond(value_);
-            case unit::millisecond: return conversions::milliseconds_to_microseconds(millisecond(value_));
-            case unit::centisecond: return conversions::centiseconds_to_microseconds(centisecond(value_));
-            case unit::decisecond: return conversions::deciseconds_to_microseconds(decisecond(value_));
-            case unit::second: return conversions::seconds_to_microseconds(second(value_));
-            case unit::minute: return conversions::minutes_to_microseconds(minute(value_));
-            case unit::hour: return conversions::hours_to_microseconds(hour(value_));
-            case unit::day: return conversions::days_to_microseconds(day(value_));
-            case unit::week: return conversions::weeks_to_microseconds(week(value_));
-            case unit::year: return conversions::years_to_microseconds(year(value_));
-            case unit::decade: return conversions::decades_to_microseconds(decade(value_));
-            case unit::century: return conversions::centuries_to_microseconds(century(value_));
-            case unit::millennium: return conversions::millennia_to_microseconds(millennium(value_));
-            default: return microsecond(0);
-        }
-    }
-    
-    constexpr millisecond to_milliseconds() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return conversions::nanoseconds_to_milliseconds(nanosecond(value_));
-            case unit::microsecond: return conversions::microseconds_to_milliseconds(microsecond(value_));
-            case unit::millisecond: return millisecond(value_);
-            case unit::centisecond: return conversions::centiseconds_to_milliseconds(centisecond(value_));
-            case unit::decisecond: return conversions::deciseconds_to_milliseconds(decisecond(value_));
-            case unit::second: return conversions::seconds_to_milliseconds(second(value_));
-            case unit::minute: return conversions::minutes_to_milliseconds(minute(value_));
-            case unit::hour: return conversions::hours_to_milliseconds(hour(value_));
-            case unit::day: return conversions::days_to_milliseconds(day(value_));
-            case unit::week: return conversions::weeks_to_milliseconds(week(value_));
-            case unit::year: return conversions::years_to_milliseconds(year(value_));
-            case unit::decade: return conversions::decades_to_milliseconds(decade(value_));
-            case unit::century: return conversions::centuries_to_milliseconds(century(value_));
-            case unit::millennium: return conversions::millennia_to_milliseconds(millennium(value_));
-            default: return millisecond(0);
-        }
-    }
-    
-    constexpr centisecond to_centiseconds() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return conversions::nanoseconds_to_centiseconds(nanosecond(value_));
-            case unit::microsecond: return conversions::microseconds_to_centiseconds(microsecond(value_));
-            case unit::millisecond: return conversions::milliseconds_to_centiseconds(millisecond(value_));
-            case unit::centisecond: return centisecond(value_);
-            case unit::decisecond: return conversions::deciseconds_to_centiseconds(decisecond(value_));
-            case unit::second: return conversions::seconds_to_centiseconds(second(value_));
-            case unit::minute: return conversions::minutes_to_centiseconds(minute(value_));
-            case unit::hour: return conversions::hours_to_centiseconds(hour(value_));
-            case unit::day: return conversions::days_to_centiseconds(day(value_));
-            case unit::week: return conversions::weeks_to_centiseconds(week(value_));
-            case unit::year: return conversions::years_to_centiseconds(year(value_));
-            case unit::decade: return conversions::decades_to_centiseconds(decade(value_));
-            case unit::century: return conversions::centuries_to_centiseconds(century(value_));
-            case unit::millennium: return conversions::millennia_to_centiseconds(millennium(value_));
-            default: return centisecond(0);
-        }
-    }
+    constexpr Duration& operator=(const ValueType& v) noexcept { m_value = v; return *this; }
+    constexpr Duration& operator=(ValueType&& v) noexcept { m_value = std::move(v); return *this; }
 
-    constexpr decisecond to_deciseconds() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return conversions::nanoseconds_to_deciseconds(nanosecond(value_));
-            case unit::microsecond: return conversions::microseconds_to_deciseconds(microsecond(value_));
-            case unit::millisecond: return conversions::milliseconds_to_deciseconds(millisecond(value_));
-            case unit::centisecond: return conversions::centiseconds_to_deciseconds(centisecond(value_));
-            case unit::decisecond: return decisecond(value_);
-            case unit::second: return conversions::seconds_to_deciseconds(second(value_));
-            case unit::minute: return conversions::minutes_to_deciseconds(minute(value_));
-            case unit::hour: return conversions::hours_to_deciseconds(hour(value_));
-            case unit::day: return conversions::days_to_deciseconds(day(value_));
-            case unit::week: return conversions::weeks_to_deciseconds(week(value_));
-            case unit::year: return conversions::years_to_deciseconds(year(value_));
-            case unit::decade: return conversions::decades_to_deciseconds(decade(value_));
-            case unit::century: return conversions::centuries_to_deciseconds(century(value_));
-            case unit::millennium: return conversions::millennia_to_deciseconds(millennium(value_));
-            default: return decisecond(0);
-        }
-    }
-    
-    constexpr second to_seconds() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return conversions::nanoseconds_to_seconds(nanosecond(value_));
-            case unit::microsecond: return conversions::microseconds_to_seconds(microsecond(value_));
-            case unit::millisecond: return conversions::milliseconds_to_seconds(millisecond(value_));
-            case unit::centisecond: return conversions::centiseconds_to_seconds(centisecond(value_));
-            case unit::decisecond: return conversions::deciseconds_to_seconds(decisecond(value_));
-            case unit::second: return second(value_);
-            case unit::minute: return conversions::minutes_to_seconds(minute(value_));
-            case unit::hour: return conversions::hours_to_seconds(hour(value_));
-            case unit::day: return conversions::days_to_seconds(day(value_));
-            case unit::week: return conversions::weeks_to_seconds(week(value_));
-            case unit::year: return conversions::years_to_seconds(year(value_));
-            case unit::decade: return conversions::decades_to_seconds(decade(value_));
-            case unit::century: return conversions::centuries_to_seconds(century(value_));
-            case unit::millennium: return conversions::millennia_to_seconds(millennium(value_));
-            default: return second(0);
-        }
-    }
-    
-    constexpr minute to_minutes() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return conversions::nanoseconds_to_minutes(nanosecond(value_));
-            case unit::microsecond: return conversions::microseconds_to_minutes(microsecond(value_));
-            case unit::millisecond: return conversions::milliseconds_to_minutes(millisecond(value_));
-            case unit::centisecond: return conversions::centiseconds_to_minutes(centisecond(value_));
-            case unit::decisecond: return conversions::deciseconds_to_minutes(decisecond(value_));
-            case unit::second: return conversions::seconds_to_minutes(second(value_));
-            case unit::minute: return minute(value_);
-            case unit::hour: return conversions::hours_to_minutes(hour(value_));
-            case unit::day: return conversions::days_to_minutes(day(value_));
-            case unit::week: return conversions::weeks_to_minutes(week(value_));
-            case unit::year: return conversions::years_to_minutes(year(value_));
-            case unit::decade: return conversions::decades_to_minutes(decade(value_));
-            case unit::century: return conversions::centuries_to_minutes(century(value_));
-            case unit::millennium: return conversions::millennia_to_minutes(millennium(value_));
-            default: return minute(0);
-        }
-    }
-    
-    constexpr hour to_hours() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return conversions::nanoseconds_to_hours(nanosecond(value_));
-            case unit::microsecond: return conversions::microseconds_to_hours(microsecond(value_));
-            case unit::millisecond: return conversions::milliseconds_to_hours(millisecond(value_));
-            case unit::centisecond: return conversions::centiseconds_to_hours(centisecond(value_));
-            case unit::decisecond: return conversions::deciseconds_to_hours(decisecond(value_));
-            case unit::second: return conversions::seconds_to_hours(second(value_));
-            case unit::minute: return conversions::minutes_to_hours(minute(value_));
-            case unit::hour: return hour(value_);
-            case unit::day: return conversions::days_to_hours(day(value_));
-            case unit::week: return conversions::weeks_to_hours(week(value_));
-            case unit::year: return conversions::years_to_hours(year(value_));
-            case unit::decade: return conversions::decades_to_hours(decade(value_));
-            case unit::century: return conversions::centuries_to_hours(century(value_));
-            case unit::millennium: return conversions::millennia_to_hours(millennium(value_));
-            default: return hour(0);
-        }
-    }
-    
-    constexpr day to_days() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return conversions::nanoseconds_to_days(nanosecond(value_));
-            case unit::microsecond: return conversions::microseconds_to_days(microsecond(value_));
-            case unit::millisecond: return conversions::milliseconds_to_days(millisecond(value_));
-            case unit::centisecond: return conversions::centiseconds_to_days(centisecond(value_));
-            case unit::decisecond: return conversions::deciseconds_to_days(decisecond(value_));
-            case unit::second: return conversions::seconds_to_days(second(value_));
-            case unit::minute: return conversions::minutes_to_days(minute(value_));
-            case unit::hour: return conversions::hours_to_days(hour(value_));
-            case unit::day: return day(value_);
-            case unit::week: return conversions::weeks_to_days(week(value_));
-            case unit::year: return conversions::years_to_days(year(value_));
-            case unit::decade: return conversions::decades_to_days(decade(value_));
-            case unit::century: return conversions::centuries_to_days(century(value_));
-            case unit::millennium: return conversions::millennia_to_days(millennium(value_));
-            default: return day(0);
-        }
-    }
-    
-    constexpr week to_weeks() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return conversions::nanoseconds_to_weeks(nanosecond(value_));
-            case unit::microsecond: return conversions::microseconds_to_weeks(microsecond(value_));
-            case unit::millisecond: return conversions::milliseconds_to_weeks(millisecond(value_));
-            case unit::centisecond: return conversions::centiseconds_to_weeks(centisecond(value_));
-            case unit::decisecond: return conversions::deciseconds_to_weeks(decisecond(value_));
-            case unit::second: return conversions::seconds_to_weeks(second(value_));
-            case unit::minute: return conversions::minutes_to_weeks(minute(value_));
-            case unit::hour: return conversions::hours_to_weeks(hour(value_));
-            case unit::day: return conversions::day_to_week(day(value_));
-            case unit::week: return week(value_);
-            case unit::year: return conversions::years_to_weeks(year(value_));
-            case unit::decade: return conversions::decades_to_weeks(decade(value_));
-            case unit::century: return conversions::centuries_to_weeks(century(value_));
-            case unit::millennium: return conversions::millennia_to_weeks(millennium(value_));
-            default: return week(0);
-        }
-    }
-    
-    constexpr year to_years() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return conversions::nanoseconds_to_years(nanosecond(value_));
-            case unit::microsecond: return conversions::microseconds_to_years(microsecond(value_));
-            case unit::millisecond: return conversions::milliseconds_to_years(millisecond(value_));
-            case unit::centisecond: return conversions::centiseconds_to_years(centisecond(value_));
-            case unit::decisecond: return conversions::deciseconds_to_years(decisecond(value_));
-            case unit::second: return conversions::seconds_to_years(second(value_));
-            case unit::minute: return conversions::minutes_to_years(minute(value_));
-            case unit::hour: return conversions::hours_to_years(hour(value_));
-            case unit::day: return conversions::days_to_years(day(value_));
-            case unit::week: return conversions::weeks_to_years(week(value_));
-            case unit::year: return year(value_);
-            case unit::decade: return conversions::decades_to_years(decade(value_));
-            case unit::century: return conversions::centuries_to_years(century(value_));
-            case unit::millennium: return conversions::millennia_to_years(millennium(value_));
-            default: return year(0);
-        }
-    }
-    
-    constexpr decade to_decades() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return conversions::nanoseconds_to_decades(nanosecond(value_));
-            case unit::microsecond: return conversions::microseconds_to_decades(microsecond(value_));
-            case unit::millisecond: return conversions::milliseconds_to_decades(millisecond(value_));
-            case unit::centisecond: return conversions::centiseconds_to_decades(centisecond(value_));
-            case unit::decisecond: return conversions::deciseconds_to_decades(decisecond(value_));
-            case unit::second: return conversions::seconds_to_decades(second(value_));
-            case unit::minute: return conversions::minutes_to_decades(minute(value_));
-            case unit::hour: return conversions::hours_to_decades(hour(value_));
-            case unit::day: return conversions::days_to_decades(day(value_));
-            case unit::week: return conversions::weeks_to_decades(week(value_));
-            case unit::year: return conversions::years_to_decades(year(value_));
-            case unit::decade: return decade(value_);
-            case unit::century: return conversions::centuries_to_decades(century(value_));
-            case unit::millennium: return conversions::millennia_to_decades(millennium(value_));
-            default: return decade(0);
-        }
-    }
-    
-    constexpr century to_centuries() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return conversions::nanoseconds_to_centuries(nanosecond(value_));
-            case unit::microsecond: return conversions::microseconds_to_centuries(microsecond(value_));
-            case unit::millisecond: return conversions::milliseconds_to_centuries(millisecond(value_));
-            case unit::centisecond: return conversions::centiseconds_to_centuries(centisecond(value_));
-            case unit::decisecond: return conversions::deciseconds_to_centuries(decisecond(value_));
-            case unit::second: return conversions::seconds_to_centuries(second(value_));
-            case unit::minute: return conversions::minutes_to_centuries(minute(value_));
-            case unit::hour: return conversions::hours_to_centuries(hour(value_));
-            case unit::day: return conversions::days_to_centuries(day(value_));
-            case unit::week: return conversions::weeks_to_centuries(week(value_));
-            case unit::year: return conversions::years_to_centuries(year(value_));
-            case unit::decade: return conversions::decades_to_centuries(decade(value_));
-            case unit::century: return century(value_);
-            case unit::millennium: return conversions::millennia_to_centuries(millennium(value_));
-            default: return century(0);
-        }
-    }
-    
-    constexpr millennium to_millennia() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return conversions::nanoseconds_to_millennia(nanosecond(value_));
-            case unit::microsecond: return conversions::microseconds_to_millennia(microsecond(value_));
-            case unit::millisecond: return conversions::milliseconds_to_millennia(millisecond(value_));
-            case unit::centisecond: return conversions::centiseconds_to_millennia(centisecond(value_));
-            case unit::decisecond: return conversions::deciseconds_to_millennia(decisecond(value_));
-            case unit::second: return conversions::seconds_to_millennia(second(value_));
-            case unit::minute: return conversions::minutes_to_millennia(minute(value_));
-            case unit::hour: return conversions::hours_to_millennia(hour(value_));
-            case unit::day: return conversions::days_to_millennia(day(value_));
-            case unit::week: return conversions::weeks_to_millennia(week(value_));
-            case unit::year: return conversions::years_to_millennia(year(value_));
-            case unit::decade: return conversions::decades_to_millennia(decade(value_));
-            case unit::century: return conversions::centuries_to_millennia(century(value_));
-            case unit::millennium: return millennium(value_);
-            default: return millennium(0);
-        }
-    }
+    template<typename U, typename = typename std::enable_if<detail::is_integer_like_v<U> && !std::is_same<U, ValueType>::value>::type>
+    constexpr Duration& operator=(const U& v) noexcept { m_value = static_cast<ValueType>(v); return *this; }
+
+    template <typename U, typename = typename std::enable_if<std::is_integral<U>::value>::type, typename = void>
+    constexpr Duration& operator=(const U v) noexcept { m_value = ValueType(v); return *this; }
 
 public:
-    constexpr double to_exact_nanoseconds() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return static_cast<double>(value_);
-            case unit::microsecond: return exact_conversions::microseconds_to_nanoseconds(microsecond(value_));
-            case unit::millisecond: return exact_conversions::milliseconds_to_nanoseconds(millisecond(value_));
-            case unit::centisecond: return exact_conversions::centiseconds_to_nanoseconds(centisecond(value_));
-            case unit::decisecond: return exact_conversions::deciseconds_to_nanoseconds(decisecond(value_));
-            case unit::second: return exact_conversions::seconds_to_nanoseconds(second(value_));
-            case unit::minute: return exact_conversions::minutes_to_nanoseconds(minute(value_));
-            case unit::hour: return exact_conversions::hours_to_nanoseconds(hour(value_));
-            case unit::day: return exact_conversions::days_to_nanoseconds(day(value_));
-            case unit::week: return exact_conversions::weeks_to_nanoseconds(week(value_));
-            case unit::year: return exact_conversions::years_to_nanoseconds(year(value_));
-            case unit::decade: return exact_conversions::decades_to_nanoseconds(decade(value_));
-            case unit::century: return exact_conversions::centuries_to_nanoseconds(century(value_));
-            case unit::millennium: return exact_conversions::millennia_to_nanoseconds(millennium(value_));
-            default: return 0.0;
-        }
-    }
-    
-    constexpr double to_exact_microseconds() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return exact_conversions::nanoseconds_to_microseconds(nanosecond(value_));
-            case unit::microsecond: return static_cast<double>(value_);
-            case unit::millisecond: return exact_conversions::milliseconds_to_microseconds(millisecond(value_));
-            case unit::centisecond: return exact_conversions::centiseconds_to_microseconds(centisecond(value_));
-            case unit::decisecond: return exact_conversions::deciseconds_to_microseconds(decisecond(value_));
-            case unit::second: return exact_conversions::seconds_to_microseconds(second(value_));
-            case unit::minute: return exact_conversions::minutes_to_microseconds(minute(value_));
-            case unit::hour: return exact_conversions::hours_to_microseconds(hour(value_));
-            case unit::day: return exact_conversions::days_to_microseconds(day(value_));
-            case unit::week: return exact_conversions::weeks_to_microseconds(week(value_));
-            case unit::year: return exact_conversions::years_to_microseconds(year(value_));
-            case unit::decade: return exact_conversions::decades_to_microseconds(decade(value_));
-            case unit::century: return exact_conversions::centuries_to_microseconds(century(value_));
-            case unit::millennium: return exact_conversions::millennia_to_microseconds(millennium(value_));
-            default: return 0.0;
-        }
-    }
-    
-    constexpr double to_exact_milliseconds() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return exact_conversions::nanoseconds_to_milliseconds(nanosecond(value_));
-            case unit::microsecond: return exact_conversions::microseconds_to_milliseconds(microsecond(value_));
-            case unit::millisecond: return static_cast<double>(value_);
-            case unit::centisecond: return exact_conversions::centiseconds_to_milliseconds(centisecond(value_));
-            case unit::decisecond: return exact_conversions::deciseconds_to_milliseconds(decisecond(value_));
-            case unit::second: return exact_conversions::seconds_to_milliseconds(second(value_));
-            case unit::minute: return exact_conversions::minutes_to_milliseconds(minute(value_));
-            case unit::hour: return exact_conversions::hours_to_milliseconds(hour(value_));
-            case unit::day: return exact_conversions::days_to_milliseconds(day(value_));
-            case unit::week: return exact_conversions::weeks_to_milliseconds(week(value_));
-            case unit::year: return exact_conversions::years_to_milliseconds(year(value_));
-            case unit::decade: return exact_conversions::decades_to_milliseconds(decade(value_));
-            case unit::century: return exact_conversions::centuries_to_milliseconds(century(value_));
-            case unit::millennium: return exact_conversions::millennia_to_milliseconds(millennium(value_));
-            default: return 0.0;
-        }
-    }
-    
-    constexpr double to_exact_centiseconds() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return exact_conversions::nanoseconds_to_centiseconds(nanosecond(value_));
-            case unit::microsecond: return exact_conversions::microseconds_to_centiseconds(microsecond(value_));
-            case unit::millisecond: return exact_conversions::milliseconds_to_centiseconds(millisecond(value_));
-            case unit::centisecond: return static_cast<double>(value_);
-            case unit::decisecond: return exact_conversions::deciseconds_to_centiseconds(decisecond(value_));
-            case unit::second: return exact_conversions::seconds_to_centiseconds(second(value_));
-            case unit::minute: return exact_conversions::minutes_to_centiseconds(minute(value_));
-            case unit::hour: return exact_conversions::hours_to_centiseconds(hour(value_));
-            case unit::day: return exact_conversions::days_to_centiseconds(day(value_));
-            case unit::week: return exact_conversions::weeks_to_centiseconds(week(value_));
-            case unit::year: return exact_conversions::years_to_centiseconds(year(value_));
-            case unit::decade: return exact_conversions::decades_to_centiseconds(decade(value_));
-            case unit::century: return exact_conversions::centuries_to_centiseconds(century(value_));
-            case unit::millennium: return exact_conversions::millennia_to_centiseconds(millennium(value_));
-            default: return 0.0;
-        }
-    }
-    
-    constexpr double to_exact_deciseconds() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return exact_conversions::nanoseconds_to_deciseconds(nanosecond(value_));
-            case unit::microsecond: return exact_conversions::microseconds_to_deciseconds(microsecond(value_));
-            case unit::millisecond: return exact_conversions::milliseconds_to_deciseconds(millisecond(value_));
-            case unit::centisecond: return exact_conversions::centiseconds_to_deciseconds(centisecond(value_));
-            case unit::decisecond: return static_cast<double>(value_);
-            case unit::second: return exact_conversions::seconds_to_deciseconds(second(value_));
-            case unit::minute: return exact_conversions::minutes_to_deciseconds(minute(value_));
-            case unit::hour: return exact_conversions::hours_to_deciseconds(hour(value_));
-            case unit::day: return exact_conversions::days_to_deciseconds(day(value_));
-            case unit::week: return exact_conversions::weeks_to_deciseconds(week(value_));
-            case unit::year: return exact_conversions::years_to_deciseconds(year(value_));
-            case unit::decade: return exact_conversions::decades_to_deciseconds(decade(value_));
-            case unit::century: return exact_conversions::centuries_to_deciseconds(century(value_));
-            case unit::millennium: return exact_conversions::millennia_to_deciseconds(millennium(value_));
-            default: return 0.0;
-        }
-    }
-    
-    constexpr double to_exact_seconds() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return exact_conversions::nanoseconds_to_seconds(nanosecond(value_));
-            case unit::microsecond: return exact_conversions::microseconds_to_seconds(microsecond(value_));
-            case unit::millisecond: return exact_conversions::milliseconds_to_seconds(millisecond(value_));
-            case unit::centisecond: return exact_conversions::centiseconds_to_seconds(centisecond(value_));
-            case unit::decisecond: return exact_conversions::deciseconds_to_seconds(decisecond(value_));
-            case unit::second: return static_cast<double>(value_);
-            case unit::minute: return exact_conversions::minutes_to_seconds(minute(value_));
-            case unit::hour: return exact_conversions::hours_to_seconds(hour(value_));
-            case unit::day: return exact_conversions::days_to_seconds(day(value_));
-            case unit::week: return exact_conversions::weeks_to_seconds(week(value_));
-            case unit::year: return exact_conversions::years_to_seconds(year(value_));
-            case unit::decade: return exact_conversions::decades_to_seconds(decade(value_));
-            case unit::century: return exact_conversions::centuries_to_seconds(century(value_));
-            case unit::millennium: return exact_conversions::millennia_to_seconds(millennium(value_));
-            default: return 0.0;
-        }
-    }
-    
-    constexpr double to_exact_minutes() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return exact_conversions::nanoseconds_to_minutes(nanosecond(value_));
-            case unit::microsecond: return exact_conversions::microseconds_to_minutes(microsecond(value_));
-            case unit::millisecond: return exact_conversions::milliseconds_to_minutes(millisecond(value_));
-            case unit::centisecond: return exact_conversions::centiseconds_to_minutes(centisecond(value_));
-            case unit::decisecond: return exact_conversions::deciseconds_to_minutes(decisecond(value_));
-            case unit::second: return exact_conversions::seconds_to_minutes(second(value_));
-            case unit::minute: return static_cast<double>(value_);
-            case unit::hour: return exact_conversions::hours_to_minutes(hour(value_));
-            case unit::day: return exact_conversions::days_to_minutes(day(value_));
-            case unit::week: return exact_conversions::weeks_to_minutes(week(value_));
-            case unit::year: return exact_conversions::years_to_minutes(year(value_));
-            case unit::decade: return exact_conversions::decades_to_minutes(decade(value_));
-            case unit::century: return exact_conversions::centuries_to_minutes(century(value_));
-            case unit::millennium: return exact_conversions::millennia_to_minutes(millennium(value_));
-            default: return 0.0;
-        }
-    }
-    
-    constexpr double to_exact_hours() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return exact_conversions::nanoseconds_to_hours(nanosecond(value_));
-            case unit::microsecond: return exact_conversions::microseconds_to_hours(microsecond(value_));
-            case unit::millisecond: return exact_conversions::milliseconds_to_hours(millisecond(value_));
-            case unit::centisecond: return exact_conversions::centiseconds_to_hours(centisecond(value_));
-            case unit::decisecond: return exact_conversions::deciseconds_to_hours(decisecond(value_));
-            case unit::second: return exact_conversions::seconds_to_hours(second(value_));
-            case unit::minute: return exact_conversions::minutes_to_hours(minute(value_));
-            case unit::hour: return static_cast<double>(value_);
-            case unit::day: return exact_conversions::days_to_hours(day(value_));
-            case unit::week: return exact_conversions::weeks_to_hours(week(value_));
-            case unit::year: return exact_conversions::years_to_hours(year(value_));
-            case unit::decade: return exact_conversions::decades_to_hours(decade(value_));
-            case unit::century: return exact_conversions::centuries_to_hours(century(value_));
-            case unit::millennium: return exact_conversions::millennia_to_hours(millennium(value_));
-            default: return 0.0;
-        }
-    }
-    
-    constexpr double to_exact_days() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return exact_conversions::nanoseconds_to_days(nanosecond(value_));
-            case unit::microsecond: return exact_conversions::microseconds_to_days(microsecond(value_));
-            case unit::millisecond: return exact_conversions::milliseconds_to_days(millisecond(value_));
-            case unit::centisecond: return exact_conversions::centiseconds_to_days(centisecond(value_));
-            case unit::decisecond: return exact_conversions::deciseconds_to_days(decisecond(value_));
-            case unit::second: return exact_conversions::seconds_to_days(second(value_));
-            case unit::minute: return exact_conversions::minutes_to_days(minute(value_));
-            case unit::hour: return exact_conversions::hours_to_days(hour(value_));
-            case unit::day: return static_cast<double>(value_);
-            case unit::week: return exact_conversions::weeks_to_days(week(value_));
-            case unit::year: return exact_conversions::years_to_days(year(value_));
-            case unit::decade: return exact_conversions::decades_to_days(decade(value_));
-            case unit::century: return exact_conversions::centuries_to_days(century(value_));
-            case unit::millennium: return exact_conversions::millennia_to_days(millennium(value_));
-            default: return 0.0;
-        }
-    }
-    
-    constexpr double to_exact_weeks() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return exact_conversions::nanoseconds_to_weeks(nanosecond(value_));
-            case unit::microsecond: return exact_conversions::microseconds_to_weeks(microsecond(value_));
-            case unit::millisecond: return exact_conversions::milliseconds_to_weeks(millisecond(value_));
-            case unit::centisecond: return exact_conversions::centiseconds_to_weeks(centisecond(value_));
-            case unit::decisecond: return exact_conversions::deciseconds_to_weeks(decisecond(value_));
-            case unit::second: return exact_conversions::seconds_to_weeks(second(value_));
-            case unit::minute: return exact_conversions::minutes_to_weeks(minute(value_));
-            case unit::hour: return exact_conversions::hours_to_weeks(hour(value_));
-            case unit::day: return exact_conversions::days_to_weeks(day(value_));
-            case unit::week: return static_cast<double>(value_);
-            case unit::year: return exact_conversions::years_to_weeks(year(value_));
-            case unit::decade: return exact_conversions::decades_to_weeks(decade(value_));
-            case unit::century: return exact_conversions::centuries_to_weeks(century(value_));
-            case unit::millennium: return exact_conversions::millennia_to_weeks(millennium(value_));
-            default: return 0.0;
-        }
-    }
-    
-    constexpr double to_exact_years() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return exact_conversions::nanoseconds_to_years(nanosecond(value_));
-            case unit::microsecond: return exact_conversions::microseconds_to_years(microsecond(value_));
-            case unit::millisecond: return exact_conversions::milliseconds_to_years(millisecond(value_));
-            case unit::centisecond: return exact_conversions::centiseconds_to_years(centisecond(value_));
-            case unit::decisecond: return exact_conversions::deciseconds_to_years(decisecond(value_));
-            case unit::second: return exact_conversions::seconds_to_years(second(value_));
-            case unit::minute: return exact_conversions::minutes_to_years(minute(value_));
-            case unit::hour: return exact_conversions::hours_to_years(hour(value_));
-            case unit::day: return exact_conversions::days_to_years(day(value_));
-            case unit::week: return exact_conversions::weeks_to_years(week(value_));
-            case unit::year: return static_cast<double>(value_);
-            case unit::decade: return exact_conversions::decades_to_years(decade(value_));
-            case unit::century: return exact_conversions::centuries_to_years(century(value_));
-            case unit::millennium: return exact_conversions::millennia_to_years(millennium(value_));
-            default: return 0.0;
-        }
-    }
-    
-    constexpr double to_exact_decades() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return exact_conversions::nanoseconds_to_decades(nanosecond(value_));
-            case unit::microsecond: return exact_conversions::microseconds_to_decades(microsecond(value_));
-            case unit::millisecond: return exact_conversions::milliseconds_to_decades(millisecond(value_));
-            case unit::centisecond: return exact_conversions::centiseconds_to_decades(centisecond(value_));
-            case unit::decisecond: return exact_conversions::deciseconds_to_decades(decisecond(value_));
-            case unit::second: return exact_conversions::seconds_to_decades(second(value_));
-            case unit::minute: return exact_conversions::minutes_to_decades(minute(value_));
-            case unit::hour: return exact_conversions::hours_to_decades(hour(value_));
-            case unit::day: return exact_conversions::days_to_decades(day(value_));
-            case unit::week: return exact_conversions::weeks_to_decades(week(value_));
-            case unit::year: return exact_conversions::years_to_decades(year(value_));
-            case unit::decade: return static_cast<double>(value_);
-            case unit::century: return exact_conversions::centuries_to_decades(century(value_));
-            case unit::millennium: return exact_conversions::millennia_to_decades(millennium(value_));
-            default: return 0.0;
-        }
-    }
-    
-    constexpr double to_exact_centuries() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return exact_conversions::nanoseconds_to_centuries(nanosecond(value_));
-            case unit::microsecond: return exact_conversions::microseconds_to_centuries(microsecond(value_));
-            case unit::millisecond: return exact_conversions::milliseconds_to_centuries(millisecond(value_));
-            case unit::centisecond: return exact_conversions::centiseconds_to_centuries(centisecond(value_));
-            case unit::decisecond: return exact_conversions::deciseconds_to_centuries(decisecond(value_));
-            case unit::second: return exact_conversions::seconds_to_centuries(second(value_));
-            case unit::minute: return exact_conversions::minutes_to_centuries(minute(value_));
-            case unit::hour: return exact_conversions::hours_to_centuries(hour(value_));
-            case unit::day: return exact_conversions::days_to_centuries(day(value_));
-            case unit::week: return exact_conversions::weeks_to_centuries(week(value_));
-            case unit::year: return exact_conversions::years_to_centuries(year(value_));
-            case unit::decade: return exact_conversions::decades_to_centuries(decade(value_));
-            case unit::century: return static_cast<double>(value_);
-            case unit::millennium: return exact_conversions::millennia_to_centuries(millennium(value_));
-            default: return 0.0;
-        }
-    }
-    
-    constexpr double to_exact_millennia() const noexcept {
-        switch (unit_) {
-            case unit::nanosecond: return exact_conversions::nanoseconds_to_millennia(nanosecond(value_));
-            case unit::microsecond: return exact_conversions::microseconds_to_millennia(microsecond(value_));
-            case unit::millisecond: return exact_conversions::milliseconds_to_millennia(millisecond(value_));
-            case unit::centisecond: return exact_conversions::centiseconds_to_millennia(centisecond(value_));
-            case unit::decisecond: return exact_conversions::deciseconds_to_millennia(decisecond(value_));
-            case unit::second: return exact_conversions::seconds_to_millennia(second(value_));
-            case unit::minute: return exact_conversions::minutes_to_millennia(minute(value_));
-            case unit::hour: return exact_conversions::hours_to_millennia(hour(value_));
-            case unit::day: return exact_conversions::days_to_millennia(day(value_));
-            case unit::week: return exact_conversions::weeks_to_millennia(week(value_));
-            case unit::year: return exact_conversions::years_to_millennia(year(value_));
-            case unit::decade: return exact_conversions::decades_to_millennia(decade(value_));
-            case unit::century: return exact_conversions::centuries_to_millennia(century(value_));
-            case unit::millennium: return static_cast<double>(value_);
-            default: return 0.0;
-        }
-    }
-    
-public:
-    OPTIONAL_CPP14_CONSTEXPR Duration& convert_to(const unit u) noexcept {
-        if (u == unit_) return *this;
-        
-        switch (u) {
-            case unit::nanosecond: {
-                nanosecond ns = to_nanoseconds();
-                value_ = ns.value();
-                unit_ = unit::nanosecond;
-                break;
-            }
-            case unit::microsecond: {
-                microsecond us = to_microseconds();
-                value_ = us.value();
-                unit_ = unit::microsecond;
-                break;
-            }
-            case unit::millisecond: {
-                millisecond ms = to_milliseconds();
-                value_ = ms.value();
-                unit_ = unit::millisecond;
-                break;
-            }
-            case unit::centisecond: {
-                centisecond cs = to_centiseconds();
-                value_ = cs.value();
-                unit_ = unit::centisecond;
-                break;
-            }
-            case unit::decisecond: {
-                decisecond ds = to_deciseconds();
-                value_ = ds.value();
-                unit_ = unit::decisecond;
-                break;
-            }
-            case unit::second: {
-                second s = to_seconds();
-                value_ = s.value();
-                unit_ = unit::second;
-                break;
-            }
-            case unit::minute: {
-                minute m = to_minutes();
-                value_ = m.value();
-                unit_ = unit::minute;
-                break;
-            }
-            case unit::hour: {
-                hour h = to_hours();
-                value_ = h.value();
-                unit_ = unit::hour;
-                break;
-            }
-            case unit::day: {
-                day d = to_days();
-                value_ = d.value();
-                unit_ = unit::day;
-                break;
-            }
-            case unit::week: {
-                week w = to_weeks();
-                value_ = w.value();
-                unit_ = unit::week;
-                break;
-            }
-            case unit::year: {
-                year y = to_years();
-                value_ = y.value();
-                unit_ = unit::year;
-                break;
-            }
-            case unit::decade: {
-                decade d = to_decades();
-                value_ = d.value();
-                unit_ = unit::decade;
-                break;
-            }
-            case unit::century: {
-                century c = to_centuries();
-                value_ = c.value();
-                unit_ = unit::century;
-                break;
-            }
-            case unit::millennium: {
-                millennium m = to_millennia();
-                value_ = m.value();
-                unit_ = unit::millennium;
-                break;
-            }
-            default:
-                break;
-        }
-        
+    constexpr const ValueType& count() const noexcept { return m_value; }
+    constexpr       ValueType& count()       noexcept { return m_value; }
+    static constexpr Duration zero() noexcept { return Duration(ValueType(0)); }
+
+    constexpr Duration& operator+=(const Duration& rhs) noexcept {
+        m_value += rhs.m_value;
         return *this;
     }
-    
-    constexpr Duration as(const unit u) const noexcept {
-        Duration result(*this);
-        result.convert_to(u);
-        return result;
+    constexpr Duration& operator-=(const Duration& rhs) noexcept {
+        m_value -= rhs.m_value;
+        return *this;
     }
-
-    constexpr CompleteDuration to_complete_duration() const noexcept;
-
-public:
-    constexpr bool operator==(DURATION_PARAM d) const noexcept {
-        if (unit_ == d.unit_) return value_ == d.value_;
-        return to_exact_millennia() == d.to_exact_millennia();
+    constexpr Duration& operator*=(const Duration& rhs) noexcept {
+        m_value *= rhs.m_value;
+        return *this;
     }
-    
-    constexpr bool operator!=(DURATION_PARAM d) const noexcept { return !(*this == d); }
-    
-    constexpr bool operator<(DURATION_PARAM d) const noexcept {
-        if (unit_ == d.unit_) return value_ < d.value_;
-        return to_exact_millennia() < d.to_exact_millennia();
+    constexpr Duration& operator/=(const Duration& rhs) noexcept {
+        m_value /= rhs.m_value;
+        return *this;
     }
-    
-    constexpr bool operator<=(DURATION_PARAM d) const noexcept { return (*this < d) || (*this == d); }
-    constexpr bool operator>(DURATION_PARAM d) const noexcept { return !(*this <= d); }
-    constexpr bool operator>=(DURATION_PARAM d) const noexcept { return !(*this < d); }
+    constexpr Duration& operator%=(const Duration& rhs) noexcept {
+        m_value %= rhs.m_value;
+        return *this;
+    }
+    template<typename T, typename = typename std::enable_if<detail::is_integer_like_v<T>>::type>
+    constexpr Duration& operator+=(const T& rhs) noexcept {
+        m_value += static_cast<ValueType>(rhs);
+        return *this;
+    }
+    template<typename T, typename = typename std::enable_if<detail::is_integer_like_v<T>>::type>
+    constexpr Duration& operator-=(const T& rhs) noexcept {
+        m_value -= static_cast<ValueType>(rhs);
+        return *this;
+    }
+    template<typename T, typename = typename std::enable_if<detail::is_integer_like_v<T>>::type>
+    constexpr Duration& operator*=(const T& rhs) noexcept {
+        m_value *= static_cast<ValueType>(rhs);
+        return *this;
+    }
+    template<typename T, typename = typename std::enable_if<detail::is_integer_like_v<T>>::type>
+    constexpr Duration& operator/=(const T& rhs) noexcept {
+        m_value /= static_cast<ValueType>(rhs);
+        return *this;
+    }
+    template<typename T, typename = typename std::enable_if<detail::is_integer_like_v<T>>::type>
+    constexpr Duration& operator%=(const T& rhs) noexcept {
+        m_value %= static_cast<ValueType>(rhs);
+        return *this;
+    }
+    constexpr Duration& operator++() noexcept {
+        ++m_value;
+        return *this;
+    }
+    constexpr Duration operator++(int) noexcept {
+        Duration tmp(*this);
+        ++(*this);
+        return tmp;
+    }
+    constexpr Duration& operator--() noexcept {
+        --m_value;
+        return *this;
+    }
+    constexpr Duration operator--(int) noexcept {
+        Duration tmp(*this);
+        --(*this);
+        return tmp;
+    }
+    friend constexpr Duration operator+(Duration lhs, const Duration& rhs) noexcept { return lhs += rhs; }
+    friend constexpr Duration operator-(Duration lhs, const Duration& rhs) noexcept { return lhs -= rhs; }
+    friend constexpr Duration operator*(Duration lhs, const Duration& rhs) noexcept { return lhs *= rhs; }
+    friend constexpr Duration operator/(Duration lhs, const Duration& rhs) noexcept { return lhs /= rhs; }
+    friend constexpr Duration operator%(Duration lhs, const Duration& rhs) noexcept { return lhs %= rhs; }
+    friend constexpr bool operator==(const Duration& a, const Duration& b) noexcept { return a.m_value == b.m_value; }
+    friend constexpr bool operator!=(const Duration& a, const Duration& b) noexcept { return a.m_value != b.m_value; }
+    friend constexpr bool operator<(const Duration& a, const Duration& b) noexcept { return a.m_value < b.m_value; }
+    friend constexpr bool operator<=(const Duration& a, const Duration& b) noexcept { return a.m_value <= b.m_value; }
+    friend constexpr bool operator>(const Duration& a, const Duration& b) noexcept { return a.m_value > b.m_value; }
+    friend constexpr bool operator>=(const Duration& a, const Duration& b) noexcept { return a.m_value >= b.m_value; }
 
-public:
-    constexpr Duration operator+(DURATION_PARAM d) const noexcept {
-        if (unit_ == d.unit_) {
-            std::uint64_t result_value = 0;
-
-            if (d.value_ > 0 && value_ > std::numeric_limits<std::uint64_t>::max() - d.value_) {
-                result_value = std::numeric_limits<std::uint64_t>::max();
-            } else {
-                result_value = value_ + d.value_;
-            }
-
-            return Duration(result_value, unit_);
+    std::string to_string(LabelStyle style = LabelStyle::none) const {
+        std::ostringstream oss;
+        oss << m_value;
+        switch (style) {
+            case LabelStyle::none: break;
+            case LabelStyle::abbrev:   oss << " " << traits::abbrev(); break;
+            case LabelStyle::singular: oss << " " << traits::name();   break;
+            case LabelStyle::plural:   oss << " " << traits::plural(); break;
         }
-        
-        nanosecond result = to_nanoseconds() + d.to_nanoseconds();
-        return Duration(result).convert_to(unit_);
-    }
-    
-    OPTIONAL_CPP14_CONSTEXPR Duration& operator+=(DURATION_PARAM d) noexcept {
-        *this = *this + d;
-        return *this;
-    }
-    
-    constexpr Duration operator-(DURATION_PARAM d) const noexcept {
-        if (unit_ == d.unit_) {
-            return Duration(value_ >= d.value_ ? value_ - d.value_ : 0, unit_);
-        }
-        
-        nanosecond this_ns = to_nanoseconds();
-        nanosecond d_ns = d.to_nanoseconds();
-        nanosecond result(this_ns.value() >= d_ns.value() ? this_ns.value() - d_ns.value() : 0);
-        return Duration(result).convert_to(unit_);
-    }
-    
-    OPTIONAL_CPP14_CONSTEXPR Duration& operator-=(DURATION_PARAM d) noexcept {
-        *this = *this - d;
-        return *this;
+        return oss.str();
     }
 
-    constexpr CompleteDuration operator+(const CompleteDuration& cd) const noexcept;
-    constexpr CompleteDuration operator-(const CompleteDuration& cd) const noexcept;
-    
-    template <typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value>::type>
-    constexpr Duration operator*(const T scalar) const noexcept {
-        if (scalar <= 0) return Duration(0, unit_);
-        double scalar_abs = fizmo::abs_constexpr(static_cast<double>(scalar));
+    friend std::ostream& operator<<(std::ostream& os, const Duration& d) { return os << d.to_string(LabelStyle::none); }
 
-        if (scalar_abs >= static_cast<double>(std::numeric_limits<std::uint64_t>::max()) / static_cast<double>(value_)) {
-            return Duration(std::numeric_limits<std::uint64_t>::max(), unit_);
-        }
-        
-        return Duration(static_cast<std::uint64_t>(static_cast<double>(value_) * scalar_abs), unit_);
-    }
-    
-    template <typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value>::type>
-    OPTIONAL_CPP14_CONSTEXPR Duration& operator*=(const T scalar) noexcept {
-        *this = *this * scalar;
-        return *this;
-    }
-    
-    template <typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value>::type>
-    constexpr Duration operator/(const T scalar) const noexcept {
-        if (scalar == 0) return Duration(0, unit_); 
-        typename std::common_type<double, T>::type scalar_abs = fizmo::abs_constexpr(static_cast<typename std::common_type<double, T>::type>(scalar));
-        return Duration(static_cast<std::uint64_t>(static_cast<typename std::common_type<double, T>::typee>(value_) / scalar_abs), unit_);
-    }
-    
-    template <typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value>::type>
-    OPTIONAL_CPP14_CONSTEXPR Duration& operator/=(const T scalar) noexcept {
-        *this = *this / scalar;
-        return *this;
-    }
-    
-    constexpr double operator/(const Duration& d) const noexcept {
-        if (d.value_ == 0) return 0.0; 
-        if (unit_ == d.unit_) return static_cast<double>(value_) / static_cast<double>(d.value_);
-        return to_exact_nanoseconds() / d.to_exact_nanoseconds();
+private:
+    template<Unit OTag, typename OV>
+    static constexpr ValueType convert_from(const TimeUnit<OTag, OV>& other) noexcept {
+        using W1 = detail::wider_t<ValueType, OV>;
+        using W2 = detail::wider_t<W1, multiprecision::uint256>;
+        const W2 planck = static_cast<W2>(other.count()) * static_cast<W2>(unit_traits<OTag>::planck_per_unit());
+        const W2 result = planck / static_cast<W2>(traits::planck_per_unit());
+        return static_cast<ValueType>(result);
     }
 
-public:
-    constexpr explicit operator nanosecond() const noexcept { return to_nanoseconds(); }
-    constexpr explicit operator microsecond() const noexcept { return to_microseconds(); }
-    constexpr explicit operator millisecond() const noexcept { return to_milliseconds(); }
-    constexpr explicit operator centisecond() const noexcept { return to_centiseconds(); }
-    constexpr explicit operator decisecond() const noexcept { return to_deciseconds(); }
-    constexpr explicit operator second() const noexcept { return to_seconds(); }
-    constexpr explicit operator minute() const noexcept { return to_minutes(); }
-    constexpr explicit operator hour() const noexcept { return to_hours(); }
-    constexpr explicit operator day() const noexcept { return to_days(); }
-    constexpr explicit operator week() const noexcept { return to_weeks(); }
-    constexpr explicit operator year() const noexcept { return to_years(); }
-    constexpr explicit operator decade() const noexcept { return to_decades(); }
-    constexpr explicit operator century() const noexcept { return to_centuries(); }
-    constexpr explicit operator millennium() const noexcept { return to_millennia(); }
-    constexpr explicit operator double() const noexcept { return static_cast<double>(value_); }
-    constexpr explicit operator CompleteDuration() const noexcept;
+    template <Unit OTag, typename OV>
+    static constexpr ValueType convert_from(const Duration<OTag, OV>& other) noexcept {
+        using W1 = detail::wider_t<ValueType, OV>;
+        using W2 = detail::wider_t<W1, multiprecision::int256>;
+        const W2 raw = static_cast<W2>(other.count());
+        const W2 planck = raw * static_cast<W2>(unit_traits<OTag>::planck_per_unit());
+        const W2 result = planck / static_cast<W2>(traits::planck_per_unit());
+        return static_cast<ValueType>(result);
+    }
 };
 
-template <typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value>::type>
-constexpr Duration operator*(const T scalar, DURATION_PARAM d) noexcept { return d * scalar; }
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr TimeUnit<Tag,V> operator+(TimeUnit<Tag,V> lhs, const Duration<DTag,DV>& rhs) noexcept {
+    using W = detail::wider_t<V, DV>;
+    W wide = static_cast<W>(lhs.count()) + static_cast<W>(rhs.count());
+    if (wide < 0) wide = 0;
+    if (wide > detail::value_limits<V>::max()) wide = detail::value_limits<V>::max();
+    lhs.count() = static_cast<V>(wide);
+    return lhs;
+}
 
-template <typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value>::type>
-constexpr Duration operator/(const T scalar, DURATION_PARAM d) noexcept { return Duration(scalar / d.count()); }
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr TimeUnit<Tag,V> operator+(const Duration<DTag,DV>& rhs, TimeUnit<Tag,V> lhs) noexcept { return lhs + rhs; }
 
-constexpr Duration nanoseconds(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::nanosecond); }
-constexpr Duration microseconds(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::microsecond); }
-constexpr Duration milliseconds(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::millisecond); }
-constexpr Duration centiseconds(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::centisecond); }
-constexpr Duration deciseconds(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::decisecond); }
-constexpr Duration seconds(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::second); }
-constexpr Duration minutes(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::minute); }
-constexpr Duration hours(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::hour); }
-constexpr Duration days(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::day); }
-constexpr Duration weeks(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::week); }
-constexpr Duration years(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::year); }
-constexpr Duration decades(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::decade); }
-constexpr Duration centuries(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::century); }
-constexpr Duration millennia(const std::uint64_t value) noexcept { return Duration(value, Duration::unit::millennium); }
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr TimeUnit<Tag,V> operator-(TimeUnit<Tag,V> lhs, const Duration<DTag,DV>& rhs) noexcept {
+    using W = detail::wider_t<V, DV>;
+    W wide = static_cast<W>(lhs.count()) - static_cast<W>(rhs.count());
+    if (wide < 0) wide = 0;
+    if (wide > detail::value_limits<V>::max()) wide = detail::value_limits<V>::max();
+    lhs.count() = static_cast<V>(wide);
+    return lhs;
+}
 
-template<Duration::unit U> struct fizmo_time_type;
-template<> struct fizmo_time_type<Duration::unit::nanosecond> { typedef nanosecond type; };
-template<> struct fizmo_time_type<Duration::unit::microsecond> { typedef microsecond type; };
-template<> struct fizmo_time_type<Duration::unit::millisecond> { typedef millisecond type; };
-template<> struct fizmo_time_type<Duration::unit::centisecond> { typedef centisecond type; };
-template<> struct fizmo_time_type<Duration::unit::decisecond> { typedef decisecond type; };
-template<> struct fizmo_time_type<Duration::unit::second> { typedef second type; };
-template<> struct fizmo_time_type<Duration::unit::minute> { typedef minute type; };
-template<> struct fizmo_time_type<Duration::unit::hour> { typedef hour type; };
-template<> struct fizmo_time_type<Duration::unit::day> { typedef day type; };
-template<> struct fizmo_time_type<Duration::unit::week> { typedef week type; };
-template<> struct fizmo_time_type<Duration::unit::year> { typedef year type; };
-template<> struct fizmo_time_type<Duration::unit::decade> { typedef decade type; };
-template<> struct fizmo_time_type<Duration::unit::century> { typedef century type; };
-template<> struct fizmo_time_type<Duration::unit::millennium> { typedef millennium type; };
+template<Unit Tag, typename V>
+constexpr Duration<Tag, fizmo_make_signed_t<V>>
+operator-(const TimeUnit<Tag,V>& a, const TimeUnit<Tag,V>& b) noexcept {
+    using Signed = fizmo_make_signed_t<V>;
+    return Duration<Tag, Signed>(static_cast<Signed>(a.count()) - static_cast<Signed>(b.count()));
+}
 
-template<Duration::unit U>
-using fizmo_time_type_t = typename fizmo_time_type<U>::type;
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr bool operator==(const TimeUnit<Tag,V>& tu, const Duration<DTag,DV>& du) noexcept { return Duration<Tag, DV>(tu).count() == du.count(); }
+
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr bool operator!=(const TimeUnit<Tag,V>& tu, const Duration<DTag,DV>& du) noexcept { return !(tu == du); }
+
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr bool operator<(const TimeUnit<Tag,V>& tu, const Duration<DTag,DV>& du) noexcept { return Duration<Tag, DV>(tu).count() < du.count(); }
+
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr bool operator<=(const TimeUnit<Tag,V>& tu, const Duration<DTag,DV>& du) noexcept { return Duration<Tag, DV>(tu).count() <= du.count(); }
+
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr bool operator>(const TimeUnit<Tag,V>& tu, const Duration<DTag,DV>& du) noexcept { return Duration<Tag, DV>(tu).count() > du.count(); }
+
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr bool operator>=(const TimeUnit<Tag,V>& tu, const Duration<DTag,DV>& du) noexcept { return Duration<Tag, DV>(tu).count() >= du.count(); }
+
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr bool operator==(const Duration<DTag,DV>& du, const TimeUnit<Tag,V>& tu) noexcept { return tu == du; }
+
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr bool operator!=(const Duration<DTag,DV>& du, const TimeUnit<Tag,V>& tu) noexcept { return !(tu == du); }
+
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr bool operator<(const Duration<DTag,DV>& du, const TimeUnit<Tag,V>& tu) noexcept { return Duration<Tag, DV>(tu).count() > du.count(); }
+
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr bool operator<=(const Duration<DTag,DV>& du, const TimeUnit<Tag,V>& tu) noexcept { return Duration<Tag, DV>(tu).count() >= du.count(); }
+
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr bool operator>(const Duration<DTag,DV>& du, const TimeUnit<Tag,V>& tu) noexcept { return Duration<Tag, DV>(tu).count() < du.count(); }
+
+template<Unit Tag, typename V, Unit DTag, typename DV>
+constexpr bool operator>=(const Duration<DTag,DV>& du, const TimeUnit<Tag,V>& tu) noexcept { return Duration<Tag, DV>(tu).count() <= du.count(); }
+
+template<Unit Tag, typename V = default_wide_int>
+using duration_t = Duration<Tag, V>;
+
+template<typename T> struct is_duration : std::false_type {};
+template<Unit Tag, typename V> struct is_duration<Duration<Tag, V>> : std::true_type {};
+
+template<typename T>
+constexpr bool is_duration_v = is_duration<T>::value;
+
+#define FIZMO_DEFINE_DURATION(NAME, TAG)                                    \
+    template<typename V = default_wide_int>                                  \
+    using NAME##_duration_t = duration_t<Unit::TAG, V>;                      \
+                                                                             \
+    using NAME##_duration = duration_t<Unit::TAG>;
+
+FIZMO_DEFINE_DURATION(planck_second, planck_second)
+FIZMO_DEFINE_DURATION(quectosecond,  quectosecond)
+FIZMO_DEFINE_DURATION(rontosecond,   rontosecond)
+FIZMO_DEFINE_DURATION(yoctosecond,   yoctosecond)
+FIZMO_DEFINE_DURATION(zeptosecond,   zeptosecond)
+FIZMO_DEFINE_DURATION(attosecond,    attosecond)
+FIZMO_DEFINE_DURATION(femtosecond,   femtosecond)
+FIZMO_DEFINE_DURATION(picosecond,    picosecond)
+FIZMO_DEFINE_DURATION(nanosecond,    nanosecond)
+FIZMO_DEFINE_DURATION(microsecond,   microsecond)
+FIZMO_DEFINE_DURATION(millisecond,   millisecond)
+FIZMO_DEFINE_DURATION(centisecond,   centisecond)
+FIZMO_DEFINE_DURATION(decisecond,    decisecond)
+FIZMO_DEFINE_DURATION(second,        second)
+FIZMO_DEFINE_DURATION(minute,        minute)
+FIZMO_DEFINE_DURATION(hour,          hour)
+FIZMO_DEFINE_DURATION(day,           day)
+FIZMO_DEFINE_DURATION(week,          week)
+FIZMO_DEFINE_DURATION(month,         month)
+FIZMO_DEFINE_DURATION(year,          year)
+FIZMO_DEFINE_DURATION(decade,        decade)
+FIZMO_DEFINE_DURATION(century,       century)
+FIZMO_DEFINE_DURATION(millennium,    millennium)
+
+template<typename To, Unit FromTag, typename FromV, typename = typename std::enable_if<is_duration<To>::value>::type>
+constexpr To duration_cast(const Duration<FromTag, FromV>& from) noexcept {
+    return static_cast<To>(from);
+}
 
 } // namespace time
 } // namespace fizmo
 
-#endif // FIZMO_DURATION_CLASS_HPP
+#endif // FIZMO_TIME_DURATION_CLASS_HPP

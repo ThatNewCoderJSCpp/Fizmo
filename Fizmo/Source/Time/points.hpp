@@ -9,11 +9,11 @@
 
 namespace fizmo {
 
-template<temp_time::Unit U>
-constexpr bool is_calendar_point_unit_v = static_cast<std::uint8_t>(U) >= static_cast<std::uint8_t>(temp_time::Unit::day);
+template<time::Unit U>
+constexpr bool is_calendar_point_unit_v = static_cast<std::uint8_t>(U) >= static_cast<std::uint8_t>(time::Unit::day);
 
-template<temp_time::Unit U>
-constexpr bool is_time_point_unit_v = static_cast<std::uint8_t>(U) < static_cast<std::uint8_t>(temp_time::Unit::day);
+template<time::Unit U>
+constexpr bool is_time_point_unit_v = static_cast<std::uint8_t>(U) < static_cast<std::uint8_t>(time::Unit::day);
 
 template<typename... Tags>
 constexpr bool all_calendar_point_units_v = (is_calendar_point_unit_v<Tags::tag> && ...);
@@ -21,7 +21,7 @@ constexpr bool all_calendar_point_units_v = (is_calendar_point_unit_v<Tags::tag>
 template<typename... Tags>
 constexpr bool all_time_point_units_v = (is_time_point_unit_v<Tags::tag> && ...);
 
-namespace temp_time {
+namespace time {
 
 #define FIZMO_FOR_EACH_UNIT(OP) \
     OP(planck_second) \
@@ -59,7 +59,7 @@ constexpr T planck_per_unit(Unit u) noexcept {
     return table[static_cast<std::uint8_t>(u)];
 }
 
-template<typename T = multiprecision::int256, typename = typename std::enable_if<detail::is_signed_int_like_v<T>>::type>
+template<typename T = default_wide_int, typename = typename std::enable_if<detail::is_signed_integer_like_v<T>>::type>
 class CalendarPoint {
 public:
     using value_type = T;
@@ -271,12 +271,12 @@ public:
     friend std::ostream& operator<<(std::ostream& os, const CalendarPoint& cp) { return os << cp.to_string(); }
 };
 
-template<typename V = multiprecision::int256, typename = typename std::enable_if<detail::is_signed_int_like_v<V>>::type>
+template<typename V = default_wide_int, typename = typename std::enable_if<detail::is_signed_integer_like_v<V>>::type>
 using calendar_point_t = CalendarPoint<V>;
 
 using calendar_point = CalendarPoint<>;
 
-template<typename T = multiprecision::int256, typename = typename std::enable_if<detail::is_signed_int_like_v<T>>::type>
+template<typename T = default_wide_int, typename = typename std::enable_if<detail::is_signed_integer_like_v<T>>::type>
 class TimePoint {
 public:
     using value_type = T;
@@ -508,17 +508,17 @@ public:
     friend std::ostream& operator<<(std::ostream& os, const TimePoint& tp) { return os << tp.to_string(); }
 };
 
-template<typename V = multiprecision::int256, typename = typename std::enable_if<detail::is_signed_int_like_v<V>>::type>
+template<typename V = default_wide_int, typename = typename std::enable_if<detail::is_signed_integer_like_v<V>>::type>
 using time_point_t = TimePoint<V>;
 
 using time_point = TimePoint<>;
 
-} // namespace temp_time
+} // namespace time
 
 template<typename T> struct is_calendar_point : std::false_type {};
 
 template<typename T, typename E>
-struct is_calendar_point<temp_time::CalendarPoint<T, E>> : std::true_type {};
+struct is_calendar_point<time::CalendarPoint<T, E>> : std::true_type {};
 
 template<typename T>
 constexpr bool is_calendar_point_v = is_calendar_point<T>::value;
@@ -526,7 +526,7 @@ constexpr bool is_calendar_point_v = is_calendar_point<T>::value;
 template<typename T> struct is_time_point : std::false_type {};
 
 template<typename T, typename E>
-struct is_time_point<temp_time::TimePoint<T, E>> : std::true_type {};
+struct is_time_point<time::TimePoint<T, E>> : std::true_type {};
 
 template<typename T>
 constexpr bool is_time_point_v = is_time_point<T>::value;

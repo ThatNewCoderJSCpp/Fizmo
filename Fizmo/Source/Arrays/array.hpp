@@ -7,8 +7,6 @@
 #include <utility>
 #include "array_iterators.hpp"
 #include "../Random/random_std_int.hpp"
-#include "../Random/random_big_int.hpp"
-#include "../Random/random_fixed_int.hpp"
 #include <forward_list>
 #include <deque>
 #include <queue>
@@ -496,6 +494,29 @@ public:
         m_size = new_size;
     }
 
+    void resize_uninit(std::size_t new_size) {
+        static_assert(std::is_trivially_copyable<T>::value, "resize_uninit requires a trivially copyable T");
+        if (new_size > m_capacity) { reserve(new_size); }
+        m_size = new_size;
+    }
+
+    void assign_uninit(std::size_t new_size) {
+        static_assert(std::is_trivially_copyable<T>::value, "assign_uninit requires a trivially copyable T");
+
+        if (new_size > m_capacity) {
+            delete[] m_data;
+            m_data = nullptr;
+            m_size = 0;
+            m_capacity = 0;
+            m_data = new T[new_size];
+            m_capacity = new_size;
+        }
+
+        m_size = new_size;
+    }
+
+    void set_size_unchecked(std::size_t new_size) noexcept { m_size = new_size; }
+
     void clear() noexcept { m_size = 0; }
 
     T* release() noexcept {
@@ -670,7 +691,8 @@ public:
         m_size += count;
     }
 
-    void insert(std::size_t index, const DynamicArray& src, std::size_t src_start, std::size_t count) { range_insert(index, src.m_data + src_start, count); }
+    // TODO: Make range_insert
+    //void insert(std::size_t index, const DynamicArray& src, std::size_t src_start, std::size_t count) { range_insert(index, src.m_data + src_start, count); }
 
     void insert_unordered(std::size_t index, const T& value) {
         ensure_capacity(m_size + 1);

@@ -4,12 +4,12 @@
 #include "points.hpp"
 
 namespace fizmo {
-namespace temp_time {
+namespace time {
 
-template <typename T = multiprecision::int256, typename = typename std::enable_if<detail::is_signed_int_like_v<T>>::type> 
+template <typename T = default_wide_int, typename = typename std::enable_if<detail::is_signed_integer_like_v<T>>::type> 
 class DateTimeDifference;
 
-template <typename T = multiprecision::int256, typename = typename std::enable_if<detail::is_signed_int_like_v<T>>::type>
+template <typename T = default_wide_int, typename = typename std::enable_if<detail::is_signed_integer_like_v<T>>::type>
 class DateTime {
 public:
     using value_type = T;
@@ -805,7 +805,7 @@ DateTime<T, E>::difference(const DateTime& other) const noexcept {
     return difference_type(m_days - other.m_days, m_planck - other.m_planck);
 }
 
-} // namespace temp_time
+} // namespace time
 } // namespace fizmo
 
 #endif // FIZMO_CALENDAR_UNITS_CLASSES_HPP

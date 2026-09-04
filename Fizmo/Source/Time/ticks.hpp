@@ -4,7 +4,7 @@
 #include "wait_sleep.hpp"
 
 namespace fizmo {
-namespace temp_time {
+namespace time {
 
 inline std::uint64_t tick_frequency() noexcept {
 #ifdef OS_WINDOWS
@@ -35,7 +35,7 @@ template<typename R, Unit Tag, typename V>
 R planck_to_ticks(const TimeUnit<Tag, V>& t) noexcept {
     const std::uint64_t freq = tick_frequency();
     if (freq == 0) return R(0);
-    using W = wider_t<R, multiprecision::uint256>;
+    using W = wider_t<R, default_storage_uint>;
     const W planck = static_cast<W>(t.count()) * static_cast<W>(unit_traits<Tag>::planck_per_unit());
     const W sec_planck = static_cast<W>(unit_traits<Unit::second>::planck_per_unit());
     const W wide_freq = static_cast<W>(freq);
@@ -54,7 +54,7 @@ template<typename R, typename T, typename = typename std::enable_if<is_unsigned_
 R runtime_to_ticks(const T& value, Unit u) noexcept {
     const std::uint64_t freq = tick_frequency();
     if (freq == 0) return R(0);
-    using W = wider_t<R, multiprecision::uint256>;
+    using W = wider_t<R, default_storage_uint>;
     const W sec_planck = static_cast<W>(unit_traits<Unit::second>::planck_per_unit());
     const W wide_freq  = static_cast<W>(freq);
     W planck;
@@ -101,25 +101,25 @@ R sum_pairs_ticks(std::initializer_list<std::pair<T, Unit>> pairs) noexcept {
 
 } // namespace detail
 
-template<typename R = multiprecision::uint256, typename... Args, typename = typename std::enable_if<(is_time_unit_v<Args> && ...)>::type>
+template<typename R = default_storage_uint, typename... Args, typename = typename std::enable_if<(is_time_unit_v<Args> && ...)>::type>
 R time_to_ticks(const Args&... durations) noexcept { return detail::sum_ticks<R>(durations...); }
 
-template<typename R = multiprecision::uint256, typename T, typename = typename std::enable_if<detail::is_unsigned_integer_like_v<T>>::type>
+template<typename R = default_storage_uint, typename T, typename = typename std::enable_if<detail::is_unsigned_integer_like_v<T>>::type>
 R time_to_ticks(const T& value, Unit unit) noexcept { return detail::runtime_to_ticks<R>(value, unit); }
 
-template<typename R = multiprecision::uint256, typename T, typename = typename std::enable_if<detail::is_unsigned_integer_like_v<T>>::type>
+template<typename R = default_storage_uint, typename T, typename = typename std::enable_if<detail::is_unsigned_integer_like_v<T>>::type>
 R time_to_ticks(std::initializer_list<std::pair<T, Unit>> pairs) noexcept { return detail::sum_pairs_ticks<R>(pairs); }
 
 template<
     Unit Tag,
-    typename V = multiprecision::uint128,
+    typename V = default_storage_uint,
     typename TickT = std::uint64_t,
     typename = typename std::enable_if<detail::is_unsigned_integer_like_v<TickT> && detail::is_unsigned_integer_like_v<V>>::type
 >
 TimeUnit<Tag, V> ticks_to_time(const TickT& num_ticks) noexcept {
     const std::uint64_t freq = tick_frequency();
     if (freq == 0) return TimeUnit<Tag, V>(V(0));
-    using W = detail::wider_t<V, multiprecision::uint256>;
+    using W = detail::wider_t<V, default_storage_uint>;
     const W wide_ticks  = static_cast<W>(num_ticks);
     const W sec_planck  = static_cast<W>(unit_traits<Unit::second>::planck_per_unit());
     const W wide_freq   = static_cast<W>(freq);
@@ -130,14 +130,14 @@ TimeUnit<Tag, V> ticks_to_time(const TickT& num_ticks) noexcept {
 }
 
 template<
-    typename R = multiprecision::uint128,
+    typename R = default_storage_uint,
     typename TickT = std::uint64_t,
     typename = typename std::enable_if<detail::is_unsigned_integer_like_v<TickT>>::type
 >
 R ticks_to_time(const TickT& num_ticks, Unit unit) noexcept {
     const std::uint64_t freq = tick_frequency();
     if (freq == 0) return R(0);
-    using W = detail::wider_t<R, multiprecision::uint256>;
+    using W = detail::wider_t<R, default_storage_uint>;
     const W wide_ticks = static_cast<W>(num_ticks);
     const W sec_planck = static_cast<W>(unit_traits<Unit::second>::planck_per_unit());
     const W wide_freq  = static_cast<W>(freq);
@@ -177,15 +177,15 @@ R ticks_to_time(const TickT& num_ticks, Unit unit) noexcept {
     return static_cast<R>(planck / target_planck);
 }
 
-template<Unit Tag, typename V = multiprecision::uint128>
+template<Unit Tag, typename V = default_storage_uint>
 TimeUnit<Tag, V> time_per_tick() noexcept {
     return ticks_to_time<Tag, V>(std::uint64_t(1));
 }
 
-template<typename R = multiprecision::uint128>
+template<typename R = default_storage_uint>
 R time_per_tick(Unit unit) noexcept { return ticks_to_time<R>(std::uint64_t(1), unit); }
 
-} // namespace temp_time
+} // namespace time
 } // namespace fizmo
 
-#endif // FIZMO_TEMP_TIME_TICK_UTILS_HPP
+#endif // FIZMO_time_TICK_UTILS_HPP

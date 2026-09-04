@@ -4,7 +4,6 @@
 #include "../Basic/fizmo_defines.hpp"
 #include "../Standard Overloads/abs.hpp"
 #include "../Multiprecision/Fixed Width int/type_traits.hpp"
-#include "../Multiprecision/Big/big_int.hpp"
 #include <cstdint>
 #include <limits>
 #include <type_traits>
@@ -12,22 +11,14 @@
 #include <ostream>
 
 namespace fizmo {
-namespace temp_time {
+namespace time {
+
+using default_wide_int = multiprecision::int512;
+using default_wide_uint = multiprecision::uint512;
+using default_storage_uint = multiprecision::uint256;
+using default_std_int = std::int64_t;
 
 namespace detail {
-
-using uint128 = multiprecision::uint128;
-using int128  = multiprecision::int128;
-using uint256 = multiprecision::uint256;
-using int256  = multiprecision::int256;
-using uint512 = multiprecision::uint512;
-using int512  = multiprecision::int512;
-using uint1024 = multiprecision::uint1024;
-using int1024  = multiprecision::int1024;
-using uint2048 = multiprecision::uint2048;
-using int2048  = multiprecision::int2048;
-using uint4096 = multiprecision::uint4096;
-using int4096  = multiprecision::int4096;
 
 template<typename T>
 struct is_integer_like : std::integral_constant<bool, is_fizmo_static_int_v<T>> {};
@@ -36,10 +27,16 @@ template<typename T>
 struct is_unsigned_integer_like : std::integral_constant<bool, is_fizmo_static_int_v<T> && is_fizmo_unsigned_v<T>> {};
 
 template<typename T>
+struct is_signed_integer_like : std::integral_constant<bool, is_fizmo_static_int_v<T> && is_fizmo_signed_v<T>> {};
+
+template<typename T>
 constexpr bool is_integer_like_v = is_integer_like<T>::value;
 
 template<typename T>
 constexpr bool is_unsigned_integer_like_v = is_unsigned_integer_like<T>::value;
+
+template<typename T>
+constexpr bool is_signed_integer_like_v = is_signed_integer_like<T>::value;
 
 template<typename A, typename B>
 using wider_t = fizmo_common_type_t<A, B>;
@@ -67,63 +64,49 @@ struct value_limits {
     static constexpr V min() noexcept { return std::numeric_limits<V>::lowest(); }
 };
 
-#define FIZMO_DEFINE_UNSIGNED_VALUE_LIMITS(TYPE)                            \
-    template<> struct value_limits<TYPE> {                                   \
-        static constexpr TYPE max() noexcept { return TYPE::max(); }        \
-        static constexpr TYPE zero() noexcept { return TYPE(); }            \
-        static constexpr TYPE min() noexcept { return TYPE(); }             \
-    };
+template<typename V>
+struct value_limits<V, typename std::enable_if<is_unsigned_integer_like_v<V>>::type> {
+    static constexpr V max() noexcept { return V::max(); }
+    static constexpr V min() noexcept { return V(); }      
+    static constexpr V zero() noexcept { return V(); }
+};
 
-#define FIZMO_DEFINE_SIGNED_VALUE_LIMITS(TYPE)                              \
-    template<> struct value_limits<TYPE> {                                   \
-        static constexpr TYPE max() noexcept { return TYPE::max(); }        \
-        static constexpr TYPE zero() noexcept { return TYPE(); }            \
-        static constexpr TYPE min() noexcept { return TYPE::min(); }        \
-    };
+template<typename V>
+struct value_limits<V, typename std::enable_if<is_signed_integer_like_v<V>>::type> {
+    static constexpr V max() noexcept { return V::max(); }
+    static constexpr V min() noexcept { return V::min(); }
+    static constexpr V zero() noexcept { return V(); }
+};
 
-FIZMO_DEFINE_UNSIGNED_VALUE_LIMITS(uint128)
-FIZMO_DEFINE_UNSIGNED_VALUE_LIMITS(uint256)
-FIZMO_DEFINE_UNSIGNED_VALUE_LIMITS(uint512)
-FIZMO_DEFINE_UNSIGNED_VALUE_LIMITS(uint1024)
-FIZMO_DEFINE_UNSIGNED_VALUE_LIMITS(uint2048)
-FIZMO_DEFINE_UNSIGNED_VALUE_LIMITS(uint4096)
-
-FIZMO_DEFINE_SIGNED_VALUE_LIMITS(int128)
-FIZMO_DEFINE_SIGNED_VALUE_LIMITS(int256)
-FIZMO_DEFINE_SIGNED_VALUE_LIMITS(int512)
-FIZMO_DEFINE_SIGNED_VALUE_LIMITS(int1024)
-FIZMO_DEFINE_SIGNED_VALUE_LIMITS(int2048)
-FIZMO_DEFINE_SIGNED_VALUE_LIMITS(int4096)
-
-constexpr multiprecision::uint256 p10_table[] = {
-    multiprecision::uint256(1ULL),                      // 10^0
-    multiprecision::uint256(10ULL),                     // 10^1
-    multiprecision::uint256(100ULL),                    // 10^2
-    multiprecision::uint256(1000ULL),                   // 10^3
-    multiprecision::uint256(10000ULL),                  // 10^4
-    multiprecision::uint256(100000ULL),                 // 10^5
-    multiprecision::uint256(1000000ULL),                // 10^6
-    multiprecision::uint256(10000000ULL),               // 10^7
-    multiprecision::uint256(100000000ULL),              // 10^8
-    multiprecision::uint256(1000000000ULL),             // 10^9
-    multiprecision::uint256(10000000000ULL),            // 10^10
-    multiprecision::uint256(100000000000ULL),           // 10^11
-    multiprecision::uint256(1000000000000ULL),          // 10^12
-    multiprecision::uint256(10000000000000ULL),         // 10^13
-    multiprecision::uint256(100000000000000ULL),        // 10^14
-    multiprecision::uint256(1000000000000000ULL),       // 10^15
-    multiprecision::uint256(10000000000000000ULL),      // 10^16
-    multiprecision::uint256(100000000000000000ULL),     // 10^17
-    multiprecision::uint256(1000000000000000000ULL),    // 10^18
-    multiprecision::uint256(10000000000000000000ULL),   // 10^19
+constexpr default_storage_uint p10_table[] = {
+    default_storage_uint(1ULL),                      // 10^0
+    default_storage_uint(10ULL),                     // 10^1
+    default_storage_uint(100ULL),                    // 10^2
+    default_storage_uint(1000ULL),                   // 10^3
+    default_storage_uint(10000ULL),                  // 10^4
+    default_storage_uint(100000ULL),                 // 10^5
+    default_storage_uint(1000000ULL),                // 10^6
+    default_storage_uint(10000000ULL),               // 10^7
+    default_storage_uint(100000000ULL),              // 10^8
+    default_storage_uint(1000000000ULL),             // 10^9
+    default_storage_uint(10000000000ULL),            // 10^10
+    default_storage_uint(100000000000ULL),           // 10^11
+    default_storage_uint(1000000000000ULL),          // 10^12
+    default_storage_uint(10000000000000ULL),         // 10^13
+    default_storage_uint(100000000000000ULL),        // 10^14
+    default_storage_uint(1000000000000000ULL),       // 10^15
+    default_storage_uint(10000000000000000ULL),      // 10^16
+    default_storage_uint(100000000000000000ULL),     // 10^17
+    default_storage_uint(1000000000000000000ULL),    // 10^18
+    default_storage_uint(10000000000000000000ULL),   // 10^19
 };
 
 constexpr int p10_table_size = 20;
 
-constexpr multiprecision::uint256 p10(int n) noexcept {
+constexpr default_storage_uint p10(int n) noexcept {
     if (n < p10_table_size) return p10_table[n];
-    multiprecision::uint256 result = p10_table[p10_table_size - 1];
-    for (int i = p10_table_size - 1; i < n; ++i) result = result * multiprecision::uint256(10);
+    default_storage_uint result = p10_table[p10_table_size - 1];
+    for (int i = p10_table_size - 1; i < n; ++i) result = result * default_storage_uint(10);
     return result;
 }
 
@@ -160,10 +143,10 @@ template<Unit> struct unit_traits;
 #define FIZMO_DEFINE_UNIT_TRAITS(TAG, PLANCK_EXPR, COEFF_VAL, EXP_VAL,     \
                                  NAME_STR, PLURAL_STR, ABBREV_STR)          \
     template<> struct unit_traits<Unit::TAG> {                               \
-        static constexpr multiprecision::uint256 planck_per_unit() noexcept  \
+        static constexpr default_storage_uint planck_per_unit() noexcept  \
             { return PLANCK_EXPR; }                                          \
-        static constexpr multiprecision::uint256 coeff() noexcept            \
-            { return multiprecision::uint256(COEFF_VAL); }                   \
+        static constexpr default_storage_uint coeff() noexcept            \
+            { return default_storage_uint(COEFF_VAL); }                   \
         static constexpr int exponent() noexcept { return EXP_VAL; }        \
         static constexpr const char* name()   { return NAME_STR; }          \
         static constexpr const char* plural() { return PLURAL_STR; }        \
@@ -172,177 +155,177 @@ template<Unit> struct unit_traits;
 
 FIZMO_DEFINE_UNIT_TRAITS(
     planck_second,
-    multiprecision::uint256(1),
+    default_storage_uint(1),
     5391247ULL, -50,
     "planck second", "planck seconds", "tP"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     quectosecond,
-    multiprecision::uint256(1854870ULL) * detail::p10(7),
+    default_storage_uint(1854870ULL) * detail::p10(7),
     1ULL, -30,
     "quectosecond", "quectoseconds", "qs"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     rontosecond,
-    multiprecision::uint256(1854870ULL) * detail::p10(10),
+    default_storage_uint(1854870ULL) * detail::p10(10),
     1ULL, -27,
     "rontosecond", "rontoseconds", "rs"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     yoctosecond,
-    multiprecision::uint256(1854870ULL) * detail::p10(13),
+    default_storage_uint(1854870ULL) * detail::p10(13),
     1ULL, -24,
     "yoctosecond", "yoctoseconds", "ys"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     zeptosecond,
-    multiprecision::uint256(1854870ULL) * detail::p10(16),
+    default_storage_uint(1854870ULL) * detail::p10(16),
     1ULL, -21,
     "zeptosecond", "zeptoseconds", "zs"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     attosecond,
-    multiprecision::uint256(1854870ULL) * detail::p10(19),
+    default_storage_uint(1854870ULL) * detail::p10(19),
     1ULL, -18,
     "attosecond", "attoseconds", "as"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     femtosecond,
-    multiprecision::uint256(1854870ULL) * detail::p10(22),
+    default_storage_uint(1854870ULL) * detail::p10(22),
     1ULL, -15,
     "femtosecond", "femtoseconds", "fs"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     picosecond,
-    multiprecision::uint256(1854870ULL) * detail::p10(25),
+    default_storage_uint(1854870ULL) * detail::p10(25),
     1ULL, -12,
     "picosecond", "picoseconds", "ps"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     nanosecond,
-    multiprecision::uint256(1854870ULL) * detail::p10(28),
+    default_storage_uint(1854870ULL) * detail::p10(28),
     1ULL, -9,
     "nanosecond", "nanoseconds", "ns"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     microsecond,
-    multiprecision::uint256(1854870ULL) * detail::p10(31),
+    default_storage_uint(1854870ULL) * detail::p10(31),
     1ULL, -6,
     "microsecond", "microseconds", "us"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     millisecond,
-    multiprecision::uint256(1854870ULL) * detail::p10(34),
+    default_storage_uint(1854870ULL) * detail::p10(34),
     1ULL, -3,
     "millisecond", "milliseconds", "ms"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     centisecond,
-    multiprecision::uint256(1854870ULL) * detail::p10(35),
+    default_storage_uint(1854870ULL) * detail::p10(35),
     1ULL, -2,
     "centisecond", "centiseconds", "cs"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     decisecond,
-    multiprecision::uint256(1854870ULL) * detail::p10(36),
+    default_storage_uint(1854870ULL) * detail::p10(36),
     1ULL, -1,
     "decisecond", "deciseconds", "ds"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     second,
-    multiprecision::uint256(1854870ULL) * detail::p10(37),
+    default_storage_uint(1854870ULL) * detail::p10(37),
     1ULL, 0,
     "second", "seconds", "s"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     minute,
-    multiprecision::uint256(111292200ULL) * detail::p10(37),
+    default_storage_uint(111292200ULL) * detail::p10(37),
     60ULL, 0,
     "minute", "minutes", "min"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     hour,
-    multiprecision::uint256(6677532000ULL) * detail::p10(37),
+    default_storage_uint(6677532000ULL) * detail::p10(37),
     3600ULL, 0,
     "hour", "hours", "hr"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     day,
-    multiprecision::uint256(160260768000ULL) * detail::p10(37),
+    default_storage_uint(160260768000ULL) * detail::p10(37),
     86400ULL, 0,
     "day", "days", "d"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     week,
-    multiprecision::uint256(1121825376000ULL) * detail::p10(37),
+    default_storage_uint(1121825376000ULL) * detail::p10(37),
     604800ULL, 0,
     "week", "weeks", "wk"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     month,
-    unit_traits<Unit::day>::planck_per_unit() * multiprecision::uint256(30),
+    unit_traits<Unit::day>::planck_per_unit() * default_storage_uint(30),
     2592000ULL, 0,
     "month", "months", "mo"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     year,
-    multiprecision::uint256(58495180320000ULL) * detail::p10(37),
+    default_storage_uint(58495180320000ULL) * detail::p10(37),
     31536000ULL, 0,
     "year", "years", "yr"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     decade,
-    multiprecision::uint256(584951803200000ULL) * detail::p10(37),
+    default_storage_uint(584951803200000ULL) * detail::p10(37),
     315360000ULL, 0,
     "decade", "decades", "dec"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     century,
-    multiprecision::uint256(5849518032000000ULL) * detail::p10(37),
+    default_storage_uint(5849518032000000ULL) * detail::p10(37),
     3153600000ULL, 0,
     "century", "centuries", "c"
 )
 
 FIZMO_DEFINE_UNIT_TRAITS(
     millennium,
-    multiprecision::uint256(58495180320000000ULL) * detail::p10(37),
+    default_storage_uint(58495180320000000ULL) * detail::p10(37),
     31536000000ULL, 0,
     "millennium", "millennia", "mil"
 )
 
-template<Unit Tag, typename ValueType, typename = typename std::enable_if<temp_time::detail::is_unsigned_integer_like_v<ValueType>>::type>
+template<Unit Tag, typename ValueType, typename = typename std::enable_if<time::detail::is_unsigned_integer_like_v<ValueType>>::type>
 class TimeUnit;
 
-} // namespace temp_time
+} // namespace time
 
 template<typename T> struct is_time_unit : std::false_type {};
-template<temp_time::Unit Tag, typename V> struct is_time_unit<temp_time::TimeUnit<Tag, V>> : std::true_type {};
+template<time::Unit Tag, typename V> struct is_time_unit<time::TimeUnit<Tag, V>> : std::true_type {};
 
 template<typename T>
 constexpr bool is_time_unit_v = is_time_unit<T>::value;
 
-namespace temp_time {
+namespace time {
 
 enum class LabelStyle {
     none,       // "300"
@@ -364,23 +347,36 @@ public:
 public:
     constexpr TimeUnit() noexcept : m_value(0) {}
     constexpr explicit TimeUnit(const ValueType& v) noexcept : m_value(v) {}
+    constexpr explicit TimeUnit(ValueType&& v) noexcept : m_value(std::move(v)) {}
 
     template<typename U, typename = typename std::enable_if<detail::is_unsigned_integer_like_v<U> && !std::is_same<U, ValueType>::value>::type>
     constexpr explicit TimeUnit(const U& v) noexcept : m_value(static_cast<ValueType>(v)) {}
+
+    template <typename U, typename = typename std::enable_if<std::is_integral<U>::value && std::is_unsigned<U>::value>::type, typename = void>
+    constexpr explicit TimeUnit(const U v) noexcept : m_value(ValueType(v)) {}
 
     constexpr TimeUnit(const TimeUnit&) noexcept = default;
     constexpr TimeUnit(TimeUnit&&) noexcept = default;
     constexpr TimeUnit& operator=(const TimeUnit&) noexcept = default;
     constexpr TimeUnit& operator=(TimeUnit&&) noexcept = default;
 
-    template<Unit OTag, typename OV, typename = typename std::enable_if<(OTag != Tag || !std::is_same<OV, ValueType>::value)>::type>
+    template<Unit OTag, typename OV, typename = typename std::enable_if<(!(OTag == Tag && std::is_same<OV, ValueType>::value))>::type>
     constexpr explicit TimeUnit(const TimeUnit<OTag, OV>& other) noexcept : m_value(convert_from(other)) {}
 
-    template<Unit OTag, typename OV, typename = typename std::enable_if<(OTag != Tag || !std::is_same<OV, ValueType>::value)>::type>
+    template<Unit OTag, typename OV, typename = typename std::enable_if<(!(OTag == Tag && std::is_same<OV, ValueType>::value))>::type>
     constexpr TimeUnit& operator=(const TimeUnit<OTag, OV>& other) noexcept {
         m_value = convert_from(other);
         return *this;
     }
+
+    constexpr TimeUnit& operator=(const ValueType& v) noexcept { m_value = v; return *this; }
+    constexpr TimeUnit& operator=(ValueType&& v) noexcept { m_value = std::move(v); return *this; }
+
+    template<typename U, typename = typename std::enable_if<detail::is_unsigned_integer_like_v<U> && !std::is_same<U, ValueType>::value>::type>
+    constexpr TimeUnit& operator=(const U& v) noexcept { m_value = static_cast<ValueType>(v); return *this; }
+
+    template <typename U, typename = typename std::enable_if<std::is_integral<U>::value && std::is_unsigned<U>::value>::type, typename = void>
+    constexpr TimeUnit& operator=(const U v) noexcept { m_value = ValueType(v); return *this; }
 
     template<typename T, typename = typename std::enable_if<detail::is_integer_like_v<T>>::type>
     constexpr explicit operator T() const noexcept { return static_cast<T>(m_value); }
@@ -753,37 +749,37 @@ private:
                                                                              \
     using NAME = NAME##_t<>;
 
-DEFINE_TIME_UNIT(planck_second, planck_second, multiprecision::uint256)
-DEFINE_TIME_UNIT(quectosecond,  quectosecond,  multiprecision::uint128)
-DEFINE_TIME_UNIT(rontosecond,   rontosecond,   multiprecision::uint128)
-DEFINE_TIME_UNIT(yoctosecond,   yoctosecond,   multiprecision::uint128)
-DEFINE_TIME_UNIT(zeptosecond,   zeptosecond,   multiprecision::uint128)
-DEFINE_TIME_UNIT(attosecond,    attosecond,    multiprecision::uint128)
-DEFINE_TIME_UNIT(femtosecond,   femtosecond,   multiprecision::uint128)
-DEFINE_TIME_UNIT(picosecond,    picosecond,    multiprecision::uint128)
+DEFINE_TIME_UNIT(planck_second, planck_second, default_storage_uint)
+DEFINE_TIME_UNIT(quectosecond,  quectosecond,  default_storage_uint)
+DEFINE_TIME_UNIT(rontosecond,   rontosecond,   default_storage_uint)
+DEFINE_TIME_UNIT(yoctosecond,   yoctosecond,   default_storage_uint)
+DEFINE_TIME_UNIT(zeptosecond,   zeptosecond,   default_storage_uint)
+DEFINE_TIME_UNIT(attosecond,    attosecond,    default_storage_uint)
+DEFINE_TIME_UNIT(femtosecond,   femtosecond,   default_storage_uint)
+DEFINE_TIME_UNIT(picosecond,    picosecond,    default_storage_uint)
 
-DEFINE_TIME_UNIT(nanosecond,    nanosecond,    multiprecision::uint128)
-DEFINE_TIME_UNIT(microsecond,   microsecond,   multiprecision::uint128)
-DEFINE_TIME_UNIT(millisecond,   millisecond,   multiprecision::uint128)
-DEFINE_TIME_UNIT(centisecond,   centisecond,   multiprecision::uint128)
-DEFINE_TIME_UNIT(decisecond,    decisecond,    multiprecision::uint128)
+DEFINE_TIME_UNIT(nanosecond,    nanosecond,    default_storage_uint)
+DEFINE_TIME_UNIT(microsecond,   microsecond,   default_storage_uint)
+DEFINE_TIME_UNIT(millisecond,   millisecond,   default_storage_uint)
+DEFINE_TIME_UNIT(centisecond,   centisecond,   default_storage_uint)
+DEFINE_TIME_UNIT(decisecond,    decisecond,    default_storage_uint)
 
-DEFINE_TIME_UNIT(second,        second,        multiprecision::uint128)
-DEFINE_TIME_UNIT(minute,        minute,        multiprecision::uint128)
-DEFINE_TIME_UNIT(hour,          hour,          multiprecision::uint128)
-DEFINE_TIME_UNIT(day,           day,           multiprecision::uint128)
-DEFINE_TIME_UNIT(week,          week,          multiprecision::uint128)
-DEFINE_TIME_UNIT(month,         month,         multiprecision::uint128)
-DEFINE_TIME_UNIT(year,          year,          multiprecision::uint128)
-DEFINE_TIME_UNIT(decade,        decade,        multiprecision::uint128)
-DEFINE_TIME_UNIT(century,       century,       multiprecision::uint128)
-DEFINE_TIME_UNIT(millennium,    millennium,    multiprecision::uint128)
+DEFINE_TIME_UNIT(second,        second,        default_storage_uint)
+DEFINE_TIME_UNIT(minute,        minute,        default_storage_uint)
+DEFINE_TIME_UNIT(hour,          hour,          default_storage_uint)
+DEFINE_TIME_UNIT(day,           day,           default_storage_uint)
+DEFINE_TIME_UNIT(week,          week,          default_storage_uint)
+DEFINE_TIME_UNIT(month,         month,         default_storage_uint)
+DEFINE_TIME_UNIT(year,          year,          default_storage_uint)
+DEFINE_TIME_UNIT(decade,        decade,        default_storage_uint)
+DEFINE_TIME_UNIT(century,       century,       default_storage_uint)
+DEFINE_TIME_UNIT(millennium,    millennium,    default_storage_uint)
 
-} // namespace temp_time
+} // namespace time
 
 #define FIZMO_DEFINE_TIME_CATEGORY_ENTRY(TRAIT_NAME, TAG)                   \
     template<typename V>                                                     \
-    struct TRAIT_NAME<temp_time::TimeUnit<temp_time::Unit::TAG, V>>          \
+    struct TRAIT_NAME<time::TimeUnit<time::Unit::TAG, V>>          \
         : std::true_type {};
 
 template<typename T> struct is_sub_nanosecond_time : std::false_type {};
@@ -834,12 +830,12 @@ struct all_are_time_units<T, Rest...> : std::integral_constant<bool, is_time_uni
 template<typename... Args>
 constexpr bool all_are_time_units_v = all_are_time_units<Args...>::value;
 
-namespace temp_time {
+namespace time {
 
 template<typename To, Unit FromTag, typename FromV, typename = typename std::enable_if<is_time_unit<To>::value>::type>
 constexpr To time_cast(const TimeUnit<FromTag, FromV>& from) noexcept { return static_cast<To>(from); }
 
-} // namespace temp_time
+} // namespace time
 } // namespace fizmo
 
 #endif // FIZMO_TIME_UNIT_HPP

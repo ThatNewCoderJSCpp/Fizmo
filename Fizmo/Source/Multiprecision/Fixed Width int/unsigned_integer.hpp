@@ -242,6 +242,7 @@ public:
     static integer from_hex(const std::string& s)     noexcept { return integer(s, 16); }
     static integer from_decimal(const std::string& s) noexcept { return integer(s, 10); }
     static integer from_binary(const std::string& s)  noexcept { return integer(s, 2);  }
+    static constexpr integer from_magnitude(const umag<Bits>& v) noexcept { return from_mag(v); }
     static bool is_valid_string(const std::string& s, long long base) noexcept { integer t; return t.parse_string(s, base, true); }
 
     bool parse_string(const std::string& str, long long base, bool validate_only = false) noexcept {

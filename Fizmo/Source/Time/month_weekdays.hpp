@@ -8,7 +8,7 @@
 #include <type_traits>
 
 namespace fizmo {
-namespace temp_time {
+namespace time {
 
 enum class Months : std::uint8_t {
     january = 0,
@@ -165,7 +165,7 @@ public:
     }
 };
 
-} // namespace temp_time
+} // namespace time
 } // namespace fizmo
 
 #endif // FIZMO_MONTHS_WEEKDAYS_HPP

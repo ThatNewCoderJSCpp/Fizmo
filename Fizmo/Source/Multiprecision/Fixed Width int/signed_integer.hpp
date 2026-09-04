@@ -273,6 +273,7 @@ public:
     static integer from_hex(const std::string& s)     noexcept { return integer(s, 16); }
     static integer from_decimal(const std::string& s) noexcept { return integer(s, 10); }
     static integer from_binary(const std::string& s)  noexcept { return integer(s, 2);  }
+    static OPTIONAL_CPP14_CONSTEXPR integer from_magnitude(const umag<Bits>& v, bool neg) noexcept { return make(v, neg); }
 
     bool parse_string(const std::string& str, long long base, bool validate_only = false) noexcept {
         if (str.empty() || base < 2 || base > 36) return false;

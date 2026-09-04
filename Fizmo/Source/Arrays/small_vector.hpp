@@ -425,6 +425,31 @@ public:
         return true;
     }
 
+    bool resize_uninit(std::size_t new_size) {
+        static_assert(std::is_trivially_copyable<T>::value, "resize_uninit requires a trivially copyable T");
+        if (new_size > m_capacity) { if (!reserve(new_size)) return false; }
+        m_size = new_size;
+        return true;
+    }
+
+    bool assign_uninit(std::size_t new_size) {
+        static_assert(std::is_trivially_copyable<T>::value, "assign_uninit requires a trivially copyable T");
+
+        if (new_size > m_capacity) {
+            if (!is_inline()) delete[] m_data;
+            m_data = inline_ptr();
+            m_capacity = N;
+            m_size = 0;
+            m_data = new T[new_size];
+            m_capacity = new_size;
+        }
+        
+        m_size = new_size;
+        return true;
+    }
+
+    void set_size_unchecked(std::size_t new_size) noexcept { m_size = new_size; }
+
     void clear() noexcept { m_size = 0; }
 
     T* release() {
@@ -1342,7 +1367,7 @@ public:
     void counting_sort_desc() { counting_sort_range_desc(std::size_t(0), m_size); }
 
     template <typename U = T, typename = typename std::enable_if<std::is_integral<U>::value>::type>
-    counting_sort_desc(std::size_t start, std::size_t end_idx) { counting_sort_range_desc(start, end_idx); }
+    void counting_sort_desc(std::size_t start, std::size_t end_idx) { counting_sort_range_desc(start, end_idx); }
 
     void shell_sort() { shell_sort(std::size_t(0), m_size, std::less<T>{}); }
 

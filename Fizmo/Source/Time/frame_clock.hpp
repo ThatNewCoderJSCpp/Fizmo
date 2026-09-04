@@ -5,9 +5,9 @@
 #include <cstddef>
 
 namespace fizmo {
-namespace temp_time {
+namespace time {
 
-template<typename T = multiprecision::int256, typename = typename std::enable_if<detail::is_signed_int_like_v<T>>::type>
+template<typename T = default_wide_int, typename = typename std::enable_if<detail::is_signed_integer_like_v<T>>::type>
 class FrameClock {
 public:
     using clock_type      = Clock<T>;
@@ -160,7 +160,7 @@ public:
     friend std::ostream& operator<<(std::ostream& os, const FrameClock& fc) { return os << fc.to_string(); }
 };
 
-} // namespace temp_time
+} // namespace time
 } // namespace fizmo
 
 #endif // FIZMO_FRAME_CLOCK_HPP
