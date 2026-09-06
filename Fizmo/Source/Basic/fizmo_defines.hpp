@@ -74,6 +74,42 @@
 #elif defined(__ANDROID__)
     #define OS_ANDROID
 #elif defined(__linux__)
+    #include <sys/types.h>
+    #include <sys/socket.h>
+    #include <sys/uio.h>
+    #include <sys/ioctl.h>
+    #include <sys/epoll.h>
+    #include <sys/eventfd.h>
+    #include <netinet/in.h>
+    #include <netinet/tcp.h>
+    #include <arpa/inet.h>
+    #include <netdb.h>
+    #include <net/if.h>
+    #include <unistd.h>
+    #include <fcntl.h>
+    #include <poll.h>
+    #include <errno.h>
+    #include <string.h>
+    #include <signal.h>
+
+    #include <openssl/ssl.h>
+    #include <openssl/err.h>
+    #include <openssl/x509.h>
+    #include <openssl/x509v3.h>
+    #include <openssl/x509_vfy.h>
+    #include <openssl/pkcs12.h>
+    #include <openssl/bio.h>
+    #include <openssl/bn.h>
+    #include <openssl/pem.h>
+
+    #include <X11/Xlib.h>
+    #include <X11/Xutil.h>
+    #include <X11/Xatom.h>
+    #include <X11/XKBlib.h>
+    #include <X11/keysym.h>
+    #include <X11/Xft/Xft.h>
+    #include <fontconfig/fontconfig.h>
+
     #define OS_LINUX
 #elif defined(__unix__) || defined(__unix)
     #define OS_UNIX

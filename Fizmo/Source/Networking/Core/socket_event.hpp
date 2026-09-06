@@ -6,6 +6,10 @@
 #include <functional>
 #include <unordered_map>
 
+#ifdef OS_LINUX
+#include "../../Windows/Renderer Impl/x11_compat.hpp"
+#endif
+
 namespace fizmo {
 namespace networking {
 namespace core {

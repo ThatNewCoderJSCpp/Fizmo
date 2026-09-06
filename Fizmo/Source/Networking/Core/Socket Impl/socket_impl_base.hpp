@@ -23,6 +23,16 @@ enum class ShutdownMode {
 
 namespace detail {
 
+#ifdef OS_WINDOWS
+    using native_handle_t = SOCKET;
+    using socklen_type    = int;
+    inline const native_handle_t kInvalidHandle = INVALID_SOCKET;
+#else
+    using native_handle_t = int;
+    using socklen_type    = socklen_t;
+    inline constexpr native_handle_t kInvalidHandle = -1;
+#endif
+
 struct IOBuffer {
     void*       data;
     std::size_t length;
@@ -103,6 +113,8 @@ public: // Common
         (void)interval_ms;
         return -1; 
     }
+
+    virtual native_handle_t native_handle() const noexcept = 0;
 };
 
 } // namespace detail

@@ -6,11 +6,18 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <ostream>
+#include <algorithm>
+#include "../Basic/fizmo_defines.hpp"
 
-class Window;
+#ifdef OS_LINUX
+#include "../x11_compat.hpp"
+#endif 
 
 namespace fizmo {
 namespace windows {
+
+class Window;
 
 enum class WindowEventType {
     MouseMove = 0,
@@ -57,7 +64,7 @@ struct WindowEvent {
     std::string key_name = "";
     int scroll_delta = 0;        // positive = up/away, negative = down/toward
     
-    friend std::ostream& operator<<(std::ostream& os, const WindowEvent& e) {
+    inline friend std::ostream& operator<<(std::ostream& os, const WindowEvent& e) {
         os << "WindowEvent[\n"
            << "    Type: " << e.type << "\n"
            << "    x: " << e.x << "\n" 

@@ -11,13 +11,13 @@
 #include "rewriter.hpp"
 
 #include "../Anti Differentiation/integrator.hpp"
-#include "../Anti Differentiation/cases/polynomial_rules.hpp"
-#include "../Anti Differentiation/cases/exponential_rules.hpp"
-#include "../Anti Differentiation/cases/logarithmic_rules.hpp"
-#include "../Anti Differentiation/cases/trigonometric_rules.hpp"
-#include "../Anti Differentiation/cases/hyperbolic_rules.hpp"
-#include "../Anti Differentiation/cases/algebraic_forms_rules.hpp"
-#include "../Anti Differentiation/cases/heuristic_rules.hpp"
+#include "../Anti Differentiation/Cases/polynomial_rules.hpp"
+#include "../Anti Differentiation/Cases/exponential_rules.hpp"
+#include "../Anti Differentiation/Cases/logarithmic_rules.hpp"
+#include "../Anti Differentiation/Cases/trigonometric_rules.hpp"
+#include "../Anti Differentiation/Cases/hyperbolic_rules.hpp"
+#include "../Anti Differentiation/Cases/algebraic_forms_rules.hpp"
+#include "../Anti Differentiation/Cases/heuristic_rules.hpp"
 
 namespace fizmo {
 namespace math {

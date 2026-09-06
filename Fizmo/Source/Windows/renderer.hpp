@@ -4,9 +4,13 @@
 #include "../Graphics/color.hpp"
 #include "window.hpp"
 #include "../Graphics/canvas.hpp"
+#include "Renderer Impl/renderer_base.hpp"   
 
-#ifdef OS_WINDOWS
-#include "Renderer Impl/renderer_windows_impl.hpp"
+
+#if defined(OS_WINDOWS)
+    #include "Renderer Impl/renderer_windows_impl.hpp"
+#elif defined(OS_LINUX)
+    #include "Renderer Impl/renderer_linux_impl.hpp"
 #endif
 
 namespace fizmo {
@@ -19,7 +23,7 @@ private:
 
 public:
     explicit Renderer(Window& window) noexcept : m_window(&window), m_impl(nullptr) {
-    #ifdef OS_WINDOWS
+    #if defined(OS_WINDOWS) || defined(OS_LINUX)
         m_impl = std::make_unique<detail::RendererImpl>();
     #endif
     }

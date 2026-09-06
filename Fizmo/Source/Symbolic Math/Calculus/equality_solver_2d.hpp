@@ -530,8 +530,8 @@ private:
             }
         }
 
-        std::uint64_t sparse_nx = std::min(nx, 32ULL);
-        std::uint64_t sparse_ny = std::min(ny, 32ULL);
+        std::uint64_t sparse_nx = std::min(nx, std::uint64_t(32));
+        std::uint64_t sparse_ny = std::min(ny, std::uint64_t(32));
         double sdx = (xhi - xlo) / static_cast<double>(sparse_nx);
         double sdy = (yhi - ylo) / static_cast<double>(sparse_ny);
 

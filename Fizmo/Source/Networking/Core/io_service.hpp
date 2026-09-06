@@ -2,6 +2,8 @@
 #define FIZMO_IO_SERVICE_HPP
 
 #include "socket_event.hpp"
+#include "Socket Impl/native_poll.hpp"
+#include "Error Conversion/native_errors.hpp"
 #include <queue>
 #include <thread>
 #include <atomic>
@@ -19,6 +21,13 @@ public:
     using Duration  = std::chrono::steady_clock::duration;
 
 private:
+    enum class EntryKind { Raw, Buffered, BufferedUDP };
+
+    struct PollEntry {
+        EntryKind kind;
+        void*     socket;
+    };
+
     std::atomic<bool> m_running;
     std::atomic<bool> m_stop_requested;
 
@@ -35,40 +44,34 @@ private:
     std::map<TimerID, std::multimap<TimePoint, std::pair<TimerID, Task>>::iterator> m_timer_lookup;
     std::condition_variable m_timer_condition;
 
-#ifdef OS_WINDOWS
-    fd_set m_read_set;
-    fd_set m_write_set;
-    fd_set m_error_set;
-#endif
-
     std::mutex m_socket_set_mutex;
     std::map<SocketBase*       , SocketEvent::Type> m_raw_sockets;
     std::map<BufferedSocket*   , SocketEvent::Type> m_buffered_sockets;
     std::map<BufferedUDPSocket*, SocketEvent::Type> m_buffered_udp_sockets;
 
+    std::mutex m_poll_mutex;
+    detail::PollSet m_poll_set;
+    std::vector<PollEntry> m_poll_index;
+
+    static constexpr int kDefaultPollTimeoutMs = 100;
+
 public:
-    IOService() : m_running(false), m_stop_requested(false), m_next_timer_id(1) {
-    #ifdef OS_WINDOWS
-        FD_ZERO(&m_read_set);
-        FD_ZERO(&m_write_set);
-        FD_ZERO(&m_error_set);
-    #endif
-    }
+    IOService() : m_running(false), m_stop_requested(false), m_next_timer_id(1) {}
 
     ~IOService() { stop(); }
     IOService(const IOService&) = delete;
     IOService& operator=(const IOService&) = delete;
 
 public:
-    void start(size_t thread_count = 1) {
+    void start(std::size_t thread_count = 1) {
         if (m_running.exchange(true)) return;
         m_stop_requested = false;
-        for (size_t i = 0; i < thread_count; ++i) { m_threads.emplace_back(&IOService::worker_thread, this); }
+        for (std::size_t i = 0; i < thread_count; ++i) { m_threads.emplace_back(&IOService::worker_thread, this); }
     }
 
     void stop() {
         m_stop_requested = true;
-        { std::lock_guard<std::mutex> lock(m_task_mutex); m_task_condition.notify_all(); }
+        { std::lock_guard<std::mutex> lock(m_task_mutex);  m_task_condition.notify_all(); }
         { std::lock_guard<std::mutex> lock(m_timer_mutex); m_timer_condition.notify_all(); }
 
         if (m_running.exchange(false)) {
@@ -112,17 +115,9 @@ public:
 public:
     unsigned int poll_one() {
         if (!m_running) return 0;
-        if (process_tasks()) return 1;
+        if (process_tasks())  return 1;
         if (process_timers()) return 1;
-        { std::lock_guard<std::mutex> lock(m_socket_set_mutex); prepare_sets(); }
-
-    #ifdef OS_WINDOWS
-        struct timeval tv = {0, 0};
-        int ready = select(0, &m_read_set, &m_write_set, &m_error_set, &tv);
-        if (ready > 0) { std::lock_guard<std::mutex> lock(m_socket_set_mutex); process_events(); return 1; }
-    #endif
-
-        return 0;
+        return poll_sockets(0) ? 1u : 0u;
     }
 
     std::uint32_t poll() {
@@ -133,60 +128,22 @@ public:
 
 public:
     void run() {
-        if (!m_running.exchange(true)) { m_stop_requested = false; }
+        m_running = true;
+        m_stop_requested = false;
 
         while (!m_stop_requested) {
             bool did_work = process_tasks();
             did_work |= process_timers();
-
-            if (!did_work) {
-                { std::lock_guard<std::mutex> lock(m_socket_set_mutex); prepare_sets(); }
-
-            #ifdef OS_WINDOWS
-                Duration td = get_next_timer_duration();
-                struct timeval tv;
-
-                if (td != Duration::max()) {
-                    auto us = std::chrono::duration_cast<std::chrono::microseconds>(td).count();
-                    tv.tv_sec  = static_cast<long>(us / 1000000);
-                    tv.tv_usec = static_cast<long>(us % 1000000);
-                } else {
-                    tv.tv_sec = 0; tv.tv_usec = 100000;
-                }
-
-                int ready = select(0, &m_read_set, &m_write_set, &m_error_set, &tv);
-                if (ready > 0) { std::lock_guard<std::mutex> lock(m_socket_set_mutex); process_events(); }
-            #endif
-            }
+            if (!did_work) { poll_sockets(next_poll_timeout_ms()); }
         }
+
         m_running = false;
     }
 
-    void run_one() {
-        if (!m_running.exchange(true)) { m_stop_requested = false; }
-        bool did_work = process_tasks();
-        did_work |= process_timers();
-
-        if (!did_work) {
-            { std::lock_guard<std::mutex> lock(m_socket_set_mutex); prepare_sets(); }
-
-        #ifdef OS_WINDOWS
-            Duration td = get_next_timer_duration();
-            struct timeval tv;
-
-            if (td != Duration::max()) {
-                auto us = std::chrono::duration_cast<std::chrono::microseconds>(td).count();
-                tv.tv_sec  = static_cast<long>(us / 1000000);
-                tv.tv_usec = static_cast<long>(us % 1000000);
-            } else {
-                tv.tv_sec = 0; tv.tv_usec = 100000;
-            }
-
-            int ready = select(0, &m_read_set, &m_write_set, &m_error_set, &tv);
-            if (ready > 0) { std::lock_guard<std::mutex> lock(m_socket_set_mutex); process_events(); }
-        #endif
-        }
-        m_running = false;
+    bool run_one() {
+        if (process_tasks())  return true;
+        if (process_timers()) return true;
+        return poll_sockets(next_poll_timeout_ms());
     }
 
 public:
@@ -264,12 +221,14 @@ private:
 
             {
                 std::unique_lock<std::mutex> lock(m_task_mutex);
+
                 if (m_tasks.empty()) {
                     TimePoint next = get_next_timer_point();
+
                     if (next != TimePoint::max()) {
                         m_task_condition.wait_until(lock, next, [this] { return !m_tasks.empty() || m_stop_requested; });
                     } else {
-                        m_task_condition.wait_for(lock, std::chrono::milliseconds(100), [this] { return !m_tasks.empty() || m_stop_requested; });
+                        m_task_condition.wait_for(lock, std::chrono::milliseconds(kDefaultPollTimeoutMs), [this] { return !m_tasks.empty() || m_stop_requested; });
                     }
                 }
 
@@ -284,133 +243,157 @@ private:
         }
     }
 
-    void prepare_sets() {
-    #ifdef OS_WINDOWS
-        FD_ZERO(&m_read_set);
-        FD_ZERO(&m_write_set);
-        FD_ZERO(&m_error_set);
+private:
+    static bool wants(SocketEvent::Type events, SocketEvent::Type flag) noexcept {
+        return (events & flag) != SocketEvent::Type::None;
+    }
+
+    int next_poll_timeout_ms() {
+        Duration remaining = get_next_timer_duration();
+        if (remaining == Duration::max()) return kDefaultPollTimeoutMs;
+        int ms = detail::PollSet::duration_to_ms(remaining);
+        if (ms < 0 || ms > kDefaultPollTimeoutMs) return kDefaultPollTimeoutMs;
+        return ms;
+    }
+
+    bool poll_sockets(int timeout_ms) {
+        std::lock_guard<std::mutex> poll_lock(m_poll_mutex);
+
+        {
+            std::lock_guard<std::mutex> lock(m_socket_set_mutex);
+            build_poll_set();
+        }
+
+        if (m_poll_set.empty()) return false;
+        int ready = m_poll_set.wait(timeout_ms);
+        if (ready <= 0) return false;
+        std::lock_guard<std::mutex> lock(m_socket_set_mutex);
+        dispatch_events();
+        return true;
+    }
+
+    void build_poll_set() {
+        m_poll_set.clear();
+        m_poll_index.clear();
+        const std::size_t total = m_raw_sockets.size() + m_buffered_sockets.size() + m_buffered_udp_sockets.size();
+        m_poll_set.reserve(total);
+        m_poll_index.reserve(total);
 
         for (const auto& entry : m_raw_sockets) {
-            SocketBase* socket = entry.first;
-            SocketEvent::Type events = entry.second;
-            SOCKET raw = socket->get_raw_socket();
-
-            if (raw != INVALID_SOCKET) {
-                if ((events & SocketEvent::Type::Read)  != SocketEvent::Type::None) { FD_SET(raw, &m_read_set); }
-                if ((events & SocketEvent::Type::Write) != SocketEvent::Type::None) { FD_SET(raw, &m_write_set); }
-                FD_SET(raw, &m_error_set);
+            const bool want_read  = wants(entry.second, SocketEvent::Type::Read);
+            const bool want_write = wants(entry.second, SocketEvent::Type::Write);
+            
+            if (m_poll_set.add(entry.first->get_raw_socket(), want_read, want_write)) {
+                m_poll_index.push_back(PollEntry{EntryKind::Raw, entry.first});
             }
         }
 
         for (const auto& entry : m_buffered_sockets) {
-            BufferedSocket* socket = entry.first;
-            SocketEvent::Type events = entry.second;
-            SOCKET raw = socket->socket().get_raw_socket();
-
-            if (raw != INVALID_SOCKET) {
-                if ((events & SocketEvent::Type::Read)  != SocketEvent::Type::None) { FD_SET(raw, &m_read_set); }
-                if (((events & SocketEvent::Type::Write) != SocketEvent::Type::None) && socket->has_data_to_send()) { FD_SET(raw, &m_write_set); }
-                FD_SET(raw, &m_error_set);
+            const bool want_read  = wants(entry.second, SocketEvent::Type::Read);
+            const bool want_write = wants(entry.second, SocketEvent::Type::Write) && entry.first->has_data_to_send();
+            
+            if (m_poll_set.add(entry.first->socket().get_raw_socket(), want_read, want_write)) {
+                m_poll_index.push_back(PollEntry{EntryKind::Buffered, entry.first});
             }
         }
 
         for (const auto& entry : m_buffered_udp_sockets) {
-            BufferedUDPSocket* socket = entry.first;
-            SocketEvent::Type events = entry.second;
-            SOCKET raw = socket->socket().get_raw_socket();
-
-            if (raw != INVALID_SOCKET) {
-                if ((events & SocketEvent::Type::Read)  != SocketEvent::Type::None) { FD_SET(raw, &m_read_set); }
-                if (((events & SocketEvent::Type::Write) != SocketEvent::Type::None) && socket->has_data_to_send()) { FD_SET(raw, &m_write_set); }
-                FD_SET(raw, &m_error_set);
+            const bool want_read  = wants(entry.second, SocketEvent::Type::Read);
+            const bool want_write = wants(entry.second, SocketEvent::Type::Write) && entry.first->has_data_to_send();
+            
+            if (m_poll_set.add(entry.first->socket().get_raw_socket(), want_read, want_write)) {
+                m_poll_index.push_back(PollEntry{EntryKind::BufferedUDP, entry.first});
             }
         }
-    #endif
     }
 
-    void process_events() {
-    #ifdef OS_WINDOWS
-        for (const auto& entry : m_raw_sockets) {
-            SocketBase* socket = entry.first;
-            SOCKET raw = socket->get_raw_socket();
+    void dispatch_events() {
+        for (std::size_t i = 0; i < m_poll_index.size(); ++i) {
+            if (!m_poll_set.signalled(i)) continue;
+            const bool readable = m_poll_set.readable(i);
+            const bool writable = m_poll_set.writable(i);
+            const bool errored  = m_poll_set.errored(i);
 
-            if (raw != INVALID_SOCKET) {
-                if (FD_ISSET(raw, &m_read_set))  { m_event_handler.trigger_event(socket, SocketEvent::Type::Read); }
-                if (FD_ISSET(raw, &m_write_set)) { m_event_handler.trigger_event(socket, SocketEvent::Type::Write); }
-                if (FD_ISSET(raw, &m_error_set)) { m_event_handler.trigger_error_event(socket, WinsockErrorConverter::get_last_error("select")); }
+            switch (m_poll_index[i].kind) {
+                case EntryKind::Raw:
+                    dispatch_raw(static_cast<SocketBase*>(m_poll_index[i].socket), readable, writable, errored);
+                    break;
+                case EntryKind::Buffered:
+                    dispatch_buffered(static_cast<BufferedSocket*>(m_poll_index[i].socket), readable, writable, errored);
+                    break;
+                case EntryKind::BufferedUDP:
+                    dispatch_buffered_udp(static_cast<BufferedUDPSocket*>(m_poll_index[i].socket), readable, writable, errored);
+                    break;
             }
         }
-
-        for (const auto& entry : m_buffered_sockets) {
-            BufferedSocket* socket = entry.first;
-            SOCKET raw = socket->socket().get_raw_socket();
-
-            if (raw != INVALID_SOCKET) {
-                if (FD_ISSET(raw, &m_read_set)) {
-                    int received = socket->receive();
-
-                    if (received > 0) {
-                        m_event_handler.trigger_event(socket, SocketEvent::Type::Read);
-                    } else if (received == 0) {
-                        m_event_handler.trigger_event(socket, SocketEvent::Type::Close);
-                    } else {
-                        if (!WinsockErrorConverter::would_block()) {
-                            m_event_handler.trigger_error_event(socket, WinsockErrorConverter::get_last_error("receive"));
-                        }
-                    }
-                }
-
-                if (FD_ISSET(raw, &m_write_set)) {
-                    int sent = socket->flush();
-
-                    if (sent > 0) {
-                        m_event_handler.trigger_event(socket, SocketEvent::Type::Write);
-                    } else if (sent < 0 && !WinsockErrorConverter::would_block()) {
-                        m_event_handler.trigger_error_event(socket, WinsockErrorConverter::get_last_error("send"));
-                    }
-                }
-
-                if (FD_ISSET(raw, &m_error_set)) {
-                    m_event_handler.trigger_error_event(socket, WinsockErrorConverter::get_last_error("select"));
-                }
-            }
-        }
-
-        for (const auto& entry : m_buffered_udp_sockets) {
-            BufferedUDPSocket* socket = entry.first;
-            SOCKET raw = socket->socket().get_raw_socket();
-
-            if (raw != INVALID_SOCKET) {
-                if (FD_ISSET(raw, &m_read_set)) {
-                    int received = socket->receive_one();
-
-                    if (received > 0) {
-                        m_event_handler.trigger_event(socket, SocketEvent::Type::Read);
-                    } else if (received < 0) {
-                        if (!WinsockErrorConverter::would_block()) {
-                            m_event_handler.trigger_error_event(socket, WinsockErrorConverter::get_last_error("recvfrom"));
-                        }
-                    }
-                }
-
-                if (FD_ISSET(raw, &m_write_set)) {
-                    int sent = socket->flush_one();
-
-                    if (sent > 0) {
-                        m_event_handler.trigger_event(socket, SocketEvent::Type::Write);
-                    } else if (sent < 0 && !WinsockErrorConverter::would_block()) {
-                        m_event_handler.trigger_error_event(socket, WinsockErrorConverter::get_last_error("sendto"));
-                    }
-                }
-
-                if (FD_ISSET(raw, &m_error_set)) {
-                    m_event_handler.trigger_error_event(socket, WinsockErrorConverter::get_last_error("select"));
-                }
-            }
-        }
-    #endif
     }
 
+    void dispatch_raw(SocketBase* socket, bool readable, bool writable, bool errored) {
+        if (!socket) return;
+        if (readable) { m_event_handler.trigger_event(socket, SocketEvent::Type::Read); }
+        if (writable) { m_event_handler.trigger_event(socket, SocketEvent::Type::Write); }
+        if (errored)  { m_event_handler.trigger_error_event(socket, NativeErrorConverter::get_last_error("poll")); }
+    }
+
+    void dispatch_buffered(BufferedSocket* socket, bool readable, bool writable, bool errored) {
+        if (!socket) return;
+
+        if (readable) {
+            int received = socket->receive();
+
+            if (received > 0) {
+                m_event_handler.trigger_event(socket, SocketEvent::Type::Read);
+            } else if (received == 0) {
+                m_event_handler.trigger_event(socket, SocketEvent::Type::Close);
+            } else if (!NativeErrorConverter::would_block()) {
+                m_event_handler.trigger_error_event(socket, NativeErrorConverter::get_last_error("receive"));
+            }
+        }
+
+        if (writable) {
+            int sent = socket->flush();
+
+            if (sent > 0) {
+                m_event_handler.trigger_event(socket, SocketEvent::Type::Write);
+            } else if (sent < 0 && !NativeErrorConverter::would_block()) {
+                m_event_handler.trigger_error_event(socket, NativeErrorConverter::get_last_error("send"));
+            }
+        }
+
+        if (errored) {
+            m_event_handler.trigger_error_event(socket, NativeErrorConverter::get_last_error("poll"));
+        }
+    }
+
+    void dispatch_buffered_udp(BufferedUDPSocket* socket, bool readable, bool writable, bool errored) {
+        if (!socket) return;
+
+        if (readable) {
+            int received = socket->receive_one();
+
+            if (received > 0) {
+                m_event_handler.trigger_event(socket, SocketEvent::Type::Read);
+            } else if (received < 0 && !NativeErrorConverter::would_block()) {
+                m_event_handler.trigger_error_event(socket, NativeErrorConverter::get_last_error("recvfrom"));
+            }
+        }
+
+        if (writable) {
+            int sent = socket->flush_one();
+
+            if (sent > 0) {
+                m_event_handler.trigger_event(socket, SocketEvent::Type::Write);
+            } else if (sent < 0 && !NativeErrorConverter::would_block()) {
+                m_event_handler.trigger_error_event(socket, NativeErrorConverter::get_last_error("sendto"));
+            }
+        }
+
+        if (errored) {
+            m_event_handler.trigger_error_event(socket, NativeErrorConverter::get_last_error("poll"));
+        }
+    }
+
+private:
     bool process_tasks() {
         Task task;
         bool processed = false;
@@ -449,7 +432,7 @@ private:
 
             if (!processed) return false;
         }
-        
+
         for (auto& t : ready) { t(); }
         return true;
     }
@@ -457,7 +440,7 @@ private:
     Duration get_next_timer_duration() {
         std::lock_guard<std::mutex> lock(m_timer_mutex);
         if (m_timers.empty()) return Duration::max();
-        TimePoint now = std::chrono::steady_clock::now();
+        TimePoint now  = std::chrono::steady_clock::now();
         TimePoint next = m_timers.begin()->first;
         if (next <= now) return Duration::zero();
         return next - now;

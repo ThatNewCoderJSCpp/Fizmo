@@ -1,7 +1,7 @@
 {
     "configurations": [
         {
-            "name": "Fizmo (g++)",
+            "name": "Fizmo Windows (g++)",
             "includePath": [
                 "${workspaceFolder}/**",
                 "${env:FIZMO_INCLUDES}"
@@ -9,16 +9,15 @@
             "defines": [
                 "_DEBUG",
                 "UNICODE",
-                "_UNICODE",
-                "__cplusplus=201703L"
+                "_UNICODE"
             ],
             "compilerPath": "C:\\msys64\\ucrt64\\bin\\g++.exe",
             "cStandard": "c11",
             "cppStandard": "c++17",
-            "intelliSenseMode": "gcc-x64"
+            "intelliSenseMode": "windows-gcc-x64"
         },
         {
-            "name": "Fizmo (clang)",
+            "name": "Fizmo Windows (clang)",
             "includePath": [
                 "${workspaceFolder}/**",
                 "${env:FIZMO_INCLUDES}"
@@ -26,13 +25,42 @@
             "defines": [
                 "_DEBUG",
                 "UNICODE",
-                "_UNICODE",
-                "__cplusplus=201703L"
+                "_UNICODE"
             ],
             "compilerPath": "C:\\msys64\\ucrt64\\bin\\clang++.exe",
             "cStandard": "c11",
             "cppStandard": "c++17",
-            "intelliSenseMode": "clang-x64"
+            "intelliSenseMode": "windows-clang-x64"
+        },
+        {
+            "name": "Fizmo Linux (g++)",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${env:FIZMO_INCLUDES}",
+                "/usr/include"
+            ],
+            "defines": [
+                "_DEBUG"
+            ],
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        },
+        {
+            "name": "Fizmo Linux (clang)",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${env:FIZMO_INCLUDES}",
+                "/usr/include"
+            ],
+            "defines": [
+                "_DEBUG"
+            ],
+            "compilerPath": "/usr/bin/clang++",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-clang-x64"
         }
     ],
     "version": 4

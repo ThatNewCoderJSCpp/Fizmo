@@ -1,7 +1,11 @@
 #ifndef ALL_FIZMO_INCLUDES_FILE_HPP
 #define ALL_FIZMO_INCLUDES_FILE_HPP
-    #if __cplusplus < 201402L
-        #error "Fizmo is only available in C++14 (201402L) or newer"
+    #if __cplusplus < 201703L
+        #error "Fizmo is only available in C++17 (201703L) or newer"
+    #endif
+
+    #if !(defined(__linux__) || defined(_WIN32) || defined(_WIN64))
+        #error "Fizmo is only available on Windows and Linux"
     #endif
 
     #ifdef ALL_FIZMO

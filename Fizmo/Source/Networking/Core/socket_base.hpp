@@ -4,11 +4,8 @@
 #include "addresses.hpp"
 #include "socket_state.hpp"
 #include <mutex>
-
-#ifdef OS_WINDOWS
-#include "Socket Impl/winsock_impl.hpp"
-#include "Error Conversion/winsock_errors.hpp"
-#endif
+#include "Socket Impl/native_impl.hpp"
+#include "Error Conversion/native_errors.hpp"
 
 namespace fizmo {
 namespace networking {
@@ -42,9 +39,7 @@ protected:
           m_default_send_timeout_ms(30000),
           m_default_receive_timeout_ms(30000)
     {
-    #ifdef OS_WINDOWS
-        m_impl = std::make_unique<detail::WinsockImpl>(type, family);
-    #endif
+        m_impl = std::make_unique<detail::NativeSocketImpl>(type, family);
 
         if (m_impl) {
             m_state = SocketState::State::Initialized;
@@ -111,7 +106,6 @@ public:
         std::unique_lock<std::mutex> lock_socket(other.m_socket_mutex, std::defer_lock);
         std::unique_lock<std::mutex> lock_error(other.m_error_mutex, std::defer_lock);
         std::lock(lock_socket, lock_error);
-
         m_type   = other.m_type;
         m_family = other.m_family;
         m_impl   = std::move(other.m_impl);
@@ -122,7 +116,6 @@ public:
         m_default_connect_timeout_ms = other.m_default_connect_timeout_ms;
         m_default_send_timeout_ms    = other.m_default_send_timeout_ms;
         m_default_receive_timeout_ms = other.m_default_receive_timeout_ms;
-
         other.m_state = SocketState::State::Closed;
     }
 
@@ -133,9 +126,7 @@ public:
             std::unique_lock<std::mutex> lk3(m_error_mutex, std::defer_lock);
             std::unique_lock<std::mutex> lk4(other.m_error_mutex, std::defer_lock);
             std::lock(lk1, lk2, lk3, lk4);
-
             close_internal();
-
             m_type   = other.m_type;
             m_family = other.m_family;
             m_impl   = std::move(other.m_impl);
@@ -146,9 +137,9 @@ public:
             m_default_connect_timeout_ms = other.m_default_connect_timeout_ms;
             m_default_send_timeout_ms    = other.m_default_send_timeout_ms;
             m_default_receive_timeout_ms = other.m_default_receive_timeout_ms;
-
             other.m_state = SocketState::State::Uninitialized;
         }
+
         return *this;
     }
 
@@ -177,10 +168,7 @@ public:
             m_state = SocketState::State::Bound;
         } else {
             m_state = SocketState::State::Initialized;
-
-        #ifdef OS_WINDOWS
-            add_error(WinsockErrorConverter::get_last_error("bind"));
-        #endif
+            add_error(NativeErrorConverter::get_last_error("bind"));
         }
 
         return result;
@@ -195,13 +183,7 @@ public:
         std::lock_guard<std::mutex> lock(m_socket_mutex);
         if (!m_state.is_initialized() || m_state.state() == SocketState::State::Closed) return false;
         bool result = m_impl->shutdown(mode);
-
-        if (!result) {
-        #ifdef OS_WINDOWS
-            add_error(WinsockErrorConverter::get_last_error("shutdown"));
-        #endif
-        }
-
+        if (!result) { add_error(NativeErrorConverter::get_last_error("shutdown")); }
         if (mode == ShutdownMode::Both) { m_state = SocketState::State::Closing; }
         return result;
     }
@@ -218,12 +200,11 @@ public:
         int result = m_impl->scatter_receive(buffers, count);
 
         if (result < 0) {
-        #ifdef OS_WINDOWS
-            add_error(WinsockErrorConverter::get_last_error("scatter_receive"));
-        #endif
+            add_error(NativeErrorConverter::get_last_error("scatter_receive"));
         } else if (result == 0) {
             m_state = SocketState::State::Closing;
         }
+
         return result;
     }
 
@@ -231,11 +212,7 @@ public:
         std::lock_guard<std::mutex> lock(m_socket_mutex);
         if (!m_state.can_send()) return -1;
         int result = m_impl->gather_send(buffers, count);
-        if (result < 0) {
-        #ifdef OS_WINDOWS
-            add_error(WinsockErrorConverter::get_last_error("gather_send"));
-        #endif
-        }
+        if (result < 0) { add_error(NativeErrorConverter::get_last_error("gather_send")); }
         return result;
     }
 
@@ -291,6 +268,12 @@ public:
         if (m_errors.size() > m_max_errors) {
             m_errors.erase(m_errors.begin(), m_errors.begin() + (m_errors.size() - m_max_errors));
         }
+    }
+
+    bool set_keepalive_params(unsigned long idle_ms, unsigned long interval_ms) noexcept {
+        std::lock_guard<std::mutex> lock(m_socket_mutex);
+        if (!m_impl) return false;
+        return m_impl->set_keepalive_params(idle_ms, interval_ms) == 0;
     }
 
 public:
@@ -349,14 +332,11 @@ public:
         return m_default_receive_timeout_ms;
     }
 
-#ifdef OS_WINDOWS
-    SOCKET get_raw_socket() const noexcept {
+    detail::native_handle_t get_raw_socket() const noexcept {
         std::lock_guard<std::mutex> lock(m_socket_mutex);
-        if (!m_state.is_initialized()) return INVALID_SOCKET;
-        auto* w = dynamic_cast<detail::WinsockImpl*>(m_impl.get());
-        return w ? w->get_raw_socket() : INVALID_SOCKET;
+        if (!m_state.is_initialized() || !m_impl) return detail::kInvalidHandle;
+        return m_impl->native_handle();
     }
-#endif
 
     bool is_valid() const noexcept {
         std::lock_guard<std::mutex> lock(m_socket_mutex);
@@ -382,47 +362,37 @@ public:
 
 public:
     NetworkAddress get_local_address() const noexcept {
-    #ifdef OS_WINDOWS
         std::lock_guard<std::mutex> lock(m_socket_mutex);
-        if (!m_state.is_initialized()) return {};
-        auto* w = dynamic_cast<detail::WinsockImpl*>(m_impl.get());
-        if (!w) return {};
-        SOCKET raw = w->get_raw_socket();
-        if (raw == INVALID_SOCKET) return {};
+        if (!m_state.is_initialized() || !m_impl) return {};
+        detail::native_handle_t raw = m_impl->native_handle();
+        if (raw == detail::kInvalidHandle) return {};
         struct sockaddr_storage storage;
-        int addr_len = sizeof(storage);
         std::memset(&storage, 0, sizeof(storage));
+        detail::socklen_type addr_len = sizeof(storage);
 
         if (::getsockname(raw, reinterpret_cast<struct sockaddr*>(&storage), &addr_len) != 0) {
             return {};
         }
 
-        return detail::WinsockImpl::parse_sockaddr(storage);
-    #else
-        return {};
-    #endif
+        return detail::NativeSocketImpl::parse_sockaddr(storage);
     }
 
     NetworkAddress get_remote_address() const noexcept {
-    #ifdef OS_WINDOWS
         std::lock_guard<std::mutex> lock(m_socket_mutex);
         if (m_state.state() != SocketState::State::Connected) return {};
-        auto* w = dynamic_cast<detail::WinsockImpl*>(m_impl.get());
-        if (!w) return {};
-        SOCKET raw = w->get_raw_socket();
-        if (raw == INVALID_SOCKET) return {};
+        auto* impl = dynamic_cast<detail::NativeSocketImpl*>(m_impl.get());
+        if (!impl) return {};
+        detail::native_handle_t raw = impl->get_raw_socket();
+        if (raw == detail::kInvalidHandle) return {};
         struct sockaddr_storage storage;
-        int addr_len = sizeof(storage);
         std::memset(&storage, 0, sizeof(storage));
+        detail::socklen_type addr_len = sizeof(storage);
 
         if (::getpeername(raw, reinterpret_cast<struct sockaddr*>(&storage), &addr_len) != 0) {
             return {};
         }
 
-        return detail::WinsockImpl::parse_sockaddr(storage);
-    #else
-        return {};
-    #endif
+        return detail::NativeSocketImpl::parse_sockaddr(storage);
     }
 };
 
