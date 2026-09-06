@@ -6,6 +6,8 @@
 
 #ifdef OS_WINDOWS
 #include "Options Conversion/winsock_options.hpp"
+#elif defined(OS_LINUX)
+#include "Options Conversion/posix_options.hpp"
 #endif
 
 namespace fizmo {
@@ -19,8 +21,10 @@ private:
     static NativeOption resolve(OptionCode code) noexcept {
     #ifdef OS_WINDOWS
         return WindowsOptions::resolve(code);
+    #elif defined(OS_LINUX)
+        return LinuxOptions::resolve(code);
     #else
-        return NativeOption(); // unsupported
+        return NativeOption();
     #endif
     }
 
@@ -130,10 +134,7 @@ public:
 
 public:
     SocketOptions& set_keepalive_params(unsigned long idle_ms, unsigned long interval_ms) noexcept {
-    #ifdef OS_WINDOWS
-        auto* impl = m_socket.get_impl();
-        if (impl) impl->set_keepalive_params(idle_ms, interval_ms);
-    #endif
+        m_socket.set_keepalive_params(idle_ms, interval_ms);
         return *this;
     }
 
@@ -163,10 +164,16 @@ public: // TCP presets
     }
 
     SocketOptions& apply_low_latency() noexcept {
-        return set(BooleanOption::TCPNoDelay, true)
-              .set(IntegerOption::TCPFastOpen, 1)
-              .set(SizeOption::SendBufferSize, 8192)
-              .set(SizeOption::ReceiveBufferSize, 8192);
+        set(BooleanOption::TCPNoDelay, true);
+    #ifdef OS_LINUX
+        set_quick_ack(true);
+    #endif
+        return *this;
+    }
+
+    SocketOptions& set_buffer_sizes(std::size_t send_bytes, std::size_t receive_bytes) noexcept {
+        return set(SizeOption::SendBufferSize, send_bytes)
+              .set(SizeOption::ReceiveBufferSize, receive_bytes);
     }
 
     SocketOptions& apply_high_throughput() noexcept {
@@ -200,6 +207,40 @@ public: // Cross-protocol presets
               .set(SizeOption::SendBufferSize, 524288)
               .set(SizeOption::ReceiveBufferSize, 524288)
               .linger(true, 30);
+    }
+
+public:
+    bool set_quick_ack(bool enable) noexcept {
+    #if defined(OS_LINUX) && defined(TCP_QUICKACK)
+        auto native = resolve(OptionCode::QuickAck);
+        if (!native.supported) return false;
+        int val = enable ? 1 : 0;
+        return m_socket.set_option(native.level, native.option_name, val) == 0;
+    #else
+        (void)enable;
+        return false;
+    #endif
+    }
+
+    bool enable_fast_open_listener(int queue_length = 16) noexcept {
+        auto native = resolve(OptionCode::TCPFastOpen);
+        if (!native.supported) return false;
+    #if defined(OS_WINDOWS)
+        int val = 1;                        
+        return m_socket.set_option(native.level, native.option_name, val) == 0;
+    #else
+        if (queue_length < 1) queue_length = 1;
+        return m_socket.set_option(native.level, native.option_name, queue_length) == 0;
+    #endif
+    }
+
+    bool enable_fast_open_client() noexcept {
+    #if defined(OS_LINUX) && defined(TCP_FASTOPEN_CONNECT)
+        int on = 1;
+        return m_socket.set_option(IPPROTO_TCP, TCP_FASTOPEN_CONNECT, on) == 0;
+    #else
+        return false;
+    #endif
     }
 
 private:

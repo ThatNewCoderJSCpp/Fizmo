@@ -4,20 +4,33 @@
         {
             "type": "cppbuild",
             "label": "Build (g++ Debug)",
-            "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+            "command": "/usr/bin/g++",
             "args": [
-                "-g",
+                "-g", "-std=c++17",
                 "-I", "${env:FIZMO_INCLUDES}",
+                "-I", "/usr/include/freetype2",
                 "${file}",
-                "-o", "${fileDirname}\\${fileBasenameNoExtension}.exe",
-                "-lgdi32", "-luser32", "-lz", "-ljpeg",
-                "-lole32", "-loleaut32", "-luuid", "-lcomdlg32",
-                "-lshell32", "-lkernel32", "-lwinmm", "-lwsock32",
-                "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32"
+                "-o", "${fileDirname}/${fileBasenameNoExtension}",
+                "-lX11", "-lXft", "-lXrender", "-lfontconfig", "-lfreetype",
+                "-lz", "-ljpeg", "-lm", "-lssl", "-lcrypto", "-lpthread"
             ],
-            "options": {
-                "cw`d": "${fileDirname}",
-                "env": { "PATH": "C:\\msys64\\ucrt64\\bin;${env:PATH}" }
+            "options": { "cwd": "${fileDirname}" },
+            "windows": {
+                "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+                "args": [
+                    "-g", "-std=c++17",
+                    "-I", "${env:FIZMO_INCLUDES}",
+                    "${file}",
+                    "-o", "${fileDirname}\\${fileBasenameNoExtension}.exe",
+                    "-lgdi32", "-luser32", "-lz", "-ljpeg",
+                    "-lole32", "-loleaut32", "-luuid", "-lcomdlg32",
+                    "-lshell32", "-lkernel32", "-lwinmm", "-lwsock32",
+                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32"
+                ],
+                "options": {
+                    "cwd": "${fileDirname}",
+                    "env": { "PATH": "C:\\msys64\\ucrt64\\bin;${env:PATH}" }
+                }
             },
             "problemMatcher": ["$gcc"],
             "group": "build",
@@ -26,20 +39,33 @@
         {
             "type": "cppbuild",
             "label": "Build (g++ Release)",
-            "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+            "command": "/usr/bin/g++",
             "args": [
-                "-O3", "-DNDEBUG",
+                "-O3", "-DNDEBUG", "-std=c++17",
                 "-I", "${env:FIZMO_INCLUDES}",
+                "-I", "/usr/include/freetype2",
                 "${file}",
-                "-o", "${fileDirname}\\${fileBasenameNoExtension}.exe",
-                "-lgdi32", "-luser32", "-lz", "-ljpeg",
-                "-lole32", "-loleaut32", "-luuid", "-lcomdlg32",
-                "-lshell32", "-lkernel32", "-lwinmm", "-lwsock32",
-                "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32"
+                "-o", "${fileDirname}/${fileBasenameNoExtension}",
+                "-lX11", "-lXft", "-lXrender", "-lfontconfig", "-lfreetype",
+                "-lz", "-ljpeg", "-lm", "-lssl", "-lcrypto", "-lpthread"
             ],
-            "options": {
-                "cwd": "${fileDirname}",
-                "env": { "PATH": "C:\\msys64\\ucrt64\\bin;${env:PATH}" }
+            "options": { "cwd": "${fileDirname}" },
+            "windows": {
+                "command": "C:\\msys64\\ucrt64\\bin\\g++.exe",
+                "args": [
+                    "-O3", "-DNDEBUG", "-std=c++17",
+                    "-I", "${env:FIZMO_INCLUDES}",
+                    "${file}",
+                    "-o", "${fileDirname}\\${fileBasenameNoExtension}.exe",
+                    "-lgdi32", "-luser32", "-lz", "-ljpeg",
+                    "-lole32", "-loleaut32", "-luuid", "-lcomdlg32",
+                    "-lshell32", "-lkernel32", "-lwinmm", "-lwsock32",
+                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32"
+                ],
+                "options": {
+                    "cwd": "${fileDirname}",
+                    "env": { "PATH": "C:\\msys64\\ucrt64\\bin;${env:PATH}" }
+                }
             },
             "problemMatcher": ["$gcc"],
             "group": { "kind": "build", "isDefault": true },
@@ -48,18 +74,34 @@
         {
             "type": "cppbuild",
             "label": "Build (clang++ Debug)",
-            "command": "C:\\msys64\\ucrt64\\bin\\clang++.exe",
+            "command": "/usr/bin/clang++",
             "args": [
-                "-g",
+                "-g", "-std=c++17",
                 "-I", "${env:FIZMO_INCLUDES}",
+                "-I", "/usr/include/freetype2",
                 "${file}",
-                "-o", "${fileDirname}\\${fileBasenameNoExtension}.exe",
-                "-lgdi32", "-luser32", "-lz", "-ljpeg",
-                "-lole32", "-loleaut32", "-luuid", "-lcomdlg32",
-                "-lshell32", "-lkernel32", "-lwinmm", "-lwsock32",
-                "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32"
+                "-o", "${fileDirname}/${fileBasenameNoExtension}",
+                "-lX11", "-lXft", "-lXrender", "-lfontconfig", "-lfreetype",
+                "-lz", "-ljpeg", "-lm", "-lssl", "-lcrypto", "-lpthread"
             ],
             "options": { "cwd": "${fileDirname}" },
+            "windows": {
+                "command": "C:\\msys64\\ucrt64\\bin\\clang++.exe",
+                "args": [
+                    "-g", "-std=c++17",
+                    "-I", "${env:FIZMO_INCLUDES}",
+                    "${file}",
+                    "-o", "${fileDirname}\\${fileBasenameNoExtension}.exe",
+                    "-lgdi32", "-luser32", "-lz", "-ljpeg",
+                    "-lole32", "-loleaut32", "-luuid", "-lcomdlg32",
+                    "-lshell32", "-lkernel32", "-lwinmm", "-lwsock32",
+                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32"
+                ],
+                "options": {
+                    "cwd": "${fileDirname}",
+                    "env": { "PATH": "C:\\msys64\\ucrt64\\bin;${env:PATH}" }
+                }
+            },
             "problemMatcher": ["$gcc"],
             "group": "build",
             "detail": "Debug build with clang++ (-g)"
@@ -67,18 +109,34 @@
         {
             "type": "cppbuild",
             "label": "Build (clang++ Release)",
-            "command": "C:\\msys64\\ucrt64\\bin\\clang++.exe",
+            "command": "/usr/bin/clang++",
             "args": [
-                "-O3", "-DNDEBUG",
+                "-O3", "-DNDEBUG", "-std=c++17",
                 "-I", "${env:FIZMO_INCLUDES}",
+                "-I", "/usr/include/freetype2",
                 "${file}",
-                "-o", "${fileDirname}\\${fileBasenameNoExtension}.exe",
-                "-lgdi32", "-luser32", "-lz", "-ljpeg",
-                "-lole32", "-loleaut32", "-luuid", "-lcomdlg32",
-                "-lshell32", "-lkernel32", "-lwinmm", "-lwsock32",
-                "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32"
+                "-o", "${fileDirname}/${fileBasenameNoExtension}",
+                "-lX11", "-lXft", "-lXrender", "-lfontconfig", "-lfreetype",
+                "-lz", "-ljpeg", "-lm", "-lssl", "-lcrypto", "-lpthread"
             ],
             "options": { "cwd": "${fileDirname}" },
+            "windows": {
+                "command": "C:\\msys64\\ucrt64\\bin\\clang++.exe",
+                "args": [
+                    "-O3", "-DNDEBUG", "-std=c++17",
+                    "-I", "${env:FIZMO_INCLUDES}",
+                    "${file}",
+                    "-o", "${fileDirname}\\${fileBasenameNoExtension}.exe",
+                    "-lgdi32", "-luser32", "-lz", "-ljpeg",
+                    "-lole32", "-loleaut32", "-luuid", "-lcomdlg32",
+                    "-lshell32", "-lkernel32", "-lwinmm", "-lwsock32",
+                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32"
+                ],
+                "options": {
+                    "cwd": "${fileDirname}",
+                    "env": { "PATH": "C:\\msys64\\ucrt64\\bin;${env:PATH}" }
+                }
+            },
             "problemMatcher": ["$gcc"],
             "group": "build",
             "detail": "Optimized release build with clang++"

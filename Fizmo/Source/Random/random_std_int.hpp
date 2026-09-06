@@ -1,156 +1,194 @@
-#ifndef RANDOM_STD_INT_HPP
-#define RANDOM_STD_INT_HPP
+#ifndef FIZMO_RANDOM_HPP
+#define FIZMO_RANDOM_HPP
 
-#include <random>
+#include "../Basic/fizmo_defines.hpp"
+
 #include <chrono>
-#include <thread>
+#include <cstddef>
 #include <cstdint>
-#include <array>
-#include <cstring>
-#include <stdexcept>
 #include <limits>
+#include <random>
+#include <stdexcept>
+#include <thread>
+#include <type_traits>
+
+#if defined(OS_WINDOWS)
+    #include <bcrypt.h>         
+#elif defined(OS_LINUX)
+    #include <errno.h>
+    #include <fcntl.h>
+    #include <sys/random.h>
+    #include <unistd.h>
+#endif
 
 #if defined(_MSC_VER)
-#include <intrin.h>
+    #include <intrin.h>
 #endif
 
 namespace fizmo {
 namespace detail {
 
+inline void os_random_bytes(void* buffer, std::size_t length) {
+    if (length == 0) return;
+
+#if defined(OS_WINDOWS)
+    const NTSTATUS status = BCryptGenRandom(
+        nullptr, static_cast<PUCHAR>(buffer), 
+        static_cast<ULONG>(length),
+        BCRYPT_USE_SYSTEM_PREFERRED_RNG
+    );
+
+    if (status != 0) throw std::runtime_error("BCryptGenRandom failed");
+#elif defined(OS_LINUX)
+    auto* out = static_cast<unsigned char*>(buffer);
+    std::size_t remaining = length;
+
+    while (remaining > 0) {
+        const ssize_t got = ::getrandom(out, remaining, 0);
+
+        if (got < 0) {
+            if (errno == EINTR) continue;          
+            if (errno == ENOSYS) break;            
+            throw std::runtime_error("getrandom failed");
+        }
+
+        out       += got;
+        remaining -= static_cast<std::size_t>(got);
+    }
+
+    if (remaining == 0) return;
+    const int fd = ::open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) throw std::runtime_error("open(/dev/urandom) failed");
+
+    while (remaining > 0) {
+        const ssize_t got = ::read(fd, out, remaining);
+
+        if (got < 0) {
+            if (errno == EINTR) continue;
+            ::close(fd);
+            throw std::runtime_error("read(/dev/urandom) failed");
+        }
+
+        if (got == 0) {                            
+            ::close(fd);
+            throw std::runtime_error("read(/dev/urandom) returned EOF");
+        }
+
+        out       += got;
+        remaining -= static_cast<std::size_t>(got);
+    }
+
+    ::close(fd);
+#endif
+}
+
 class RNG {
 private:
-    std::mt19937_64 engine;
+    std::mt19937_64 m_engine;
 
-    static std::uint64_t rdtsc() {
+    static std::uint64_t rdtsc() noexcept {
     #if defined(_MSC_VER)
         return __rdtsc();
-    #elif defined(__i386__)
-        std::uint64_t x;
-        __asm__ volatile ("rdtsc" : "=A" (x));
-        return x;
     #elif defined(__x86_64__)
         std::uint32_t hi, lo;
         __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
-        return ((std::uint64_t)hi << 32) | lo;
+        return (static_cast<std::uint64_t>(hi) << 32) | lo;
+    #elif defined(__i386__)
+        std::uint64_t x;
+        __asm__ volatile ("rdtsc" : "=A"(x));
+        return x;
     #else
-        return std::chrono::high_resolution_clock::now().time_since_epoch().count();
+        return static_cast<std::uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
     #endif
     }
 
-    static std::uint64_t mix_entropy() {
+    static std::uint64_t mix(std::uint64_t seed, std::uint64_t value) noexcept {
+        seed ^= value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
+        return seed;
+    }
+
+    static std::uint64_t make_seed() noexcept {
         std::uint64_t seed = 0;
-        auto now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-        std::uint64_t tsc    = rdtsc();
-        std::uint64_t pid    = static_cast<std::uint64_t>(::getpid());
-        std::uint64_t tid    = std::hash<std::thread::id>{}(std::this_thread::get_id());
-        std::random_device rd;
-        std::uint64_t rd_val = (static_cast<std::uint64_t>(rd()) << 32) ^ rd();
-        seed ^= now    + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
-        seed ^= tsc    + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
-        seed ^= pid    + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
-        seed ^= tid    + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
-        seed ^= rd_val + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
+        std::uint64_t os_value = 0;
+
+        try {
+            os_random_bytes(&os_value, sizeof(os_value));
+        } catch (...) {
+            os_value = 0;
+        }
+
+        seed = mix(seed, os_value);
+        seed = mix(seed, static_cast<std::uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
+        seed = mix(seed, rdtsc());
+        seed = mix(seed, std::hash<std::thread::id>{}(std::this_thread::get_id()));
+        seed = mix(seed, reinterpret_cast<std::uintptr_t>(&seed));  
         return seed;
     }
 
 public:
-    RNG() {
-        std::uint64_t seed = mix_entropy();
-        engine.seed(seed);
-    }
+    RNG() noexcept : m_engine(make_seed()) {}
 
-    template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
-    inline T random_int(T a, T b) {
-        std::uniform_int_distribution<T> dist(a, b);
-        return dist(engine);
+    std::mt19937_64& engine() noexcept { return m_engine; }
+
+    template <typename T, typename = typename std::enable_if<std::is_integral<T>::value && !std::is_same<typename std::remove_cv<T>::type, bool>::value>::type>
+    T random_int(T a, T b) noexcept {
+        if (a > b) { const T t = a; a = b; b = t; }
+        if (a == b) return a;
+        using Wide = typename std::conditional<std::is_signed<T>::value, long long, unsigned long long>::type;
+        std::uniform_int_distribution<Wide> dist(static_cast<Wide>(a), static_cast<Wide>(b));
+        return static_cast<T>(dist(m_engine));
     }
 };
 
-#if defined(_WIN32) || defined(_WIN64)
-    #include <windows.h>
-    #include <bcrypt.h>
-#elif defined(__linux__)
-    #include <sys/random.h>
-#elif defined(__APPLE__)
-    #include <Security/Security.h>
-#elif defined(__ANDROID__)
-    #include <sys/random.h>
-#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
-    #include <unistd.h>
-#elif defined(__sun)
-    #include <fcntl.h>
-    #include <unistd.h>
-#else 
-    #include <fcntl.h>
-    #include <unistd.h>
-#endif
-
-inline void os_random_bytes(void* buffer, std::size_t length) {
-#if defined(_WIN32) || defined(_WIN64)
-    if (BCryptGenRandom(nullptr, static_cast<PUCHAR>(buffer), (ULONG)length, BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) {
-        throw std::runtime_error("BCryptGenRandom failed");
-    }
-#elif defined(__linux__)
-    ssize_t ret = getrandom(buffer, length, 0);
-    if (ret < 0 || static_cast<std::size_t>(ret) != length) { throw std::runtime_error("genrandom failed"); }
-#elif defined(__APPLE__)
-    if (SecRandomCopyBytes(kSecRandomDefault, length, buffer) != errSecSuccess) { throw std::runtime_error("SecRandomCopyBytes failed"); }
-#elif defined(__ANDROID__)
-    ssize_t ret = getrandom(buffer, length, 0);
-    if (ret < 0 || static_cast<std::size_t>(ret) != length) { throw std::runtime_error("genrandom failed"); }
-#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
-    arc4random_buf(buffer, length);
-#elif defined(__sun)
-    int fd = open("/dev/random", O_RDONLY);
-    if (fd < 0) { throw std::runtime_error("open(/dev/random) failed"); }
-    ssize_t ret = read(fd, buffer, length);
-    close(fd);
-    if (ret < 0 || static_cast<std::size_t>(ret) != length) { throw std::runtime_error("read(/dev/random) failed"); }
-#else 
-    int fd = open("/dev/urandom", O_RDONLY);
-    if (fd < 0) { throw std::runtime_error("open(/dev/urandom) failed"); }
-    ssize_t ret = read(fd, buffer, length);
-    close(fd);
-    if (ret < 0 || static_cast<std::size_t>(ret) != length) { throw std::runtime_error("read(/dev/urandom) failed"); }
-#endif
+inline RNG& thread_rng() noexcept {
+    static thread_local RNG rng;
+    return rng;
 }
 
 } // namespace detail
 
-template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
+inline void random_bytes(void* buffer, std::size_t length) {
+    detail::os_random_bytes(buffer, length);
+}
+
+template <typename T, typename = typename std::enable_if<std::is_integral<T>::value && !std::is_same<typename std::remove_cv<T>::type, bool>::value>::type>
 T random_int(T a = T(0), T b = std::numeric_limits<T>::max()) {
+    if (a > b) { const T t = a; a = b; b = t; }
+    if (a == b) return a;
     using U = typename std::make_unsigned<T>::type;
+    const U span = static_cast<U>(static_cast<U>(b) - static_cast<U>(a));  
     U value;
-    detail::os_random_bytes(&value, sizeof(U));
-    const U range = static_cast<U>(b) - static_cast<U>(a);
-    const U mapped = (range == std::numeric_limits<U>::max()) ? value : value % (range + U(1));
-    return a + static_cast<T>(mapped);
+
+    if (span == std::numeric_limits<U>::max()) {
+        random_bytes(&value, sizeof(U));          
+    } else {
+        const U bound = static_cast<U>(span + U(1));
+        const U threshold = static_cast<U>(static_cast<U>(U(0) - bound) % bound);
+
+        do {
+            random_bytes(&value, sizeof(U));
+        } while (value < threshold);
+
+        value = static_cast<U>(value % bound);
+    }
+
+    return static_cast<T>(static_cast<U>(static_cast<U>(a) + value));
 }
 
-template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
-T random_int_nothrow(T a = T(0), T b = std::numeric_limits<T>::max()) noexcept {
+template <typename T>
+T random_int_nothrow(T a = T(0), T b = std::numeric_limits<T>::max(), T fallback = std::numeric_limits<T>::max()) noexcept {
     try {
-        return random_int(a, b);
+        return random_int<T>(a, b);
     } catch (...) {
-        return std::numeric_limits<T>::max();
+        return fallback;
     }
 }
 
-template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
-T unsecure_random_int(T min = T(0), T max = std::numeric_limits<T>::max()) {
-    detail::RNG rng;
-    return rng.random_int(min, max);
-}
-
-template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
-T unsecure_random_int_nothrow(T min = T(0), T max = std::numeric_limits<T>::max()) noexcept {
-    try {
-        return unsecure_random_int(min, max);
-    } catch (...) {
-        return std::numeric_limits<T>::max();
-    }
+template <typename T, typename = typename std::enable_if<std::is_integral<T>::value && !std::is_same<typename std::remove_cv<T>::type, bool>::value>::type>
+T unsecure_random_int(T a = T(0), T b = std::numeric_limits<T>::max()) noexcept {
+    return detail::thread_rng().template random_int<T>(a, b);
 }
 
 } // namespace fizmo
 
-#endif // RANDOM_STD_INT_HPP
+#endif // FIZMO_RANDOM_HPP

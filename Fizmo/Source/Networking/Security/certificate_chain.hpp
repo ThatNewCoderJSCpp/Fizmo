@@ -2,7 +2,7 @@
 #define FIZMO_CERTIFICATE_CHAIN_HPP
 
 #include "certificate.hpp"
-#include "../../Basic/basic_includes.hpp"
+#include "Backend/native_backend.hpp"
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -39,6 +39,17 @@ public:
         return chain;
     }
 
+    static CertificateChain from_der_list(const std::vector<std::vector<std::uint8_t>>& ders) noexcept {
+        CertificateChain chain;
+
+        for (const auto& der : ders) {
+            Certificate cert;
+            if (cert.load_from_der(der)) { chain.m_certs.push_back(std::move(cert)); }
+        }
+
+        return chain;
+    }
+
     bool push_back(Certificate&& cert) noexcept {
         if (!cert.loaded()) return false;
         m_certs.push_back(std::move(cert));
@@ -58,11 +69,19 @@ public:
         return mids;
     }
 
+    std::vector<const Certificate*> tail() const noexcept {
+        std::vector<const Certificate*> rest;
+        if (m_certs.size() <= 1) return rest;
+        rest.reserve(m_certs.size() - 1);
+        for (std::size_t i = 1; i < m_certs.size(); ++i) { rest.push_back(&m_certs[i]); }
+        return rest;
+    }
+
     const Certificate& operator[](std::size_t index) const noexcept { return m_certs[index]; }
 
     struct OrderResult {
         bool        valid = false;
-        std::size_t break_index = 0;   
+        std::size_t break_index = 0;
         std::string detail;
         explicit operator bool() const noexcept { return valid; }
     };
@@ -72,11 +91,8 @@ public:
         if (m_certs.size() == 1) { return { true, 0, {} }; }
 
         for (std::size_t i = 0; i + 1 < m_certs.size(); ++i) {
-            const auto& current = m_certs[i];
-            const auto& next    = m_certs[i + 1];
-
-            if (!issuer_matches_subject(current, next)) {
-                return { 
+            if (!detail::NativeCertOps::issuer_links_to_subject(m_certs[i].native(), m_certs[i + 1].native())) {
+                return {
                     false, i,
                     "Issuer of cert[" + std::to_string(i) +
                     "] does not match subject of cert[" +
@@ -96,9 +112,9 @@ public:
             s += "    [" + std::to_string(i) + "]: ";
             s += m_certs[i].to_string();
             s += "\n";
-            if (i == m_certs.size() - 1) { s += "}\n"; }
         }
 
+        s += "}\n";
         return s;
     }
 
@@ -106,56 +122,10 @@ private:
     std::vector<Certificate> m_certs;
 
     void parse_pem_bundle(const std::string& pem) noexcept {
-        static const std::string BEGIN_MARKER = "-----BEGIN CERTIFICATE-----";
-        static const std::string END_MARKER   = "-----END CERTIFICATE-----";
-        std::size_t pos = 0;
-
-        while (pos < pem.size()) {
-            std::size_t begin = pem.find(BEGIN_MARKER, pos);
-            if (begin == std::string::npos) break;
-            std::size_t end = pem.find(END_MARKER, begin);
-            if (end == std::string::npos) break;
-            end += END_MARKER.size();
-
-            if (end < pem.size() && (pem[end] == '\n' || pem[end] == '\r')) {
-                ++end;
-                if (end < pem.size() && pem[end] == '\n') ++end;
-            }
-
-            std::string block = pem.substr(begin, end - begin);
+        for (const auto& block : detail::PEM::split_bundle(pem)) {
             Certificate cert;
             if (cert.load_from_pem(block)) { m_certs.push_back(std::move(cert)); }
-            pos = end;
         }
-    }
-
-    static bool issuer_matches_subject(const Certificate& current, const Certificate& next) noexcept {
-    #ifdef OS_WINDOWS
-        PCCERT_CONTEXT cur_ctx  = current.native_handle();
-        PCCERT_CONTEXT next_ctx = next.native_handle();
-
-        if (cur_ctx && next_ctx) {
-            return CertCompareCertificateName(
-                X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
-                &cur_ctx->pCertInfo->Issuer,
-                &next_ctx->pCertInfo->Subject
-            ) == TRUE;
-        }
-    #endif
-
-        const auto& issuer  = current.issuer();
-        const auto& subject = next.subject();
-        if (issuer.size() != subject.size()) return false;
-
-        for (std::size_t i = 0; i < issuer.size(); ++i) {
-            char a = issuer[i];
-            char b = subject[i];
-            if (a >= 'A' && a <= 'Z') a += ('a' - 'A');
-            if (b >= 'A' && b <= 'Z') b += ('a' - 'A');
-            if (a != b) return false;
-        }
-
-        return true;
     }
 };
 

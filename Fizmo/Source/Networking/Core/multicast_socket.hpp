@@ -20,7 +20,7 @@ private:
 
 public:
     explicit MulticastSocket(AddressFamily family = AddressFamily::IPv4) : m_socket(family), m_local_interface("0.0.0.0"), m_ttl(1), m_loopback(true) {
-        options(m_socket).set(OptionCode::ReuseAddress, true);
+        options(m_socket).set(BooleanOption::ReuseAddress, true);
     }
 
     MulticastSocket(const MulticastSocket&) = delete;

@@ -20,7 +20,8 @@ enum class OptionType {
 
 enum class OptionCategory {
     Common = 0,
-    Windows
+    Windows,
+    Linux
 };
 
 #define FIZMO_COMMON_OPTIONS(X)                          \
@@ -49,14 +50,28 @@ enum class OptionCategory {
     X(ExclusiveAddress,  Windows,  Boolean)              \
     X(DontFragment,      Windows,  Boolean)
 
+#define FIZMO_LINUX_OPTIONS(X)                           \
+    X(BindToDevice,      Linux,    String)               \
+    X(Priority,          Linux,    Integer)              \
+    X(DeferAccept,       Linux,    Integer)              \
+    X(QuickAck,          Linux,    Boolean)              \
+    X(FreeBind,          Linux,    Boolean)              \
+    X(PathMTUDiscover,   Linux,    Integer)              \
+    X(TransparentProxy,  Linux,    Boolean)
+
 #define FIZMO_ALL_OPTIONS(X)                             \
     FIZMO_COMMON_OPTIONS(X)                              \
-    FIZMO_WINDOWS_OPTIONS(X)
+    FIZMO_WINDOWS_OPTIONS(X)                             \
+    FIZMO_LINUX_OPTIONS(X)
 
 #ifdef OS_WINDOWS
     #define FIZMO_PLATFORM_EXPAND(M)      \
             FIZMO_COMMON_OPTIONS(M)        \
             FIZMO_WINDOWS_OPTIONS(M)
+#elif defined(OS_LINUX)
+    #define FIZMO_PLATFORM_EXPAND(M)   \
+            FIZMO_COMMON_OPTIONS(M)    \
+            FIZMO_LINUX_OPTIONS(M)
 #else
     #define FIZMO_PLATFORM_EXPAND(M)   \
             FIZMO_COMMON_OPTIONS(M)
@@ -114,6 +129,8 @@ enum class OptionCategory {
 #define FIZMO_MATCH_Common_Windows(X, name)
 #define FIZMO_MATCH_Windows_Common(X, name)
 #define FIZMO_MATCH_Windows_Windows(X, name)      X(name)
+#define FIZMO_MATCH_Linux_Common(X, name)
+#define FIZMO_MATCH_Linux_Linux(X, name)          X(name)
 
 #define FIZMO_BY_TYPE(target, X, name, cat, type)  FIZMO_MATCH_##target##_##type(X, name)
 #define FIZMO_BY_CAT(target, X, name, cat, type)   FIZMO_MATCH_##target##_##cat(X, name)
@@ -424,6 +441,8 @@ public:
         if (cat == OptionCategory::Common) return true;
     #ifdef OS_WINDOWS
         return cat == OptionCategory::Windows;
+    #elif defined(OS_LINUX)
+        return cat == OptionCategory::Linux;
     #else
         return false;
     #endif
@@ -437,6 +456,7 @@ public:
         switch (category) {
             case OptionCategory::Common:  return "Common";
             case OptionCategory::Windows: return "Windows";
+            case OptionCategory::Linux:   return "Linux";
             default:                      return "Unknown";
         }
     }

@@ -6,9 +6,12 @@
 #include "../Graphics/color.hpp"
 #include "window_events.hpp"
 #include "../Input/keybord.hpp"
+#include "Windows Impl/window_base.hpp"
 
-#ifdef OS_WINDOWS
-#include "Windows Impl/window_impl.hpp"
+#if defined(OS_WINDOWS)
+    #include "Windows Impl/window_windows_impl.hpp"
+#elif defined(OS_LINUX)
+    #include "Windows Impl/window_linux_impl.hpp"
 #endif
 
 namespace fizmo {
@@ -25,7 +28,7 @@ private:
 
 public:
     Window(unsigned int w, unsigned int h, const std::string& t, const graphics::Color& background_color = graphics::Color()) noexcept : m_width(w), m_height(h), m_title(t), m_color(background_color) {
-    #ifdef OS_WINDOWS
+    #if defined(OS_WINDOWS) || defined(OS_LINUX)
         m_impl = std::make_unique<detail::WindowImpl>(this, background_color);
     #endif
     }

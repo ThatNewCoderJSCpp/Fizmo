@@ -8,11 +8,9 @@ namespace networking {
 namespace core {
 
 enum class AddressFamily {
-#ifdef OS_WINDOWS
     IPv4 = AF_INET,
     IPv6 = AF_INET6,
-    Any = AF_UNSPEC
-#endif
+    Any  = AF_UNSPEC
 };
 
 class NetworkAddress {

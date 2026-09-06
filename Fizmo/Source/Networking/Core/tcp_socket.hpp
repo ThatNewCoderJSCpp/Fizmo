@@ -23,7 +23,7 @@ public:
         std::lock_guard<std::mutex> lock(m_socket_mutex);
 
         if (m_state.state() == SocketState::State::Connected) {
-            graceful_close_internal(500); 
+            graceful_close_internal(500);
         } else {
             close_internal();
         }
@@ -41,11 +41,9 @@ public:
             m_state = SocketState::State::Connected;
         } else {
             m_state = SocketState::State::Initialized;
-        #ifdef OS_WINDOWS
-            SocketError err = WinsockErrorConverter::get_last_error("connect");
+            SocketError err = NativeErrorConverter::get_last_error("connect");
             add_error(err);
-            if (err.is_critical()) { m_state = SocketState::State::Error; } 
-        #endif
+            if (err.is_critical()) { m_state = SocketState::State::Error; }
         }
 
         return result;
@@ -60,10 +58,7 @@ public:
             m_state = SocketState::State::Listening;
         } else {
             m_state = SocketState::State::Error;
-        #ifdef OS_WINDOWS
-            SocketError err = WinsockErrorConverter::get_last_error("listen");
-            add_error(err); 
-        #endif
+            add_error(NativeErrorConverter::get_last_error("listen"));
         }
 
         return result;
@@ -77,14 +72,12 @@ public:
         m_state = SocketState::State::Listening;
 
         if (!impl) {
-        #ifdef OS_WINDOWS
-            SocketError err = WinsockErrorConverter::get_last_error("accept");
+            SocketError err = NativeErrorConverter::get_last_error("accept");
             add_error(err);
             if (err.is_critical()) { m_state = SocketState::State::Error; }
-        #endif
             return nullptr;
         }
-        
+
         AddressFamily af = impl->family();
         return std::unique_ptr<TCPSocket>(new TCPSocket(af, std::move(impl)));
     }
@@ -95,11 +88,9 @@ public:
         const int result = m_impl->send(data, length);
 
         if (result < 0) {
-        #ifdef OS_WINDOWS
-            SocketError err = WinsockErrorConverter::get_last_error("send");
+            SocketError err = NativeErrorConverter::get_last_error("send");
             add_error(err);
             if (err.is_critical()) { m_state = SocketState::State::Error; }
-        #endif
         }
 
         return result;
@@ -113,11 +104,9 @@ public:
         if (result == 0) {
             m_state = SocketState::State::Closing;
         } else if (result < 0) {
-        #ifdef OS_WINDOWS
-            SocketError err = WinsockErrorConverter::get_last_error("receive");
+            SocketError err = NativeErrorConverter::get_last_error("receive");
             add_error(err);
             if (err.is_critical()) { m_state = SocketState::State::Error; }
-        #endif
         }
 
         return result;
@@ -131,11 +120,9 @@ public:
         if (result == 0) {
             m_state = SocketState::State::Closing;
         } else if (result < 0) {
-        #ifdef OS_WINDOWS
-            SocketError err = WinsockErrorConverter::get_last_error("scatter_receive");
+            SocketError err = NativeErrorConverter::get_last_error("scatter_receive");
             add_error(err);
             if (err.is_critical()) { m_state = SocketState::State::Error; }
-        #endif
         }
 
         return result;
@@ -147,11 +134,9 @@ public:
         int result = m_impl->gather_send(buffers, count);
 
         if (result < 0) {
-        #ifdef OS_WINDOWS
-            SocketError err = WinsockErrorConverter::get_last_error("gather_send");
+            SocketError err = NativeErrorConverter::get_last_error("gather_send");
             add_error(err);
             if (err.is_critical()) { m_state = SocketState::State::Error; }
-        #endif
         }
 
         return result;

@@ -3,6 +3,8 @@
 
 #include "socket_base.hpp"
 #include "socket_options.hpp"
+#include "Socket Impl/native_socket_ops.hpp"
+#include "Socket Impl/native_ip_options.hpp"
 
 namespace fizmo {
 namespace networking {
@@ -11,7 +13,7 @@ namespace core {
 enum class RawProtocol {
     ICMP = 0,
     ICMPv6,
-    RAW        
+    RAW
 };
 
 class RawSocket : public SocketBase {
@@ -19,21 +21,25 @@ private:
     RawProtocol m_protocol;
 
 public:
-    explicit RawSocket(RawProtocol protocol = RawProtocol::ICMP, AddressFamily family = AddressFamily::IPv4) noexcept : SocketBase(SocketType::UDP, family), m_protocol(protocol) {                                           
-    #ifdef OS_WINDOWS
+    explicit RawSocket(RawProtocol protocol = RawProtocol::ICMP, AddressFamily family = AddressFamily::IPv4) noexcept : SocketBase(SocketType::UDP, family), m_protocol(protocol) {
         if (m_impl) { m_impl->close(); }
-        int af    = (family == AddressFamily::IPv6) ? AF_INET6 : AF_INET;
-        int proto = native_protocol(protocol, family);
-        SOCKET s  = ::socket(af, SOCK_RAW, proto);
+        detail::native_handle_t handle = detail::sockops::create_raw_handle(family, native_protocol(protocol, family));
 
-        if (s == INVALID_SOCKET) {
+        if (handle == detail::kInvalidHandle) {
+            m_impl.reset();
             m_state = SocketState::State::Error;
-            add_error(WinsockErrorConverter::get_last_error("socket(SOCK_RAW)"));
-        } else {
-            m_impl = std::make_unique<detail::WinsockImpl>(s, SocketType::UDP, family);
-            m_state = SocketState::State::Initialized;
+            add_error(NativeErrorConverter::get_last_error("socket(SOCK_RAW)"));
+            return;
         }
-    #endif
+
+        m_impl = detail::sockops::adopt(handle, SocketType::UDP, family);
+
+        if (m_impl) {
+            m_state = SocketState::State::Initialized;
+        } else {
+            m_state = SocketState::State::Error;
+            add_error(SocketError(ErrorCode::OutOfMemory, "Could not wrap raw socket handle", 0, "RawSocket"));
+        }
     }
 
     RawSocket(const RawSocket&) = delete;
@@ -60,13 +66,7 @@ public:
         std::lock_guard<std::mutex> lock(m_socket_mutex);
         if (!m_state.can_sendto()) return -1;
         int result = m_impl->sendto(data, length, dest);
-
-        if (result < 0) {
-        #ifdef OS_WINDOWS
-            add_error(WinsockErrorConverter::get_last_error("sendto(raw)"));
-        #endif
-        }
-
+        if (result < 0) { add_error(NativeErrorConverter::get_last_error("sendto(raw)")); }
         return result;
     }
 
@@ -74,111 +74,63 @@ public:
         std::lock_guard<std::mutex> lock(m_socket_mutex);
         if (!m_state.can_recvfrom()) return -1;
         int result = m_impl->recvfrom(buffer, length, source);
-
-        if (result < 0) {
-        #ifdef OS_WINDOWS
-            add_error(WinsockErrorConverter::get_last_error("recvfrom(raw)"));
-        #endif
-        }
-
+        if (result < 0) { add_error(NativeErrorConverter::get_last_error("recvfrom(raw)")); }
         return result;
     }
 
     int peek(void* buffer, std::size_t length, NetworkAddress& source) noexcept {
-    #ifdef OS_WINDOWS
         std::lock_guard<std::mutex> lock(m_socket_mutex);
         if (!m_state.can_recvfrom()) return -1;
-        struct sockaddr_storage storage;
-        int addr_len = sizeof(storage);
-        std::memset(&storage, 0, sizeof(storage));
-
-        int result = ::recvfrom(
-            static_cast<detail::WinsockImpl*>(m_impl.get())->get_raw_socket(),
-            static_cast<char*>(buffer),
-            static_cast<int>(length),
-            MSG_PEEK,
-            reinterpret_cast<struct sockaddr*>(&storage),
-            &addr_len
-        );
-
-        if (result >= 0) {
-            source = detail::WinsockImpl::parse_sockaddr(storage);
-        } else {
-            add_error(WinsockErrorConverter::get_last_error("peek(raw)"));
-        }
-
+        int result = detail::sockops::peek_from(m_impl.get(), buffer, length, source);
+        if (result < 0) { add_error(NativeErrorConverter::get_last_error("peek(raw)")); }
         return result;
-    #else
-        return -1;
-    #endif
     }
 
 public:
     bool set_header_included(bool enable) noexcept {
-    #ifdef OS_WINDOWS
         std::lock_guard<std::mutex> lock(m_socket_mutex);
         if (!m_state.is_initialized()) return false;
-        int val = enable ? 1 : 0;
-        int result;
 
-        if (m_family == AddressFamily::IPv6) {
-            result = m_impl->set_option(IPPROTO_IPV6, IPV6_HDRINCL, &val, sizeof(val));
-        } else {
-            result = m_impl->set_option(IPPROTO_IP, IP_HDRINCL, &val, sizeof(val));
+        if (!detail::IPOptions::header_included_supported(m_family)) {
+            add_error(SocketError(
+                ErrorCode::OperationNotSupported,
+                "Header-included mode is not available for this address family on this platform",
+                0,
+                "set_header_included"
+            ));
+
+            return false;
         }
 
-        if (result != 0) {
-            add_error(WinsockErrorConverter::get_last_error("set_header_included"));
+        if (!detail::IPOptions::set_header_included(m_impl.get(), m_family, enable)) {
+            add_error(NativeErrorConverter::get_last_error("set_header_included"));
             return false;
         }
 
         return true;
-    #else
-        return false;
-    #endif
+    }
+
+    bool header_included_supported() const noexcept {
+        return detail::IPOptions::header_included_supported(m_family);
     }
 
 public:
     bool set_ttl(int ttl) noexcept {
-    #ifdef OS_WINDOWS
         std::lock_guard<std::mutex> lock(m_socket_mutex);
         if (!m_state.is_initialized()) return false;
-        int result;
 
-        if (m_family == AddressFamily::IPv6) {
-            result = m_impl->set_option(IPPROTO_IPV6, IPV6_UNICAST_HOPS, &ttl, sizeof(ttl));
-        } else {
-            result = m_impl->set_option(IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
-        }
-
-        if (result != 0) {
-            add_error(WinsockErrorConverter::get_last_error("set_ttl(raw)"));
+        if (!detail::IPOptions::set_unicast_hops(m_impl.get(), m_family, ttl)) {
+            add_error(NativeErrorConverter::get_last_error("set_ttl(raw)"));
             return false;
         }
 
         return true;
-    #else
-        return false;
-    #endif
     }
 
     int get_ttl() const noexcept {
-    #ifdef OS_WINDOWS
         std::lock_guard<std::mutex> lock(m_socket_mutex);
         if (!m_state.is_initialized()) return -1;
-        int ttl = -1;
-        int len = sizeof(ttl);
-
-        if (m_family == AddressFamily::IPv6) {
-            m_impl->get_option(IPPROTO_IPV6, IPV6_UNICAST_HOPS, &ttl, &len);
-        } else {
-            m_impl->get_option(IPPROTO_IP, IP_TTL, &ttl, &len);
-        }
-
-        return ttl;
-    #else
-        return -1;
-    #endif
+        return detail::IPOptions::get_unicast_hops(m_impl.get(), m_family);
     }
 
 public:
@@ -190,8 +142,8 @@ public:
     ) noexcept {
         std::size_t total = 8 + payload_len;
         std::vector<std::uint8_t> pkt(total, 0);
-        pkt[0] = 8;   
-        pkt[1] = 0;   
+        pkt[0] = 8;
+        pkt[1] = 0;
         pkt[4] = static_cast<std::uint8_t>(identifier >> 8);
         pkt[5] = static_cast<std::uint8_t>(identifier & 0xFF);
         pkt[6] = static_cast<std::uint8_t>(sequence >> 8);
@@ -218,12 +170,12 @@ public:
         std::uint16_t expected_id
     ) noexcept {
         auto* bytes = static_cast<const std::uint8_t*>(data);
-        if (length < 28) return -1;  
+        if (length < 28) return -1;
         std::size_t ip_hdr_len = static_cast<std::size_t>(bytes[0] & 0x0F) * 4;
         if (length < ip_hdr_len + 8) return -1;
         const std::uint8_t* icmp = bytes + ip_hdr_len;
-        if (icmp[0] != 0) return -1;  
-        if (icmp[1] != 0) return -1;  
+        if (icmp[0] != 0) return -1;
+        if (icmp[1] != 0) return -1;
         std::uint16_t id = (static_cast<std::uint16_t>(icmp[4]) << 8) | icmp[5];
         if (id != expected_id) return -1;
         std::uint16_t seq = (static_cast<std::uint16_t>(icmp[6]) << 8) | icmp[7];
@@ -232,20 +184,16 @@ public:
 
 private:
     static int native_protocol(RawProtocol proto, AddressFamily family) noexcept {
-    #ifdef OS_WINDOWS
         switch (proto) {
             case RawProtocol::ICMP:
-                return (family == AddressFamily::IPv6) ? IPPROTO_ICMPV6 : IPPROTO_ICMP;
+                return (family == AddressFamily::IPv6) ? detail::sockops::kProtocolICMPv6 : detail::sockops::kProtocolICMP;
             case RawProtocol::ICMPv6:
-                return IPPROTO_ICMPV6;
+                return detail::sockops::kProtocolICMPv6;
             case RawProtocol::RAW:
-                return IPPROTO_RAW;
+                return detail::sockops::kProtocolRaw;
             default:
-                return IPPROTO_ICMP;
+                return detail::sockops::kProtocolICMP;
         }
-    #else
-        return -1;
-    #endif
     }
 };
 

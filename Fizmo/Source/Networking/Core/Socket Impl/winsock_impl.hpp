@@ -398,14 +398,14 @@ public: // Common
 
     int set_blocking(bool blocking) noexcept override {
         std::lock_guard<std::mutex> lock(m_impl_mutex);
-        if (m_socket == INVALID_SOCKET) return;
+        if (m_socket == INVALID_SOCKET) return -1;   
         u_long mode = blocking ? 0 : 1;
         return ioctlsocket(m_socket, FIONBIO, &mode);
     }
 
     int set_option(int level, int option, const void* value, int length) noexcept override {
         std::lock_guard<std::mutex> lock(m_impl_mutex);
-        if (m_socket == INVALID_SOCKET) return;
+        if (m_socket == INVALID_SOCKET) return -1; 
         return setsockopt(m_socket, level, option, static_cast<const char*>(value), length);
     }
 
@@ -494,6 +494,11 @@ public:
         );
 
         return (result == 0) ? 0 : -1;
+    }
+
+    native_handle_t native_handle() const noexcept override {
+        std::lock_guard<std::mutex> lock(m_impl_mutex);
+        return m_socket;
     }
 };
 
