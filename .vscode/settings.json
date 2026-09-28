@@ -1,4 +1,5 @@
 {
     "C_Cpp.errorSquiggles": "enabled",
-    "cmake.sourceDirectory": "/run/media/christiandavis/Development/Fizmo/Fizmo"
+    "cmake.sourceDirectory": "/run/media/christiandavis/Development/Fizmo/Fizmo",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json"
 }

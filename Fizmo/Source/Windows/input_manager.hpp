@@ -81,6 +81,8 @@ public:
         m_mouse_just_released.clear();
         m_mouse_just_double_clicked.clear();
         m_scroll_delta = 0;
+        m_mouse_dx = 0;
+        m_mouse_dy = 0;
     }
 
     bool is_key_down(const std::string& name) const noexcept { return m_keys_down.count(name) > 0; }
@@ -109,7 +111,9 @@ public:
 
     bool is_mouse_held(unsigned int btn, double min_seconds) const noexcept { return mouse_hold_duration(btn) >= min_seconds; }
     bool is_mouse_double_clicked(unsigned int btn) const noexcept { return m_mouse_just_double_clicked.count(btn) > 0; }
-    int scroll_delta() const noexcept { return m_scroll_delta; }
+    int scroll_delta()  const noexcept { return m_scroll_delta; }
+    int mouse_delta_x() const noexcept { return m_mouse_dx; }
+    int mouse_delta_y() const noexcept { return m_mouse_dy; }
 
     void reset() noexcept {
         m_keys_down.clear();
@@ -124,6 +128,8 @@ public:
         m_mouse_just_double_clicked.clear();
         m_mouse_press_time.clear();
         m_scroll_delta = 0;
+        m_mouse_dx = 0;
+        m_mouse_dy = 0;
     }
 
 private:
@@ -181,6 +187,8 @@ private:
     void on_mouse_move(const WindowEvent& e) {
         m_mouse_x = static_cast<int>(e.x);
         m_mouse_y = static_cast<int>(e.y);
+        m_mouse_dx += e.dx;
+        m_mouse_dy += e.dy;
     }
 
     void on_mouse_scroll(const WindowEvent& e) {
@@ -210,8 +218,8 @@ private:
     std::unordered_set<std::string> m_just_released;
     std::unordered_set<std::string> m_double_pressed;
 
-    std::unordered_map<std::string, TimePoint> m_key_press_time;     // when each key went down
-    std::unordered_map<std::string, TimePoint> m_key_last_release;   // when each key was last released
+    std::unordered_map<std::string, TimePoint> m_key_press_time;     
+    std::unordered_map<std::string, TimePoint> m_key_last_release;   
 
     int m_mouse_x = 0;
     int m_mouse_y = 0;
@@ -224,6 +232,8 @@ private:
     std::unordered_map<unsigned int, TimePoint> m_mouse_press_time;
 
     int m_scroll_delta = 0;
+    int m_mouse_dx = 0;
+    int m_mouse_dy = 0;
 };
 
 } // namespace windows

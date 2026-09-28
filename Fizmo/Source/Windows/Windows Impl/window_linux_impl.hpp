@@ -9,6 +9,8 @@
 #include "../../x11_compat.hpp"
 #include <string>
 #include <cstdlib>
+#include <cmath>
+#include <dlfcn.h>
 
 namespace fizmo {
 namespace windows {
@@ -37,6 +39,19 @@ private:
     int m_last_click_x = 0;
     int m_last_click_y = 0;
 
+    bool          m_locked         = false;
+    bool          m_cursor_visible = true;
+    ::Cursor      m_blank_cursor   = 0;
+    bool          m_have_ref       = false;
+    int           m_ref_x = 0, m_ref_y = 0;    
+    int           m_pre_x = 0, m_pre_y = 0;    
+    unsigned long m_warp_serial    = 0;        
+
+    void*  m_xi_lib    = nullptr;
+    int    m_xi_opcode = -1;
+    bool   m_xi_raw    = false;
+    double m_raw_rem_x = 0.0, m_raw_rem_y = 0.0;
+
 public:
     WindowImpl(IWindowEventHandler* handler, const fizmo::graphics::Color& color) noexcept : ImplBase(handler), m_background(color) {
         XInitThreads();
@@ -52,10 +67,13 @@ public:
 
     ~WindowImpl() noexcept override {
         if (!m_display) return;
+        if (m_locked) XUngrabPointer(m_display, CurrentTime);
+        if (m_blank_cursor) XFreeCursor(m_display, m_blank_cursor);
         if (m_window) XDestroyWindow(m_display, m_window);
-        XCloseDisplay(m_display);
+        XCloseDisplay(m_display);  
         m_display = nullptr;
         m_window  = 0;
+        if (m_xi_lib) { dlclose(m_xi_lib); m_xi_lib = nullptr; }
     }
 
     bool create(unsigned int width, unsigned int height, const std::string& title) noexcept override {
@@ -88,6 +106,7 @@ public:
         m_last_width  = width;
         m_last_height = height;
         m_open = true;
+        init_raw_motion();
         return true;
     }
 
@@ -97,7 +116,13 @@ public:
 
         while (m_open && XPending(m_display) > 0) {
             XNextEvent(m_display, &ev);
+            if (ev.type == GenericEvent) { handle_generic(ev); continue; }
             handle_event(ev);
+        }
+
+        if (m_open && m_locked && !m_xi_raw) {
+            const int cx = static_cast<int>(m_last_width / 2), cy = static_cast<int>(m_last_height / 2);
+            if (m_ref_x != cx || m_ref_y != cy) { warp_to_center(); XFlush(m_display); }
         }
     }
 
@@ -153,7 +178,149 @@ public:
         m_paint_callback = std::move(cb);
     }
 
+    bool set_cursor_locked(bool locked) noexcept override {
+        if (!m_display || !m_window) return false;
+        if (locked == m_locked) return true;
+
+        if (locked) {
+            const int r = XGrabPointer(
+                m_display, m_window, x11::kTrue,
+                ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+                GrabModeAsync, GrabModeAsync,
+                m_window,            
+                blank_cursor(),      
+                CurrentTime
+            );
+
+            if (r != GrabSuccess) return false;
+            m_locked = true;
+            m_raw_rem_x = m_raw_rem_y = 0.0;
+            warp_to_center();
+        } else {
+            XUngrabPointer(m_display, CurrentTime);
+            m_locked = false;
+            m_warp_serial = 0;
+            apply_cursor();
+        }
+
+        XFlush(m_display);
+        return true;
+    }
+
+    bool cursor_locked() const noexcept override { return m_locked; }
+
+    void set_cursor_visible(bool visible) noexcept override {
+        m_cursor_visible = visible;
+        apply_cursor();
+        if (m_display) XFlush(m_display);
+    }
+
+    bool cursor_visible() const noexcept override { return m_cursor_visible; }
+
 private:
+    ::Cursor blank_cursor() noexcept {
+        if (m_blank_cursor || !m_display || !m_window) return m_blank_cursor;
+        static const char zero[1] = { 0 };
+        const x11::XPixmapId pm = XCreateBitmapFromData(m_display, m_window, zero, 1, 1);
+        if (!pm) return 0;
+        XColor black = {};
+        m_blank_cursor = XCreatePixmapCursor(m_display, pm, pm, &black, &black, 0, 0);
+        XFreePixmap(m_display, pm);
+        return m_blank_cursor;
+    }
+
+    void apply_cursor() noexcept {
+        if (!m_display || !m_window) return;
+        if (!m_cursor_visible && blank_cursor()) XDefineCursor(m_display, m_window, m_blank_cursor);
+        else XUndefineCursor(m_display, m_window);
+    }
+
+    void warp_to_center() noexcept {
+        const int cx = static_cast<int>(m_last_width / 2), cy = static_cast<int>(m_last_height / 2);
+        m_pre_x = m_ref_x;
+        m_pre_y = m_ref_y;
+        m_warp_serial = NextRequest(m_display);
+        XWarpPointer(m_display, x11::kNone, m_window, 0, 0, 0, 0, cx, cy);
+        m_ref_x = cx;
+        m_ref_y = cy;
+        m_have_ref = true;
+    }
+
+    bool relative_motion(const XMotionEvent& m, int& dx, int& dy) noexcept {
+        if (m_locked && m_xi_raw) { m_ref_x = m.x; m_ref_y = m.y; return false; }  
+
+        if (m_locked && m_warp_serial != 0 && m.serial < m_warp_serial) {
+            dx = m.x - m_pre_x; dy = m.y - m_pre_y;
+            m_pre_x = m.x; m_pre_y = m.y;
+            return dx != 0 || dy != 0;
+        }
+
+        if (!m_have_ref) { m_ref_x = m.x; m_ref_y = m.y; m_have_ref = true; }
+        dx = m.x - m_ref_x; dy = m.y - m_ref_y;
+        m_ref_x = m.x; m_ref_y = m.y;
+
+        if (m_locked) return dx != 0 || dy != 0;   
+        return true;
+    }
+
+    void init_raw_motion() noexcept {
+    #ifdef FIZMO_HAS_XINPUT2
+        int event = 0, error = 0;
+        if (!XQueryExtension(m_display, "XInputExtension", &m_xi_opcode, &event, &error)) return;
+        m_xi_lib = dlopen("libXi.so.6", RTLD_NOW | RTLD_LOCAL);
+        if (!m_xi_lib) return;
+        using QueryVersion = int (*)(::Display*, int*, int*);
+        using SelectEvents = int (*)(::Display*, ::Window, XIEventMask*, int);
+        auto query  = reinterpret_cast<QueryVersion>(dlsym(m_xi_lib, "XIQueryVersion"));
+        auto select = reinterpret_cast<SelectEvents>(dlsym(m_xi_lib, "XISelectEvents"));
+        int major = 2, minor = 0;
+        if (!query || !select || query(m_display, &major, &minor) != 0) return;   // 0 == Success
+        unsigned char mask_bits[XIMaskLen(XI_LASTEVENT)] = {};
+        XISetMask(mask_bits, XI_RawMotion);
+        XIEventMask mask;
+        mask.deviceid = XIAllMasterDevices;
+        mask.mask_len = sizeof(mask_bits);
+        mask.mask     = mask_bits;
+        select(m_display, RootWindow(m_display, m_screen), &mask, 1);
+        XFlush(m_display);
+        m_xi_raw = true;
+    #endif
+    }
+
+    void handle_generic(XEvent& ev) noexcept {
+    #ifdef FIZMO_HAS_XINPUT2
+        XGenericEventCookie* cookie = &ev.xcookie;
+        if (!m_xi_raw || cookie->extension != m_xi_opcode || !XGetEventData(m_display, cookie)) return;
+
+        if (cookie->evtype == XI_RawMotion && m_locked) {
+            const XIRawEvent* raw = static_cast<const XIRawEvent*>(cookie->data);
+            const double* values = raw->raw_values;
+            double mx = 0.0, my = 0.0;
+
+            for (int axis = 0; axis < 2 && axis < raw->valuators.mask_len * 8; ++axis) {
+                if (!XIMaskIsSet(raw->valuators.mask, axis)) continue;
+                (axis == 0 ? mx : my) = *values++;
+            }
+
+            m_raw_rem_x += mx;
+            m_raw_rem_y += my;
+            WindowEvent e;
+            e.type = WindowEventType::MouseMove;
+            e.dx = static_cast<int>(std::trunc(m_raw_rem_x));
+            e.dy = static_cast<int>(std::trunc(m_raw_rem_y));
+            m_raw_rem_x -= e.dx;
+            m_raw_rem_y -= e.dy;
+            e.x = clamp_coord(m_ref_x);
+            e.y = clamp_coord(m_ref_y);
+            if (e.dx != 0 || e.dy != 0) m_event_handler->dispatch_event(e);
+        }
+
+        XFreeEventData(m_display, cookie);
+    #else
+        (void)ev;
+    #endif
+    }
+
     void apply_title(const std::string& title) noexcept {
         XStoreName(m_display, m_window, title.c_str());
         x11::XAtomId net_name = XInternAtom(m_display, "_NET_WM_NAME", 0);
@@ -195,6 +362,7 @@ private:
         }
 
         if (ev.type == x11::kMotionNotify) {
+            if (!relative_motion(ev.xmotion, e.dx, e.dy)) return;
             e.type = WindowEventType::MouseMove;
             e.x = clamp_coord(ev.xmotion.x);
             e.y = clamp_coord(ev.xmotion.y);
@@ -248,6 +416,8 @@ private:
         }
 
         if (ev.type == x11::kFocusOut) {
+            if (ev.xfocus.mode == NotifyGrab || ev.xfocus.mode == NotifyUngrab) return;
+            if (m_locked) set_cursor_locked(false);
             e.type = WindowEventType::WindowBlur;
             m_event_handler->dispatch_event(e);
             return;

@@ -10,6 +10,8 @@
 #include "gpu_geometry.hpp"
 #include "gpu_text.hpp"
 #include "gpu_shaders.hpp"
+#include "gpu_shaders_3d.hpp"
+#include "../raster_3d.hpp"
 
 #include <algorithm>
 #include <array>
@@ -83,6 +85,15 @@ inline std::uint64_t hash_bytes(const void* data, std::size_t n, std::uint64_t s
     return h;
 }
 
+struct LineVertex3D {
+    float         x, y, z;        
+    float         ox, oy, oz;     
+    std::uint32_t color;          
+    float         side;           
+    float         width;          
+};
+static_assert(sizeof(LineVertex3D) == 36, "line vertex layout must match the pipeline");
+
 inline Cap  to_cap(graphics::LineCap c) noexcept {
     return c == graphics::LineCap::Round ? Cap::Round : c == graphics::LineCap::Square ? Cap::Square : Cap::Flat;
 }
@@ -103,6 +114,8 @@ private:
     static constexpr std::uint32_t kRampRows         = 256;
     static constexpr std::uint64_t kEvictAfterFrames = 180;
     static constexpr std::uint64_t kTextureBudget    = 512ull * 1024 * 1024;  
+    static constexpr std::uint64_t kMeshEvictFrames  = 1800;                   
+    static constexpr std::uint64_t kMeshBudget       = 512ull * 1024 * 1024;
 
     enum SamplerKind : std::uint8_t {
         NearestClamp = 0, LinearClamp, NearestRepeat, LinearRepeat, NearestMirror, LinearMirror, kSamplerCount
@@ -163,6 +176,45 @@ private:
         vulkan::Buffer         staging;
         vulkan::Image          ramp;
         vulkan::DescriptorPool pool;
+        vulkan::Buffer         vertices3d;
+        vulkan::Buffer         lines3d;
+    };
+
+    struct GpuMesh {
+        std::unique_ptr<vulkan::Buffer> vertices, indices;
+        std::uint64_t stamp = 0, last_used = 0, bytes = 0;
+        std::uint32_t vertex_count = 0, index_count = 0;
+    };
+
+    struct BufferUpload {
+        vulkan::Buffer* dst    = nullptr;
+        std::size_t     offset = 0;
+        std::uint64_t   bytes  = 0;
+        GpuMesh*        owner  = nullptr;
+    };
+
+    struct RetiredBuffer {
+        std::uint64_t                   frame;
+        std::unique_ptr<vulkan::Buffer> buffer;
+    };
+
+    enum class DrawKind3D : std::uint8_t { Mesh, Triangles, Lines };
+
+    struct Draw3D {
+        DrawKind3D               kind    = DrawKind3D::Triangles;
+        std::uint32_t            state   = 0;          
+        GpuMesh*                 mesh    = nullptr;
+        std::uint32_t            first   = 0, count = 0;
+        const vulkan::ImageView* view    = nullptr;
+        std::uint8_t             sampler = NearestClamp;
+        float                    push[32] = {};
+    };
+
+    struct SceneRec {
+        std::size_t   batch_index = 0;   
+        std::uint32_t first_draw  = 0;
+        Scene3D       scene;
+        Mat4f         vp;                
     };
 
     struct Retired {
@@ -218,6 +270,22 @@ private:
     std::vector<gpu::Vec2>     m_points;
     std::vector<gpu::Vec2>     m_wave;
 
+    vulkan::Image                 m_depth;
+    vulkan::Format                m_depth_format = vulkan::Format::D32Float;
+    vulkan::PipelineLayout        m_mesh_layout, m_line_layout;
+    vulkan::ShaderModule          m_mesh_vs, m_mesh_fs, m_line_vs, m_line_fs;
+    std::unordered_map<std::uint32_t, vulkan::Pipeline> m_pipelines3d;
+    std::unordered_map<const void*, GpuMesh> m_meshes;
+    std::uint64_t                 m_mesh_bytes = 0;
+    std::vector<RetiredBuffer>    m_retired_buffers;
+    std::vector<BufferUpload>     m_buffer_uploads;
+    std::vector<graphics::Vertex3D>  m_vertices3d;
+    std::vector<gpu::LineVertex3D>   m_lines3d;
+    std::vector<Draw3D>           m_draws3d;
+    std::vector<SceneRec>         m_scenes;
+    bool                          m_force_new_batch = false;
+    bool                          m_uploads_committed = false;
+
 public:
     RendererImplGPU() noexcept = default;
     ~RendererImplGPU() noexcept override { shutdown(); }
@@ -246,11 +314,18 @@ public:
         m_layouts.clear();
         m_text.shutdown();
         m_retired.clear();
+        m_meshes.clear();
+        m_mesh_bytes = 0;
+        m_retired_buffers.clear();
+        m_pipelines3d.clear();
+        m_line_fs.destroy(); m_line_vs.destroy(); m_mesh_fs.destroy(); m_mesh_vs.destroy();
+        m_line_layout.destroy(); m_mesh_layout.destroy();
+        m_depth.destroy();
         m_glyphs.clear();
         m_atlas.clear();
         m_textures.clear();
         m_texture_bytes = 0;
-        for (auto& pf : m_per_frame) { pf.pool.destroy(); pf.ramp.destroy(); pf.staging.destroy(); pf.vertices.destroy(); }
+        for (auto& pf : m_per_frame) { pf.lines3d.destroy(); pf.vertices3d.destroy(); pf.pool.destroy(); pf.ramp.destroy(); pf.staging.destroy(); pf.vertices.destroy(); }
         m_msaa_target.destroy();
         m_target.destroy();
         m_white.destroy();
@@ -306,6 +381,7 @@ public:
 
         m_vertices.clear();
         m_batches.clear();
+        drop_3d_recording();
         m_clear_pending = true;
         m_clear_color = { color.red() / 255.0f, color.green() / 255.0f, color.blue() / 255.0f, 1.0f };
     }
@@ -625,7 +701,265 @@ public:
         }
     }
 
+    void begin_3d(const Scene3D& scene) noexcept override {
+        if (!m_ready) return;
+        if (m_in_3d) end_3d();
+
+        try {
+            SceneRec rec;
+            rec.batch_index = m_batches.size();
+            rec.first_draw  = static_cast<std::uint32_t>(m_draws3d.size());
+            rec.scene       = scene;
+            rec.vp          = scene.view_proj;
+            for (int c = 0; c < 4; ++c) rec.vp[4 + c] = -rec.vp[4 + c];   
+            m_scenes.push_back(rec);
+            m_in_3d = true;
+            m_force_new_batch = true;
+        } catch (...) {}
+    }
+
+    void end_3d() noexcept override {
+        if (!m_in_3d) return;
+        m_in_3d = false;
+        m_force_new_batch = true;   
+    }
+
+    void draw_mesh_3d(const graphics::Mesh3D& mesh, const float* model, const graphics::Material3D& mat) noexcept override {
+        if (!m_ready || !m_in_3d || mesh.empty()) return;
+
+        try {
+            GpuMesh* g = mesh_for(mesh);
+            if (!g) return;
+            Draw3D d;
+            d.kind  = DrawKind3D::Mesh;
+            d.mesh  = g;
+            d.count = g->index_count ? g->index_count : g->vertex_count;
+            if (!material(d, mat)) return;
+            mesh_push(d, model);
+            m_draws3d.push_back(d);
+        } catch (...) {}
+    }
+
+    void draw_triangles_3d(const graphics::Vertex3D* v, std::size_t count, const float* model, const graphics::Material3D& mat) noexcept override {
+        if (!m_ready || !m_in_3d || !v || count < 3) return;
+
+        try {
+            count -= count % 3;
+            Draw3D d;
+            d.kind  = DrawKind3D::Triangles;
+            d.first = static_cast<std::uint32_t>(m_vertices3d.size());
+            d.count = static_cast<std::uint32_t>(count);
+            if (!material(d, mat)) return;
+            mesh_push(d, model);
+            m_vertices3d.insert(m_vertices3d.end(), v, v + count);
+            m_draws3d.push_back(d);
+        } catch (...) {}
+    }
+
+    void draw_lines_3d(const vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test) noexcept override {
+        if (!m_ready || !m_in_3d || !pts || count < 2 || color.alpha() == 0) return;
+
+        try {
+            const SceneRec& sc = m_scenes.back();
+            const std::uint32_t rgba = graphics::Vertex3D::pack(color);
+            const float w = std::max(width, 1.0f);
+            Draw3D d;
+            d.kind  = DrawKind3D::Lines;
+            d.first = static_cast<std::uint32_t>(m_lines3d.size());
+            d.state = kLines | (1u << 2) /* alpha blend */ | (depth_test ? kDepthTest : 0u);
+
+            for (std::size_t i = 0; i + 1 < count; i += 2) {
+                vector3d a = pts[i], b = pts[i + 1];
+                if (!clip_to_near(sc.scene.view_proj, a, b)) continue;
+                auto corner = [&](const vector3d& p, const vector3d& o, float side) {
+                    m_lines3d.push_back({ float(p.x), float(p.y), float(p.z), float(o.x), float(o.y), float(o.z), rgba, side, w });
+                };
+                corner(a, b, 1.0f); corner(a, b, -1.0f); corner(b, a, 1.0f);
+                corner(a, b, 1.0f); corner(b, a, 1.0f); corner(b, a, -1.0f);
+            }
+
+            d.count = static_cast<std::uint32_t>(m_lines3d.size()) - d.first;
+            if (d.count == 0) return;
+            std::copy(sc.vp.begin(), sc.vp.end(), d.push);
+            d.push[16] = static_cast<float>(std::max(1u, sc.scene.width));
+            d.push[17] = static_cast<float>(std::max(1u, sc.scene.height));
+            m_draws3d.push_back(d);
+        } catch (...) {}
+    }
+
+    void release_mesh(const graphics::Mesh3D& mesh) noexcept {
+        auto it = m_meshes.find(&mesh);
+        if (it == m_meshes.end()) return;
+        retire(it->second);
+        m_meshes.erase(it);
+    }
+
 private:
+    static constexpr std::uint32_t kDepthTest  = 1u << 4;
+    static constexpr std::uint32_t kDepthWrite = 1u << 5;
+    static constexpr std::uint32_t kLines      = 1u << 6;
+
+    static std::uint32_t state_for(const graphics::Material3D& m) noexcept {
+        return static_cast<std::uint32_t>(m.cull) | (static_cast<std::uint32_t>(m.blend) << 2)
+             | (m.depth_test ? kDepthTest : 0u) | (m.depth_write ? kDepthWrite : 0u);
+    }
+
+    bool material(Draw3D& d, const graphics::Material3D& m) {
+        d.state = state_for(m);
+
+        if (m.texture && m.texture->valid()) {
+            d.view    = texture_view(*m.texture);
+            d.sampler = sampler_for(*m.texture);
+        } else {
+            d.view    = &m_white.view();
+            d.sampler = NearestClamp;
+        }
+
+        return d.view != nullptr;
+    }
+
+    void mesh_push(Draw3D& d, const float* model) const noexcept {
+        const Mat4f& vp = m_scenes.back().vp;
+        Mat4f m = mat4_identity();
+        if (model) std::copy(model, model + 16, m.begin());
+        const Mat4f mvp = model ? mat4_mul(vp, m) : vp;
+        std::copy(mvp.begin(), mvp.end(), d.push);
+
+        for (int r = 0; r < 3; ++r) {
+            d.push[16 + r * 4 + 0] = m[r * 4 + 0];
+            d.push[16 + r * 4 + 1] = m[r * 4 + 1];
+            d.push[16 + r * 4 + 2] = m[r * 4 + 2];
+            d.push[16 + r * 4 + 3] = 0.0f;
+        }
+
+        const double len = m_light3d.direction.magnitude();
+        const double k = len > 0.0 ? m_light3d.diffuse / len : 0.0;
+        d.push[28] = static_cast<float>(m_light3d.direction.x * k);
+        d.push[29] = static_cast<float>(m_light3d.direction.y * k);
+        d.push[30] = static_cast<float>(m_light3d.direction.z * k);
+        d.push[31] = m_light3d.ambient;
+    }
+
+    static bool clip_to_near(const Mat4f& vp, vector3d& a, vector3d& b) noexcept {
+        auto z_of = [&vp](const vector3d& p) { return vp[8] * p.x + vp[9] * p.y + vp[10] * p.z + vp[11]; };
+        const double za = z_of(a), zb = z_of(b);
+        if (za < 0.0 && zb < 0.0) return false;
+        if (za < 0.0) a = a + (b - a) * (za / (za - zb));
+        else if (zb < 0.0) b = b + (a - b) * (zb / (zb - za));
+        return true;
+    }
+
+    GpuMesh* mesh_for(const graphics::Mesh3D& mesh) {
+        const std::uint64_t stamp = mesh.version();
+        auto it = m_meshes.find(&mesh);
+        if (it != m_meshes.end() && it->second.stamp == stamp) { it->second.last_used = m_frame_serial; return &it->second; }
+
+        const auto& verts = mesh.vertices();
+        const auto& idx   = mesh.indices();
+        const std::uint64_t vbytes = verts.size() * sizeof(graphics::Vertex3D);
+        const std::uint64_t ibytes = idx.size() * sizeof(std::uint32_t);
+        GpuMesh fresh;
+        fresh.vertices = std::make_unique<vulkan::Buffer>();
+        if (failed(fresh.vertices->create(m_device, { vbytes, vulkan::BufferUsage::Vertex, vulkan::MemoryUsage::GpuOnly, "fizmo mesh vertices" }))) return nullptr;
+
+        if (ibytes) {
+            fresh.indices = std::make_unique<vulkan::Buffer>();
+            if (failed(fresh.indices->create(m_device, { ibytes, vulkan::BufferUsage::Index, vulkan::MemoryUsage::GpuOnly, "fizmo mesh indices" }))) return nullptr;
+        }
+
+        fresh.stamp        = stamp;
+        fresh.last_used    = m_frame_serial;
+        fresh.bytes        = vbytes + ibytes;
+        fresh.vertex_count = static_cast<std::uint32_t>(verts.size());
+        fresh.index_count  = static_cast<std::uint32_t>(idx.size());
+
+        GpuMesh* g = nullptr;
+        if (it != m_meshes.end()) { retire(it->second); it->second = std::move(fresh); g = &it->second; }
+        else g = &m_meshes.emplace(&mesh, std::move(fresh)).first->second;
+
+        m_mesh_bytes += g->bytes;
+        m_buffer_uploads.push_back({ g->vertices.get(), push_staging(verts.data(), vbytes), vbytes, g });
+        if (ibytes) m_buffer_uploads.push_back({ g->indices.get(), push_staging(idx.data(), ibytes), ibytes, g });
+        return g;
+    }
+
+    void retire(GpuMesh& g) {
+        m_mesh_bytes -= std::min(m_mesh_bytes, g.bytes);
+        if (g.vertices) m_retired_buffers.push_back({ m_frame_serial, std::move(g.vertices) });
+        if (g.indices)  m_retired_buffers.push_back({ m_frame_serial, std::move(g.indices) });
+        g.bytes = 0;
+    }
+
+    vulkan::Pipeline* pipeline_3d(std::uint32_t key) {
+        auto it = m_pipelines3d.find(key);
+        if (it != m_pipelines3d.end()) return &it->second;
+        const bool lines = (key & kLines) != 0;
+        vulkan::GraphicsPipelineDesc d;
+        d.vertex_shader   = lines ? &m_line_vs : &m_mesh_vs;
+        d.fragment_shader = lines ? &m_line_fs : &m_mesh_fs;
+        d.layout          = lines ? &m_line_layout : &m_mesh_layout;
+
+        if (lines) {
+            d.vertex_bindings   = { { 0, sizeof(gpu::LineVertex3D), vulkan::VertexRate::PerVertex } };
+            d.vertex_attributes = {
+                { 0, 0, vulkan::Format::RGB32Float, 0 },  { 1, 0, vulkan::Format::RGB32Float, 12 },
+                { 2, 0, vulkan::Format::RGBA8Unorm, 24 }, { 3, 0, vulkan::Format::R32Float, 28 },
+                { 4, 0, vulkan::Format::R32Float, 32 },
+            };
+            d.cull_mode = vulkan::CullMode::None;
+        } else {
+            d.vertex_bindings   = { { 0, sizeof(graphics::Vertex3D), vulkan::VertexRate::PerVertex } };
+            d.vertex_attributes = {
+                { 0, 0, vulkan::Format::RGB32Float, 0 },  { 1, 0, vulkan::Format::RGB32Float, 12 },
+                { 2, 0, vulkan::Format::RG32Float, 24 },  { 3, 0, vulkan::Format::RGBA8Unorm, 32 },
+            };
+            const std::uint32_t cull = key & 3u;
+            d.cull_mode = cull == 1u ? vulkan::CullMode::None : cull == 2u ? vulkan::CullMode::Front : vulkan::CullMode::Back;
+        }
+
+        d.front_face    = vulkan::FrontFace::CounterClockwise;
+        d.samples       = m_samples;
+        d.color_formats = { vulkan::Format::RGBA8Unorm };
+        d.depth_format  = m_depth_format;
+        d.depth.test    = (key & kDepthTest) != 0;
+        d.depth.write   = (key & kDepthWrite) != 0;
+        d.depth.compare = vulkan::CompareOp::LessEqual;
+        const std::uint32_t blend = (key >> 2) & 3u;
+
+        if (blend == 1u) {
+            d.blend = { vulkan::BlendState::premultiplied() };
+        } else if (blend == 2u) {
+            vulkan::BlendState b;
+            b.enable = true;
+            b.src_color = vulkan::BlendFactor::One; b.dst_color = vulkan::BlendFactor::One;
+            b.src_alpha = vulkan::BlendFactor::One; b.dst_alpha = vulkan::BlendFactor::One;
+            d.blend = { b };
+        } else {
+            d.blend = { vulkan::BlendState::opaque() };
+        }
+
+        d.name = lines ? "fizmo 3d lines" : "fizmo 3d mesh";
+        vulkan::Pipeline p;
+        if (failed(p.create(m_device, d))) return nullptr;
+        return &m_pipelines3d.emplace(key, std::move(p)).first->second;
+    }
+
+    void drop_3d_recording() noexcept {
+        const bool reopen = m_in_3d && !m_scenes.empty();
+        SceneRec open;
+        if (reopen) open = m_scenes.back();
+        m_scenes.clear();
+        m_draws3d.clear();
+        m_vertices3d.clear();
+        m_lines3d.clear();
+
+        if (reopen) {
+            open.batch_index = 0;
+            open.first_draw  = 0;
+            m_scenes.push_back(open);
+        }
+    }
+
     vulkan::SwapchainDesc swapchain_desc(unsigned int w, unsigned int h) const noexcept {
         vulkan::SwapchainDesc d;
         d.size  = { std::max(w, 1u), std::max(h, 1u) };
@@ -708,6 +1042,19 @@ private:
         present.color_formats   = { m_swapchain.format() };
         present.name            = "fizmo present";
         if (failed(m_present_pipeline.create(m_device, present))) return false;
+        if (failed(m_mesh_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kMesh3DVert, sizeof(gpu::kMesh3DVert) / 4), "fizmo mesh3d.vert"))) return false;
+        if (failed(m_mesh_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kMesh3DFrag, sizeof(gpu::kMesh3DFrag) / 4), "fizmo mesh3d.frag"))) return false;
+        if (failed(m_line_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kLine3DVert, sizeof(gpu::kLine3DVert) / 4), "fizmo line3d.vert"))) return false;
+        if (failed(m_line_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kLine3DFrag, sizeof(gpu::kLine3DFrag) / 4), "fizmo line3d.frag"))) return false;
+        vulkan::PipelineLayoutDesc ml;
+        ml.set_layouts    = { &m_draw_set_layout };
+        ml.push_constants = { { vulkan::ShaderStage::Vertex, 0, 128 } };
+        if (failed(m_mesh_layout.create(m_device, ml))) return false;
+        vulkan::PipelineLayoutDesc ll;
+        ll.push_constants = { { vulkan::ShaderStage::Vertex, 0, 80 } };
+        if (failed(m_line_layout.create(m_device, ll))) return false;
+        m_depth_format = m_device.physical_device().supports_format(vulkan::Format::D32Float, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
+                       ? vulkan::Format::D32Float : vulkan::Format::D24UnormS8Uint;
         const vulkan::AddressMode modes[3] = { vulkan::AddressMode::ClampToEdge, vulkan::AddressMode::Repeat, vulkan::AddressMode::MirroredRepeat };
 
         for (int i = 0; i < kSamplerCount; ++i) {
@@ -774,6 +1121,13 @@ private:
             m_msaa_target.create(m_device, md);
         }
 
+        vulkan::ImageDesc dd;
+        dd.extent  = { m_width, m_height, 1 };
+        dd.format  = m_depth_format;
+        dd.usage   = vulkan::ImageUsage::DepthAttachment;
+        dd.samples = m_samples;
+        dd.name    = "fizmo depth buffer";
+        m_depth.create(m_device, dd);
         m_target_fresh = true;
 
         if (m_clip_active) {
@@ -787,6 +1141,15 @@ private:
     }
 
     void reset_recording() noexcept {
+        if (!m_uploads_committed) for (const BufferUpload& u : m_buffer_uploads) if (u.owner) u.owner->stamp = 0;
+        m_uploads_committed = false;
+        m_buffer_uploads.clear();
+        m_scenes.clear();
+        m_draws3d.clear();
+        m_vertices3d.clear();
+        m_lines3d.clear();
+        m_in_3d = false;
+        m_force_new_batch = false;
         m_vertices.clear();
         m_batches.clear();
         m_uploads.clear();
@@ -797,7 +1160,7 @@ private:
     }
 
     Batch& batch_for(const vulkan::ImageView* view, std::uint8_t sampler) {
-        if (!m_batches.empty()) {
+        if (!m_batches.empty() && !m_force_new_batch) {
             Batch& b = m_batches.back();
 
             if (
@@ -810,6 +1173,7 @@ private:
             ) return b;
         }
 
+        m_force_new_batch = false;
         Batch b;
         b.first   = static_cast<std::uint32_t>(m_vertices.size());
         b.view    = view;
@@ -1223,6 +1587,25 @@ private:
             ), m_retired.end()
         );
 
+        m_retired_buffers.erase(
+            std::remove_if(m_retired_buffers.begin(), m_retired_buffers.end(), [&](const RetiredBuffer& r) { return safe(r.frame); }),
+            m_retired_buffers.end()
+        );
+
+        for (auto it = m_meshes.begin(); it != m_meshes.end();) {
+            if (it->second.last_used + kMeshEvictFrames <= now) { retire(it->second); it = m_meshes.erase(it); }
+            else ++it;
+        }
+
+        while (m_mesh_bytes > kMeshBudget) {
+            auto oldest = m_meshes.end();
+            for (auto it = m_meshes.begin(); it != m_meshes.end(); ++it)
+                if (safe(it->second.last_used) && (oldest == m_meshes.end() || it->second.last_used < oldest->second.last_used)) oldest = it;
+            if (oldest == m_meshes.end()) break;
+            retire(oldest->second);
+            m_meshes.erase(oldest);
+        }
+
         for (auto it = m_textures.begin(); it != m_textures.end();) {
             if (it->second.last_used + kEvictAfterFrames <= now) {
                 m_texture_bytes -= static_cast<std::uint64_t>(it->second.width) * it->second.height * 4;
@@ -1289,6 +1672,114 @@ private:
         ++m_frame_serial;
     }
 
+    using DescriptorCache = std::vector<std::pair<std::uint64_t, vulkan::DescriptorSet>>;
+
+    vulkan::DescriptorSet descriptor_for(PerFrame& pf, const vulkan::ImageView* view, std::uint8_t sampler, DescriptorCache& cache) {
+        const std::uint64_t key = reinterpret_cast<std::uintptr_t>(view) * 8 + sampler;
+        for (const auto& s : cache) if (s.first == key) return s.second;
+        vulkan::DescriptorSet set;
+        if (failed(pf.pool.allocate(m_draw_set_layout, set))) return set;
+        vulkan::DescriptorWriter().image(0, *view, m_samplers[sampler]).image(1, pf.ramp.view(), m_samplers[LinearClamp]).update(set);
+        cache.emplace_back(key, set);
+        return set;
+    }
+
+    vulkan::ColorAttachment color_attachment(bool clear) const noexcept {
+        const bool msaa = m_msaa_target.valid();
+        vulkan::ColorAttachment color;
+        color.view    = msaa ? &m_msaa_target.view() : &m_target.view();
+        color.resolve = msaa ? &m_target.view() : nullptr;
+        color.load    = clear ? vulkan::LoadOp::Clear : vulkan::LoadOp::Load;
+        color.store   = vulkan::StoreOp::Store;
+        color.clear   = m_clear_pending ? m_clear_color : vulkan::ClearColor{ 0, 0, 0, 1 };
+        return color;
+    }
+
+    void record_2d_pass(const vulkan::CommandBuffer& cmd, PerFrame& pf, std::size_t from, std::size_t to, bool clear, DescriptorCache& sets) {
+        const vulkan::ColorAttachment color = color_attachment(clear);
+        const vulkan::Extent2D size{ m_width, m_height };
+        cmd.begin_rendering({ { { 0, 0 }, size }, color });
+
+        if (from < to) {
+            cmd.bind(m_draw_pipeline);
+            cmd.set_viewport({ 0.0f, 0.0f, static_cast<float>(m_width), static_cast<float>(m_height), 0.0f, 1.0f });
+            const float push[2] = { 2.0f / m_width, 2.0f / m_height };
+            cmd.push_constants(m_draw_pipeline, vulkan::ShaderStage::Vertex, push, sizeof(push));
+            cmd.bind_vertex_buffer(0, pf.vertices);
+
+            for (std::size_t i = from; i < to; ++i) {
+                const Batch& b = m_batches[i];
+                if (b.count == 0 || b.scissor.extent.width == 0 || b.scissor.extent.height == 0) continue;
+                const vulkan::DescriptorSet set = descriptor_for(pf, b.view, b.sampler, sets);
+                if (!set.valid()) continue;
+                cmd.set_scissor(b.scissor);
+                cmd.bind_descriptor_set(m_draw_pipeline, 0, set);
+                cmd.draw(b.count, 1, b.first);
+            }
+        }
+
+        cmd.end_rendering();
+    }
+
+    void record_3d_pass(const vulkan::CommandBuffer& cmd, PerFrame& pf, const SceneRec& sc, std::size_t from, std::size_t to, bool clear, DescriptorCache& sets) {
+        const int x0 = std::max(sc.scene.x, 0), y0 = std::max(sc.scene.y, 0);
+        const int x1 = std::min(sc.scene.x + static_cast<int>(sc.scene.width),  static_cast<int>(m_width));
+        const int y1 = std::min(sc.scene.y + static_cast<int>(sc.scene.height), static_cast<int>(m_height));
+        if ((x1 <= x0 || y1 <= y0 || from >= to) && !clear) return;
+        cmd.transition(m_depth, vulkan::ImageLayout::DepthAttachment);
+        const vulkan::ColorAttachment color = color_attachment(clear);
+        vulkan::DepthAttachment depth;
+        depth.view        = &m_depth.view();
+        depth.load        = vulkan::LoadOp::Clear;
+        depth.store       = vulkan::StoreOp::DontCare;
+        depth.clear       = vulkan::ClearDepth{ 1.0f, 0 };
+        depth.has_stencil = vulkan::has_stencil(m_depth_format);
+        vulkan::RenderingDesc rd;
+        rd.area   = { { 0, 0 }, { m_width, m_height } };
+        rd.colors = color;
+        rd.depth  = &depth;
+        cmd.begin_rendering(rd);
+
+        if (x1 > x0 && y1 > y0) {
+            cmd.set_viewport({ static_cast<float>(sc.scene.x), static_cast<float>(sc.scene.y),
+                               static_cast<float>(sc.scene.width), static_cast<float>(sc.scene.height), 0.0f, 1.0f });
+            cmd.set_scissor({ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } });
+            const vulkan::Pipeline* bound = nullptr;
+
+            for (std::size_t i = from; i < to; ++i) {
+                const Draw3D& d = m_draws3d[i];
+                if (d.count == 0) continue;
+                const vulkan::Pipeline* p = pipeline_3d(d.state);
+                if (!p) continue;
+                if (p != bound) { cmd.bind(*p); bound = p; }
+
+                if (d.kind == DrawKind3D::Lines) {
+                    cmd.push_constants(*p, vulkan::ShaderStage::Vertex, d.push, 80);
+                    cmd.bind_vertex_buffer(0, pf.lines3d);
+                    cmd.draw(d.count, 1, d.first);
+                    continue;
+                }
+
+                const vulkan::DescriptorSet set = descriptor_for(pf, d.view, d.sampler, sets);
+                if (!set.valid()) continue;
+                cmd.bind_descriptor_set(*p, 0, set);
+                cmd.push_constants(*p, vulkan::ShaderStage::Vertex, d.push, 128);
+
+                if (d.kind == DrawKind3D::Mesh) {
+                    if (!d.mesh || !d.mesh->vertices) continue;
+                    cmd.bind_vertex_buffer(0, *d.mesh->vertices);
+                    if (d.mesh->indices) { cmd.bind_index_buffer(*d.mesh->indices, vulkan::IndexType::UInt32); cmd.draw_indexed(d.count); }
+                    else cmd.draw(d.count);
+                } else {
+                    cmd.bind_vertex_buffer(0, pf.vertices3d);
+                    cmd.draw(d.count, 1, d.first);
+                }
+            }
+        }
+
+        cmd.end_rendering();
+    }
+
     void record_frame(vulkan::Frame& f) {
         collect_garbage();
         PerFrame& pf = m_per_frame[f.frame_index];
@@ -1334,6 +1825,18 @@ private:
             pf.vertices.write(m_vertices.data(), bytes);
         }
 
+        if (!m_vertices3d.empty()) {
+            const std::uint64_t bytes = m_vertices3d.size() * sizeof(graphics::Vertex3D);
+            if (!ensure_buffer(m_device, pf.vertices3d, bytes, vulkan::BufferUsage::Vertex, "fizmo 3d vertices")) return;
+            pf.vertices3d.write(m_vertices3d.data(), bytes);
+        }
+
+        if (!m_lines3d.empty()) {
+            const std::uint64_t bytes = m_lines3d.size() * sizeof(gpu::LineVertex3D);
+            if (!ensure_buffer(m_device, pf.lines3d, bytes, vulkan::BufferUsage::Vertex, "fizmo 3d lines")) return;
+            pf.lines3d.write(m_lines3d.data(), bytes);
+        }
+
         cmd.begin_label("fizmo uploads");
 
         for (const Upload& u : m_uploads) {
@@ -1342,55 +1845,56 @@ private:
         }
 
         for (const Upload& u : m_uploads) cmd.transition(*u.image, vulkan::ImageLayout::ShaderReadOnly);
+        for (const BufferUpload& u : m_buffer_uploads) cmd.copy_buffer(pf.staging, *u.dst, u.bytes, u.offset, 0);
+
+        if (!m_buffer_uploads.empty()) {
+            cmd.memory_barrier(vulkan::PipelineStage::Transfer, vulkan::Access::TransferWrite,
+                               vulkan::PipelineStage::VertexInput, vulkan::Access::VertexRead | vulkan::Access::IndexRead);
+        }
+
+        m_uploads_committed = true;
         cmd.end_label();
         const bool must_clear = m_clear_pending || m_target_fresh;
 
-        if (must_clear || !m_batches.empty()) {
+        if (must_clear || !m_batches.empty() || !m_scenes.empty()) {
             cmd.begin_label("fizmo draw");
-            const bool msaa = m_msaa_target.valid();
             cmd.transition(m_target, vulkan::ImageLayout::ColorAttachment);
-            if (msaa) cmd.transition(m_msaa_target, vulkan::ImageLayout::ColorAttachment);
-            vulkan::ColorAttachment color;
-            color.view    = msaa ? &m_msaa_target.view() : &m_target.view();
-            color.resolve = msaa ? &m_target.view() : nullptr;
-            color.load    = must_clear ? vulkan::LoadOp::Clear : vulkan::LoadOp::Load;
-            color.store   = vulkan::StoreOp::Store;
-            color.clear   = m_clear_pending ? m_clear_color : vulkan::ClearColor{ 0, 0, 0, 1 };
-            const vulkan::Extent2D size{ m_width, m_height };
-            cmd.begin_rendering({ { { 0, 0 }, size }, color });
+            if (m_msaa_target.valid()) cmd.transition(m_msaa_target, vulkan::ImageLayout::ColorAttachment);
+            DescriptorCache sets;
+            bool clear_next = must_clear;
+            bool had_pass = false;
+            std::size_t next_batch = 0;
 
-            if (!m_batches.empty()) {
-                cmd.bind(m_draw_pipeline);
-                cmd.set_viewport({ 0.0f, 0.0f, static_cast<float>(m_width), static_cast<float>(m_height), 0.0f, 1.0f });
-                const float push[2] = { 2.0f / m_width, 2.0f / m_height };
-                cmd.push_constants(m_draw_pipeline, vulkan::ShaderStage::Vertex, push, sizeof(push));
-                cmd.bind_vertex_buffer(0, pf.vertices);
-                std::vector<std::pair<std::uint64_t, vulkan::DescriptorSet>> sets;
-
-                for (const Batch& b : m_batches) {
-                    if (b.count == 0 || b.scissor.extent.width == 0 || b.scissor.extent.height == 0) continue;
-                    const std::uint64_t key = reinterpret_cast<std::uintptr_t>(b.view) * 8 + b.sampler;
-                    vulkan::DescriptorSet set;
-                    for (const auto& s : sets) if (s.first == key) { set = s.second; break; }
-
-                    if (!set.valid()) {
-                        if (failed(pf.pool.allocate(m_draw_set_layout, set))) continue;
-
-                        vulkan::DescriptorWriter()
-                            .image(0, *b.view, m_samplers[b.sampler])
-                            .image(1, pf.ramp.view(), m_samplers[LinearClamp])
-                            .update(set);
-
-                        sets.emplace_back(key, set);
-                    }
-
-                    cmd.set_scissor(b.scissor);
-                    cmd.bind_descriptor_set(m_draw_pipeline, 0, set);
-                    cmd.draw(b.count, 1, b.first);
+            auto between_passes = [&]() {
+                if (had_pass) {
+                    cmd.memory_barrier(
+                        vulkan::PipelineStage::ColorAttachmentOutput | vulkan::PipelineStage::LateFragmentTests,
+                        vulkan::Access::ColorAttachmentWrite | vulkan::Access::DepthAttachmentWrite,
+                        vulkan::PipelineStage::ColorAttachmentOutput | vulkan::PipelineStage::EarlyFragmentTests,
+                        vulkan::Access::ColorAttachmentRead | vulkan::Access::ColorAttachmentWrite |
+                        vulkan::Access::DepthAttachmentRead | vulkan::Access::DepthAttachmentWrite);
                 }
+                had_pass = true;
+            };
+
+            for (std::size_t si = 0; si <= m_scenes.size(); ++si) {
+                const bool last = si == m_scenes.size();
+                const std::size_t upto = last ? m_batches.size() : std::min(m_scenes[si].batch_index, m_batches.size());
+
+                if (upto > next_batch || (last && clear_next)) {
+                    between_passes();
+                    record_2d_pass(cmd, pf, next_batch, upto, clear_next, sets);
+                    clear_next = false;
+                }
+
+                next_batch = std::max(next_batch, upto);
+                if (last) break;
+                const std::size_t draw_end = si + 1 < m_scenes.size() ? m_scenes[si + 1].first_draw : m_draws3d.size();
+                between_passes();
+                record_3d_pass(cmd, pf, m_scenes[si], m_scenes[si].first_draw, draw_end, clear_next, sets);
+                clear_next = false;
             }
 
-            cmd.end_rendering();
             cmd.end_label();
             m_target_fresh = false;
         }

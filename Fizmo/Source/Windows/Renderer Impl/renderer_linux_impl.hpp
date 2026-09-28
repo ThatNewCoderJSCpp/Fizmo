@@ -351,6 +351,42 @@ public:
         XDestroyImage(dst);
     }
 
+    void draw_pixel_buffer(
+        int dx, int dy, unsigned int dw, unsigned int dh,
+        const graphics::Color* pixels, unsigned int pw, unsigned int ph,
+        bool /*smooth*/, std::uint64_t /*version*/
+    ) noexcept override {
+        if (!m_display || !m_back || !pixels || pw == 0 || ph == 0 || dw == 0 || dh == 0) return;
+        const int x0 = std::max(dx, 0), y0 = std::max(dy, 0);
+        const int x1 = std::min(dx + static_cast<int>(dw), static_cast<int>(m_width));
+        const int y1 = std::min(dy + static_cast<int>(dh), static_cast<int>(m_height));
+        if (x1 <= x0 || y1 <= y0) return;
+        const unsigned int rw = static_cast<unsigned int>(x1 - x0), rh = static_cast<unsigned int>(y1 - y0);
+        XImage* dst = XGetImage(m_display, m_back, x0, y0, rw, rh, x11::kAllPlanes, x11::kZPixmap);
+        if (!dst) return;
+
+        for (unsigned int row = 0; row < rh; ++row) {
+            const unsigned int sy = static_cast<unsigned int>(static_cast<std::uint64_t>(y0 - dy + static_cast<int>(row)) * ph / dh);
+
+            for (unsigned int col = 0; col < rw; ++col) {
+                const unsigned int sx = static_cast<unsigned int>(static_cast<std::uint64_t>(x0 - dx + static_cast<int>(col)) * pw / dw);
+                const graphics::Color& c = pixels[static_cast<std::size_t>(std::min(sy, ph - 1)) * pw + std::min(sx, pw - 1)];
+                const unsigned int a = c.alpha();
+                if (a == 0) continue;
+                if (a == 255) { XPutPixel(dst, static_cast<int>(col), static_cast<int>(row), to_pixel(c)); continue; }
+                const unsigned long bg = XGetPixel(dst, static_cast<int>(col), static_cast<int>(row));
+                auto mix = [a](unsigned int s, unsigned int d) { return static_cast<std::uint8_t>((s * a + d * (255u - a) + 127u) / 255u); };
+                XPutPixel(dst, static_cast<int>(col), static_cast<int>(row), pack(
+                    mix(c.red(),   extract_channel(m_visual->red_mask,   bg)),
+                    mix(c.green(), extract_channel(m_visual->green_mask, bg)),
+                    mix(c.blue(),  extract_channel(m_visual->blue_mask,  bg))));
+            }
+        }
+
+        XPutImage(m_display, m_back, m_gc, dst, 0, 0, x0, y0, rw, rh);
+        XDestroyImage(dst);
+    }
+
     void draw_text(int x, int y, const wchar_t* str, int len, const text::TextStyle& style) noexcept override {
         if (!str || len == 0) return;
         if (len < 0) len = static_cast<int>(std::wcslen(str));

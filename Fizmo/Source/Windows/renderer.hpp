@@ -5,6 +5,8 @@
 #include "window.hpp"
 #include "../Graphics/canvas.hpp"
 #include "../Graphics/sprite.hpp"
+#include "../Graphics/camera_3d.hpp"
+#include "../Graphics/mesh.hpp"
 #include "Renderer Impl/renderer_base.hpp"
 
 #if defined(OS_WINDOWS) || defined(OS_LINUX)
@@ -105,7 +107,11 @@ public:
 
     bool vsync() const noexcept { return m_vsync; }
     void begin_frame() noexcept { if (m_impl) m_impl->begin_frame(); }
-    void present() noexcept { if (m_impl) m_impl->present(); }
+    void present() noexcept {
+        if (!m_impl) return;
+        if (m_impl->in_3d()) m_impl->end_3d();
+        m_impl->present();
+    }
     void clear(const graphics::Color& color = graphics::Color()) noexcept { if (m_impl) m_impl->clear(color); }
     bool capture(images::BitmapImage& out) noexcept { return m_impl && m_impl->capture(out); }
 
@@ -276,6 +282,72 @@ public:
 
     void draw_rich_text(int x, int y, unsigned int w, unsigned int h, const text::RichText& rt) noexcept {
         if (m_impl) m_impl->draw_rich_text(x, y, w, h, rt);
+    }
+
+    bool begin_3d(const graphics::Camera3D& camera) noexcept {
+        return m_window ? begin_3d(camera, 0, 0, m_window->width(), m_window->height()) : false;
+    }
+
+    bool begin_3d(const graphics::Camera3D& camera, int x, int y, unsigned int w, unsigned int h) noexcept {
+        if (!m_impl || w == 0 || h == 0) return false;
+        if (m_impl->in_3d()) m_impl->end_3d();
+        detail::Scene3D scene;
+        const auto& vp = camera.view_projection_matrix().data;
+        for (std::size_t i = 0; i < 16; ++i) scene.view_proj[i] = static_cast<float>(vp[i]);
+
+        if (camera.depth_range() == graphics::DepthRange::NegativeOneToOne) {  
+            for (std::size_t c = 0; c < 4; ++c) scene.view_proj[8 + c] = 0.5f * scene.view_proj[8 + c] + 0.5f * scene.view_proj[12 + c];
+        }
+
+        scene.camera[0] = static_cast<float>(camera.position().x);
+        scene.camera[1] = static_cast<float>(camera.position().y);
+        scene.camera[2] = static_cast<float>(camera.position().z);
+        scene.x = x; scene.y = y; scene.width = w; scene.height = h;
+        m_impl->begin_3d(scene);
+        return m_impl->in_3d();
+    }
+
+    void end_3d() noexcept { if (m_impl) m_impl->end_3d(); }
+    bool in_3d() const noexcept { return m_impl && m_impl->in_3d(); }
+
+    void set_light_3d(const graphics::Light3D& light) noexcept { if (m_impl) m_impl->set_light_3d(light); }
+
+    void draw_mesh(const graphics::Mesh3D& mesh, const graphics::Material3D& material = {}) noexcept {
+        if (m_impl) m_impl->draw_mesh_3d(mesh, nullptr, material);
+    }
+
+    void draw_mesh(const graphics::Mesh3D& mesh, const math::Matrix4d& model, const graphics::Material3D& material = {}) noexcept {
+        if (!m_impl) return;
+        float m[16];
+        for (std::size_t i = 0; i < 16; ++i) m[i] = static_cast<float>(model.data[i]);
+        m_impl->draw_mesh_3d(mesh, m, material);
+    }
+
+    void draw_triangles_3d(const graphics::Vertex3D* vertices, std::size_t count, const graphics::Material3D& material = {}) noexcept {
+        if (m_impl) m_impl->draw_triangles_3d(vertices, count, nullptr, material);
+    }
+
+    void draw_triangles_3d(const std::vector<graphics::Vertex3D>& vertices, const graphics::Material3D& material = {}) noexcept {
+        draw_triangles_3d(vertices.data(), vertices.size(), material);
+    }
+
+    void draw_line_3d(const vector3d& a, const vector3d& b, const graphics::Color& color, float width = 1.0f, bool depth_test = true) noexcept {
+        const vector3d pts[2] = { a, b };
+        if (m_impl) m_impl->draw_lines_3d(pts, 2, color, width, depth_test);
+    }
+
+    void draw_lines_3d(const std::vector<vector3d>& points, const graphics::Color& color, float width = 1.0f, bool depth_test = true) noexcept {
+        if (m_impl) m_impl->draw_lines_3d(points.data(), points.size(), color, width, depth_test);
+    }
+
+    void draw_box_3d(const vector3d& lo, const vector3d& hi, const graphics::Color& color, float width = 1.0f, bool depth_test = true) noexcept {
+        if (!m_impl) return;
+        vector3d c[8];
+        for (int i = 0; i < 8; ++i) c[i] = vector3d{ (i & 1) ? hi.x : lo.x, (i & 2) ? hi.y : lo.y, (i & 4) ? hi.z : lo.z };
+        const int e[24] = { 0,1, 2,3, 4,5, 6,7,  0,2, 1,3, 4,6, 5,7,  0,4, 1,5, 2,6, 3,7 };
+        vector3d pts[24];
+        for (int i = 0; i < 24; ++i) pts[i] = c[e[i]];
+        m_impl->draw_lines_3d(pts, 24, color, width, depth_test);
     }
 
     text::TextMetrics measure_rich_text(const text::RichText& rt, unsigned int max_width = 0) noexcept {

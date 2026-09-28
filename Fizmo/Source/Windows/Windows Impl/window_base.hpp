@@ -31,6 +31,10 @@ public:
     virtual void* native_handle() const noexcept = 0;
     virtual void set_paint_callback(std::function<void(void*)> cb) noexcept = 0;
     virtual void set_background_erase(bool /*enabled*/) noexcept {}
+    virtual bool set_cursor_locked(bool /*locked*/) noexcept { return false; }
+    virtual bool cursor_locked() const noexcept { return false; }
+    virtual void set_cursor_visible(bool /*visible*/) noexcept {}
+    virtual bool cursor_visible() const noexcept { return true; }
 };
 
 } // namespace detail

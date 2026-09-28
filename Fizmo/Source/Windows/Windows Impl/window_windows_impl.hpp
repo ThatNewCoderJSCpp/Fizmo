@@ -3,6 +3,7 @@
 
 #include "window_base.hpp"
 #include "../../Input/keybord.hpp"
+#include <cstdlib>
 
 namespace fizmo {
 namespace windows {
@@ -16,6 +17,75 @@ private:
     HBRUSH backgroundBrush;
     bool m_open = false;
     std::function<void(void*)> m_paint_callback;
+
+    bool m_locked         = false;
+    bool m_cursor_visible = true;
+    bool m_have_last      = false;
+    int  m_last_x = 0, m_last_y = 0;
+    bool m_raw_registered = false;   
+    bool m_raw_relative   = false;   
+
+    void register_raw_mouse() noexcept {
+        if (m_raw_registered || !hwnd) return;
+        RAWINPUTDEVICE rid{};
+        rid.usUsagePage = 0x01;   
+        rid.usUsage     = 0x02;   
+        rid.dwFlags     = 0;
+        rid.hwndTarget  = hwnd;
+        m_raw_registered = RegisterRawInputDevices(&rid, 1, sizeof(rid)) != FALSE;
+    }
+
+    void handle_raw_input(LPARAM lParam) noexcept {
+        RAWINPUT raw{};
+        UINT size = sizeof(raw);
+        if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, &raw, &size, sizeof(RAWINPUTHEADER)) == static_cast<UINT>(-1)) return;
+        if (raw.header.dwType != RIM_TYPEMOUSE || (raw.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) return;
+        m_raw_relative = true;
+        const LONG dx = raw.data.mouse.lLastX, dy = raw.data.mouse.lLastY;
+        if (dx == 0 && dy == 0) return;
+        WindowEvent e;
+        e.type = WindowEventType::MouseMove;
+        e.dx = static_cast<int>(dx);
+        e.dy = static_cast<int>(dy);
+        e.x  = static_cast<unsigned int>(m_last_x < 0 ? 0 : m_last_x);
+        e.y  = static_cast<unsigned int>(m_last_y < 0 ? 0 : m_last_y);
+        m_event_handler->dispatch_event(e);
+    }
+
+    POINT client_center() const noexcept {
+        RECT rc; GetClientRect(hwnd, &rc);
+        return POINT{ (rc.right - rc.left) / 2, (rc.bottom - rc.top) / 2 };
+    }
+
+    void warp_to_center() noexcept {
+        POINT c = client_center();
+        m_last_x = c.x; m_last_y = c.y; m_have_last = true;
+        ClientToScreen(hwnd, &c);
+        SetCursorPos(c.x, c.y);
+    }
+
+    void apply_clip() noexcept {
+        RECT rc; GetClientRect(hwnd, &rc);
+        POINT tl{ rc.left, rc.top }, br{ rc.right, rc.bottom };
+        ClientToScreen(hwnd, &tl);
+        ClientToScreen(hwnd, &br);
+        const RECT clip{ tl.x, tl.y, br.x, br.y };
+        ClipCursor(&clip);
+    }
+
+    
+    
+    bool relative_motion(int x, int y, int& dx, int& dy) noexcept {
+        if (!m_have_last) { m_last_x = x; m_last_y = y; m_have_last = true; }
+        dx = x - m_last_x; dy = y - m_last_y;
+        m_last_x = x; m_last_y = y;
+        if (!m_locked) return true;
+        if (m_raw_registered && m_raw_relative) return false;  
+        if (dx == 0 && dy == 0) return false;
+        const POINT c = client_center();
+        if (std::abs(x - c.x) > c.x / 2 || std::abs(y - c.y) > c.y / 2) warp_to_center();
+        return true;
+    }
 
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         WindowImpl* impl = nullptr;
@@ -51,10 +121,26 @@ private:
                 case WM_ERASEBKGND: return 1;
 
                 case WM_MOUSEMOVE:
+                    if (!impl->relative_motion(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), event.dx, event.dy)) break;
                     event.type = WindowEventType::MouseMove;
                     event.x = GET_X_LPARAM(lParam);
                     event.y = GET_Y_LPARAM(lParam);
                     impl->m_event_handler->dispatch_event(event);
+                    break;
+
+                case WM_INPUT:
+                    if (impl->m_locked && impl->m_raw_registered) impl->handle_raw_input(lParam);
+                    break;  
+
+                case WM_SETCURSOR:
+                    if ((impl->m_locked || !impl->m_cursor_visible) && LOWORD(lParam) == HTCLIENT) {
+                        SetCursor(NULL);
+                        return TRUE;
+                    }
+                    break;
+
+                case WM_MOVE:
+                    if (impl->m_locked) impl->apply_clip();
                     break;
 
                 case WM_LBUTTONDOWN:
@@ -168,6 +254,7 @@ private:
                 }
 
                 case WM_SIZE:
+                    if (impl->m_locked) impl->apply_clip();
                     event.type = WindowEventType::WindowResize;
                     event.x = LOWORD(lParam);
                     event.y = HIWORD(lParam);
@@ -181,6 +268,7 @@ private:
                     break;
 
                 case WM_KILLFOCUS:
+                    if (impl->m_locked) impl->set_cursor_locked(false);
                     event.type = WindowEventType::WindowBlur;
                     impl->m_event_handler->dispatch_event(event);
                     break;
@@ -257,6 +345,35 @@ public:
     void invalidate() noexcept override { if (hwnd) { InvalidateRect(hwnd, NULL, FALSE); } }
     void* native_handle() const noexcept override { return static_cast<void*>(hwnd); }
     void set_paint_callback(std::function<void(void*)> cb) noexcept override { m_paint_callback = std::move(cb); }
+
+    bool set_cursor_locked(bool locked) noexcept override {
+        if (!hwnd) return false;
+        if (locked == m_locked) return true;
+
+        if (locked) {
+            if (GetForegroundWindow() != hwnd) return false;
+            register_raw_mouse();
+            m_locked = true;
+            apply_clip();
+            SetCursor(NULL);
+            warp_to_center();
+        } else {
+            m_locked = false;
+            ClipCursor(NULL);
+            if (m_cursor_visible) SetCursor(LoadCursorW(NULL, (LPCWSTR)IDC_ARROW));
+        }
+
+        return true;
+    }
+
+    bool cursor_locked() const noexcept override { return m_locked; }
+
+    void set_cursor_visible(bool visible) noexcept override {
+        m_cursor_visible = visible;
+        if (!m_locked) SetCursor(visible ? LoadCursorW(NULL, (LPCWSTR)IDC_ARROW) : NULL);
+    }
+
+    bool cursor_visible() const noexcept override { return m_cursor_visible; }
 };
 #endif
 

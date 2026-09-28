@@ -6,12 +6,14 @@
 #include "../../Graphics/texture.hpp"
 #include "../../Text/text_style.hpp"
 #include "../../Text/rich_text.hpp"
+#include "../raster_3d.hpp"
 #include <cctype>
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -194,6 +196,62 @@ public:
     }
 
     virtual bool load_font_file(const char* /*utf8_path*/) noexcept { return false; }
+
+    virtual void begin_3d(const Scene3D& scene) noexcept {
+        try {
+            if (!m_soft3d) m_soft3d.reset(new SoftwareRasterizer3D());
+            m_soft3d->set_light(m_light3d);
+            m_soft3d->begin(scene);
+            m_in_3d = true;
+        } catch (...) {
+            m_in_3d = false;
+        }
+    }
+
+    virtual void end_3d() noexcept {
+        if (!m_in_3d || !m_soft3d) return;
+        m_in_3d = false;
+        if (!m_soft3d->touched()) return;
+
+        try {
+            m_soft3d->resolve(m_soft3d_pixels);
+            const Scene3D& s = m_soft3d->scene();
+            draw_pixel_buffer(s.x, s.y, s.width, s.height, m_soft3d_pixels.data(), s.width, s.height, false, ++m_soft3d_version);
+        } catch (...) {}
+    }
+
+    virtual void set_light_3d(const graphics::Light3D& light) noexcept {
+        m_light3d = light;
+        if (m_soft3d) m_soft3d->set_light(light);
+    }
+
+    virtual void draw_mesh_3d(const graphics::Mesh3D& mesh, const float* model, const graphics::Material3D& mat) noexcept {
+        if (!m_in_3d || mesh.empty()) return;
+        const auto& v = mesh.vertices();
+        const auto& i = mesh.indices();
+        try { m_soft3d->draw(v.data(), v.size(), mesh.indexed() ? i.data() : nullptr, i.size(), model, mat); } catch (...) {}
+    }
+
+    virtual void draw_triangles_3d(const graphics::Vertex3D* v, std::size_t count, const float* model, const graphics::Material3D& mat) noexcept {
+        if (!m_in_3d || !v || count < 3) return;
+        try { m_soft3d->draw(v, count, nullptr, 0, model, mat); } catch (...) {}
+    }
+
+    virtual void draw_lines_3d(const vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test) noexcept {
+        if (!m_in_3d || !pts || count < 2) return;
+        try { m_soft3d->lines(pts, count, color, width, depth_test); } catch (...) {}
+    }
+
+    bool in_3d() const noexcept { return m_in_3d; }
+
+protected:
+    graphics::Light3D                     m_light3d;
+    bool                                  m_in_3d = false;
+    std::unique_ptr<SoftwareRasterizer3D> m_soft3d;
+    std::vector<graphics::Color>          m_soft3d_pixels;
+    std::uint64_t                         m_soft3d_version = 0;
+
+public:
 
 private:
     struct FallbackPiece {
