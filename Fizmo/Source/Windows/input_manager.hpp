@@ -142,12 +142,10 @@ private:
 
         if (e.scancode != 0) {
             auto held = m_scancode_names.find(e.scancode);
-
             if (held != m_scancode_names.end()) {
                 if (held->second == e.key_name) return;
                 release_name(held->second);
             }
-
             m_scancode_names[e.scancode] = e.key_name;
         }
 

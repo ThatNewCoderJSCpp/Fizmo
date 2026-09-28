@@ -71,9 +71,7 @@ private:
         ClientToScreen(hwnd, &br);
         const RECT clip{ tl.x, tl.y, br.x, br.y };
         ClipCursor(&clip);
-    }
-
-    
+    }    
     
     bool relative_motion(int x, int y, int& dx, int& dy) noexcept {
         if (!m_have_last) { m_last_x = x; m_last_y = y; m_have_last = true; }

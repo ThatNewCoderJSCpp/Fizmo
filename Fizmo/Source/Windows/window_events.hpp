@@ -61,7 +61,7 @@ struct WindowEvent {
     unsigned int y = 0;          // Mouse y position or window height
     unsigned int button = 0;     // Mouse button or key code
     unsigned int key = 0;        // Key code
-    unsigned int scancode = 0; 
+    unsigned int scancode = 0;
     std::string key_name = "";
     int scroll_delta = 0;        // positive = up/away, negative = down/toward
     int dx = 0;                  // MouseMove: pixels moved since the previous MouseMove 
