@@ -134,6 +134,7 @@ public:
 
         XSetWindowBackground(
             m_display, m_window,
+
             x11::pack_color(
                 DefaultVisual(m_display, m_screen),
                 color.red(), color.green(), color.blue()
@@ -258,7 +259,6 @@ private:
         if (!m_have_ref) { m_ref_x = m.x; m_ref_y = m.y; m_have_ref = true; }
         dx = m.x - m_ref_x; dy = m.y - m_ref_y;
         m_ref_x = m.x; m_ref_y = m.y;
-
         if (m_locked) return dx != 0 || dy != 0;   
         return true;
     }

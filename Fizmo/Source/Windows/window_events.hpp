@@ -74,6 +74,7 @@ struct WindowEvent {
            << "    y: " << e.y << "\n"
            << "    Button: " << e.button << "\n"
            << "    Key Code: " << e.key << "\n" 
+           << "    Scancode: " << e.scancode << "\n"
            << "    Key Name: " << e.key_name << "\n"
            << "    Scroll Delta: " << e.scroll_delta << "\n"
            << "    Mouse Delta: " << e.dx << ", " << e.dy << "\n"
