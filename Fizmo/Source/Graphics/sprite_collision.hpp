@@ -4,6 +4,7 @@
 #include "sprite.hpp"
 #include "../Physics/Rigid Body/physics_2d.hpp"
 #include "../Physics/Rigid Body/quadtree.hpp"
+#include <unordered_map>
 #include <vector>
 #include <functional>
 #include <utility>
@@ -117,7 +118,12 @@ public:
         )
     >;
 
-    explicit SpriteCollisionWorld(const physics::AABB& world_bounds, std::size_t max_per_node = 8, std::size_t max_depth = 6) noexcept : m_tree(world_bounds, max_per_node, max_depth) {}
+    explicit SpriteCollisionWorld(
+        const physics::AABB& world_bounds,
+        std::size_t          max_per_node = 8,
+        std::size_t          max_depth    = 6,
+        double               looseness    = physics::Quadtree<Sprite>::RECOMMENDED_LOOSENESS
+    ) noexcept : m_tree(world_bounds, max_per_node, max_depth, looseness) {}
 
     std::size_t add(Sprite& s, SpriteCollisionDef def = {}) noexcept {
         std::size_t id = m_regs.size();
@@ -137,26 +143,23 @@ public:
 
     void update(PairCallback on_pair) {
         m_tree.clear();
+        m_defs.clear();
 
         for (auto& reg : m_regs) {
             if (!reg.sprite) continue;
             if (!reg.sprite->visible()) continue;
             if (reg.def.kind == SpriteCollisionKind::None) continue;
+            if (!m_defs.emplace(reg.sprite, &reg.def).second) continue;
             physics::AABB aabb = sprite_collision_aabb(*reg.sprite, reg.def);
             m_tree.insert(reg.sprite, aabb);
         }
 
         m_tree.find_pairs([&](Sprite* a, Sprite* b) {
-            const SpriteCollisionDef* da = nullptr;
-            const SpriteCollisionDef* db = nullptr;
-
-            for (auto& r : m_regs) {
-                if (r.sprite == a) da = &r.def;
-                if (r.sprite == b) db = &r.def;
-                if (da && db) break;
-            }
-
-            if (!da || !db) return;
+            auto ia = m_defs.find(a);
+            auto ib = m_defs.find(b);
+            if (ia == m_defs.end() || ib == m_defs.end()) return;
+            const SpriteCollisionDef* da = ia->second;
+            const SpriteCollisionDef* db = ib->second;
             physics::OverlapResult result = collides(*a, *da, *b, *db);
             if (result.hit && on_pair) on_pair(*a, *da, *b, *db, result);
         });
@@ -174,7 +177,7 @@ public:
     }
 
     void set_world_bounds(const physics::AABB& bounds) noexcept {
-        m_tree = physics::Quadtree<Sprite>(bounds, m_tree.bounds().area() > 0 ? 8 : 8, 6);
+        m_tree = physics::Quadtree<Sprite>(bounds, m_tree.max_per_node(), m_tree.max_depth(), m_tree.looseness());
     }
 
     std::size_t registration_count() const noexcept { return m_regs.size(); }
@@ -183,6 +186,7 @@ public:
 private:
     std::vector<Registration> m_regs;
     physics::Quadtree<Sprite> m_tree;
+    std::unordered_map<const Sprite*, const SpriteCollisionDef*> m_defs;
 };
 
 } // namespace graphics

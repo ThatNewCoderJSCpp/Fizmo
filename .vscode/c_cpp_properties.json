@@ -20,7 +20,8 @@
             "name": "Fizmo Windows (clang)",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${env:FIZMO_INCLUDES}"
+                "${env:FIZMO_INCLUDES}",
+                "/usr/include/pango-1.0"
             ],
             "defines": [
                 "_DEBUG",

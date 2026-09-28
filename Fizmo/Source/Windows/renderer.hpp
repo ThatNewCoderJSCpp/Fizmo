@@ -292,16 +292,14 @@ public:
         if (!m_impl || w == 0 || h == 0) return false;
         if (m_impl->in_3d()) m_impl->end_3d();
         detail::Scene3D scene;
-        const auto& vp = camera.view_projection_matrix().data;
-        for (std::size_t i = 0; i < 16; ++i) scene.view_proj[i] = static_cast<float>(vp[i]);
+        m_origin_3d = camera.position();
+        math::Matrix4d vp = camera.view_projection_matrix() * translation(m_origin_3d);
 
-        if (camera.depth_range() == graphics::DepthRange::NegativeOneToOne) {  
-            for (std::size_t c = 0; c < 4; ++c) scene.view_proj[8 + c] = 0.5f * scene.view_proj[8 + c] + 0.5f * scene.view_proj[12 + c];
+        if (camera.depth_range() == graphics::DepthRange::NegativeOneToOne) {
+            for (std::size_t c = 0; c < 4; ++c) vp.data[8 + c] = 0.5 * vp.data[8 + c] + 0.5 * vp.data[12 + c];
         }
 
-        scene.camera[0] = static_cast<float>(camera.position().x);
-        scene.camera[1] = static_cast<float>(camera.position().y);
-        scene.camera[2] = static_cast<float>(camera.position().z);
+        for (std::size_t i = 0; i < 16; ++i) scene.view_proj[i] = static_cast<float>(vp.data[i]);
         scene.x = x; scene.y = y; scene.width = w; scene.height = h;
         m_impl->begin_3d(scene);
         return m_impl->in_3d();
@@ -312,19 +310,28 @@ public:
 
     void set_light_3d(const graphics::Light3D& light) noexcept { if (m_impl) m_impl->set_light_3d(light); }
 
+    const vector3d& render_origin() const noexcept { return m_origin_3d; }
+
     void draw_mesh(const graphics::Mesh3D& mesh, const graphics::Material3D& material = {}) noexcept {
-        if (m_impl) m_impl->draw_mesh_3d(mesh, nullptr, material);
+        draw_mesh(mesh, math::Matrix4d::identity(), material);
     }
 
     void draw_mesh(const graphics::Mesh3D& mesh, const math::Matrix4d& model, const graphics::Material3D& material = {}) noexcept {
         if (!m_impl) return;
         float m[16];
-        for (std::size_t i = 0; i < 16; ++i) m[i] = static_cast<float>(model.data[i]);
+        to_origin_relative(model, m);
         m_impl->draw_mesh_3d(mesh, m, material);
     }
 
+    void draw_mesh_at(const graphics::Mesh3D& mesh, const vector3d& offset, const graphics::Material3D& material = {}) noexcept {
+        draw_mesh(mesh, translation(offset), material);
+    }
+
     void draw_triangles_3d(const graphics::Vertex3D* vertices, std::size_t count, const graphics::Material3D& material = {}) noexcept {
-        if (m_impl) m_impl->draw_triangles_3d(vertices, count, nullptr, material);
+        if (!m_impl) return;
+        float m[16];
+        to_origin_relative(math::Matrix4d::identity(), m);
+        m_impl->draw_triangles_3d(vertices, count, m, material);
     }
 
     void draw_triangles_3d(const std::vector<graphics::Vertex3D>& vertices, const graphics::Material3D& material = {}) noexcept {
@@ -332,12 +339,18 @@ public:
     }
 
     void draw_line_3d(const vector3d& a, const vector3d& b, const graphics::Color& color, float width = 1.0f, bool depth_test = true) noexcept {
-        const vector3d pts[2] = { a, b };
+        const vector3d pts[2] = { a - m_origin_3d, b - m_origin_3d };
         if (m_impl) m_impl->draw_lines_3d(pts, 2, color, width, depth_test);
     }
 
     void draw_lines_3d(const std::vector<vector3d>& points, const graphics::Color& color, float width = 1.0f, bool depth_test = true) noexcept {
-        if (m_impl) m_impl->draw_lines_3d(points.data(), points.size(), color, width, depth_test);
+        if (!m_impl) return;
+
+        try {
+            m_line_scratch.resize(points.size());
+            for (std::size_t i = 0; i < points.size(); ++i) m_line_scratch[i] = points[i] - m_origin_3d;
+            m_impl->draw_lines_3d(m_line_scratch.data(), m_line_scratch.size(), color, width, depth_test);
+        } catch (...) {}
     }
 
     void draw_box_3d(const vector3d& lo, const vector3d& hi, const graphics::Color& color, float width = 1.0f, bool depth_test = true) noexcept {
@@ -346,7 +359,7 @@ public:
         for (int i = 0; i < 8; ++i) c[i] = vector3d{ (i & 1) ? hi.x : lo.x, (i & 2) ? hi.y : lo.y, (i & 4) ? hi.z : lo.z };
         const int e[24] = { 0,1, 2,3, 4,5, 6,7,  0,2, 1,3, 4,6, 5,7,  0,4, 1,5, 2,6, 3,7 };
         vector3d pts[24];
-        for (int i = 0; i < 24; ++i) pts[i] = c[e[i]];
+        for (int i = 0; i < 24; ++i) pts[i] = c[e[i]] - m_origin_3d;
         m_impl->draw_lines_3d(pts, 24, color, width, depth_test);
     }
 
@@ -385,6 +398,20 @@ public:
     }
 
 private:
+    static math::Matrix4d translation(const vector3d& t) noexcept {
+        math::Matrix4d m = math::Matrix4d::identity();
+        m.data[3] = t.x; m.data[7] = t.y; m.data[11] = t.z;
+        return m;
+    }
+
+    void to_origin_relative(const math::Matrix4d& model, float* out) const noexcept {
+        const math::Matrix4d rel = translation(-m_origin_3d) * model;
+        for (std::size_t i = 0; i < 16; ++i) out[i] = static_cast<float>(rel.data[i]);
+    }
+
+    vector3d              m_origin_3d{};
+    std::vector<vector3d> m_line_scratch;
+
     struct ResolvedRect { int x; int y; unsigned int w; unsigned int h; };
 
     static ResolvedRect resolve_corners(int x1, int y1, int x2, int y2) noexcept {
