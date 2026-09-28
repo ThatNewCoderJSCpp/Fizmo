@@ -1,23 +1,51 @@
-1: Complex class with math
-2: Physics
-    2a-a: Create collider classes (circle, rectangle, line segment, square, stadium, semi-circle, stadium-capsule, and polygon)
-    2a-b: Create collision handling between all combinations 
-    2a-c: Create a ComplexCollider which is a std::vector or DynamicArray of colliders
-    2a-d: Create a RigidBody2 with a ComplexCollider2 and some other stuff. Use a enum class Flags to disable/enable things that affect it (gravity, collisions, torsion, etc)
-    2a-e: Create forces, force feilds, etc.
-    2a-f: Create a Simulation2 that handles 2D stuff
-    2b: Create all of this in 3D
-    2c: Create planetary motion and whatnot. Add in gravitational pull. Also implement general relativity
-    2d: Update the Special relativity to handle multiprecision
-3: Add changes to converters to allow multiprecision
-4: Add multiprecision constants 
-5: Statistics
-    5a-a (basic distributions): normal pdf/cdf, students-t, binomial, geometric, and chi-squared. Make sure to add methods to get between two points, above a point, below a point, etc
-    5a-b: nCr, nPr, lock combinations nCr(n+m-1, m-1), lock permutations pow(m,n)
-    5a-c (critical values): lower_critical_z_score, upper_critical_z_score, two_tail_critical_z_score, and the same with "t" scores
-    5a-d (confidence intervals): Probability interval, probability difference, mean interval, mean difference, 
-    5a-e (hypotheses):
-        lower_tail_z_test, upper_tail_z_test, two_tail_z_test, (differences too)
-        upper_Tail_reject_h0, lower_tail_reject_h0, etc
-        degrees_of_freedom, t_statistic, t-tests (same things as z-test but with mean),
-        chi-squared GOF test (and reject h0 bool method), the "power" of all of the t-tests and z-tests
+1:  Physics
+        1a-a: Create collider classes (circle, rectangle, line segment, square, stadium, semi-circle, stadium-capsule, and polygon)
+        1a-b: Create collision handling between all combinations 
+        1a-c: Create a ComplexCollider which is a std::vector or DynamicArray of colliders
+        1a-d: Create a RigidBody2 with a ComplexCollider2 and some other stuff. Use a enum class Flags to disable/enable things that affect it (gravity, collisions, torsion, etc)
+        1a-e: Create forces, force feilds, etc.
+        1a-f: Create a Simulation2 that handles 2D stuff
+        1b: Create all of this in 3D
+        1c: Create planetary motion and whatnot. Add in gravitational pull. Also implement general relativity
+        1d: Update the Special relativity to handle multiprecision
+2:  Add changes to converters to allow multiprecision
+3:  Statistics
+        3a-a (basic distributions): normal pdf/cdf, students-t, binomial, geometric, and chi-squared. Make sure to add methods to get between two points, above a point, below a point, etc
+        3a-b: nCr, nPr, lock combinations nCr(n+m-1, m-1), lock permutations pow(m,n)
+        3a-c (critical values): lower_critical_z_score, upper_critical_z_score, two_tail_critical_z_score, and the same with "t" scores
+        3a-d (confidence intervals): Probability interval, probability difference, mean interval, mean difference, 
+        3a-e (hypotheses):
+            lower_tail_z_test, upper_tail_z_test, two_tail_z_test, (differences too)
+            upper_Tail_reject_h0, lower_tail_reject_h0, etc
+            degrees_of_freedom, t_statistic, t-tests (same things as z-test but with mean),
+            chi-squared GOF test (and reject h0 bool method), the "power" of all of the t-tests and z-tests
+4:  BigFloat math
+        UnitStep,
+        Jacobi Theta Functions,
+        BellPolynomial,
+        NielsenPolylog, 
+        RiemannZetaDerivative, 
+        BesselJ,             
+        BesselY,     
+        BesselI,            
+        BesselK,            
+        HankelH1,            
+        HankelH2,           
+        SphericalBesselJ,    
+        SphericalBesselY,   
+        SphericalBesselI,   
+        SphericalBesselK,   
+        Dedekind numbers,
+        Hypergeometric function,
+        Jacobi Polynomials,
+        Gegenbauer polynomials,
+        Hermite polynomials,
+        Laguerre polynomials,
+        Dickson polynomials,
+        Vieta-Lucas polynomials,
+        Vieta-Fibonacci polynomials,
+        Spread polynomials,
+        Hardy-Z function,
+        Basel functions,
+        Eulerian polynomials,
+        Barnes-G function

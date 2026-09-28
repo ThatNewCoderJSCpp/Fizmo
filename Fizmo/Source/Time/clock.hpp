@@ -21,16 +21,17 @@ public:
     using value_type      = T;
 
     enum class Type {
-        system,     // Wall clock — can jump (NTP, DST, manual adjustment)
-        steady,     // Monotonic  — never goes backwards, no calendar meaning
-        high_res    // Highest resolution available 
+        system,     
+        steady,    
+        high_res    
     };
 
 private:
     static constexpr std::uint64_t filetime_ticks_per_day_ = 864000000000ULL;
     static constexpr std::uint64_t ns_per_filetime_tick_ = 100ULL;
-    static constexpr T planck_per_ns_ = planck_per_unit<T>(Unit::nanosecond);
+    static constexpr T planck_per_ns_      = planck_per_unit<T>(Unit::nanosecond);
     static constexpr T windows_epoch_days_ = calendar_type::windows_epoch().raw_days();
+    static constexpr T unix_epoch_days_    = calendar_type::unix_epoch().raw_days();
 
 public:
     static datetime_type now(Type clock_type = Type::system) noexcept {
@@ -69,15 +70,21 @@ public:
     }
 
     static difference_type uptime() noexcept {
-    #ifdef OS_WINDOWS
+    #if defined(OS_WINDOWS)
         const ULONGLONG ms = GetTickCount64();
         const T planck = T(ms) * planck_per_unit<T>(Unit::millisecond);
-        const T ppd    = planck_per_unit<T>(Unit::day);
-        const T days   = planck / ppd;
-        const T rem    = planck - days * ppd;
-        return difference_type(days, rem);
+    #elif defined(OS_LINUX)
+        const std::uint64_t ns = detail::linux_now_ns(CLOCK_BOOTTIME);
+        const T planck = T(ns) * planck_per_ns_;
     #else
         return difference_type();
+    #endif
+
+    #if defined(OS_WINDOWS) || defined(OS_LINUX)
+        const T ppd  = planck_per_unit<T>(Unit::day);
+        const T days = planck / ppd;
+        const T rem  = planck - days * ppd;
+        return difference_type(days, rem);
     #endif
     }
 
@@ -89,6 +96,7 @@ public:
 
     static bool sleep_until(const datetime_type& target, Type clock_type = Type::system) noexcept {
         datetime_type current = now(clock_type);
+
         if (
             target.raw_days() > current.raw_days() ||
             (target.raw_days() == current.raw_days() && target.raw_planck() > current.raw_planck())
@@ -150,7 +158,7 @@ public:
 
 private:
     static datetime_type system_now() noexcept {
-    #ifdef OS_WINDOWS
+    #if defined(OS_WINDOWS)
         FILETIME ft;
         GetSystemTimePreciseAsFileTime(&ft);
         ULARGE_INTEGER uli;
@@ -163,13 +171,22 @@ private:
         const T sub_day_planck = T(remainder_ns) * planck_per_ns_;
         const T total_days = windows_epoch_days_ + T(days_since_1601);
         return datetime_type(total_days, sub_day_planck);
+    #elif defined(OS_LINUX)
+        struct timespec ts;
+        if (::clock_gettime(CLOCK_REALTIME, &ts) != 0) return datetime_type();
+        const std::int64_t sec = static_cast<std::int64_t>(ts.tv_sec);
+        std::int64_t days    = sec / 86400;
+        std::int64_t rem_sec = sec % 86400;
+        if (rem_sec < 0) { rem_sec += 86400; --days; }
+        const T sub_day_planck = T(rem_sec) * planck_per_unit<T>(Unit::second) + T(static_cast<std::uint64_t>(ts.tv_nsec)) * planck_per_ns_;
+        return datetime_type(unix_epoch_days_ + T(days), sub_day_planck);
     #else
         return datetime_type();
     #endif
     }
 
     static datetime_type steady_now() noexcept {
-    #ifdef OS_WINDOWS
+    #if defined(OS_WINDOWS)
         LARGE_INTEGER counter, freq;
         QueryPerformanceCounter(&counter);
         QueryPerformanceFrequency(&freq);
@@ -184,38 +201,42 @@ private:
         const T days = total_planck / ppd;
         const T rem  = total_planck - days * ppd;
         return datetime_type(days, rem);
+    #elif defined(OS_LINUX)
+        const std::uint64_t ns = tick_counter();   
+        const T total_planck = T(ns) * planck_per_ns_;
+        const T ppd = planck_per_unit<T>(Unit::day);
+        const T days = total_planck / ppd;
+        const T rem  = total_planck - days * ppd;
+        return datetime_type(days, rem);
     #else
         return datetime_type();
     #endif
     }
 
-    static datetime_type high_res_now() noexcept {
-    #ifdef OS_WINDOWS
-        return steady_now();
-    #else
-        return datetime_type();
-    #endif
-    }
+    static datetime_type high_res_now() noexcept { return steady_now(); }
 
     static TimeUnit<Unit::nanosecond, default_storage_uint> system_resolution() noexcept {
-    #ifdef OS_WINDOWS
+    #if defined(OS_WINDOWS)
         DWORD time_adjustment, time_increment;
         BOOL disabled;
         if (GetSystemTimeAdjustment(&time_adjustment, &time_increment, &disabled)) { return TimeUnit<Unit::nanosecond, default_storage_uint>(static_cast<std::uint64_t>(time_increment) * ns_per_filetime_tick_); }
         return TimeUnit<Unit::nanosecond, default_storage_uint>(std::uint64_t(15625000));
+    #elif defined(OS_LINUX)
+        struct timespec ts;
+
+        if (::clock_getres(CLOCK_REALTIME, &ts) == 0) {
+            const std::uint64_t r = static_cast<std::uint64_t>(ts.tv_sec) * 1000000000ULL + static_cast<std::uint64_t>(ts.tv_nsec);
+            return TimeUnit<Unit::nanosecond, default_storage_uint>(r);
+        }
+
+        return TimeUnit<Unit::nanosecond, default_storage_uint>(std::uint64_t(0));
     #else
         return TimeUnit<Unit::nanosecond, default_storage_uint>(std::uint64_t(0));
     #endif
     }
 
     static TimeUnit<Unit::nanosecond, default_storage_uint> steady_resolution() noexcept {
-    #ifdef OS_WINDOWS
-        const std::uint64_t f = tick_frequency();
-        if (f == 0) { return TimeUnit<Unit::nanosecond, default_storage_uint>(std::uint64_t(0)); }
-        return TimeUnit<Unit::nanosecond, default_storage_uint>(std::uint64_t(1000000000ULL / f));
-    #else
-        return TimeUnit<Unit::nanosecond, default_storage_uint>(std::uint64_t(0));
-    #endif
+        return TimeUnit<Unit::nanosecond, default_storage_uint>(tick_resolution_ns());
     }
 };
 

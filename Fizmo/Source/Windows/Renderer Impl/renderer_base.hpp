@@ -3,12 +3,33 @@
 
 #include "../../Graphics/color.hpp"
 #include "../../Graphics/paint.hpp"
+#include "../../Graphics/texture.hpp"
 #include "../../Text/text_style.hpp"
+#include "../../Text/rich_text.hpp"
+#include <cctype>
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace fizmo {
 namespace windows {
+
+struct RenderPoint {
+    float x = 0.0f;
+    float y = 0.0f;
+
+    constexpr RenderPoint() noexcept = default;
+
+    template <typename X, typename Y, typename = typename std::enable_if<std::is_arithmetic<X>::value && std::is_arithmetic<Y>::value>::type>
+    constexpr RenderPoint(X px, Y py) noexcept : x(static_cast<float>(px)), y(static_cast<float>(py)) {}
+};
+
 namespace detail {
 
 class RendererImplBase {
@@ -52,6 +73,336 @@ public:
         const wchar_t* str, int len,
         const text::TextStyle& style
     ) noexcept = 0;
+
+
+    virtual const char* backend_name() const noexcept { return "software"; }
+    virtual bool is_gpu() const noexcept { return false; }
+    virtual void set_vsync(bool /*enabled*/) noexcept {}
+
+    virtual void draw_pixel_buffer(
+        int dx, int dy, unsigned int dw, unsigned int dh,
+        const graphics::Color* pixels, unsigned int pw, unsigned int ph,
+        bool /*smooth*/, std::uint64_t /*version*/
+    ) noexcept {
+        if (!pixels || pw == 0 || ph == 0 || dw == 0 || dh == 0) return;
+
+        try {
+            images::BitmapImage img(pw, ph);
+
+            for (unsigned int y = 0; y < ph; ++y)
+                for (unsigned int x = 0; x < pw; ++x)
+                    img.set_pixel(x, y, pixels[static_cast<std::size_t>(y) * pw + x]);
+
+            draw_image(dx, dy, dw, dh, img, 0, 0, pw, ph);
+        } catch (...) {}
+    }
+
+    virtual void draw_texture_quad(
+        const RenderPoint quad[4], const graphics::Texture& tex,
+        float opacity, const graphics::TextureRect& src
+    ) noexcept {
+        if (!quad || !tex.valid() || src.is_empty() || opacity <= 0.0f) return;
+        opacity = std::min(opacity, 1.0f);
+        float minx = quad[0].x, maxx = quad[0].x, miny = quad[0].y, maxy = quad[0].y;
+
+        for (int i = 1; i < 4; ++i) {
+            minx = std::min(minx, quad[i].x); maxx = std::max(maxx, quad[i].x);
+            miny = std::min(miny, quad[i].y); maxy = std::max(maxy, quad[i].y);
+        }
+
+        const int x0 = static_cast<int>(std::floor(minx)), y0 = static_cast<int>(std::floor(miny));
+        const int x1 = static_cast<int>(std::ceil(maxx)),  y1 = static_cast<int>(std::ceil(maxy));
+        if (x1 <= x0 || y1 <= y0 || x1 - x0 > 16384 || y1 - y0 > 16384) return;
+        const unsigned int bw = static_cast<unsigned int>(x1 - x0), bh = static_cast<unsigned int>(y1 - y0);
+        const double e1x = quad[1].x - quad[0].x, e1y = quad[1].y - quad[0].y;
+        const double e2x = quad[3].x - quad[0].x, e2y = quad[3].y - quad[0].y;
+        const double det = e1x * e2y - e1y * e2x;
+        if (std::abs(det) < 1e-9) return;
+        const double inv = 1.0 / det;
+
+        try {
+            images::BitmapImage img(bw, bh);
+            const graphics::Color clear(0, 0, 0, 0);
+
+            for (unsigned int row = 0; row < bh; ++row) {
+                const double qy = (y0 + static_cast<int>(row)) + 0.5 - quad[0].y;
+
+                for (unsigned int col = 0; col < bw; ++col) {
+                    const double qx = (x0 + static_cast<int>(col)) + 0.5 - quad[0].x;
+                    const double s  = (qx * e2y - qy * e2x) * inv;
+                    const double t  = (e1x * qy - e1y * qx) * inv;
+
+                    if (s < 0.0 || s >= 1.0 || t < 0.0 || t >= 1.0) { img.set_pixel(col, row, clear); continue; }
+
+                    graphics::Color c = tex.sample(src.x + s * src.w, src.y + t * src.h);
+                    if (opacity < 1.0f) c.set_alpha(static_cast<std::uint8_t>(c.alpha() * opacity + 0.5f));
+                    img.set_pixel(col, row, c);
+                }
+            }
+
+            const graphics::Texture tmp(std::move(img));
+            draw_texture(x0, y0, bw, bh, tmp, 1.0f, graphics::TextureRect(0, 0, bw, bh));
+        } catch (...) {}
+    }
+
+    virtual void draw_polyline(const RenderPoint* pts, std::size_t count, bool closed, const graphics::Paint& p) noexcept {
+        if (!pts || count < 2 || !p.has_stroke()) return;
+        for (std::size_t i = 0; i + 1 < count; ++i) draw_segment(pts[i], pts[i + 1], p);
+        if (closed && count > 2) draw_segment(pts[count - 1], pts[0], p);
+    }
+
+    virtual void draw_polygon(const RenderPoint* pts, std::size_t count, const graphics::Paint& p) noexcept {
+        if (!pts || count < 3) return;
+
+        if (p.has_fill()) {
+            float ymin = pts[0].y, ymax = pts[0].y;
+            for (std::size_t i = 1; i < count; ++i) { ymin = std::min(ymin, pts[i].y); ymax = std::max(ymax, pts[i].y); }
+            const graphics::Paint span = graphics::Paint::stroke(p.fill_color(), 1);
+            std::vector<float> xs;
+
+            for (int y = static_cast<int>(std::floor(ymin)); y <= static_cast<int>(std::ceil(ymax)); ++y) {
+                const float yc = static_cast<float>(y) + 0.5f;
+                xs.clear();
+
+                for (std::size_t i = 0, j = count - 1; i < count; j = i++) {
+                    const RenderPoint a = pts[j], b = pts[i];
+
+                    if ((a.y <= yc && b.y > yc) || (b.y <= yc && a.y > yc))
+                        xs.push_back(a.x + (yc - a.y) / (b.y - a.y) * (b.x - a.x));
+                }
+
+                std::sort(xs.begin(), xs.end());
+
+                for (std::size_t k = 0; k + 1 < xs.size(); k += 2) {
+                    const int x0 = static_cast<int>(std::ceil(xs[k] - 0.5f));
+                    const int x1 = static_cast<int>(std::floor(xs[k + 1] - 0.5f));
+                    if (x1 >= x0) draw_line(x0, y, x1, y, span);
+                }
+            }
+        }
+        if (p.has_stroke()) draw_polyline(pts, count, true, p);
+    }
+
+    virtual bool capture(images::BitmapImage& /*out*/) noexcept { return false; }
+
+    virtual void draw_rich_text(int x, int y, unsigned int w, unsigned int h, const text::RichText& rt) noexcept {
+        try { fallback_rich_text(x, y, w, h, rt, true); } catch (...) {}
+    }
+
+    virtual text::TextMetrics measure_rich_text(const text::RichText& rt, unsigned int max_width) noexcept {
+        try { return fallback_rich_text(0, 0, max_width, 0, rt, false); } catch (...) { return {}; }
+    }
+
+    virtual bool load_font_file(const char* /*utf8_path*/) noexcept { return false; }
+
+private:
+    struct FallbackPiece {
+        std::string     text;
+        text::TextStyle style;
+        int             width   = 0;
+        int             ascent  = 0;
+        int             descent = 0;
+        int             rise    = 0;
+    };
+
+    struct FallbackLine {
+        std::vector<FallbackPiece> pieces;
+        int  width    = 0;
+        int  ascent   = 0;
+        int  descent  = 0;
+        bool para_end = false;
+    };
+
+    static std::string fallback_transform(std::string s, text::TextTransform t) {
+        bool start = true;
+
+        for (char& ch : s) {
+            const unsigned char u = static_cast<unsigned char>(ch);
+            if (u >= 0x80) { start = false; continue; }
+            if (t == text::TextTransform::Uppercase) ch = static_cast<char>(std::toupper(u));
+            else if (t == text::TextTransform::Lowercase) ch = static_cast<char>(std::tolower(u));
+            else if (t == text::TextTransform::Capitalize && start && std::isalpha(u)) ch = static_cast<char>(std::toupper(u));
+            start = !std::isalnum(u);
+        }
+
+        return s;
+    }
+
+    FallbackPiece fallback_piece(std::string s, const text::TextStyle& st, int rise) {
+        const text::TextMetrics m = measure_text(s.c_str(), static_cast<int>(s.size()), st);
+        FallbackPiece p;
+        p.text    = std::move(s);
+        p.style   = st;
+        p.width   = static_cast<int>(m.width);
+        p.ascent  = m.ascent;
+        p.descent = m.descent;
+        p.rise    = rise;
+        return p;
+    }
+
+    static void fallback_add(FallbackLine& L, FallbackPiece p) {
+        L.width  += p.width;
+        L.ascent  = std::max(L.ascent, p.ascent - p.rise);
+        L.descent = std::max(L.descent, p.descent + p.rise);
+        L.pieces.push_back(std::move(p));
+    }
+
+    text::TextMetrics fallback_rich_text(int x, int y, unsigned int w, unsigned int h, const text::RichText& rt, bool draw) {
+        text::TextMetrics result;
+        if (rt.empty()) return result;
+        const text::TextStyle& para = rt.base();
+        const text::TextOverflow overflow = para.has_text_overflow() ? para.text_overflow() : text::TextOverflow::Visible;
+        const bool wrap = overflow == text::TextOverflow::WordWrap && w > 0;
+        const double mult = para.has_line_height() && para.line_height() > 0.0 ? para.line_height() : 1.0;
+        const int para_gap = para.has_paragraph_spacing() ? static_cast<int>(std::lround(para.paragraph_spacing())) : 0;
+        std::vector<FallbackLine> lines(1);
+        text::TextStyle last_style = para;
+
+        for (std::size_t i = 0; i < rt.size(); ++i) {
+            text::TextStyle st = rt.resolved(i);
+            st.clear_text_align();
+            int rise = 0;
+
+            if (st.has_vertical_align() && (st.vertical_align() == text::VerticalAlign::Superscript || st.vertical_align() == text::VerticalAlign::Subscript)) {
+                const double size = st.has_size() && st.size() > 0.0 ? st.size() : 16.0;
+                rise = static_cast<int>(std::lround(st.vertical_align() == text::VerticalAlign::Superscript ? -size * 0.35 : size * 0.15));
+                st.set_size(size * 0.7);
+                st.clear_vertical_align();              
+            }
+
+            std::string t;
+            for (char ch : rt.spans()[i].text) if (ch != '\r') t += ch;
+            if (st.has_transform()) t = fallback_transform(std::move(t), st.transform());
+            last_style = st;
+            std::size_t p = 0;
+
+            while (p < t.size()) {
+                if (t[p] == '\n') { lines.back().para_end = true; lines.emplace_back(); ++p; continue; }
+                const bool space = t[p] == ' ';
+                std::size_t q = p;
+                while (q < t.size() && t[q] != '\n' && (t[q] == ' ') == space) ++q;
+                FallbackPiece piece = fallback_piece(t.substr(p, q - p), st, rise);
+                p = q;
+
+                if (wrap && !space && !lines.back().pieces.empty() && lines.back().width + piece.width > static_cast<int>(w)) {
+                    while (!lines.back().pieces.empty() && lines.back().pieces.back().text[0] == ' ') {
+                        lines.back().width -= lines.back().pieces.back().width;
+                        lines.back().pieces.pop_back();
+                    }
+
+                    lines.emplace_back();
+                }
+
+                const bool wrapped_start = lines.size() > 1 && !lines[lines.size() - 2].para_end;
+                if (space && lines.back().pieces.empty() && wrapped_start) continue;   
+                fallback_add(lines.back(), std::move(piece));
+            }
+        }
+
+        const text::TextMetrics blank = measure_text(" ", 1, para);
+
+        for (FallbackLine& L : lines) {
+            if (L.pieces.empty()) { L.ascent = blank.ascent; L.descent = blank.descent; }
+        }
+
+        auto line_height = [&](const FallbackLine& L) { return static_cast<int>(std::lround((L.ascent + L.descent) * mult)); };
+        std::size_t limit = lines.size();
+        if (para.has_max_lines()) limit = std::min<std::size_t>(limit, para.max_lines());
+
+        if (h > 0 && overflow != text::TextOverflow::Visible) {
+            int used = 0;
+            std::size_t fit = 0;
+
+            for (std::size_t i = 0; i < lines.size(); ++i) {
+                used += line_height(lines[i]);
+                if (used > static_cast<int>(h)) break;
+                fit = i + 1;
+                if (lines[i].para_end) used += para_gap;
+            }
+
+            limit = std::min(limit, std::max<std::size_t>(fit, 1));
+        }
+
+        const bool ellipsize = overflow == text::TextOverflow::WordWrap || overflow == text::TextOverflow::Ellipsis;
+        const std::string ell = "\xE2\x80\xA6";
+
+        auto add_ellipsis = [&](FallbackLine& L) {
+            const text::TextStyle st = L.pieces.empty() ? last_style : L.pieces.back().style;
+            FallbackPiece e = fallback_piece(ell, st, L.pieces.empty() ? 0 : L.pieces.back().rise);
+
+            if (w > 0) {
+                while (!L.pieces.empty() && (L.width + e.width > static_cast<int>(w) || L.pieces.back().text[0] == ' ')) {
+                    L.width -= L.pieces.back().width;
+                    L.pieces.pop_back();
+                }
+            }
+
+            fallback_add(L, std::move(e));
+        };
+
+        if (limit < lines.size()) {
+            lines.resize(limit);
+            if (ellipsize) add_ellipsis(lines.back());
+        }
+
+        if (overflow == text::TextOverflow::Ellipsis && w > 0) {
+            for (FallbackLine& L : lines) if (L.width > static_cast<int>(w)) add_ellipsis(L);
+        }
+
+        int widest = 0, total = 0;
+
+        for (std::size_t i = 0; i < lines.size(); ++i) {
+            widest = std::max(widest, lines[i].width);
+            total += line_height(lines[i]);
+            if (lines[i].para_end && i + 1 < lines.size()) total += para_gap;
+        }
+
+        result.width   = static_cast<unsigned int>(widest);
+        result.height  = static_cast<unsigned int>(total);
+        result.ascent  = lines.front().ascent;
+        result.descent = lines.front().descent;
+        if (!draw) return result;
+
+        const text::TextAlign align = para.has_text_align() ? para.text_align() : text::TextAlign::Left;
+        const int region = w > 0 ? static_cast<int>(w) : widest;
+        int top = y;
+
+        if (h > 0 && para.has_vertical_align()) {
+            if (para.vertical_align() == text::VerticalAlign::Middle) top += (static_cast<int>(h) - total) / 2;
+            else if (para.vertical_align() == text::VerticalAlign::Bottom) top += static_cast<int>(h) - total;
+        }
+
+        const bool clip = overflow == text::TextOverflow::Clip && w > 0 && h > 0;
+        if (clip) set_clip_rect(x, y, w, h, RectOrigin::TopLeft);
+
+        for (const FallbackLine& L : lines) {
+            const int lh = line_height(L);
+            const int baseline = top + (lh - (L.ascent + L.descent)) / 2 + L.ascent;
+            int pen = x;
+            if (align == text::TextAlign::Center) pen += (region - L.width) / 2;
+            else if (align == text::TextAlign::Right) pen += region - L.width;
+            if (w == 0 && align == text::TextAlign::Center) pen -= region / 2;
+            else if (w == 0 && align == text::TextAlign::Right) pen -= region;
+
+            for (const FallbackPiece& p : L.pieces) {
+                draw_text(pen, baseline + p.rise - p.ascent, p.text.c_str(), static_cast<int>(p.text.size()), p.style);
+                pen += p.width;
+            }
+
+            top += lh + (L.para_end ? para_gap : 0);
+        }
+
+        if (clip) reset_clip_rect();
+        return result;
+    }
+
+private:
+    void draw_segment(RenderPoint a, RenderPoint b, const graphics::Paint& p) noexcept {
+        draw_line(
+            static_cast<int>(std::lround(a.x)), static_cast<int>(std::lround(a.y)),
+            static_cast<int>(std::lround(b.x)), static_cast<int>(std::lround(b.y)), p
+        );
+    }
 };
 
 } // namespace detail

@@ -7,6 +7,7 @@
 
 #include "../../Graphics/color.hpp"
 #include "../../Graphics/fixed_color.hpp"
+#include "../../Graphics/content_version.hpp"
 
 namespace fizmo {
 namespace images {
@@ -37,6 +38,7 @@ private:
     std::vector<fizmo::graphics::Color> m_pixels;
     unsigned int m_width;
     unsigned int m_height;
+    fizmo::ContentVersion m_version;     
 
 private:
     unsigned int get_padding() const { return (4 - (m_width * 3) % 4) % 4; }
@@ -102,6 +104,7 @@ public:
     bool is_valid_image() const noexcept { return !m_pixels.empty() && m_width != 0 && m_height != 0; }
     double pixel_distance(const unsigned int x, const unsigned int y) const { return std::sqrt(std::pow(x - m_width / 2, 2) + std::pow(y - m_height / 2, 2)); }
     double pixel_distance(const unsigned int x1, const unsigned int y1, const unsigned int x2, const unsigned int y2) { return std::sqrt(std::pow(x1 - x2, 2) + std::pow(y1 - y2, 2)); }
+    std::uint64_t version() const noexcept { return m_version.get(); }
 
 public:
     void fill_area(const unsigned int x1, const unsigned int y1, const unsigned int x2, const unsigned int y2, const fizmo::graphics::Color& color) {

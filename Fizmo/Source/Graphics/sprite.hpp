@@ -12,12 +12,17 @@
 namespace fizmo {
 namespace graphics {
 
+struct SpriteQuad {
+    double x[4];
+    double y[4];
+};
+
 class Sprite {
 private:
     Texture m_texture;
     double m_x = 0.0;
     double m_y = 0.0;
-    double m_rotation = 0.0;        
+    double m_rotation = 0.0;       
     double m_scale_x = 1.0;
     double m_scale_y = 1.0;
     float m_opacity = 1.0f;
@@ -25,7 +30,7 @@ private:
     bool m_flip_h = false;
     bool m_flip_v = false;
     RectOrigin m_origin = RectOrigin::Center;
-    TextureRect m_source_rect;       
+    TextureRect m_source_rect;
     int m_z_order = 0;
 
 public:
@@ -89,7 +94,7 @@ public:
 
     unsigned int frame_width()  const noexcept { return m_source_rect.w; }
     unsigned int frame_height() const noexcept { return m_source_rect.h; }
-    
+
     double display_width()  const noexcept { return m_source_rect.w * std::abs(m_scale_x); }
     double display_height() const noexcept { return m_source_rect.h * std::abs(m_scale_y); }
 
@@ -105,14 +110,63 @@ public:
         return { m_x - ox, m_y - oy, dw, dh };
     }
 
+    Bounds rotated_bounds() const noexcept {
+        const SpriteQuad q = quad();
+        double x0 = q.x[0], x1 = q.x[0], y0 = q.y[0], y1 = q.y[0];
+
+        for (int i = 1; i < 4; ++i) {
+            x0 = std::min(x0, q.x[i]); x1 = std::max(x1, q.x[i]);
+            y0 = std::min(y0, q.y[i]); y1 = std::max(y1, q.y[i]);
+        }
+
+        return { x0, y0, x1 - x0, y1 - y0 };
+    }
+
     bool contains(double px, double py) const noexcept {
-        Bounds b = bounds();
-        return px >= b.x && px < b.x + b.w && py >= b.y && py < b.y + b.h;
+        const double dw = display_width(), dh = display_height();
+        if (dw <= 0.0 || dh <= 0.0) return false;
+        double ox = 0.0, oy = 0.0;
+        origin_offset(dw, dh, ox, oy);
+        const double rad = m_rotation * constants::pi_180();
+        const double c = std::cos(rad), s = std::sin(rad);
+        const double dx = px - m_x, dy = py - m_y;
+        double lx =  dx * c + dy * s;                  
+        double ly = -dx * s + dy * c;
+        if (m_flip_h) lx = -lx;
+        if (m_flip_v) ly = -ly;
+        lx += ox; ly += oy;
+        return lx >= 0.0 && lx < dw && ly >= 0.0 && ly < dh;
+    }
+
+    SpriteQuad quad() const noexcept {
+        const double dw = display_width(), dh = display_height();
+        double ox = 0.0, oy = 0.0;
+        origin_offset(dw, dh, ox, oy);
+        const double rad = m_rotation * constants::pi_180();
+        const double c = std::cos(rad), s = std::sin(rad);
+        const double fx = m_flip_h ? -1.0 : 1.0;
+        const double fy = m_flip_v ? -1.0 : 1.0;
+        const double lx[4] = { 0.0, dw, dw, 0.0 };
+        const double ly[4] = { 0.0, 0.0, dh, dh };
+        SpriteQuad q;
+
+        for (int i = 0; i < 4; ++i) {
+            const double px = (lx[i] - ox) * fx;
+            const double py = (ly[i] - oy) * fy;
+            q.x[i] = m_x + px * c - py * s;
+            q.y[i] = m_y + px * s + py * c;
+        }
+
+        return q;
+    }
+
+    bool drawable() const noexcept {
+        return m_visible && m_texture.valid() && !m_source_rect.is_empty() && m_opacity > 0.0f
+            && display_width() > 0.0 && display_height() > 0.0;
     }
 
     void draw(Canvas& canvas) const noexcept {
-        if (!m_visible || !m_texture.valid() || m_source_rect.is_empty()) return;
-        if (m_opacity <= 0.0f) return;
+        if (!drawable()) return;
         unsigned int dw = static_cast<unsigned int>(std::round(display_width()));
         unsigned int dh = static_cast<unsigned int>(std::round(display_height()));
         if (dw == 0 || dh == 0) return;

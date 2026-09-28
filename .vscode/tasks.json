@@ -8,11 +8,21 @@
             "args": [
                 "-g", "-std=c++17",
                 "-I", "${env:FIZMO_INCLUDES}",
+                "-I", "/usr/include/pango-1.0",
+                "-I", "/usr/include/glib-2.0",
+                "-I", "/usr/lib64/glib-2.0/include",
+                "-I", "/usr/include/harfbuzz",
+                "-I", "/usr/include/cairo",
                 "-I", "/usr/include/freetype2",
                 "${file}",
                 "-o", "${fileDirname}/${fileBasenameNoExtension}",
                 "-lX11", "-lXft", "-lXrender", "-lfontconfig", "-lfreetype",
-                "-lz", "-ljpeg", "-lm", "-lssl", "-lcrypto", "-lpthread"
+                "-lz", "-ljpeg", "-lm", "-lssl", "-lcrypto", "-lpthread",
+                "-lpangocairo-1.0",
+                "-lpango-1.0",
+                "-lgobject-2.0",
+                "-lglib-2.0",
+                "-lcairo"
             ],
             "options": { "cwd": "${fileDirname}" },
             "windows": {
@@ -25,7 +35,7 @@
                     "-lgdi32", "-luser32", "-lz", "-ljpeg",
                     "-lole32", "-loleaut32", "-luuid", "-lcomdlg32",
                     "-lshell32", "-lkernel32", "-lwinmm", "-lwsock32",
-                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32"
+                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32", "-ldwrite", "-lmsimg32"
                 ],
                 "options": {
                     "cwd": "${fileDirname}",
@@ -43,11 +53,21 @@
             "args": [
                 "-O3", "-DNDEBUG", "-std=c++17",
                 "-I", "${env:FIZMO_INCLUDES}",
+                "-I", "/usr/include/pango-1.0",
+                "-I", "/usr/include/glib-2.0",
+                "-I", "/usr/lib64/glib-2.0/include",
+                "-I", "/usr/include/harfbuzz",
+                "-I", "/usr/include/cairo",
                 "-I", "/usr/include/freetype2",
                 "${file}",
                 "-o", "${fileDirname}/${fileBasenameNoExtension}",
                 "-lX11", "-lXft", "-lXrender", "-lfontconfig", "-lfreetype",
-                "-lz", "-ljpeg", "-lm", "-lssl", "-lcrypto", "-lpthread"
+                "-lz", "-ljpeg", "-lm", "-lssl", "-lcrypto", "-lpthread",
+                "-lpangocairo-1.0",
+                "-lpango-1.0",
+                "-lgobject-2.0",
+                "-lglib-2.0",
+                "-lcairo"
             ],
             "options": { "cwd": "${fileDirname}" },
             "windows": {
@@ -60,7 +80,7 @@
                     "-lgdi32", "-luser32", "-lz", "-ljpeg",
                     "-lole32", "-loleaut32", "-luuid", "-lcomdlg32",
                     "-lshell32", "-lkernel32", "-lwinmm", "-lwsock32",
-                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32"
+                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32", "-ldwrite", "-lmsimg32"
                 ],
                 "options": {
                     "cwd": "${fileDirname}",
@@ -78,11 +98,21 @@
             "args": [
                 "-g", "-std=c++17",
                 "-I", "${env:FIZMO_INCLUDES}",
+                "-I", "/usr/include/pango-1.0",
+                "-I", "/usr/include/glib-2.0",
+                "-I", "/usr/lib64/glib-2.0/include",
+                "-I", "/usr/include/harfbuzz",
+                "-I", "/usr/include/cairo",
                 "-I", "/usr/include/freetype2",
                 "${file}",
                 "-o", "${fileDirname}/${fileBasenameNoExtension}",
                 "-lX11", "-lXft", "-lXrender", "-lfontconfig", "-lfreetype",
-                "-lz", "-ljpeg", "-lm", "-lssl", "-lcrypto", "-lpthread"
+                "-lz", "-ljpeg", "-lm", "-lssl", "-lcrypto", "-lpthread",
+                "-lpangocairo-1.0",
+                "-lpango-1.0",
+                "-lgobject-2.0",
+                "-lglib-2.0",
+                "-lcairo"
             ],
             "options": { "cwd": "${fileDirname}" },
             "windows": {
@@ -95,7 +125,7 @@
                     "-lgdi32", "-luser32", "-lz", "-ljpeg",
                     "-lole32", "-loleaut32", "-luuid", "-lcomdlg32",
                     "-lshell32", "-lkernel32", "-lwinmm", "-lwsock32",
-                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32"
+                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32", "-ldwrite", "-lmsimg32"
                 ],
                 "options": {
                     "cwd": "${fileDirname}",
@@ -113,11 +143,21 @@
             "args": [
                 "-O3", "-DNDEBUG", "-std=c++17",
                 "-I", "${env:FIZMO_INCLUDES}",
+                "-I", "/usr/include/pango-1.0",
+                "-I", "/usr/include/glib-2.0",
+                "-I", "/usr/lib64/glib-2.0/include",
+                "-I", "/usr/include/harfbuzz",
+                "-I", "/usr/include/cairo",
                 "-I", "/usr/include/freetype2",
                 "${file}",
                 "-o", "${fileDirname}/${fileBasenameNoExtension}",
                 "-lX11", "-lXft", "-lXrender", "-lfontconfig", "-lfreetype",
-                "-lz", "-ljpeg", "-lm", "-lssl", "-lcrypto", "-lpthread"
+                "-lz", "-ljpeg", "-lm", "-lssl", "-lcrypto", "-lpthread",
+                "-lpangocairo-1.0",
+                "-lpango-1.0",
+                "-lgobject-2.0",
+                "-lglib-2.0",
+                "-lcairo"
             ],
             "options": { "cwd": "${fileDirname}" },
             "windows": {
@@ -130,7 +170,7 @@
                     "-lgdi32", "-luser32", "-lz", "-ljpeg",
                     "-lole32", "-loleaut32", "-luuid", "-lcomdlg32",
                     "-lshell32", "-lkernel32", "-lwinmm", "-lwsock32",
-                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32"
+                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lcrypt32", "-ldwrite", "-lmsimg32"
                 ],
                 "options": {
                     "cwd": "${fileDirname}",

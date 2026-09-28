@@ -36,7 +36,7 @@
         #ifndef FIZMO_CONVERTERS
             #define FIZMO_CONVERTERS
         #endif
-        #ifndef FIMZO_TUPLE
+        #ifndef FIZMO_TUPLE
             #define FIZMO_TUPLE
         #endif
         #ifndef FIZMO_STRING
@@ -53,6 +53,9 @@
         #endif
         #ifndef FIZMO_CHEMISTRY
             #define FIZMO_CHEMISTRY
+        #endif
+        #ifndef FIZMO_MATRICES
+            #define FIZMO_MATRICES
         #endif
 
         #ifndef FIZMO_CONSTANTS
@@ -74,7 +77,6 @@
         #endif 
 
         #ifdef FIZMO_PHYSICS
-            #include "../special_relativity.hpp"
             #include "../physics.hpp"
         #endif 
 
@@ -106,6 +108,10 @@
 
         #if defined(FIZMO_CHEMISTRY) || defined(FIZMO_CHEM)
             #include "../chemistry.hpp"
+        #endif
+
+        #ifdef FIZMO_MATRICES
+            #include "../matrices.hpp"
         #endif
     #endif // FIZMO
 #endif //ALL_FIZMO_INCLUDES_FILE_HPP

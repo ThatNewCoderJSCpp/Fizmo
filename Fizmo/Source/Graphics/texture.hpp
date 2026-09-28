@@ -117,12 +117,11 @@ private:
     }
 
     Color sample_nearest(double px, double py) const noexcept {
-        int x = static_cast<int>(std::round(px));
-        int y = static_cast<int>(std::round(py));
-        return sample(x, y);
+        return sample(static_cast<int>(std::floor(px)), static_cast<int>(std::floor(py)));
     }
 
     Color sample_bilinear(double px, double py) const noexcept {
+        px -= 0.5; py -= 0.5; 
         int w = static_cast<int>(m_image->width());
         int h = static_cast<int>(m_image->height());
         int x0 = static_cast<int>(std::floor(px));

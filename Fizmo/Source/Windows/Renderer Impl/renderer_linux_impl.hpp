@@ -379,6 +379,10 @@ public:
         return measure_text32(cps.data(), static_cast<int>(cps.size()), style);
     }
 
+    bool load_font_file(const char* path) noexcept override {
+        return path && FcConfigAppFontAddFile(FcConfigGetCurrent(), reinterpret_cast<const FcChar8*>(path));
+    }
+
 private:
     static void angles_to_x11(const graphics::Paint& p, bool full, int& start64, int& ext64) noexcept {
         if (full) { start64 = 0; ext64 = 360 * 64; return; }

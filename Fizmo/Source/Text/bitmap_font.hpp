@@ -2,13 +2,11 @@
 #define FIZMO_BITMAP_FONT_HPP
 
 #include "utf_8.hpp"
-#include "glyph_rasterizer.hpp"
 #include <cstdint>
 #include <cstring>
 #include <algorithm>
 #include <unordered_map>
 #include <vector>
-#include <memory>
 #include <string>
 
 namespace fizmo {
@@ -26,11 +24,9 @@ public:
 
 public:
     BitmapFont() noexcept = default;
-    explicit BitmapFont(std::unique_ptr<GlyphRasterizer> rast) noexcept : m_rasterizer(std::move(rast)) {}
-    static BitmapFont system(const char* font_face = "Segoe UI") { return BitmapFont(std::make_unique<GlyphRasterizer>(font_face)); }
 
     static BitmapFont& builtin() noexcept {
-        static BitmapFont f(std::make_unique<GlyphRasterizer>());
+        static BitmapFont f;
         return f;
     }
 
@@ -38,21 +34,6 @@ public:
         if (cp >= kFirstAscii && cp <= kLastAscii) { return &kAsciiData[(cp - kFirstAscii) * kGlyphH]; }
         auto it = m_extended.find(cp);
         if (it != m_extended.end()) { return it->second.data(); }
-
-        if (m_rasterizer && m_rasterizer->valid()) {
-            std::uint8_t buf[kGlyphH];
-
-            if (m_rasterizer->rasterize(cp, buf)) {
-                auto& entry = m_extended[cp];
-                entry.assign(buf, buf + kGlyphH);
-                return m_extended[cp].data();
-            }
-            
-            auto& entry = m_extended[cp];
-            entry.assign(kReplacementGlyph, kReplacementGlyph + kGlyphH);
-            return entry.data();
-        }
-
         return kReplacementGlyph;
     }
 
@@ -64,22 +45,6 @@ public:
     bool has_glyph(std::uint32_t cp) const noexcept {
         if (cp >= kFirstAscii && cp <= kLastAscii) return true;
         return m_extended.count(cp) > 0;
-    }
-
-    void preload_range(std::uint32_t first, std::uint32_t last) const {
-        for (std::uint32_t cp = first; cp <= last; ++cp) {
-            glyph(cp);  
-        }
-    }
-
-    void preload_common() const {
-        preload_range(0x00A0, 0x00FF);   // Latin-1 Supplement
-        preload_range(0x0100, 0x017F);   // Latin Extended-A
-        preload_range(0x2000, 0x206F);   // General Punctuation
-        preload_range(0x2190, 0x21FF);   // Arrows
-        preload_range(0x2500, 0x257F);   // Box Drawing
-        preload_range(0x2580, 0x259F);   // Block Elements
-        preload_range(0x25A0, 0x25FF);   // Geometric Shapes
     }
 
     unsigned int measure_width(const std::string& str, int extra_spacing = 0) const noexcept {
@@ -102,23 +67,15 @@ public:
 
     void unregister_glyph(std::uint32_t cp) { m_extended.erase(cp); }
     std::size_t extended_glyph_count() const noexcept { return m_extended.size(); }
-    bool has_rasterizer() const noexcept { return m_rasterizer && m_rasterizer->valid(); }
-    void set_rasterizer(std::unique_ptr<GlyphRasterizer> rast) noexcept { m_rasterizer = std::move(rast); }
 
 private:
-    // Auto-rasterizer 
-    mutable std::unique_ptr<GlyphRasterizer> m_rasterizer;
+    std::unordered_map<std::uint32_t, std::vector<std::uint8_t>> m_extended;
 
-    // Extended / cached glyphs keyed by codepoint
-    // Mutable so that glyph() can auto-populate transparently
-    mutable std::unordered_map<std::uint32_t, std::vector<std::uint8_t>> m_extended;
-
-    // Replacement glyph (open box)
     static constexpr std::uint8_t kReplacementGlyph[kGlyphH] = {
         0xFE, 0x82, 0x82, 0x82, 0x82, 0x82, 0x82, 0xFE,
     };
 
-    // Builtin ASCII glyphs 
+    // Builtin ASCII glyphs
     static constexpr std::uint8_t kAsciiData[kAsciiCount * kGlyphH] = {
         // 0x20 ' '
         0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
