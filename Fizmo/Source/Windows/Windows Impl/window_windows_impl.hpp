@@ -199,6 +199,7 @@ private:
                     bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
                     UINT scancode = (lParam >> 16) & 0xFF;
                     bool extended = (lParam >> 24) & 1;
+                    event.scancode = scancode | (extended ? 0x100u : 0u);
 
                     switch (wParam) {
                         case VK_SPACE:   event.key_name = "Space"; break;
