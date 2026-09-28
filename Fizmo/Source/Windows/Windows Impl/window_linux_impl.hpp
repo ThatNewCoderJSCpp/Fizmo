@@ -19,9 +19,10 @@ private:
     x11::XDisplay*  m_display = nullptr;
     x11::XWindowId  m_window  = 0;
     x11::XAtomId    m_wm_delete = 0;
-    x11::Handle     m_handle;                  
+    x11::Handle     m_handle;
     int             m_screen  = 0;
     bool            m_open    = false;
+    bool            m_erase   = true;          
 
     std::function<void(void*)> m_paint_callback;
     fizmo::graphics::Color     m_background;
@@ -38,6 +39,7 @@ private:
 
 public:
     WindowImpl(IWindowEventHandler* handler, const fizmo::graphics::Color& color) noexcept : ImplBase(handler), m_background(color) {
+        XInitThreads();
         m_display = XOpenDisplay(nullptr);
 
         if (m_display) {
@@ -62,7 +64,7 @@ public:
         x11::XVisual*  vis  = DefaultVisual(m_display, m_screen);
         XSetWindowAttributes swa = {};
         swa.background_pixel = x11::pack_color(vis, m_background.red(), m_background.green(), m_background.blue());
-        
+
         swa.event_mask = ExposureMask | KeyPressMask | KeyReleaseMask
                        | ButtonPressMask | ButtonReleaseMask
                        | PointerMotionMask | StructureNotifyMask
@@ -78,6 +80,7 @@ public:
         m_wm_delete = XInternAtom(m_display, "WM_DELETE_WINDOW", 0);
         XSetWMProtocols(m_display, m_window, &m_wm_delete, 1);
         apply_title(title);
+        if (!m_erase) XSetWindowBackgroundPixmap(m_display, m_window, x11::kNone);
         XMapWindow(m_display, m_window);
         XFlush(m_display);
         m_handle.display = m_display;
@@ -102,7 +105,7 @@ public:
 
     void set_background_color(const fizmo::graphics::Color& color) noexcept override {
         m_background = color;
-        if (!m_display || !m_window) return;
+        if (!m_display || !m_window || !m_erase) return;
 
         XSetWindowBackground(
             m_display, m_window,
@@ -114,6 +117,22 @@ public:
 
         if (!m_paint_callback) XClearWindow(m_display, m_window);
         invalidate();
+    }
+
+    void set_background_erase(bool enabled) noexcept override {
+        m_erase = enabled;
+        if (!m_display || !m_window) return;
+
+        if (enabled) {
+            XSetWindowBackground(
+                m_display, m_window,
+                x11::pack_color(DefaultVisual(m_display, m_screen), m_background.red(), m_background.green(), m_background.blue())
+            );
+        } else {
+            XSetWindowBackgroundPixmap(m_display, m_window, x11::kNone);  
+        }
+
+        XFlush(m_display);
     }
 
     void invalidate() noexcept override {
@@ -151,9 +170,9 @@ private:
         WindowEvent e;
 
         if (ev.type == x11::kExpose) {
-            if (ev.xexpose.count != 0) return;      
+            if (ev.xexpose.count != 0) return;
 
-            if (m_paint_callback) m_paint_callback(nullptr);  
+            if (m_paint_callback) m_paint_callback(nullptr);
             else                  XClearWindow(m_display, m_window);
 
             e.type = WindowEventType::WindowExpose;
@@ -188,7 +207,7 @@ private:
             const unsigned int xb = ev.xbutton.button;
 
             if (xb == 4 || xb == 5) {
-                if (!pressed) return;               
+                if (!pressed) return;
                 e.type = WindowEventType::MouseScroll;
                 e.x = clamp_coord(ev.xbutton.x);
                 e.y = clamp_coord(ev.xbutton.y);
@@ -280,7 +299,7 @@ private:
                       && dy <= kDoubleClickSlop;
 
         if (hit) {
-            m_last_click_time   = 0;  
+            m_last_click_time   = 0;
             m_last_click_button = 0;
         } else {
             m_last_click_time   = t;
@@ -300,7 +319,7 @@ private:
         buf[n] = '\0';
         WindowEvent e;
         e.type = pressed ? WindowEventType::KeyPress : WindowEventType::KeyRelease;
-        e.key  = static_cast<unsigned int>(ks);   
+        e.key  = static_cast<unsigned int>(ks);
         e.key_name = key_name(ks, buf, n);
         m_event_handler->dispatch_event(e);
     }
@@ -327,7 +346,7 @@ private:
             case XK_Down:               return "DownArrow";
             default: break;
         }
-        
+
         if (len > 0 && static_cast<unsigned char>(text[0]) >= 0x20) { return std::string(text, static_cast<std::size_t>(len)); }
         const char* s = XKeysymToString(ks);
         return s ? std::string(s) : std::string();

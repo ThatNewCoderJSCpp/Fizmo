@@ -285,12 +285,43 @@ struct fizmo_float_from_int<multiprecision::integer<Bits, S>, void> {
     using type = multiprecision::floatmp<
         Bits,
         mantissa_bits,
-        multiprecision::sign::is_signed
+        S
     >;
 };
 
 template <typename T>
 using fizmo_float_from_int_t = typename fizmo_float_from_int<T>::type;
+
+template <typename Float, typename Enable = void>
+struct fizmo_int_from_float;
+
+template <typename T>
+struct fizmo_int_from_float<
+    T,
+    typename std::enable_if<std::is_floating_point<T>::value>::type
+> {
+    using type = multiprecision::int128;
+};
+
+template <
+    std::size_t Bits,
+    std::size_t MantissaBits,
+    multiprecision::sign S
+>
+struct fizmo_int_from_float<
+    multiprecision::floatmp<Bits, MantissaBits, S>,
+    void
+> {
+    static constexpr std::size_t int_bits = Bits; 
+
+    using type = multiprecision::integer<
+        int_bits,
+        S
+    >;
+};
+
+template <typename T>
+using fizmo_int_from_float_t = typename fizmo_int_from_float<T>::type;
 
 template <class T, class = void>
 struct fizmo_float_rank : std::integral_constant<std::size_t, 0> {};
@@ -301,8 +332,11 @@ struct fizmo_float_rank<
     void
 > : std::integral_constant<std::size_t, TB * 2 + 1> {};
 
+template <class T, class = void>
+struct fizmo_type_rank : std::integral_constant<std::size_t, integer_rank<T>::value> {};
+
 template <class T>
-struct fizmo_type_rank : std::integral_constant<std::size_t, (fizmo_float_rank<T>::value > 0 ? fizmo_float_rank<T>::value : integer_rank<T>::value)> {};
+struct fizmo_type_rank<T, typename std::enable_if<is_fizmo_float_v<T>>::type> : std::integral_constant<std::size_t, fizmo_float_rank<T>::value> {};
 
 template <class T, class = void>
 struct fizmo_type_bits;
@@ -371,7 +405,7 @@ public:
         fizmo_standard_mantissa_for_bits<ResultBits>::value;
 };
 
-template <class A, class B>
+template <class A, class B, class = void>
 struct fizmo_common_type {
 private:
     static constexpr std::size_t bitsA = fizmo_type_bits_v<A>;

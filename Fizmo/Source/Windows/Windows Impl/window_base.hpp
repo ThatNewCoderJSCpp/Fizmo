@@ -30,6 +30,7 @@ public:
     virtual void invalidate() noexcept = 0;
     virtual void* native_handle() const noexcept = 0;
     virtual void set_paint_callback(std::function<void(void*)> cb) noexcept = 0;
+    virtual void set_background_erase(bool /*enabled*/) noexcept {}
 };
 
 } // namespace detail

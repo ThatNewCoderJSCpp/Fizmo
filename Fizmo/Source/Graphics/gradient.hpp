@@ -40,7 +40,7 @@ private:
     double m_x1 = 1.0, m_y1 = 0.0;
 
     double m_radius  = 1.0;
-    double m_fx = 0.0, m_fy = 0.0;   
+    double m_fx = 0.0, m_fy = 0.0;
     bool   m_focal_set = false;
 
     std::vector<GradientStop> m_stops;
@@ -118,6 +118,16 @@ public:
     GradientType   type()   const noexcept { return m_type; }
     GradientSpread spread() const noexcept { return m_spread; }
 
+    double start_x()  const noexcept { return m_x0; }
+    double start_y()  const noexcept { return m_y0; }
+    double end_x()    const noexcept { return m_x1; }
+    double end_y()    const noexcept { return m_y1; }
+    double center_x() const noexcept { return m_x0; }
+    double center_y() const noexcept { return m_y0; }
+    double radius()   const noexcept { return m_radius; }
+    double focal_x()  const noexcept { return m_fx; }
+    double focal_y()  const noexcept { return m_fy; }
+
     Color sample(double x, double y) const noexcept {
         double t = (m_type == GradientType::Linear) ? project_linear(x, y) : project_radial(x, y);
         t = apply_spread(t);
@@ -148,7 +158,7 @@ private:
         m_dx     = m_x1 - m_x0;
         m_dy     = m_y1 - m_y0;
         m_len_sq = m_dx * m_dx + m_dy * m_dy;
-        if (m_len_sq <= constants::middle_epsilon()) m_len_sq = constants::middle_epsilon();  
+        if (m_len_sq <= constants::middle_epsilon()) m_len_sq = constants::middle_epsilon();
     }
 
     double project_linear(double x, double y) const noexcept {
@@ -164,21 +174,15 @@ private:
 
     double apply_spread(double t) const noexcept {
         switch (m_spread) {
-            case GradientSpread::Repeat: {
-                t = t - std::floor(t);   
-                return t;
-            }
+            case GradientSpread::Repeat: return t - std::floor(t);
             case GradientSpread::Reflect: {
-                t = t - std::floor(t);   
-                int period = static_cast<int>(std::floor(t));
-                t = t - std::floor(t);
-                break;
+                const double m = t - 2.0 * std::floor(t * 0.5);
+                return (m > 1.0) ? 2.0 - m : m;
             }
             case GradientSpread::Pad:
             default:
                 return clamp01(t);
         }
-        return clamp01(t);
     }
 
     static double clamp01(double v) noexcept {
@@ -188,12 +192,14 @@ private:
     void ensure_sorted() const noexcept {
         if (m_sorted) return;
         auto& self = const_cast<Gradient&>(*this);
+
         std::sort(
             self.m_stops.begin(), self.m_stops.end(),
             [](const GradientStop& a, const GradientStop& b) {
                 return a.position < b.position;
             }
         );
+
         self.m_sorted = true;
     }
 };

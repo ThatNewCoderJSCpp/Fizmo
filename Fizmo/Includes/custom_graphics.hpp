@@ -5,6 +5,8 @@
 #include "../Source/Graphics/color.hpp"
 #include "../Source/Graphics/hsl_color.hpp"
 
+#include "../Source/Vulkan/include.hpp"
+
 #include "../Source/Windows/window.hpp"
 #include "../Source/Windows/renderer.hpp"
 #include "../Source/Windows/game_loop.hpp"

@@ -1,6 +1,10 @@
 #ifndef FIZMO_DEFINES_HPP
 #define FIZMO_DEFINES_HPP
 
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+    #define _GNU_SOURCE
+#endif
+
 #if defined(_WIN32) || defined(_WIN64)
     #ifndef UNICODE
         #define UNICODE
@@ -91,6 +95,10 @@
     #include <errno.h>
     #include <string.h>
     #include <signal.h>
+
+    #include <time.h>
+    #include <sched.h>
+    #include <sys/prctl.h>
 
     #include <openssl/ssl.h>
     #include <openssl/err.h>

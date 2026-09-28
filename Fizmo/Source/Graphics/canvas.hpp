@@ -28,6 +28,7 @@ private:
     std::vector<Color> m_pixels;
     unsigned int m_width  = 0;
     unsigned int m_height = 0;
+    fizmo::ContentVersion m_version;    
 
 public:
     Framebuffer() = default;
@@ -63,6 +64,8 @@ public:
     const Color* data()  const noexcept { return m_pixels.data(); }
     Color*       data()        noexcept { return m_pixels.data(); }
     const std::vector<Color>& pixels() const noexcept { return m_pixels; }
+
+    std::uint64_t version() const noexcept { return m_version.get(); }
 
     images::BitmapImage to_bitmap_image() const {
         images::BitmapImage img(m_width, m_height);

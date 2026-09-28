@@ -20,6 +20,9 @@ inline Expression NEGATE(SymbolicContext& ctx, double a) {
 }
 
 // ABS
+#ifdef ABS
+#undef ABS
+#endif
 inline Expression ABS(SymbolicContext& ctx, const Expression& a) {
     return Expression(ctx.manager().unary(symbols::NodeType::AbsoluteValue, a.inner()), ctx.manager());
 }

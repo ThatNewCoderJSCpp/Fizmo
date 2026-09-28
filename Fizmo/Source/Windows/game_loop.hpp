@@ -9,7 +9,7 @@ namespace fizmo {
 namespace windows {
 
 enum class CanvasAnchor {
-    top_left, top_center, top_right,
+    top_left = 0, top_center, top_right,
     center_left, center, center_right,
     bottom_left, bottom_center, bottom_right
 };
@@ -20,6 +20,7 @@ struct CanvasLayout {
     unsigned int fixed_w = 0;
     unsigned int fixed_h = 0;
     CanvasAnchor anchor = CanvasAnchor::center;
+    bool smooth_scaling = false;   
 };
 
 struct CanvasRect {
@@ -62,17 +63,18 @@ inline CanvasRect resolve_layout(const CanvasLayout& layout, unsigned int win_w,
         int cw = static_cast<int>(r.w),   ch = static_cast<int>(r.h);
 
         switch (layout.anchor) {
-            case CanvasAnchor::top_left:      r.x = 0;              r.y = 0;              break;
-            case CanvasAnchor::top_center:    r.x = (iw - cw) / 2;  r.y = 0;              break;
-            case CanvasAnchor::top_right:     r.x = iw - cw;        r.y = 0;              break;
-            case CanvasAnchor::center_left:   r.x = 0;              r.y = (ih - ch) / 2;  break;
-            case CanvasAnchor::center:        r.x = (iw - cw) / 2;  r.y = (ih - ch) / 2;  break;
-            case CanvasAnchor::center_right:  r.x = iw - cw;        r.y = (ih - ch) / 2;  break;
+            case CanvasAnchor::top_left:      r.x = 0;              r.y = 0;               break;
+            case CanvasAnchor::top_center:    r.x = (iw - cw) / 2;  r.y = 0;               break;
+            case CanvasAnchor::top_right:     r.x = iw - cw;        r.y = 0;               break;
+            case CanvasAnchor::center_left:   r.x = 0;              r.y = (ih - ch) / 2;   break;
+            case CanvasAnchor::center:        r.x = (iw - cw) / 2;  r.y = (ih - ch) / 2;   break;
+            case CanvasAnchor::center_right:  r.x = iw - cw;        r.y = (ih - ch) / 2;   break;
             case CanvasAnchor::bottom_left:   r.x = 0;              r.y = ih - ch;         break;
             case CanvasAnchor::bottom_center: r.x = (iw - cw) / 2;  r.y = ih - ch;         break;
             case CanvasAnchor::bottom_right:  r.x = iw - cw;        r.y = ih - ch;         break;
         }
     }
+
     return r;
 }
 
@@ -106,13 +108,7 @@ private:
     void blit_canvas_to_window() noexcept {
         Renderer& r = m_app.renderer();
         if (m_layout.mode != CanvasLayout::Mode::fill) { r.clear(m_letterbox); }
-
-        if (m_layout.mode == CanvasLayout::Mode::fixed && m_fb.width() == m_rect.w && m_fb.height() == m_rect.h && m_rect.x == 0 && m_rect.y == 0) {
-            r.blit_framebuffer(m_fb);
-        } else {
-            auto img = m_fb.to_bitmap_image();
-            r.draw_image(img, m_rect.x, m_rect.y, m_rect.w, m_rect.h);
-        }
+        r.draw_framebuffer(m_fb, m_rect.x, m_rect.y, m_rect.w, m_rect.h, m_layout.smooth_scaling);
     }
 
 public:

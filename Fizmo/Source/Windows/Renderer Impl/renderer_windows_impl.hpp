@@ -4,6 +4,12 @@
 #include "renderer_base.hpp"
 #include "../../Basic/fizmo_defines.hpp"
 
+#ifdef OS_WINDOWS
+    #if defined(_MSC_VER)
+        #pragma comment(lib, "msimg32.lib")   
+    #endif
+#endif
+
 namespace fizmo {
 namespace windows {
 namespace detail {
@@ -17,6 +23,12 @@ private:
     HBITMAP m_old_bitmap = NULL;
     unsigned int m_width = 0;
     unsigned int m_height = 0;
+    HDC           m_scratch_dc   = NULL;
+    HBITMAP       m_scratch_bmp  = NULL;
+    HGDIOBJ       m_scratch_old  = NULL;
+    std::uint8_t* m_scratch_bits = nullptr;
+    unsigned int  m_scratch_w    = 0;
+    unsigned int  m_scratch_h    = 0;
 
     void create_back_buffer(unsigned int w, unsigned int h) noexcept {
         HDC window_dc = GetDC(m_hwnd);
@@ -39,6 +51,66 @@ private:
         }
     }
 
+    void destroy_scratch() noexcept {
+        if (m_scratch_dc) {
+            SelectObject(m_scratch_dc, m_scratch_old);
+            if (m_scratch_bmp) DeleteObject(m_scratch_bmp);
+            DeleteDC(m_scratch_dc);
+        }
+
+        m_scratch_dc = NULL; m_scratch_bmp = NULL; m_scratch_old = NULL;
+        m_scratch_bits = nullptr; m_scratch_w = m_scratch_h = 0;
+    }
+
+    bool ensure_scratch(unsigned int w, unsigned int h) noexcept {
+        if (m_scratch_bmp && w <= m_scratch_w && h <= m_scratch_h) { GdiFlush(); return true; }
+        const unsigned int nw = std::max(w, m_scratch_w), nh = std::max(h, m_scratch_h);
+        destroy_scratch();
+        BITMAPINFO bmi = {};
+        bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
+        bmi.bmiHeader.biWidth       = static_cast<LONG>(nw);
+        bmi.bmiHeader.biHeight      = -static_cast<LONG>(nh);
+        bmi.bmiHeader.biPlanes      = 1;
+        bmi.bmiHeader.biBitCount    = 32;
+        bmi.bmiHeader.biCompression = BI_RGB;
+        m_scratch_dc = CreateCompatibleDC(NULL);
+        if (!m_scratch_dc) return false;
+        void* bits = nullptr;
+        m_scratch_bmp = CreateDIBSection(m_scratch_dc, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+        if (!m_scratch_bmp || !bits) { destroy_scratch(); return false; }
+        m_scratch_old  = SelectObject(m_scratch_dc, m_scratch_bmp);
+        m_scratch_bits = static_cast<std::uint8_t*>(bits);
+        m_scratch_w = nw;
+        m_scratch_h = nh;
+        return true;
+    }
+
+    std::uint8_t* scratch_row(unsigned int row) noexcept {
+        return m_scratch_bits + static_cast<std::size_t>(row) * m_scratch_w * 4;
+    }
+
+    static void put_premul_bgra(std::uint8_t* d, const graphics::Color& c) noexcept {
+        const unsigned int a = c.alpha();
+        d[0] = static_cast<std::uint8_t>((c.blue()  * a + 127u) / 255u);
+        d[1] = static_cast<std::uint8_t>((c.green() * a + 127u) / 255u);
+        d[2] = static_cast<std::uint8_t>((c.red()   * a + 127u) / 255u);
+        d[3] = static_cast<std::uint8_t>(a);
+    }
+
+    void blend_scratch(int dx, int dy, unsigned int dw, unsigned int dh, unsigned int sw, unsigned int sh, float opacity) noexcept {
+        const float o = std::max(0.0f, std::min(1.0f, opacity));
+        BLENDFUNCTION bf = {};
+        bf.BlendOp             = AC_SRC_OVER;
+        bf.SourceConstantAlpha = static_cast<BYTE>(o * 255.0f + 0.5f);
+        bf.AlphaFormat         = AC_SRC_ALPHA;
+        if (bf.SourceConstantAlpha == 0) return;
+
+        AlphaBlend(
+            m_back_dc, dx, dy, static_cast<int>(dw), static_cast<int>(dh),
+            m_scratch_dc, 0, 0, static_cast<int>(sw), static_cast<int>(sh), bf
+        );
+    }
+
     static COLORREF to_cr(const graphics::Color& c) noexcept {
         return RGB(c.red(), c.green(), c.blue());
     }
@@ -56,7 +128,7 @@ private:
             case graphics::LineJoin::Round: return PS_JOIN_ROUND;
             case graphics::LineJoin::Bevel: return PS_JOIN_BEVEL;
             default:                        return PS_JOIN_MITER;
-        } 
+        }
     }
 
     HPEN create_stroke_pen(const graphics::Paint& p) noexcept {
@@ -65,7 +137,7 @@ private:
         lb.lbStyle = BS_SOLID;
         lb.lbColor = to_cr(p.stroke_color());
         lb.lbHatch = 0;
-        
+
         return ExtCreatePen(
             PS_GEOMETRIC | PS_SOLID | gdi_pen_endcap(p.line_cap()) | gdi_pen_join(p.line_join()),
             static_cast<int>(p.stroke_width()),
@@ -90,6 +162,7 @@ public:
     }
 
     void shutdown() noexcept override {
+        destroy_scratch();
         destroy_back_buffer();
         m_hwnd = NULL;
     }
@@ -140,7 +213,6 @@ public:
         SetPixel(m_back_dc, x, y, to_cr(color));
     }
 
-    // ---- Line ----
     void draw_line(int x1, int y1, int x2, int y2, const graphics::Paint& p) noexcept override {
         if (!m_back_dc || !p.has_stroke()) return;
         HPEN pen = create_stroke_pen(p);
@@ -151,7 +223,6 @@ public:
         DeleteObject(pen);
     }
 
-    // ---- Rect ----
     void draw_rect(int x, int y, unsigned int w, unsigned int h, const graphics::Paint& p) noexcept override {
         if (!m_back_dc) return;
         if (!p.has_fill() && !p.has_stroke()) return;
@@ -178,7 +249,6 @@ public:
         if (owns_brush) DeleteObject(brush);
     }
 
-    // ---- Ellipse ----
     void draw_ellipse(int cx, int cy, unsigned int rx, unsigned int ry, const graphics::Paint& p) noexcept override {
         if (!m_back_dc) return;
         if (!p.has_fill() && !p.has_stroke()) return;
@@ -194,7 +264,6 @@ public:
         if (full) {
             Ellipse(m_back_dc, cx - irx, cy - iry, cx + irx + 1, cy + iry + 1);
         } else {
-            constexpr double kPi = constants::pi();
             constexpr double kPi_180 = constants::pi_180();
             double sa_rad = p.start_angle() * kPi_180;
             double ea_rad = p.end_angle()   * kPi_180;
@@ -213,12 +282,10 @@ public:
         if (owns_brush)  DeleteObject(brush);
     }
 
-    // ---- Arc ----
     void draw_arc(int cx, int cy, unsigned int rx, unsigned int ry, const graphics::Paint& p) noexcept override {
         if (!m_back_dc) return;
         if (!p.has_fill() && !p.has_stroke()) return;
         int irx = static_cast<int>(rx), iry = static_cast<int>(ry);
-        constexpr double kPi = constants::pi();
         constexpr double kPi_180 = constants::pi_180();
         double sa_rad = p.start_angle() * kPi_180;
         double ea_rad = p.end_angle()   * kPi_180;
@@ -254,109 +321,81 @@ public:
         unsigned int sw, unsigned int sh
     ) noexcept override {
         if (!m_back_dc) return;
-        unsigned int img_w = img.width(), img_h = img.height();
+        const unsigned int img_w = img.width(), img_h = img.height();
         if (img_w == 0 || img_h == 0 || sw == 0 || sh == 0 || dw == 0 || dh == 0) return;
-        BITMAPINFO bmi = {};
-        bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
-        bmi.bmiHeader.biWidth       = static_cast<LONG>(img_w);
-        bmi.bmiHeader.biHeight      = -static_cast<LONG>(img_h);
-        bmi.bmiHeader.biPlanes      = 1;
-        bmi.bmiHeader.biBitCount    = 32;
-        bmi.bmiHeader.biCompression = BI_RGB;
-        std::vector<std::uint8_t> bits(img_w * img_h * 4);
+        if (sx >= img_w || sy >= img_h) return;
+        sw = std::min(sw, img_w - sx);
+        sh = std::min(sh, img_h - sy);
+        if (!ensure_scratch(sw, sh)) return;
 
-        for (unsigned int r = 0; r < img_h; ++r) {
-            for (unsigned int c = 0; c < img_w; ++c) {
-                auto px = img.get_pixel(c, r);
-                std::size_t off = (r * img_w + c) * 4;
-                bits[off + 0] = px.blue();
-                bits[off + 1] = px.green();
-                bits[off + 2] = px.red();
-                bits[off + 3] = px.alpha();
-            }
+        for (unsigned int r = 0; r < sh; ++r) {
+            std::uint8_t* row = scratch_row(r);
+            for (unsigned int c = 0; c < sw; ++c) put_premul_bgra(row + c * 4, img.get_pixel(sx + c, sy + r));
         }
 
-        int prev_mode = SetStretchBltMode(m_back_dc, HALFTONE);
+        blend_scratch(dx, dy, dw, dh, sw, sh, 1.0f);
+    }
 
-        StretchDIBits(
-            m_back_dc,
-            dx, dy, static_cast<int>(dw), static_cast<int>(dh),
-            static_cast<int>(sx),
-            static_cast<int>(sy),
-            static_cast<int>(sw), static_cast<int>(sh),
-            bits.data(), &bmi, DIB_RGB_COLORS, SRCCOPY
-        );
+    void draw_pixel_buffer(
+        int dx, int dy, unsigned int dw, unsigned int dh,
+        const graphics::Color* pixels, unsigned int pw, unsigned int ph,
+        bool smooth, std::uint64_t /*version*/
+    ) noexcept override {
+        if (!m_back_dc || !pixels || pw == 0 || ph == 0 || dw == 0 || dh == 0) return;
+        if (!ensure_scratch(pw, ph)) return;
 
-        SetStretchBltMode(m_back_dc, prev_mode);
+        for (unsigned int r = 0; r < ph; ++r) {
+            std::uint8_t* row = scratch_row(r);
+            const graphics::Color* src = pixels + static_cast<std::size_t>(r) * pw;
+            for (unsigned int c = 0; c < pw; ++c) put_premul_bgra(row + c * 4, src[c]);
+        }
+
+        (void)smooth;  
+        blend_scratch(dx, dy, dw, dh, pw, ph, 1.0f);
     }
 
     void draw_texture(
-        int dx, int dy, 
+        int dx, int dy,
         unsigned int dw, unsigned int dh,
         const graphics::Texture& tex,
         float opacity,
         const graphics::TextureRect& src
     ) noexcept override {
         if (!m_back_dc || !tex.valid()) return;
-        if (dw == 0 || dh == 0 || src.is_empty()) return;
+        if (dw == 0 || dh == 0 || src.is_empty() || opacity <= 0.0f) return;
+        const int x0 = std::max(dx, 0);
+        const int y0 = std::max(dy, 0);
+        const int x1 = std::min(dx + static_cast<int>(dw), static_cast<int>(m_width));
+        const int y1 = std::min(dy + static_cast<int>(dh), static_cast<int>(m_height));
+        if (x1 <= x0 || y1 <= y0) return;
+        const unsigned int rw = static_cast<unsigned int>(x1 - x0);
+        const unsigned int rh = static_cast<unsigned int>(y1 - y0);
+        if (!ensure_scratch(rw, rh)) return;
+        const double sx = static_cast<double>(src.w) / dw;
+        const double sy = static_cast<double>(src.h) / dh;
 
-        if (opacity >= 1.0f && tex.filter() == graphics::SampleFilter::Nearest) {
-            draw_image(
-                dx, dy, dw, dh, *tex.image(),
-                static_cast<unsigned int>(src.x),
-                static_cast<unsigned int>(src.y),
-                src.w, src.h
-            );
+        for (unsigned int r = 0; r < rh; ++r) {
+            std::uint8_t* row = scratch_row(r);
+            const double v = src.y + (static_cast<double>(y0 - dy + static_cast<int>(r)) + 0.5) * sy;
 
-            return;
-        }
-
-        std::vector<std::uint8_t> bits(dw * dh * 4);
-
-        for (unsigned int row = 0; row < dh; ++row) {
-            for (unsigned int col = 0; col < dw; ++col) {
-                double u = src.x + (static_cast<double>(col) + 0.5) * src.w / dw;
-                double v = src.y + (static_cast<double>(row) + 0.5) * src.h / dh;
-                auto texel = tex.sample(u, v);
-                std::size_t off = (row * dw + col) * 4;
-                std::uint8_t final_alpha = texel.alpha();
-
-                if (opacity < 1.0f) { final_alpha = static_cast<std::uint8_t>(std::round(final_alpha * opacity)); }
-
-                if (final_alpha < 255) {
-                    COLORREF bg = GetPixel(m_back_dc, dx + static_cast<int>(col), dy + static_cast<int>(row));
-                    float a = final_alpha / 255.0f;
-                    float inv_a = 1.0f - a;
-                    auto mix = [a, inv_a](std::uint8_t s, std::uint8_t d) -> std::uint8_t { return static_cast<std::uint8_t>(std::round(s * a + d * inv_a)); };
-                    bits[off + 0] = mix(texel.blue(),  GetBValue(bg));
-                    bits[off + 1] = mix(texel.green(), GetGValue(bg));
-                    bits[off + 2] = mix(texel.red(),   GetRValue(bg));
-                } else {
-                    bits[off + 0] = texel.blue();
-                    bits[off + 1] = texel.green();
-                    bits[off + 2] = texel.red();
-                }
-
-                bits[off + 3] = final_alpha;
+            for (unsigned int c = 0; c < rw; ++c) {
+                const double u = src.x + (static_cast<double>(x0 - dx + static_cast<int>(c)) + 0.5) * sx;
+                put_premul_bgra(row + c * 4, tex.sample(u, v));
             }
         }
 
-        BITMAPINFO bmi = {};
-        bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
-        bmi.bmiHeader.biWidth       = static_cast<LONG>(dw);
-        bmi.bmiHeader.biHeight      = -static_cast<LONG>(dh);
-        bmi.bmiHeader.biPlanes      = 1;
-        bmi.bmiHeader.biBitCount    = 32;
-        bmi.bmiHeader.biCompression = BI_RGB;
-
-        SetDIBitsToDevice(
-            m_back_dc, dx, dy, dw, dh,
-            0, 0, 0, dh,
-            bits.data(), &bmi, DIB_RGB_COLORS
-        );
+        blend_scratch(x0, y0, rw, rh, rw, rh, opacity);
     }
 
-    // ---- Text ----
+    bool load_font_file(const char* utf8_path) noexcept override {
+        if (!utf8_path) return false;
+        const int n = MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, nullptr, 0);
+        if (n <= 0) return false;
+        std::vector<wchar_t> path(static_cast<std::size_t>(n));
+        MultiByteToWideChar(CP_UTF8, 0, utf8_path, -1, path.data(), n);
+        return AddFontResourceExW(path.data(), FR_PRIVATE, nullptr) > 0;
+    }
+
     void draw_text(
         int x, int y,
         const wchar_t* str, int len,
@@ -502,10 +541,10 @@ private:
         int height = 0;
 
         if (style.has_size()) {
-            // Negative = character height 
+            // Negative = character height
             height = -static_cast<int>(style.size());
         } else {
-            height = -16; 
+            height = -16;
         }
 
         int weight  = style.has_weight() ? gdi_font_weight(style.weight()) : FW_NORMAL;

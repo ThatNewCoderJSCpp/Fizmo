@@ -124,7 +124,7 @@ public:
     static BigInt from_magnitude(BigUInt&& mag, bool neg)      { return make(std::move(mag), neg); }
 
 public:
-    const BigUInt& magnitude()   const noexcept { return m_mag; }
+    const BigUInt& magnitude()    const noexcept { return m_mag; }
     bool           is_nan()       const noexcept { return m_mag.is_undefined() && m_neg;  }
     bool           is_undefined() const noexcept { return m_mag.is_undefined() && !m_neg; }
     bool           is_finite()    const noexcept { return !m_mag.is_undefined(); }
@@ -135,6 +135,10 @@ public:
     bool           is_even()      const noexcept { return is_finite() && m_mag.is_even(); }
     bool           is_odd()       const noexcept { return is_finite() && m_mag.is_odd(); }
     std::size_t    bit_length()   const noexcept { return is_finite() ? m_mag.bit_length() : 0; }
+
+    std::size_t limb_count() const noexcept { return m_mag.limb_count(); }
+    std::uint64_t get_lowest_bits() const noexcept { return m_mag.get_lowest_bits(); }
+    std::uint64_t get_highest_bits() const noexcept { return m_mag.get_highest_bits(); }
 
     bool get_bit(std::size_t i) const noexcept { return is_finite() && m_mag.get_bit(i); }
 

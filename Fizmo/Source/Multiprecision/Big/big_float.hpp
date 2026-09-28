@@ -25,11 +25,12 @@ enum class RoundingMode {
 };
 
 struct BigFloatContext {
+    static constexpr long double log2_10      = 3.321928094887362347870319429489L;
+    static constexpr long double log10_2      = 0.301029995663981195213738894724L;
     static constexpr std::size_t min_prec     = 2;
     static constexpr std::size_t default_prec = 53; // double's significant precision
     static constexpr std::size_t max_prec     = BigUInt::max_bits;
-    static constexpr long double log2_10  = 3.321928094887362347870319429489L;
-    static constexpr long double log10_2  = 0.301029995663981195213738894724L;
+    static constexpr std::size_t max_dps      = std::size_t(static_cast<long double>(max_prec) * log10_2);
 
     std::size_t  precision;
     RoundingMode rounding_mode;
@@ -111,8 +112,7 @@ private:
 
     struct raw_tag {};
 
-    BigFloat(raw_tag, BigUInt mag, bool neg, std::int64_t exp, fpclass cls)
-        : m_mag(std::move(mag)), m_exp(exp), m_neg(neg), m_cls(cls) {}
+    BigFloat(raw_tag, BigUInt mag, bool neg, std::int64_t exp, fpclass cls) : m_mag(std::move(mag)), m_exp(exp), m_neg(neg), m_cls(cls) {}
 
     static std::int64_t add_sat(std::int64_t e, std::int64_t d) noexcept {
         if (d > 0 && e > std::numeric_limits<std::int64_t>::max() - d) return std::numeric_limits<std::int64_t>::max();
@@ -716,13 +716,6 @@ public:
     BigFloat& operator=(const char* s)        { if (!parse_string(s))         *this = undefined(); return *this; }
 
 public:
-    BigFloat operator+() const { return *this; }
-
-    BigFloat operator-() const {
-        if (m_cls == fpclass::nan || m_cls == fpclass::undefined) return *this;
-        return BigFloat(raw_tag{}, m_mag, !m_neg, m_exp, m_cls);
-    }
-
     BigFloat abs() const {
         if (m_cls == fpclass::nan || m_cls == fpclass::undefined) return *this;
         return BigFloat(raw_tag{}, m_mag, false, m_exp, m_cls);
@@ -772,7 +765,7 @@ public:
         return (c < 0) ? ordering::less : ((c > 0) ? ordering::greater : ordering::equal);
     }
 
-    ordering compare_to(const BigFloat& o) const noexcept { return compare(*this, o); }
+    ordering compare(const BigFloat& o) const noexcept { return compare(*this, o); }
 
     static bool unordered(const BigFloat& a, const BigFloat& b) noexcept {
         return compare(a, b) == ordering::unordered;

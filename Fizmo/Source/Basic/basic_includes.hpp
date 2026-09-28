@@ -31,6 +31,10 @@
 #include <list>
 #include <memory>
 
+#ifdef OS_LINUX
+#include "../x11_compat.hpp"
+#endif
+
 #if CPP14_OR_GREATER
     #include <shared_mutex>
 #endif

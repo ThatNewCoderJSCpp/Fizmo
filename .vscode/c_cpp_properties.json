@@ -37,7 +37,13 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "${env:FIZMO_INCLUDES}",
-                "/usr/include"
+                "/usr/include",
+                "/usr/include/pango-1.0",
+                "/usr/include/glib-2.0",
+                "/usr/lib64/glib-2.0/include",
+                "/usr/include/harfbuzz",
+                "/usr/include/cairo",
+                "/usr/include/freetype2"
             ],
             "defines": [
                 "_DEBUG"
@@ -52,7 +58,13 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "${env:FIZMO_INCLUDES}",
-                "/usr/include"
+                "/usr/include",
+                "/usr/include/pango-1.0",
+                "/usr/include/glib-2.0",
+                "/usr/lib64/glib-2.0/include",
+                "/usr/include/harfbuzz",
+                "/usr/include/cairo",
+                "/usr/include/freetype2"
             ],
             "defines": [
                 "_DEBUG"

@@ -19,60 +19,41 @@ public:
     using duration_type = duration_ns;
 
 private:
-#ifdef OS_WINDOWS
-    LARGE_INTEGER start_;
-    LARGE_INTEGER stop_;
-    LARGE_INTEGER freq_;
-    LARGE_INTEGER accum_;
-#endif
-
+    std::uint64_t start_;   
+    std::uint64_t stop_;    
+    std::uint64_t accum_;   
     bool running_;
     bool started_;
 
 public:
-    Stopwatch() noexcept : running_(false), started_(false) {
-    #ifdef OS_WINDOWS
-        QueryPerformanceFrequency(&freq_);
-        start_.QuadPart = 0;
-        stop_.QuadPart  = 0;
-        accum_.QuadPart = 0;
-    #endif
-    }
+    Stopwatch() noexcept : start_(0), stop_(0), accum_(0), running_(false), started_(false) {}
 
     void start() noexcept {
-        if (!running_) {
-    #ifdef OS_WINDOWS
-            LARGE_INTEGER now;
-            QueryPerformanceCounter(&now);
+        if (running_) return;
+        const std::uint64_t now = tick_counter();
 
-            if (started_) {
-                start_.QuadPart = now.QuadPart - accum_.QuadPart;
-            } else {
-                start_ = now;
-                accum_.QuadPart = 0;
-            }
-    #endif
-            running_ = true;
-            started_ = true;
+        if (started_) {
+            start_ = now - accum_;      
+        } else {
+            start_ = now;
+            accum_ = 0;
         }
+
+        running_ = true;
+        started_ = true;
     }
 
     void stop() noexcept {
-        if (running_) {
-    #ifdef OS_WINDOWS
-            QueryPerformanceCounter(&stop_);
-            accum_.QuadPart = stop_.QuadPart - start_.QuadPart;
-    #endif
-            running_ = false;
-        }
+        if (!running_) return;
+        stop_    = tick_counter();
+        accum_   = stop_ - start_;
+        running_ = false;
     }
 
     void reset() noexcept {
-    #ifdef OS_WINDOWS
-        start_.QuadPart = 0;
-        stop_.QuadPart  = 0;
-        accum_.QuadPart = 0;
-    #endif
+        start_   = 0;
+        stop_    = 0;
+        accum_   = 0;
         running_ = false;
         started_ = false;
     }
@@ -87,53 +68,33 @@ public:
 
 public:
     std::uint64_t elapsed_ticks() const noexcept {
-    #ifdef OS_WINDOWS
         if (!started_) return 0;
-        LARGE_INTEGER now;
-
-        if (running_) {
-            QueryPerformanceCounter(&now);
-        } else {
-            now = stop_;
-        }
-
-        return static_cast<std::uint64_t>(now.QuadPart - start_.QuadPart);
-    #else
-        return 0;
-    #endif
+        const std::uint64_t now = running_ ? tick_counter() : stop_;
+        return now - start_;
     }
 
     duration_ns elapsed_nanoseconds() const noexcept {
-    #ifdef OS_WINDOWS
-        const std::uint64_t ticks = elapsed_ticks();
-        if (freq_.QuadPart == 0) return duration_ns(0);
-        const std::uint64_t ns = ticks_to_time<std::uint64_t>(ticks, Unit::nanosecond);
-        return duration_ns(static_cast<Int>(ns));
-    #else
-        return duration_ns(0);
-    #endif
+        return duration_ns(static_cast<Int>(ticks_to_ns(elapsed_ticks())));
+    }
+
+    float_type exact_elapsed_nanoseconds() const noexcept {
+        return float_type(ticks_to_ns(elapsed_ticks()));
     }
 
     duration_ms elapsed_milliseconds() const noexcept {
-    #ifdef OS_WINDOWS
-        const std::uint64_t ticks = elapsed_ticks();
-        if (freq_.QuadPart == 0) return duration_ms(0);
-        const std::uint64_t ms = ticks_to_time<std::uint64_t>(ticks, Unit::millisecond);
-        return duration_ms(static_cast<Int>(ms));
-    #else
-        return duration_ms(0);
-    #endif
+        return duration_ms(static_cast<Int>(ticks_to_ns(elapsed_ticks()) / 1000000ULL));
+    }
+
+    float_type exact_elapsed_milliseconds() const noexcept {
+        return exact_elapsed_nanoseconds() / float_type(1000000ULL);
     }
 
     duration_s elapsed_seconds() const noexcept {
-    #ifdef OS_WINDOWS
-        const std::uint64_t ticks = elapsed_ticks();
-        if (freq_.QuadPart == 0) return duration_s(0);
-        const std::uint64_t s = ticks_to_time<std::uint64_t>(ticks, Unit::second);
-        return duration_s(static_cast<Int>(s));
-    #else
-        return duration_s(0);
-    #endif
+        return duration_s(static_cast<Int>(ticks_to_ns(elapsed_ticks()) / 1000000000ULL));
+    }
+
+    float_type exact_elapsed_seconds() const noexcept {
+        return exact_elapsed_milliseconds() / float_type(1000ULL);
     }
 
     template<Unit U>

@@ -67,6 +67,7 @@ public:
     void invalidate() noexcept { m_impl->invalidate(); }
     void* native_handle() const noexcept { return m_impl->native_handle(); }
     void set_paint_callback(std::function<void(void*)> cb) noexcept { m_impl->set_paint_callback(std::move(cb)); }
+    void set_background_erase(bool enabled) noexcept { m_impl->set_background_erase(enabled); }
 };
 
 } // namespace windows

@@ -302,6 +302,9 @@ public:
     bool        is_undefined() const noexcept { return m_data.empty(); }
     std::size_t limb_count()   const noexcept { return m_data.size(); }
 
+    std::uint64_t get_lowest_bits() const noexcept { return m_data.front(); }
+    std::uint64_t get_highest_bits() const noexcept { return m_data.back(); }
+
     const limb_store& data() const noexcept { return m_data; }
     const std::uint64_t* limbs() const noexcept { return m_data.data(); }
     std::uint64_t limb(std::size_t i) const noexcept { return i < m_data.size() ? m_data[i] : std::uint64_t(0); }
