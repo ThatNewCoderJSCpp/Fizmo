@@ -71,9 +71,7 @@ private:
         ClientToScreen(hwnd, &br);
         const RECT clip{ tl.x, tl.y, br.x, br.y };
         ClipCursor(&clip);
-    }
-
-    
+    }    
     
     bool relative_motion(int x, int y, int& dx, int& dy) noexcept {
         if (!m_have_last) { m_last_x = x; m_last_y = y; m_have_last = true; }
@@ -199,6 +197,7 @@ private:
                     bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
                     UINT scancode = (lParam >> 16) & 0xFF;
                     bool extended = (lParam >> 24) & 1;
+                    event.scancode = scancode | (extended ? 0x100u : 0u);
 
                     switch (wParam) {
                         case VK_SPACE:   event.key_name = "Space"; break;

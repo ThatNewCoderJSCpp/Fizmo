@@ -140,6 +140,15 @@ private:
     void on_key_press(const WindowEvent& e) {
         auto now = Clock::now();
 
+        if (e.scancode != 0) {
+            auto held = m_scancode_names.find(e.scancode);
+            if (held != m_scancode_names.end()) {
+                if (held->second == e.key_name) return;
+                release_name(held->second);
+            }
+            m_scancode_names[e.scancode] = e.key_name;
+        }
+
         if (m_keys_down.insert(e.key_name).second) {
             m_just_pressed.insert(e.key_name);
             m_key_press_time[e.key_name] = now;
@@ -157,10 +166,25 @@ private:
     }
 
     void on_key_release(const WindowEvent& e) {
-        if (m_keys_down.erase(e.key_name)) {
-            m_just_released.insert(e.key_name);
-            m_key_press_time.erase(e.key_name);
-            m_key_last_release[e.key_name] = Clock::now();
+        if (e.scancode != 0) {
+            auto held = m_scancode_names.find(e.scancode);
+
+            if (held != m_scancode_names.end()) {
+                const std::string name = held->second;
+                m_scancode_names.erase(held);
+                release_name(name);
+                if (name == e.key_name) return;
+            }
+        }
+
+        release_name(e.key_name);
+    }
+
+    void release_name(const std::string& name) {
+        if (m_keys_down.erase(name)) {
+            m_just_released.insert(name);
+            m_key_press_time.erase(name);
+            m_key_last_release[name] = Clock::now();
         }
     }
 
@@ -230,6 +254,8 @@ private:
     std::unordered_set<unsigned int> m_mouse_just_double_clicked;
 
     std::unordered_map<unsigned int, TimePoint> m_mouse_press_time;
+
+    std::unordered_map<unsigned int, std::string> m_scancode_names;
 
     int m_scroll_delta = 0;
     int m_mouse_dx = 0;

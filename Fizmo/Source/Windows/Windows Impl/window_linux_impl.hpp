@@ -490,6 +490,7 @@ private:
         WindowEvent e;
         e.type = pressed ? WindowEventType::KeyPress : WindowEventType::KeyRelease;
         e.key  = static_cast<unsigned int>(ks);
+        e.scancode = ke.keycode;
         e.key_name = key_name(ks, buf, n);
         m_event_handler->dispatch_event(e);
     }
