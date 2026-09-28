@@ -1,6 +1,11 @@
 #ifndef FIZMO_QUADTREE_HPP
 #define FIZMO_QUADTREE_HPP
 
+#include <algorithm>
+#include <array>
+#include <functional>
+#include <memory>
+#include <vector>
 #include "physics_2d.hpp"
 
 namespace fizmo {
@@ -32,9 +37,9 @@ inline bool overlap_aabb_circle(
 
 struct OverlapResult {
     bool     hit = false;
-    double   depth_x = 0.0; // meters (positive = overlapping)
+    double   depth_x = 0.0; 
     double   depth_y = 0.0;
-    vector2d normal{};      // unit push direction (a out of b)
+    vector2d normal{};      
 };
 
 inline OverlapResult overlap_aabb_mtv(const AABB& a, const AABB& b) noexcept {
@@ -129,24 +134,45 @@ public:
         AABB aabb;
     };
 
+    static constexpr double TIGHT = 1.0;
+    static constexpr double RECOMMENDED_LOOSENESS = 2.0;
+
     Quadtree() noexcept = default;
 
     explicit Quadtree(
         const AABB&  bounds,
         std::size_t  max_per_node = 8,
-        std::size_t  max_depth    = 6
+        std::size_t  max_depth    = 6,
+        double       looseness    = TIGHT
     ) noexcept
         : m_bounds(bounds),
           m_max_entries(max_per_node),
-          m_max_depth(max_depth) {}
+          m_max_depth(max_depth),
+          m_looseness(std::max(looseness, TIGHT)) { update_loose_bounds(); }
 
     void rebuild(const AABB& bounds, T** items, const AABB* aabbs, std::size_t n) {
-        m_bounds = bounds;
         clear();
+        m_bounds = bounds;
+        update_loose_bounds();
         for (std::size_t i = 0; i < n; ++i) insert(items[i], aabbs[i]);
     }
 
-    void insert(T* item, const AABB& item_aabb) { insert_impl(item, item_aabb, 0); }
+    void insert(T* item, const AABB& item_aabb) {
+        if (m_divided) {
+            int q = find_child(item_aabb);
+
+            if (q >= 0) {
+                m_children[q]->insert(item, item_aabb);
+                return;
+            }
+
+            m_entries.push_back({ item, item_aabb });
+            return;
+        }
+
+        m_entries.push_back({ item, item_aabb });
+        if (m_entries.size() > m_max_entries && m_depth < m_max_depth) subdivide();
+    }
 
     void clear() noexcept {
         m_entries.clear();
@@ -155,7 +181,7 @@ public:
     }
 
     void query(const AABB& region, std::vector<T*>& out) const {
-        if (!m_bounds.overlaps(region)) return;
+        if (!m_loose_bounds.overlaps(region)) return;
         for (auto& e : m_entries) { if (e.aabb.overlaps(region)) out.push_back(e.item); }
         if (m_divided) { for (auto& c : m_children) c->query(region, out); }
     }
@@ -168,16 +194,34 @@ public:
 
     template <typename Fn>
     void find_pairs(Fn&& on_pair) const {
+        if (is_loose()) {
+            for_each_entry([&](const Entry& e) { pair_with(e, on_pair); });
+            return;
+        }
+
         std::vector<const Entry*> ancestors;
-        find_pairs_impl(on_pair, ancestors); 
+        find_pairs_impl(on_pair, ancestors);
     }
 
-    std::size_t count()     const noexcept { return count_impl(); }
-    std::size_t depth()     const noexcept { return depth_impl(0); }
+    std::size_t count()      const noexcept { return count_impl(); }
+    std::size_t depth()      const noexcept { return depth_impl(0); }
     std::size_t node_count() const noexcept { return node_count_impl(); }
-    const AABB& bounds() const noexcept { return m_bounds; }
+    const AABB& bounds()       const noexcept { return m_bounds; }
+    const AABB& loose_bounds() const noexcept { return m_loose_bounds; }
+    std::size_t max_per_node() const noexcept { return m_max_entries; }
+    std::size_t max_depth()    const noexcept { return m_max_depth; }
+    double looseness()         const noexcept { return m_looseness; }
+    bool   is_loose()          const noexcept { return m_looseness > TIGHT; }
 
 private:
+    AABB loosen(const AABB& b) const noexcept {
+        const vector2d c = b.center();
+        const vector2d h = b.extents() * m_looseness;
+        return { c - h, c + h };
+    }
+
+    void update_loose_bounds() noexcept { m_loose_bounds = loosen(m_bounds); }
+
     AABB quadrant_bounds(int q) const noexcept {
         vector2d mid = m_bounds.center();
 
@@ -192,6 +236,13 @@ private:
 
     int find_child(const AABB& item_aabb) const noexcept {
         vector2d mid = m_bounds.center();
+
+        if (is_loose()) {
+            const vector2d c = item_aabb.center();
+            const int q = (c.x >= mid.x ? 1 : 0) | (c.y >= mid.y ? 2 : 0);
+            return loosen(quadrant_bounds(q)).contains(item_aabb) ? q : -1;
+        }
+
         bool left   = item_aabb.max.x <= mid.x;
         bool right  = item_aabb.min.x >= mid.x;
         bool top    = item_aabb.max.y <= mid.y;
@@ -200,11 +251,15 @@ private:
         if (right && top)    return 1;
         if (left  && bottom) return 2;
         if (right && bottom) return 3;
-        return -1; 
+        return -1;
     }
 
     void subdivide() {
-        for (int q = 0; q < 4; ++q) m_children[q] = std::make_unique<Quadtree>(quadrant_bounds(q), m_max_entries, m_max_depth - 1);
+        for (int q = 0; q < 4; ++q) {
+            m_children[q] = std::make_unique<Quadtree>(quadrant_bounds(q), m_max_entries, m_max_depth, m_looseness);
+            m_children[q]->m_depth = m_depth + 1;
+        }
+
         m_divided = true;
         std::vector<Entry> keep;
 
@@ -221,21 +276,22 @@ private:
         m_entries = std::move(keep);
     }
 
-    void insert_impl(T* item, const AABB& item_aabb, std::size_t depth) {
-        if (m_divided) {
-            int q = find_child(item_aabb);
+    template <typename Fn>
+    void for_each_entry(Fn&& fn) const {
+        for (auto& e : m_entries) fn(e);
+        if (m_divided) { for (auto& c : m_children) c->for_each_entry(fn); }
+    }
 
-            if (q >= 0) {
-                m_children[q]->insert_impl(item, item_aabb, depth + 1);
-                return;
-            }
-            
-            m_entries.push_back({ item, item_aabb });
-            return;
+    template <typename Fn>
+    void pair_with(const Entry& e, Fn& on_pair) const {
+        if (!m_loose_bounds.overlaps(e.aabb)) return;
+        const std::less<const Entry*> before;
+
+        for (auto& other : m_entries) {
+            if (before(&e, &other) && other.aabb.overlaps(e.aabb)) on_pair(e.item, other.item);
         }
 
-        m_entries.push_back({ item, item_aabb });
-        if (m_entries.size() > m_max_entries && depth < m_max_depth) { subdivide(); }
+        if (m_divided) { for (auto& c : m_children) c->pair_with(e, on_pair); }
     }
 
     template <typename Fn>
@@ -280,8 +336,11 @@ private:
 
 private:
     AABB        m_bounds{};
+    AABB        m_loose_bounds{};
     std::size_t m_max_entries = 8;
     std::size_t m_max_depth   = 6;
+    std::size_t m_depth       = 0;
+    double      m_looseness   = TIGHT;
 
     std::vector<Entry>                       m_entries;
     std::array<std::unique_ptr<Quadtree>, 4> m_children;
