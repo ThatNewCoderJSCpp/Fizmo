@@ -43,7 +43,7 @@ private:
     bool m_running    = false;
     bool m_auto_clear = true;
 
-    double    m_max_fps = 0.0;
+    double m_max_fps = 0.0;
     TimePoint m_next_frame;
 
 public:
