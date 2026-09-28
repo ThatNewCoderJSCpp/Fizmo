@@ -30,7 +30,7 @@ elseif(UNIX)
 
     find_dependency(PkgConfig)
     pkg_check_modules(FIZMO_PANGOCAIRO REQUIRED IMPORTED_TARGET GLOBAL
-        pangocairo pango cairo gobject-2.0 glib-2.0)
+        pangocairo pangoft2 pango cairo gobject-2.0 glib-2.0)
 
     list(APPEND FIZMO_DEPENDENCY_TARGETS
         X11::X11 X11::Xft X11::Xrender
