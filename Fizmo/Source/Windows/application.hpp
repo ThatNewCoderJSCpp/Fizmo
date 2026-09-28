@@ -7,6 +7,7 @@
 #include <functional>
 #include <vector>
 #include <chrono>
+#include <thread>
 
 namespace fizmo {
 namespace windows {
@@ -41,6 +42,9 @@ private:
 
     bool m_running    = false;
     bool m_auto_clear = true;
+
+    double m_max_fps = 0.0;
+    TimePoint m_next_frame;
 
 public:
     Application(
@@ -78,6 +82,9 @@ public:
     void set_auto_clear(bool v) noexcept { m_auto_clear = v; }
     void set_clear_color(const graphics::Color& c) noexcept { m_clear_color = c; }
 
+    void   set_max_fps(double fps) noexcept { m_max_fps = fps > 0.0 ? fps : 0.0; m_next_frame = Clock::now(); }
+    double max_fps() const noexcept { return m_max_fps; }
+
     double      delta_seconds()   const noexcept { return m_delta;       }
     double      fps()             const noexcept { return m_fps;         }
     double      fps_average()     const noexcept { return m_fps_avg;     }
@@ -104,6 +111,7 @@ public:
         m_fps         = 0.0;
         m_fps_avg     = 0.0;
         m_frame_count = 0;
+        m_next_frame = m_time_start;
 
         while (m_running && m_window.is_open()) {
             auto now = Clock::now();
@@ -127,6 +135,7 @@ public:
             if (m_on_render) m_on_render(m_renderer);
             m_renderer.present();
             m_input.end_frame();
+            limit_frame_rate();
         }
 
         m_running = false;
@@ -157,6 +166,17 @@ private:
         m_window.add_event_listener(WindowEventType::WindowClose,      forward);
         m_window.add_event_listener(WindowEventType::WindowFocus,      forward);
         m_window.add_event_listener(WindowEventType::WindowBlur,       forward);
+    }
+
+    void limit_frame_rate() noexcept {
+        if (m_max_fps <= 0.0) return;
+        const auto period = std::chrono::duration_cast<Clock::duration>(Duration(1.0 / m_max_fps));
+        m_next_frame += period;
+        const auto now = Clock::now();
+        if (m_next_frame < now - period) { m_next_frame = now; return; }
+        const auto spin_margin = std::chrono::microseconds(1500);
+        if (m_next_frame - now > spin_margin) std::this_thread::sleep_until(m_next_frame - spin_margin);
+        while (Clock::now() < m_next_frame) std::this_thread::yield();
     }
 };
 
