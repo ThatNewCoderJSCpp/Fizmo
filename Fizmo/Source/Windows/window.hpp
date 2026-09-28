@@ -68,6 +68,27 @@ public:
     void* native_handle() const noexcept { return m_impl->native_handle(); }
     void set_paint_callback(std::function<void(void*)> cb) noexcept { m_impl->set_paint_callback(std::move(cb)); }
     void set_background_erase(bool enabled) noexcept { m_impl->set_background_erase(enabled); }
+
+    bool set_cursor_locked(bool locked) noexcept { return m_impl->set_cursor_locked(locked); }
+    bool cursor_locked() const noexcept { return m_impl->cursor_locked(); }
+    void set_cursor_visible(bool visible) noexcept { m_impl->set_cursor_visible(visible); }
+    bool cursor_visible() const noexcept { return m_impl->cursor_visible(); }
+};
+
+class CursorLock {
+private:
+    Window* m_window;
+
+public:
+    explicit CursorLock(Window& window) noexcept : m_window(&window) {}
+    ~CursorLock() { unlock(); }
+    CursorLock(const CursorLock&) = delete;
+    CursorLock& operator=(const CursorLock&) = delete;
+
+    bool lock() noexcept   { return m_window->set_cursor_locked(true); }
+    void unlock() noexcept { if (m_window->cursor_locked()) m_window->set_cursor_locked(false); }
+    bool toggle() noexcept { if (locked()) { unlock(); return false; } return lock(); }
+    bool locked() const noexcept { return m_window->cursor_locked(); }
 };
 
 } // namespace windows

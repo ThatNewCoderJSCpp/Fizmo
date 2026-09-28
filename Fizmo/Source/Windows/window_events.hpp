@@ -63,7 +63,9 @@ struct WindowEvent {
     unsigned int key = 0;        // Key code
     std::string key_name = "";
     int scroll_delta = 0;        // positive = up/away, negative = down/toward
-    
+    int dx = 0;                  // MouseMove: pixels moved since the previous MouseMove 
+    int dy = 0;
+
     inline friend std::ostream& operator<<(std::ostream& os, const WindowEvent& e) {
         os << "WindowEvent[\n"
            << "    Type: " << e.type << "\n"
@@ -73,6 +75,7 @@ struct WindowEvent {
            << "    Key Code: " << e.key << "\n" 
            << "    Key Name: " << e.key_name << "\n"
            << "    Scroll Delta: " << e.scroll_delta << "\n"
+           << "    Mouse Delta: " << e.dx << ", " << e.dy << "\n"
            << "]";
         return os;
     }

@@ -53,7 +53,7 @@ public:
         const bool angle_counterclockwise = true) noexcept
     {
         double rad = angle;
-        if (angle_in_degrees) rad = rad * constants::reciprocal_pi_180();
+        if (angle_in_degrees) rad *= constants::pi_180();
         if (!angle_counterclockwise) rad = -rad;
         return Vector2D(static_cast<TX>(magnitude * math::cos_constexpr(rad)), static_cast<TY>(magnitude * math::sin_constexpr(rad)));
     }

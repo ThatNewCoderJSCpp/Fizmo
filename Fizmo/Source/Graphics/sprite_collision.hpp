@@ -2,8 +2,8 @@
 #define FIZMO_SPRITE_COLLISION_HPP
 
 #include "sprite.hpp"
-#include "../Physics/physics_2d.hpp"
-#include "../Physics/quadtree.hpp"
+#include "../Physics/Rigid Body/physics_2d.hpp"
+#include "../Physics/Rigid Body/quadtree.hpp"
 #include <vector>
 #include <functional>
 #include <utility>
