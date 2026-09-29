@@ -283,6 +283,8 @@ private:
     static constexpr int kPointShadowMaps = static_cast<int>(graphics::PointShadows3D::MAX_LIGHTS);
     static constexpr int kCubeFaces       = 6;
     static constexpr std::int32_t kSceneEnabled = 1, kSunShadows = 2, kPointShadows = 4;
+    static constexpr std::int32_t kAtmosphere = 8, kVolumetric = 16, kToneMap = 32, kMedium = 64;
+    static constexpr std::uint32_t kSkyVertices = 3;
     static constexpr std::uint32_t kFlagLit = 1u, kFlagLegacy = 4u;
     static constexpr double kPointNear     = 0.05;
     static constexpr double kSunUpLimit    = 0.99;
@@ -305,9 +307,20 @@ private:
         float        point_shadow[4] = { 0, 0, 0, 0 };
         float        point_pos[kMaxPointLights][4]   = {};
         float        point_color[kMaxPointLights][4] = {};
+        float        sky_zenith[4]   = {};
+        float        sky_horizon[4]  = {};
+        float        sky_glow[4]     = {};
+        float        sky_sun[4]      = {};
+        float        sky_moon[4]     = {};
+        float        sky_params[4]   = { 0, 0, 0, 1 };
+        float        medium_color[4] = { 0, 0, 0, 1 };
+        float        volume[4]       = {};
+        float        waves[4]        = {};
+        float        gloss[4]        = {};
+        float        inv_view_proj[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
     };
 
-    static_assert(sizeof(SceneUniforms) == 2256, "scene uniforms must match the std140 block in the shaders");
+    static_assert(sizeof(SceneUniforms) == 2480, "scene uniforms must match the std140 block in the shaders");
 
     struct Caster {
         enum class Kind : std::uint8_t { Mesh = 0, Instanced, Quads };
@@ -336,6 +349,7 @@ private:
         bool          sun_shadow    = false;
         unsigned int  sun_size      = 0;
         bool          wants_casters = false;
+        bool          sky           = false;
         std::array<PointShadowRec, kPointShadowMaps> points{};
         std::uint32_t point_count   = 0;
         unsigned int  point_size    = 0;
@@ -447,6 +461,8 @@ private:
     vulkan::DescriptorSetLayout   m_scene_set_layout;
     vulkan::PipelineLayout        m_shadow_layout;
     vulkan::ShaderModule          m_shadow_mesh_vs, m_shadow_instanced_vs, m_shadow_quad_vs, m_shadow_point_fs;
+    vulkan::ShaderModule          m_sky_vs, m_sky_fs;
+    vulkan::Pipeline              m_sky_pipeline;
     std::unordered_map<std::uint32_t, vulkan::Pipeline> m_shadow_pipelines;
     vulkan::Sampler               m_shadow_sampler;
     vulkan::Format                m_shadow_format = vulkan::Format::D16Unorm;
@@ -501,6 +517,7 @@ public:
         m_dummy_sun.reset();
         m_dummy_cube.reset();
         m_shadow_sampler.destroy();
+        m_sky_pipeline.destroy(); m_sky_fs.destroy(); m_sky_vs.destroy();
         m_shadow_point_fs.destroy(); m_shadow_quad_vs.destroy(); m_shadow_instanced_vs.destroy(); m_shadow_mesh_vs.destroy();
         m_shadow_layout.destroy();
         m_arena.clear();
@@ -1366,9 +1383,86 @@ private:
             flags |= kSunShadows;
         }
 
+        flags |= environment_uniforms(u, l, scene);
         u.counts[1] = flags;
         rec.wants_casters = rec.sun_shadow || rec.point_count > 0;
+        rec.sky = (flags & kAtmosphere) != 0;
         return rec;
+    }
+
+    static void unit_into(float* out, const vector3d& v) noexcept {
+        const double len = v.magnitude();
+        const vector3d n = len > 0.0 ? v / len : vector3d{ 0.0, 0.0, 1.0 };
+        out[0] = static_cast<float>(n.x); out[1] = static_cast<float>(n.y); out[2] = static_cast<float>(n.z);
+    }
+
+    static std::int32_t environment_uniforms(SceneUniforms& u, const graphics::SceneLighting3D& l, const Scene3D& scene) noexcept {
+        std::int32_t flags = 0;
+        const graphics::Atmosphere3D& a = l.atmosphere;
+        rgb_into(u.sky_zenith, a.zenith, 1.0f);
+        rgb_into(u.sky_horizon, a.horizon, 1.0f);
+        rgb_into(u.sky_glow, a.glow, 1.0f);
+        u.sky_zenith[3]  = a.stars;
+        u.sky_horizon[3] = a.fog_density;
+        u.sky_glow[3]    = a.glow_strength;
+        unit_into(u.sky_sun, a.sun_position);
+        unit_into(u.sky_moon, a.moon_position);
+        u.sky_sun[3]  = static_cast<float>(std::cos(a.sun_radius * kRadiansPerDegree));
+        u.sky_moon[3] = static_cast<float>(std::cos(a.moon_radius * kRadiansPerDegree));
+        u.sky_params[0] = a.fog_start;
+        u.sky_params[1] = static_cast<float>(l.time);
+        u.sky_params[2] = l.medium.density;
+        u.sky_params[3] = l.tone_map.exposure;
+        rgb_into(u.medium_color, l.medium.color, 1.0f);
+        u.medium_color[3] = l.tone_map.saturation;
+        u.volume[0] = l.volumetrics.density;
+        u.volume[1] = l.volumetrics.anisotropy;
+        u.volume[2] = l.volumetrics.distance;
+        u.volume[3] = static_cast<float>(l.volumetrics.steps);
+        u.waves[0] = l.surfaces.wave_strength;
+        u.waves[1] = l.surfaces.wave_scale;
+        u.waves[2] = l.surfaces.wave_speed;
+        u.waves[3] = l.surfaces.reflectivity;
+        u.gloss[0] = l.surfaces.specular_power;
+        u.gloss[1] = l.surfaces.specular;
+        u.gloss[2] = a.sun_disk;
+        u.gloss[3] = a.moon_disk;
+        Mat4f vp = scene.view_proj;
+        for (int c = 0; c < 4; ++c) vp[static_cast<std::size_t>(4 + c)] = -vp[static_cast<std::size_t>(4 + c)];
+        const Mat4f inv = mat4_inverse(vp);
+        std::copy(inv.begin(), inv.end(), u.inv_view_proj);
+        if (a.enabled) flags |= kAtmosphere;
+        if (l.volumetrics.enabled && l.volumetrics.steps > 0) flags |= kVolumetric;
+        if (l.tone_map.enabled) flags |= kToneMap;
+        if (l.medium.active) flags |= kMedium;
+        return flags;
+    }
+
+    static Mat4f mat4_inverse(const Mat4f& m) noexcept {
+        double a[4][8];
+
+        for (int r = 0; r < 4; ++r)
+            for (int c = 0; c < 8; ++c)
+                a[r][c] = c < 4 ? m[static_cast<std::size_t>(r * 4 + c)] : (c - 4 == r ? 1.0 : 0.0);
+
+        for (int col = 0; col < 4; ++col) {
+            int pivot = col;
+            for (int r = col + 1; r < 4; ++r) if (std::fabs(a[r][col]) > std::fabs(a[pivot][col])) pivot = r;
+            if (std::fabs(a[pivot][col]) < 1e-12) return mat4_identity();
+            if (pivot != col) for (int c = 0; c < 8; ++c) std::swap(a[pivot][c], a[col][c]);
+            const double inv = 1.0 / a[col][col];
+            for (int c = 0; c < 8; ++c) a[col][c] *= inv;
+
+            for (int r = 0; r < 4; ++r) {
+                if (r == col) continue;
+                const double k = a[r][col];
+                for (int c = 0; c < 8; ++c) a[r][c] -= k * a[col][c];
+            }
+        }
+
+        Mat4f out{};
+        for (int r = 0; r < 4; ++r) for (int c = 0; c < 4; ++c) out[static_cast<std::size_t>(r * 4 + c)] = static_cast<float>(a[r][c + 4]);
+        return out;
     }
 
     bool casting() const noexcept { return !m_scene_lights.empty() && m_scene_lights.back().wants_casters; }
@@ -1842,6 +1936,25 @@ private:
         return &m_pipelines3d.emplace(key, std::move(p)).first->second;
     }
 
+    const vulkan::Pipeline* sky_pipeline() {
+        if (m_sky_pipeline.valid()) return &m_sky_pipeline;
+        vulkan::GraphicsPipelineDesc d;
+        d.vertex_shader   = &m_sky_vs;
+        d.fragment_shader = &m_sky_fs;
+        d.layout          = &m_mesh_layout;
+        d.cull_mode       = vulkan::CullMode::None;
+        d.samples         = m_samples;
+        d.color_formats   = { vulkan::Format::RGBA8Unorm };
+        d.depth_format    = m_depth_format;
+        d.depth.test      = true;
+        d.depth.write     = false;
+        d.depth.compare   = vulkan::CompareOp::LessEqual;
+        d.blend           = { vulkan::BlendState::opaque() };
+        d.name            = "fizmo sky";
+        if (failed(m_sky_pipeline.create(m_device, d))) return nullptr;
+        return &m_sky_pipeline;
+    }
+
     vulkan::Pipeline* shadow_pipeline(Caster::Kind kind, bool point) {
         const std::uint32_t key = static_cast<std::uint32_t>(kind) | (point ? kShadowPointKey : 0u);
         auto it = m_shadow_pipelines.find(key);
@@ -2000,6 +2113,8 @@ private:
         if (failed(m_shadow_instanced_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kShadowInstanced3DVert, sizeof(gpu::kShadowInstanced3DVert) / 4), "fizmo shadow_instanced.vert"))) return false;
         if (failed(m_shadow_quad_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kShadowQuad3DVert, sizeof(gpu::kShadowQuad3DVert) / 4), "fizmo shadow_quad.vert"))) return false;
         if (failed(m_shadow_point_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kShadowPoint3DFrag, sizeof(gpu::kShadowPoint3DFrag) / 4), "fizmo shadow_point.frag"))) return false;
+        if (failed(m_sky_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kSky3DVert, sizeof(gpu::kSky3DVert) / 4), "fizmo sky.vert"))) return false;
+        if (failed(m_sky_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kSky3DFrag, sizeof(gpu::kSky3DFrag) / 4), "fizmo sky.frag"))) return false;
         m_multi_draw = m_device.features().multi_draw_indirect && m_device.features().draw_indirect_first_instance;
 
         if (
@@ -2988,7 +3103,7 @@ private:
         const int x0 = std::max(sc.scene.x, 0), y0 = std::max(sc.scene.y, 0);
         const int x1 = std::min(sc.scene.x + static_cast<int>(sc.scene.width),  static_cast<int>(m_width));
         const int y1 = std::min(sc.scene.y + static_cast<int>(sc.scene.height), static_cast<int>(m_height));
-        if ((x1 <= x0 || y1 <= y0 || from >= to) && !clear) return;
+        if ((x1 <= x0 || y1 <= y0 || from >= to) && !clear && !m_scene_lights[scene].sky) return;
         cmd.transition(m_depth, vulkan::ImageLayout::DepthAttachment);
         const vulkan::ColorAttachment color = color_attachment(clear);
         vulkan::DepthAttachment depth;
@@ -3009,6 +3124,18 @@ private:
             cmd.set_scissor({ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } });
             const vulkan::Pipeline* bound = nullptr;
             vulkan::DescriptorSet lighting;
+
+            if (m_scene_lights[scene].sky) {
+                const vulkan::Pipeline* sky = sky_pipeline();
+                if (sky) lighting = scene_descriptor(pf, scene);
+
+                if (sky && lighting.valid()) {
+                    cmd.bind(*sky);
+                    bound = sky;
+                    cmd.bind_descriptor_set(*sky, 1, lighting);
+                    cmd.draw(kSkyVertices);
+                }
+            }
 
             for (std::size_t i = from; i < to; ++i) {
                 const Draw3D& d = m_draws3d[i];
@@ -3183,6 +3310,11 @@ private:
         }
 
         for (const Upload& u : m_uploads) cmd.transition(*u.image, vulkan::ImageLayout::ShaderReadOnly);
+        if (!m_buffer_uploads.empty()) {
+            cmd.memory_barrier(vulkan::PipelineStage::VertexInput, vulkan::Access::VertexRead | vulkan::Access::IndexRead,
+                               vulkan::PipelineStage::Transfer, vulkan::Access::TransferWrite);
+        }
+
         for (const BufferUpload& u : m_buffer_uploads) cmd.copy_buffer(pf.staging, *u.dst, u.bytes, u.offset, u.dst_offset);
 
         if (!m_buffer_uploads.empty()) {

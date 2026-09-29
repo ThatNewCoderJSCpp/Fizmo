@@ -58,7 +58,9 @@ static_assert(sizeof(Vertex3D) == 36, "Vertex3D layout is shared with the GPU pi
 enum class CellFace : std::uint8_t { NegX = 0, PosX, NegY, PosY, NegZ, PosZ, None };
 
 enum CompactVertexFlags : std::uint8_t {
-    CompactLit = 1u << 0
+    CompactLit    = 1u << 0,
+    CompactGlossy = 1u << 1,
+    CompactLiquid = 1u << 2
 };
 
 inline int cell_variation(std::int32_t x, std::int32_t y, std::int32_t z, unsigned int amount) noexcept {

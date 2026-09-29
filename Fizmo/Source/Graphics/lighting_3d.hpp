@@ -79,6 +79,52 @@ struct PointShadows3D {
     float        strength      = 1.0f;
 };
 
+struct Atmosphere3D {
+    bool     enabled       = false;
+    vector3d sun_position  { 0.35, 0.2, 1.0 };
+    vector3d moon_position { -0.35, -0.2, -1.0 };
+    Color    zenith        = Color(70, 130, 235);
+    Color    horizon       = Color(175, 210, 250);
+    Color    glow          = Color(255, 214, 160);
+    float    glow_strength = 0.6f;
+    float    sun_radius    = 1.2f;
+    float    moon_radius   = 1.6f;
+    float    sun_disk      = 6.0f;
+    float    moon_disk     = 0.9f;
+    float    stars         = 0.0f;
+    float    fog_density   = 0.004f;
+    float    fog_start     = 24.0f;
+};
+
+struct Volumetrics3D {
+    bool         enabled    = false;
+    unsigned int steps      = 16;
+    float        density    = 0.02f;
+    float        anisotropy = 0.6f;
+    float        distance   = 96.0f;
+};
+
+struct Surfaces3D {
+    float wave_strength  = 0.08f;
+    float wave_scale     = 0.9f;
+    float wave_speed     = 1.2f;
+    float reflectivity   = 1.0f;
+    float specular_power = 180.0f;
+    float specular       = 2.5f;
+};
+
+struct Medium3D {
+    bool  active  = false;
+    Color color   = Color(30, 70, 120);
+    float density = 0.12f;
+};
+
+struct ToneMap3D {
+    bool  enabled    = false;
+    float exposure   = 1.0f;
+    float saturation = 1.0f;
+};
+
 struct SceneLighting3D {
     static constexpr std::size_t MAX_POINT_LIGHTS = 64;
 
@@ -102,6 +148,12 @@ struct SceneLighting3D {
 
     SunShadow3D    sun_shadow;
     PointShadows3D point_shadows;
+    Atmosphere3D   atmosphere;
+    Volumetrics3D  volumetrics;
+    Surfaces3D     surfaces;
+    Medium3D       medium;
+    ToneMap3D      tone_map;
+    double         time = 0.0;
 
     std::vector<PointLight3D> point_lights;
 
