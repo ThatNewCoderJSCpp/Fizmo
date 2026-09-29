@@ -64,6 +64,7 @@ struct SunShadow3D {
     float        normal_offset = 1.5f;
     float        softness      = 1.0f;
     float        strength      = 1.0f;
+    double       angle_step    = 0.25;
 };
 
 struct PointShadows3D {
@@ -71,9 +72,10 @@ struct PointShadows3D {
 
     bool         enabled    = false;
     unsigned int max_lights = MAX_LIGHTS;
-    unsigned int resolution    = 256;
+    unsigned int resolution    = 512;
     float        bias          = 0.04f;
     float        normal_offset = 0.04f;
+    float        softness      = 1.0f;
     float        strength      = 1.0f;
 };
 

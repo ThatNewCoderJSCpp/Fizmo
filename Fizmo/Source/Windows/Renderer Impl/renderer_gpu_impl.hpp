@@ -286,6 +286,8 @@ private:
     static constexpr std::uint32_t kFlagLit = 1u, kFlagLegacy = 4u;
     static constexpr double kPointNear     = 0.05;
     static constexpr double kSunUpLimit    = 0.99;
+    static constexpr double kRadiansPerDegree = 3.14159265358979323846 / 180.0;
+    static constexpr float  kCubeTexelSpan = 2.0f;
     static constexpr std::uint32_t kShadowPointKey = 1u << 2;
     static constexpr float  kShadowBiasConstant = 1.25f;
     static constexpr float  kShadowBiasSlope    = 1.75f;
@@ -1238,8 +1240,18 @@ private:
         m[static_cast<std::size_t>(row * 4 + 3)] = static_cast<float>(constant);
     }
 
+    static vector3d quantized_direction(const vector3d& direction, double step_degrees) noexcept {
+        const vector3d d = direction / direction.magnitude();
+        if (step_degrees <= 0.0) return d;
+        const double step = step_degrees * kRadiansPerDegree;
+        const double azimuth = std::round(std::atan2(d.y, d.x) / step) * step;
+        const double elevation = std::round(std::asin(std::max(-1.0, std::min(1.0, d.z))) / step) * step;
+        const double flat = std::cos(elevation);
+        return { flat * std::cos(azimuth), flat * std::sin(azimuth), std::sin(elevation) };
+    }
+
     static Mat4f sun_matrix(const vector3d& direction, const vector3d& origin, const graphics::SunShadow3D& s) noexcept {
-        const vector3d f = direction / direction.magnitude();
+        const vector3d f = quantized_direction(direction, s.angle_step);
         const vector3d up = std::fabs(f.z) > kSunUpLimit ? vector3d{ 0.0, 1.0, 0.0 } : vector3d{ 0.0, 0.0, 1.0 };
         vector3d r = f.cross(up);
         r = r / r.magnitude();
@@ -1247,7 +1259,7 @@ private:
         const double texel = 2.0 * s.distance / static_cast<double>(s.resolution);
         const double ox = origin.dot(r), oy = origin.dot(u), oz = origin.dot(f);
         const double cx = std::floor(ox / texel) * texel, cy = std::floor(oy / texel) * texel;
-        const double near_z = oz - s.depth_range, range = s.depth_range + s.distance;
+        const double near_z = std::floor(oz / texel) * texel - s.depth_range, range = s.depth_range + s.distance;
         Mat4f m = mat4_identity();
         set_row(m, 0, r / s.distance, (ox - cx) / s.distance);
         set_row(m, 1, u / s.distance, (oy - cy) / s.distance);
@@ -1336,6 +1348,7 @@ private:
             u.point_shadow[0] = l.point_shadows.bias;
             u.point_shadow[1] = l.point_shadows.strength;
             u.point_shadow[2] = l.point_shadows.normal_offset;
+            u.point_shadow[3] = kCubeTexelSpan * l.point_shadows.softness / static_cast<float>(l.point_shadows.resolution);
         }
 
         const graphics::SunShadow3D& s = l.sun_shadow;
