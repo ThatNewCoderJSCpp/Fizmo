@@ -34,6 +34,8 @@ struct DeviceFeatures {
     bool swapchain             = false;
     bool multi_draw_indirect   = false;
     bool draw_indirect_first_instance = false;
+    bool depth_clamp           = false;
+    bool depth_bias_clamp      = false;
 };
 
 namespace detail {
@@ -382,6 +384,8 @@ public:
         e2.features.wideLines         = s2.features.wideLines;
         e2.features.multiDrawIndirect         = s2.features.multiDrawIndirect;
         e2.features.drawIndirectFirstInstance = s2.features.drawIndirectFirstInstance;
+        e2.features.depthClamp                = s2.features.depthClamp;
+        e2.features.depthBiasClamp            = s2.features.depthBiasClamp;
         auto& feat = state->features;
         feat.dynamic_rendering     = true;
         feat.synchronization2      = true;
@@ -393,6 +397,8 @@ public:
         feat.wide_lines            = s2.features.wideLines == VK_TRUE;
         feat.multi_draw_indirect   = s2.features.multiDrawIndirect == VK_TRUE;
         feat.draw_indirect_first_instance = s2.features.drawIndirectFirstInstance == VK_TRUE;
+        feat.depth_clamp           = s2.features.depthClamp == VK_TRUE;
+        feat.depth_bias_clamp      = s2.features.depthBiasClamp == VK_TRUE;
         feat.swapchain             = desc.surface != nullptr;
         std::vector<const char*> extensions;
         if (desc.surface) extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);

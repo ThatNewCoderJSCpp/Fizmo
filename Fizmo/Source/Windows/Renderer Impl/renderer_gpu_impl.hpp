@@ -182,6 +182,7 @@ private:
         vulkan::Buffer         batch_instances;
         vulkan::Buffer         batch_commands;
         vulkan::Buffer         instances3d;
+        vulkan::Buffer         scene_uniforms;
     };
 
     struct GpuMesh {
@@ -189,6 +190,8 @@ private:
         std::uint64_t stamp = 0, last_used = 0, bytes = 0;
         std::uint32_t vertex_count = 0, index_count = 0;
         bool          quads = false;
+        graphics::Bounds3D bounds;
+        graphics::FaceGroups groups{};
     };
 
     struct ArenaRange {
@@ -271,8 +274,84 @@ private:
     struct SceneRec {
         std::size_t   batch_index = 0;   
         std::uint32_t first_draw  = 0;
+        std::uint32_t first_caster = 0;
         Scene3D       scene;
         Mat4f         vp;                
+    };
+
+    static constexpr int kMaxPointLights  = static_cast<int>(graphics::SceneLighting3D::MAX_POINT_LIGHTS);
+    static constexpr int kPointShadowMaps = static_cast<int>(graphics::PointShadows3D::MAX_LIGHTS);
+    static constexpr int kCubeFaces       = 6;
+    static constexpr std::int32_t kSceneEnabled = 1, kSunShadows = 2, kPointShadows = 4;
+    static constexpr std::uint32_t kFlagLit = 1u, kFlagLegacy = 4u;
+    static constexpr double kPointNear     = 0.05;
+    static constexpr double kSunUpLimit    = 0.99;
+    static constexpr std::uint32_t kShadowPointKey = 1u << 2;
+    static constexpr float  kShadowBiasConstant = 1.25f;
+    static constexpr float  kShadowBiasSlope    = 1.75f;
+
+    struct SceneUniforms {
+        float        legacy[4]       = { 0, 0, 0, 1 };
+        float        sun_dir[4]      = { 0, 0, -1, 0 };
+        float        sun_color[4]    = { 0, 0, 0, 1 };
+        float        sky_color[4]    = { 1, 1, 1, 0 };
+        float        block_color[4]  = { 1, 1, 1, 1 };
+        float        params[4]       = { 0, 1, 0, 0 };
+        std::int32_t counts[4]       = { 0, 0, 0, 0 };
+        float        sun_matrix[16]  = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+        float        sun_shadow[4]   = { 0, 0, 0, 0 };
+        float        point_shadow[4] = { 0, 0, 0, 0 };
+        float        point_pos[kMaxPointLights][4]   = {};
+        float        point_color[kMaxPointLights][4] = {};
+    };
+
+    static_assert(sizeof(SceneUniforms) == 2256, "scene uniforms must match the std140 block in the shaders");
+
+    struct Caster {
+        enum class Kind : std::uint8_t { Mesh = 0, Instanced, Quads };
+        Kind                  kind           = Kind::Mesh;
+        const vulkan::Buffer* vertices       = nullptr;
+        const vulkan::Buffer* indices        = nullptr;
+        std::uint32_t         count          = 0;
+        std::int32_t          vertex_base    = 0;
+        std::uint32_t         instance_first = 0;
+        std::uint32_t         instance_count = 0;
+        graphics::FaceGroups  groups{};
+        graphics::FaceMask    faces          = graphics::ALL_FACE_GROUPS;
+        bool                  axis_aligned   = true;
+        float                 model[12]      = { 1,0,0,0, 0,1,0,0, 0,0,1,0 };
+        float                 lo[3]          = { 0, 0, 0 };
+        float                 hi[3]          = { 0, 0, 0 };
+    };
+
+    struct PointShadowRec {
+        float light[4] = { 0, 0, 0, 1 };
+        Mat4f faces[kCubeFaces];
+    };
+
+    struct SceneLightRec {
+        SceneUniforms uniforms;
+        bool          sun_shadow    = false;
+        unsigned int  sun_size      = 0;
+        bool          wants_casters = false;
+        std::array<PointShadowRec, kPointShadowMaps> points{};
+        std::uint32_t point_count   = 0;
+        unsigned int  point_size    = 0;
+    };
+
+    struct ShadowMap {
+        std::unique_ptr<vulkan::Image>           image;
+        vulkan::ImageView                        sample_view;
+        std::array<vulkan::ImageView, kCubeFaces> face_views;
+        unsigned int                             size = 0;
+        bool                                     cube = false;
+
+        const vulkan::ImageView& attachment(int face) const noexcept { return cube ? face_views[static_cast<std::size_t>(face)] : image->view(); }
+    };
+
+    struct RetiredMap {
+        std::uint64_t              frame;
+        std::unique_ptr<ShadowMap> map;
     };
 
     struct Retired {
@@ -359,6 +438,21 @@ private:
     std::vector<gpu::LineVertex3D>   m_lines3d;
     std::vector<Draw3D>           m_draws3d;
     std::vector<SceneRec>         m_scenes;
+    std::vector<SceneLightRec>    m_scene_lights;
+    std::vector<Caster>           m_casters;
+    std::vector<std::uint8_t>     m_uniform_bytes;
+    std::uint64_t                 m_uniform_stride = sizeof(SceneUniforms);
+    vulkan::DescriptorSetLayout   m_scene_set_layout;
+    vulkan::PipelineLayout        m_shadow_layout;
+    vulkan::ShaderModule          m_shadow_mesh_vs, m_shadow_instanced_vs, m_shadow_quad_vs, m_shadow_point_fs;
+    std::unordered_map<std::uint32_t, vulkan::Pipeline> m_shadow_pipelines;
+    vulkan::Sampler               m_shadow_sampler;
+    vulkan::Format                m_shadow_format = vulkan::Format::D16Unorm;
+    std::unique_ptr<ShadowMap>    m_sun_map;
+    std::array<std::unique_ptr<ShadowMap>, kPointShadowMaps> m_point_maps;
+    std::unique_ptr<ShadowMap>    m_dummy_sun, m_dummy_cube;
+    std::vector<RetiredMap>       m_retired_maps;
+    mutable std::vector<std::pair<double, std::size_t>> m_light_order;
     bool                          m_force_new_batch = false;
     bool                          m_uploads_committed = false;
 
@@ -398,6 +492,15 @@ public:
         m_quad_index_pending = false;
         m_retired_buffers.clear();
         m_pipelines3d.clear();
+        m_shadow_pipelines.clear();
+        m_retired_maps.clear();
+        m_sun_map.reset();
+        for (auto& m : m_point_maps) m.reset();
+        m_dummy_sun.reset();
+        m_dummy_cube.reset();
+        m_shadow_sampler.destroy();
+        m_shadow_point_fs.destroy(); m_shadow_quad_vs.destroy(); m_shadow_instanced_vs.destroy(); m_shadow_mesh_vs.destroy();
+        m_shadow_layout.destroy();
         m_arena.clear();
         m_retired_ranges.clear();
         m_arena_quads_used = 0;
@@ -405,12 +508,13 @@ public:
         m_quad_fs.destroy(); m_quad_vs.destroy();
         m_line_fs.destroy(); m_line_vs.destroy(); m_mesh_fs.destroy(); m_mesh_vs.destroy();
         m_line_layout.destroy(); m_mesh_layout.destroy();
+        m_scene_set_layout.destroy();
         m_depth.destroy();
         m_glyphs.clear();
         m_atlas.clear();
         m_textures.clear();
         m_texture_bytes = 0;
-        for (auto& pf : m_per_frame) { pf.instances3d.destroy(); pf.batch_commands.destroy(); pf.batch_instances.destroy(); pf.lines3d.destroy(); pf.vertices3d.destroy(); pf.pool.destroy(); pf.ramp.destroy(); pf.staging.destroy(); pf.vertices.destroy(); }
+        for (auto& pf : m_per_frame) { pf.scene_uniforms.destroy(); pf.instances3d.destroy(); pf.batch_commands.destroy(); pf.batch_instances.destroy(); pf.lines3d.destroy(); pf.vertices3d.destroy(); pf.pool.destroy(); pf.ramp.destroy(); pf.staging.destroy(); pf.vertices.destroy(); }
         m_msaa_target.destroy();
         m_target.destroy();
         m_white.destroy();
@@ -792,11 +896,13 @@ public:
 
         try {
             SceneRec rec;
-            rec.batch_index = m_batches.size();
-            rec.first_draw  = static_cast<std::uint32_t>(m_draws3d.size());
-            rec.scene       = scene;
-            rec.vp          = scene.view_proj;
+            rec.batch_index  = m_batches.size();
+            rec.first_draw   = static_cast<std::uint32_t>(m_draws3d.size());
+            rec.first_caster = static_cast<std::uint32_t>(m_casters.size());
+            rec.scene        = scene;
+            rec.vp           = scene.view_proj;
             for (int c = 0; c < 4; ++c) rec.vp[4 + c] = -rec.vp[4 + c];   
+            m_scene_lights.push_back(snapshot_lighting(scene));
             m_scenes.push_back(rec);
             m_in_3d = true;
             m_force_new_batch = true;
@@ -809,24 +915,40 @@ public:
         m_force_new_batch = true;   
     }
 
+    void set_light_3d(const graphics::Light3D& light) noexcept override {
+        RendererImplBase::set_light_3d(light);
+        if (m_in_3d && !m_scene_lights.empty()) legacy_uniforms(m_scene_lights.back().uniforms);
+    }
+
+    void set_scene_lighting(const graphics::SceneLighting3D& lighting) noexcept override {
+        RendererImplBase::set_scene_lighting(lighting);
+        if (!m_in_3d || m_scenes.empty() || m_scene_lights.empty()) return;
+
+        try {
+            m_scene_lights.back() = snapshot_lighting(m_scenes.back().scene);
+        } catch (...) {}
+    }
+
     void draw_mesh_3d(const graphics::Mesh3D& mesh, const float* model, const graphics::Material3D& mat) noexcept override {
         if (!m_ready || !m_in_3d || mesh.empty()) return;
 
         try {
             GpuMesh* g = mesh_for(mesh);
             if (!g) return;
+            if (mat.casts_shadow() && casting()) add_caster(mesh_caster(*g), model, g->bounds);
+            if (!mat.visible()) return;
             Draw3D d;
             d.kind  = DrawKind3D::Mesh;
             d.mesh  = g;
             d.count = g->index_count ? g->index_count : g->vertex_count;
             if (!material(d, mat)) return;
-            mesh_push(d, model);
+            mesh_push(d, model, mat);
             m_draws3d.push_back(d);
         } catch (...) {}
     }
 
     void draw_triangles_3d(const graphics::Vertex3D* v, std::size_t count, const float* model, const graphics::Material3D& mat) noexcept override {
-        if (!m_ready || !m_in_3d || !v || count < 3) return;
+        if (!m_ready || !m_in_3d || !v || count < 3 || !mat.visible()) return;
 
         try {
             count -= count % 3;
@@ -835,7 +957,7 @@ public:
             d.first = static_cast<std::uint32_t>(m_vertices3d.size());
             d.count = static_cast<std::uint32_t>(count);
             if (!material(d, mat)) return;
-            mesh_push(d, model);
+            mesh_push(d, model, mat);
             m_vertices3d.insert(m_vertices3d.end(), v, v + count);
             m_draws3d.push_back(d);
         } catch (...) {}
@@ -851,7 +973,7 @@ public:
             Draw3D d;
             d.kind  = DrawKind3D::Lines;
             d.first = static_cast<std::uint32_t>(m_lines3d.size());
-            d.state = kLines | (1u << 2) /* alpha blend */ | (depth_test ? kDepthTest : 0u);
+            d.state = kLines | (1u << 2) | (depth_test ? kDepthTest : 0u);
 
             for (std::size_t i = 0; i + 1 < count; i += 2) {
                 vector3d a = pts[i], b = pts[i + 1];
@@ -878,7 +1000,16 @@ public:
         try {
             GpuMesh* g = quads_for(quads);
             if (!g) return;
-            push_quad_draw(*g, model, cell_origin, mat);
+
+            if (mat.casts_shadow() && casting() && ensure_quad_indices(g->vertex_count / graphics::QuadMesh3D::VERTICES_PER_QUAD)) {
+                Caster c;
+                c.kind     = Caster::Kind::Quads;
+                c.vertices = g->vertices.get();
+                c.groups   = g->groups;
+                add_caster(c, model, g->bounds);
+            }
+
+            if (mat.visible()) push_quad_draw(*g, model, cell_origin, mat);
         } catch (...) {}
     }
 
@@ -898,9 +1029,12 @@ public:
         try {
             HandleMesh* h = handle_for(slot);
             if (!h) return;
+            const bool cast = mat.casts_shadow() && casting();
 
             if (h->quads) {
                 if (!ensure_quad_indices(h->range.count)) return;
+                if (cast) add_caster(arena_caster(*h, slot->groups, graphics::ALL_FACE_GROUPS), model, slot->bounds);
+                if (!mat.visible()) return;
                 Draw3D d;
                 d.kind  = DrawKind3D::ArenaQuads;
                 d.page  = h->range.page;
@@ -908,18 +1042,20 @@ public:
                 d.count = h->range.count * static_cast<std::uint32_t>(graphics::QuadMesh3D::INDICES_PER_QUAD);
                 if (!material(d, mat)) return;
                 d.state |= kQuads;
-                quad_push(d, model, cell_origin);
+                quad_push(d, model, cell_origin, mat);
                 m_draws3d.push_back(d);
                 return;
             }
 
             h->mesh.last_used = m_frame_serial;
+            if (cast) add_caster(mesh_caster(h->mesh), model, slot->bounds);
+            if (!mat.visible()) return;
             Draw3D d;
             d.kind  = DrawKind3D::Mesh;
             d.mesh  = &h->mesh;
             d.count = h->mesh.index_count ? h->mesh.index_count : h->mesh.vertex_count;
             if (!material(d, mat)) return;
-            mesh_push(d, model);
+            mesh_push(d, model, mat);
             m_draws3d.push_back(d);
         } catch (...) {}
     }
@@ -929,13 +1065,16 @@ public:
         if (!m_in_3d || !items || count == 0) return;
 
         try {
+            const bool cast    = mat.casts_shadow() && casting();
+            const bool visible = mat.visible();
+            if (!cast && !visible) return;
             Draw3D base;
             if (!material(base, mat)) return;
             base.kind = DrawKind3D::Batch;
             base.state |= kBatch;
             std::copy(m_scenes.back().vp.begin(), m_scenes.back().vp.end(), base.push);
             for (int a = 0; a < 3; ++a) base.push[16 + a] = camera_frac[a];
-            light_push(base.push + 20);
+            put_bits(base.push[23], material_flags(mat));
             if (m_page_commands.size() < m_arena.size()) m_page_commands.resize(m_arena.size());
             for (auto& cmds : m_page_commands) cmds.clear();
             std::uint32_t largest = 0;
@@ -946,6 +1085,15 @@ public:
                 HandleMesh* h = resident(*item.slot);
                 if (!h) h = handle_for(item.slot->shared_from_this());
                 if (!h || !h->quads) continue;
+
+                if (cast) {
+                    float model[12] = { 1,0,0,0, 0,1,0,0, 0,0,1,0 };
+                    for (int a = 0; a < 3; ++a) model[a * 4 + 3] = static_cast<float>(item.rel_cell[a]) + (item.frac[a] - camera_frac[a]);
+                    add_caster(arena_caster(*h, item.slot->groups, item.faces), model, item.slot->bounds);
+                    largest = std::max(largest, h->range.count);
+                }
+
+                if (!visible) continue;
                 const std::uint32_t instance = static_cast<std::uint32_t>(m_batch_instances.size());
                 BatchInstance inst;
 
@@ -982,7 +1130,7 @@ public:
                 if (any) m_batch_instances.push_back(inst);
             }
 
-            if (largest == 0 || !ensure_quad_indices(largest)) return;
+            if (largest == 0 || !ensure_quad_indices(largest) || !visible) return;
 
             for (std::size_t page = 0; page < m_page_commands.size(); ++page) {
                 auto& cmds = m_page_commands[page];
@@ -1005,16 +1153,29 @@ public:
         try {
             GpuMesh* g = mesh_for(mesh);
             if (!g) return;
+            const std::uint32_t first = static_cast<std::uint32_t>(m_instances3d.size());
+            const bool cast = mat.casts_shadow() && casting();
+            if (!cast && !mat.visible()) return;
+            m_instances3d.insert(m_instances3d.end(), instances, instances + count);
+
+            if (cast) {
+                Caster c = mesh_caster(*g);
+                c.kind           = Caster::Kind::Instanced;
+                c.instance_first = first;
+                c.instance_count = static_cast<std::uint32_t>(count);
+                add_caster(c, model, instance_bounds(g->bounds, instances, count));
+            }
+
+            if (!mat.visible()) return;
             Draw3D d;
             d.kind  = DrawKind3D::Instanced;
             d.mesh  = g;
             d.count = g->index_count ? g->index_count : g->vertex_count;
             if (!material(d, mat)) return;
             d.state |= kInstanced;
-            mesh_push(d, model);
-            d.instance_first = static_cast<std::uint32_t>(m_instances3d.size());
+            mesh_push(d, model, mat);
+            d.instance_first = first;
             d.instance_count = static_cast<std::uint32_t>(count);
-            m_instances3d.insert(m_instances3d.end(), instances, instances + count);
             m_draws3d.push_back(d);
         } catch (...) {}
     }
@@ -1046,22 +1207,200 @@ private:
     static constexpr std::uint32_t kArenaPageQuads = 1u << 18;
     static constexpr std::uint64_t kQuadBytes  = graphics::QuadMesh3D::VERTICES_PER_QUAD * sizeof(graphics::CompactVertex3D);
 
-    void light_push(float* out) const noexcept {
-        const double len = m_light3d.direction.magnitude();
-        const double k = len > 0.0 ? m_light3d.diffuse / len : 0.0;
-        out[0] = static_cast<float>(m_light3d.direction.x * k);
-        out[1] = static_cast<float>(m_light3d.direction.y * k);
-        out[2] = static_cast<float>(m_light3d.direction.z * k);
-        out[3] = m_light3d.ambient;
+    static void put_bits(float& slot, std::uint32_t value) noexcept { std::memcpy(&slot, &value, sizeof(value)); }
+    static void put_bits(float& slot, std::int32_t value) noexcept { std::memcpy(&slot, &value, sizeof(value)); }
+
+    static std::uint32_t material_flags(const graphics::Material3D& m) noexcept { return m.lit ? kFlagLit : 0u; }
+
+    void quad_push(Draw3D& d, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) const noexcept {
+        mesh_push(d, model, mat);
+        for (int r = 0; r < 3; ++r) put_bits(d.push[28 + r], cell_origin ? cell_origin[r] : 0);
+        put_bits(d.push[31], material_flags(mat));
     }
 
-    void quad_push(Draw3D& d, const float* model, const std::int32_t* cell_origin) const noexcept {
-        mesh_push(d, model);
+    static void rgb_into(float* out, const graphics::Color& c, float scale) noexcept {
+        for (int k = 0; k < 3; ++k) out[k] = graphics::detail::light_channel(c, k) * scale;
+    }
 
-        for (int r = 0; r < 3; ++r) {
-            const std::int32_t c = cell_origin ? cell_origin[r] : 0;
-            std::memcpy(&d.push[16 + r * 4 + 3], &c, sizeof(c));
+    void legacy_uniforms(SceneUniforms& u) const noexcept {
+        const double len = m_light3d.direction.magnitude();
+        const double k = len > 0.0 ? m_light3d.diffuse / len : 0.0;
+        u.legacy[0] = static_cast<float>(m_light3d.direction.x * k);
+        u.legacy[1] = static_cast<float>(m_light3d.direction.y * k);
+        u.legacy[2] = static_cast<float>(m_light3d.direction.z * k);
+        u.legacy[3] = m_light3d.ambient;
+    }
+
+    static void set_row(Mat4f& m, int row, const vector3d& axis, double constant) noexcept {
+        m[static_cast<std::size_t>(row * 4 + 0)] = static_cast<float>(axis.x);
+        m[static_cast<std::size_t>(row * 4 + 1)] = static_cast<float>(axis.y);
+        m[static_cast<std::size_t>(row * 4 + 2)] = static_cast<float>(axis.z);
+        m[static_cast<std::size_t>(row * 4 + 3)] = static_cast<float>(constant);
+    }
+
+    static Mat4f sun_matrix(const vector3d& direction, const vector3d& origin, const graphics::SunShadow3D& s) noexcept {
+        const vector3d f = direction / direction.magnitude();
+        const vector3d up = std::fabs(f.z) > kSunUpLimit ? vector3d{ 0.0, 1.0, 0.0 } : vector3d{ 0.0, 0.0, 1.0 };
+        vector3d r = f.cross(up);
+        r = r / r.magnitude();
+        const vector3d u = r.cross(f);
+        const double texel = 2.0 * s.distance / static_cast<double>(s.resolution);
+        const double ox = origin.dot(r), oy = origin.dot(u), oz = origin.dot(f);
+        const double cx = std::floor(ox / texel) * texel, cy = std::floor(oy / texel) * texel;
+        const double near_z = oz - s.depth_range, range = s.depth_range + s.distance;
+        Mat4f m = mat4_identity();
+        set_row(m, 0, r / s.distance, (ox - cx) / s.distance);
+        set_row(m, 1, u / s.distance, (oy - cy) / s.distance);
+        set_row(m, 2, f / range, (oz - near_z) / range);
+        return m;
+    }
+
+    static Mat4f cube_face_matrix(int face, const vector3d& light) noexcept {
+        static const double axes[kCubeFaces][3][3] = {
+            { {  0,  0, -1 }, {  0, -1,  0 }, {  1,  0,  0 } },
+            { {  0,  0,  1 }, {  0, -1,  0 }, { -1,  0,  0 } },
+            { {  1,  0,  0 }, {  0,  0,  1 }, {  0,  1,  0 } },
+            { {  1,  0,  0 }, {  0,  0, -1 }, {  0, -1,  0 } },
+            { {  1,  0,  0 }, {  0, -1,  0 }, {  0,  0,  1 } },
+            { { -1,  0,  0 }, {  0, -1,  0 }, {  0,  0, -1 } },
+        };
+
+        const double (*a)[3] = axes[face];
+        const vector3d sc{ a[0][0], a[0][1], a[0][2] }, tc{ a[1][0], a[1][1], a[1][2] }, ma{ a[2][0], a[2][1], a[2][2] };
+        Mat4f m{};
+        set_row(m, 0, sc, -sc.dot(light));
+        set_row(m, 1, tc, -tc.dot(light));
+        set_row(m, 2, ma, -ma.dot(light) - kPointNear);
+        set_row(m, 3, ma, -ma.dot(light));
+        return m;
+    }
+
+    SceneLightRec snapshot_lighting(const Scene3D& scene) const {
+        SceneLightRec rec;
+        SceneUniforms& u = rec.uniforms;
+        legacy_uniforms(u);
+        const graphics::SceneLighting3D& l = m_scene_lighting;
+        if (!l.enabled) return rec;
+        const vector3d origin{ scene.origin[0], scene.origin[1], scene.origin[2] };
+        std::int32_t flags = kSceneEnabled;
+        const double sun_len = l.sun_direction.magnitude();
+        const vector3d sun = sun_len > 0.0 ? l.sun_direction / sun_len : vector3d{ 0.0, 0.0, -1.0 };
+        u.sun_dir[0] = static_cast<float>(sun.x); u.sun_dir[1] = static_cast<float>(sun.y); u.sun_dir[2] = static_cast<float>(sun.z);
+        rgb_into(u.sun_color, l.sun_color, std::max(l.sun_intensity, 0.0f));
+        u.sun_color[3] = l.sun_exposure;
+        rgb_into(u.sky_color, l.sky_color, l.sky_intensity);
+        u.sky_color[3] = l.min_light;
+        rgb_into(u.block_color, l.block_color, l.block_intensity);
+        u.block_color[3] = l.falloff;
+        u.params[0] = l.ambient;
+        u.params[1] = l.max_light;
+
+        std::vector<std::pair<double, std::size_t>>& all = m_light_order;
+        all.clear();
+
+        for (std::size_t i = 0; i < l.point_lights.size(); ++i) {
+            const graphics::PointLight3D& p = l.point_lights[i];
+            if (p.radius <= 0.0f || p.intensity <= 0.0f) continue;
+            const vector3d d = p.position - origin;
+            all.emplace_back(d.dot(d), i);
         }
+
+        const std::size_t count = std::min(all.size(), graphics::SceneLighting3D::MAX_POINT_LIGHTS);
+        std::partial_sort(all.begin(), all.begin() + static_cast<std::ptrdiff_t>(count), all.end());
+        const unsigned int shadow_limit = l.point_shadows.enabled ? std::min<unsigned int>(l.point_shadows.max_lights, kPointShadowMaps) : 0u;
+
+        for (std::size_t k = 0; k < count; ++k) {
+            const graphics::PointLight3D& p = l.point_lights[all[k].second];
+            const vector3d rel = p.position - origin;
+            float* pos = u.point_pos[k];
+            float* col = u.point_color[k];
+            pos[0] = static_cast<float>(rel.x); pos[1] = static_cast<float>(rel.y); pos[2] = static_cast<float>(rel.z); pos[3] = p.radius;
+            rgb_into(col, p.color, p.intensity);
+            col[3] = -1.0f;
+
+            if (p.casts_shadows && rec.point_count < shadow_limit && l.point_shadows.resolution > 0) {
+                PointShadowRec& ps = rec.points[rec.point_count];
+                ps.light[0] = pos[0]; ps.light[1] = pos[1]; ps.light[2] = pos[2]; ps.light[3] = p.radius;
+                const vector3d at{ pos[0], pos[1], pos[2] };
+                for (int f = 0; f < kCubeFaces; ++f) ps.faces[static_cast<std::size_t>(f)] = cube_face_matrix(f, at);
+                col[3] = static_cast<float>(rec.point_count);
+                ++rec.point_count;
+            }
+        }
+
+        u.counts[0] = static_cast<std::int32_t>(count);
+
+        if (rec.point_count > 0) {
+            flags |= kPointShadows;
+            rec.point_size = l.point_shadows.resolution;
+            u.point_shadow[0] = l.point_shadows.bias;
+            u.point_shadow[1] = l.point_shadows.strength;
+            u.point_shadow[2] = l.point_shadows.normal_offset;
+        }
+
+        const graphics::SunShadow3D& s = l.sun_shadow;
+
+        if (s.enabled && l.sun_intensity > 0.0f && s.resolution > 0 && s.distance > 0.0 && sun_len > 0.0) {
+            const Mat4f m = sun_matrix(sun, origin, s);
+            std::copy(m.begin(), m.end(), u.sun_matrix);
+            const double texel = 2.0 * s.distance / static_cast<double>(s.resolution);
+            u.sun_shadow[0] = s.bias;
+            u.sun_shadow[1] = static_cast<float>(s.normal_offset * texel);
+            u.sun_shadow[2] = s.softness / static_cast<float>(s.resolution);
+            u.sun_shadow[3] = s.strength;
+            rec.sun_shadow = true;
+            rec.sun_size = s.resolution;
+            flags |= kSunShadows;
+        }
+
+        u.counts[1] = flags;
+        rec.wants_casters = rec.sun_shadow || rec.point_count > 0;
+        return rec;
+    }
+
+    bool casting() const noexcept { return !m_scene_lights.empty() && m_scene_lights.back().wants_casters; }
+
+    static void caster_bounds(Caster& c, const graphics::Bounds3D& b) noexcept {
+        if (!b.valid) {
+            for (int a = 0; a < 3; ++a) { c.lo[a] = -std::numeric_limits<float>::max(); c.hi[a] = std::numeric_limits<float>::max(); }
+            return;
+        }
+
+        for (int a = 0; a < 3; ++a) {
+            const float* row = &c.model[a * 4];
+            float lo = row[3], hi = row[3];
+
+            for (int k = 0; k < 3; ++k) {
+                const float x = row[k] * b.lo[k], y = row[k] * b.hi[k];
+                lo += std::min(x, y);
+                hi += std::max(x, y);
+            }
+
+            c.lo[a] = lo;
+            c.hi[a] = hi;
+        }
+    }
+
+    static void caster_model(Caster& c, const float* model) noexcept {
+        if (model) std::copy(model, model + 12, c.model);
+        const float eps = 1e-6f;
+        c.axis_aligned = true;
+
+        for (int r = 0; r < 3; ++r)
+            for (int k = 0; k < 3; ++k)
+                if (std::fabs(c.model[r * 4 + k] - (r == k ? 1.0f : 0.0f)) > eps) c.axis_aligned = false;
+    }
+
+    void add_caster(Caster c, const float* model, const graphics::Bounds3D& local) {
+        caster_model(c, model);
+        caster_bounds(c, local);
+        m_casters.push_back(c);
+    }
+
+    static graphics::FaceGroups whole_groups(std::uint32_t quads) noexcept {
+        graphics::FaceGroups g{};
+        g[graphics::CELL_FACE_GROUPS - 1] = { 0, quads };
+        return g;
     }
 
     void push_quad_draw(GpuMesh& g, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) {
@@ -1073,8 +1412,41 @@ private:
         d.count = g.index_count;
         if (!material(d, mat)) return;
         d.state |= kQuads;
-        quad_push(d, model, cell_origin);
+        quad_push(d, model, cell_origin, mat);
         m_draws3d.push_back(d);
+    }
+
+    static Caster mesh_caster(const GpuMesh& g) noexcept {
+        Caster c;
+        c.kind     = Caster::Kind::Mesh;
+        c.vertices = g.vertices.get();
+        c.indices  = g.indices.get();
+        c.count    = g.index_count ? g.index_count : g.vertex_count;
+        return c;
+    }
+
+    Caster arena_caster(const HandleMesh& h, const graphics::FaceGroups& groups, graphics::FaceMask faces) const noexcept {
+        Caster c;
+        c.kind        = Caster::Kind::Quads;
+        c.vertices    = h.range.page < m_arena.size() ? m_arena[h.range.page].buffer.get() : nullptr;
+        c.vertex_base = static_cast<std::int32_t>(h.range.first * graphics::QuadMesh3D::VERTICES_PER_QUAD);
+        c.groups      = groups;
+        c.faces       = faces;
+        return c;
+    }
+
+    static graphics::Bounds3D instance_bounds(const graphics::Bounds3D& mesh, const graphics::Instance3D* instances, std::size_t count) noexcept {
+        graphics::Bounds3D out;
+        if (!mesh.valid) return out;
+
+        for (std::size_t i = 0; i < count; ++i) {
+            const graphics::Instance3D& in = instances[i];
+            const float s = in.scale;
+            out.include(in.x + std::min(mesh.lo[0] * s, mesh.hi[0] * s), in.y + std::min(mesh.lo[1] * s, mesh.hi[1] * s), in.z + std::min(mesh.lo[2] * s, mesh.hi[2] * s));
+            out.include(in.x + std::max(mesh.lo[0] * s, mesh.hi[0] * s), in.y + std::max(mesh.lo[1] * s, mesh.hi[1] * s), in.z + std::max(mesh.lo[2] * s, mesh.hi[2] * s));
+        }
+
+        return out;
     }
 
     bool ensure_quad_indices(std::uint64_t quads) {
@@ -1121,6 +1493,8 @@ private:
         fresh.last_used    = m_frame_serial;
         fresh.vertex_count = static_cast<std::uint32_t>(verts.size());
         fresh.index_count  = static_cast<std::uint32_t>(quads.quad_count() * graphics::QuadMesh3D::INDICES_PER_QUAD);
+        fresh.bounds       = graphics::Bounds3D::of(verts);
+        fresh.groups       = quads.grouped() ? quads.groups() : whole_groups(static_cast<std::uint32_t>(quads.quad_count()));
         GpuMesh* g = nullptr;
         if (it != m_meshes.end()) { retire(it->second); it->second = std::move(fresh); g = &it->second; }
         else g = &m_meshes.emplace(&quads, std::move(fresh)).first->second;
@@ -1305,26 +1679,17 @@ private:
         return d.view != nullptr;
     }
 
-    void mesh_push(Draw3D& d, const float* model) const noexcept {
+    void mesh_push(Draw3D& d, const float* model, const graphics::Material3D& mat) const noexcept {
         const Mat4f& vp = m_scenes.back().vp;
         Mat4f m = mat4_identity();
         if (model) std::copy(model, model + 16, m.begin());
         const Mat4f mvp = model ? mat4_mul(vp, m) : vp;
         std::copy(mvp.begin(), mvp.end(), d.push);
-
-        for (int r = 0; r < 3; ++r) {
-            d.push[16 + r * 4 + 0] = m[r * 4 + 0];
-            d.push[16 + r * 4 + 1] = m[r * 4 + 1];
-            d.push[16 + r * 4 + 2] = m[r * 4 + 2];
-            d.push[16 + r * 4 + 3] = 0.0f;
-        }
-
-        const double len = m_light3d.direction.magnitude();
-        const double k = len > 0.0 ? m_light3d.diffuse / len : 0.0;
-        d.push[28] = static_cast<float>(m_light3d.direction.x * k);
-        d.push[29] = static_cast<float>(m_light3d.direction.y * k);
-        d.push[30] = static_cast<float>(m_light3d.direction.z * k);
-        d.push[31] = m_light3d.ambient;
+        std::copy(m.begin(), m.begin() + 12, d.push + 16);
+        put_bits(d.push[28], mat.light);
+        put_bits(d.push[29], material_flags(mat) | kFlagLegacy);
+        d.push[30] = 0.0f;
+        d.push[31] = 0.0f;
     }
 
     static bool clip_to_near(const Mat4f& vp, vector3d& a, vector3d& b) noexcept {
@@ -1359,6 +1724,7 @@ private:
         fresh.bytes        = vbytes + ibytes;
         fresh.vertex_count = static_cast<std::uint32_t>(verts.size());
         fresh.index_count  = static_cast<std::uint32_t>(idx.size());
+        fresh.bounds       = graphics::Bounds3D::of(verts);
 
         GpuMesh* g = nullptr;
         if (it != m_meshes.end()) { retire(it->second); it->second = std::move(fresh); g = &it->second; }
@@ -1404,9 +1770,9 @@ private:
             };
             d.vertex_attributes = {
                 { 0, 0, vulkan::Format::RGB32Float, 0 }, { 1, 0, vulkan::Format::RGBA8Unorm, 12 },
-                { 2, 0, vulkan::Format::R32Uint, 16 },
-                { 3, 1, vulkan::Format::RGB32Sint, 0 }, { 4, 1, vulkan::Format::RGB32Sint, 12 },
-                { 5, 1, vulkan::Format::RGB32Float, 24 },
+                { 2, 0, vulkan::Format::R32Uint, 16 },   { 3, 0, vulkan::Format::RGBA8Unorm, 20 },
+                { 4, 1, vulkan::Format::RGB32Sint, 0 },  { 5, 1, vulkan::Format::RGB32Sint, 12 },
+                { 6, 1, vulkan::Format::RGB32Float, 24 },
             };
             const std::uint32_t cull = key & 3u;
             d.cull_mode = cull == 1u ? vulkan::CullMode::None : cull == 2u ? vulkan::CullMode::Front : vulkan::CullMode::Back;
@@ -1414,7 +1780,7 @@ private:
             d.vertex_bindings   = { { 0, sizeof(graphics::CompactVertex3D), vulkan::VertexRate::PerVertex } };
             d.vertex_attributes = {
                 { 0, 0, vulkan::Format::RGB32Float, 0 }, { 1, 0, vulkan::Format::RGBA8Unorm, 12 },
-                { 2, 0, vulkan::Format::R32Uint, 16 },
+                { 2, 0, vulkan::Format::R32Uint, 16 },   { 3, 0, vulkan::Format::RGBA8Unorm, 20 },
             };
             const std::uint32_t cull = key & 3u;
             d.cull_mode = cull == 1u ? vulkan::CullMode::None : cull == 2u ? vulkan::CullMode::Front : vulkan::CullMode::Back;
@@ -1429,6 +1795,7 @@ private:
                 d.vertex_bindings.push_back({ 1, sizeof(graphics::Instance3D), vulkan::VertexRate::PerInstance });
                 d.vertex_attributes.push_back({ 4, 1, vulkan::Format::RGBA32Float, 0 });
                 d.vertex_attributes.push_back({ 5, 1, vulkan::Format::RGBA8Unorm, 16 });
+                d.vertex_attributes.push_back({ 6, 1, vulkan::Format::RGBA8Unorm, 20 });
             }
 
             const std::uint32_t cull = key & 3u;
@@ -1462,19 +1829,67 @@ private:
         return &m_pipelines3d.emplace(key, std::move(p)).first->second;
     }
 
+    vulkan::Pipeline* shadow_pipeline(Caster::Kind kind, bool point) {
+        const std::uint32_t key = static_cast<std::uint32_t>(kind) | (point ? kShadowPointKey : 0u);
+        auto it = m_shadow_pipelines.find(key);
+        if (it != m_shadow_pipelines.end()) return &it->second;
+        vulkan::GraphicsPipelineDesc d;
+        d.layout          = &m_shadow_layout;
+        d.fragment_shader = point ? &m_shadow_point_fs : nullptr;
+
+        if (kind == Caster::Kind::Quads) {
+            d.vertex_shader     = &m_shadow_quad_vs;
+            d.vertex_bindings   = { { 0, sizeof(graphics::CompactVertex3D), vulkan::VertexRate::PerVertex } };
+            d.vertex_attributes = { { 0, 0, vulkan::Format::RGB32Float, 0 }, { 2, 0, vulkan::Format::R32Uint, 16 } };
+        } else {
+            d.vertex_shader     = kind == Caster::Kind::Instanced ? &m_shadow_instanced_vs : &m_shadow_mesh_vs;
+            d.vertex_bindings   = { { 0, sizeof(graphics::Vertex3D), vulkan::VertexRate::PerVertex } };
+            d.vertex_attributes = { { 0, 0, vulkan::Format::RGB32Float, 0 }, { 1, 0, vulkan::Format::RGB32Float, 12 } };
+
+            if (kind == Caster::Kind::Instanced) {
+                d.vertex_bindings.push_back({ 1, sizeof(graphics::Instance3D), vulkan::VertexRate::PerInstance });
+                d.vertex_attributes.push_back({ 4, 1, vulkan::Format::RGBA32Float, 0 });
+            }
+        }
+
+        d.cull_mode          = vulkan::CullMode::None;
+        d.depth_format       = m_shadow_format;
+        d.depth.test         = true;
+        d.depth.write        = true;
+        d.depth.compare      = vulkan::CompareOp::LessEqual;
+        d.depth.clamp        = !point;
+        d.depth.bias         = !point;
+        d.depth.bias_constant = kShadowBiasConstant;
+        d.depth.bias_slope    = kShadowBiasSlope;
+        d.name = point ? "fizmo point shadow" : "fizmo sun shadow";
+        vulkan::Pipeline p;
+        if (failed(p.create(m_device, d))) return nullptr;
+        return &m_shadow_pipelines.emplace(key, std::move(p)).first->second;
+    }
+
     void drop_3d_recording() noexcept {
-        const bool reopen = m_in_3d && !m_scenes.empty();
+        const bool reopen = m_in_3d && !m_scenes.empty() && !m_scene_lights.empty();
         SceneRec open;
-        if (reopen) open = m_scenes.back();
+        SceneLightRec open_light;
+
+        if (reopen) {
+            open = m_scenes.back();
+            open_light = m_scene_lights.back();
+        }
+
         m_scenes.clear();
+        m_scene_lights.clear();
+        m_casters.clear();
         m_draws3d.clear();
         m_vertices3d.clear();
         m_lines3d.clear();
 
         if (reopen) {
-            open.batch_index = 0;
-            open.first_draw  = 0;
+            open.batch_index  = 0;
+            open.first_draw   = 0;
+            open.first_caster = 0;
             m_scenes.push_back(open);
+            m_scene_lights.push_back(open_light);
         }
     }
 
@@ -1568,11 +1983,34 @@ private:
         if (failed(m_quad_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kQuad3DFrag, sizeof(gpu::kQuad3DFrag) / 4), "fizmo quad3d.frag"))) return false;
         if (failed(m_batch_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kBatch3DVert, sizeof(gpu::kBatch3DVert) / 4), "fizmo batch3d.vert"))) return false;
         if (failed(m_instanced_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kInstanced3DVert, sizeof(gpu::kInstanced3DVert) / 4), "fizmo instanced3d.vert"))) return false;
+        if (failed(m_shadow_mesh_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kShadowMesh3DVert, sizeof(gpu::kShadowMesh3DVert) / 4), "fizmo shadow_mesh.vert"))) return false;
+        if (failed(m_shadow_instanced_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kShadowInstanced3DVert, sizeof(gpu::kShadowInstanced3DVert) / 4), "fizmo shadow_instanced.vert"))) return false;
+        if (failed(m_shadow_quad_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kShadowQuad3DVert, sizeof(gpu::kShadowQuad3DVert) / 4), "fizmo shadow_quad.vert"))) return false;
+        if (failed(m_shadow_point_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kShadowPoint3DFrag, sizeof(gpu::kShadowPoint3DFrag) / 4), "fizmo shadow_point.frag"))) return false;
         m_multi_draw = m_device.features().multi_draw_indirect && m_device.features().draw_indirect_first_instance;
+
+        if (
+            failed(
+                m_scene_set_layout.create(
+                    m_device, {
+                        vulkan::DescriptorBinding{ 0, vulkan::DescriptorType::UniformBuffer, vulkan::ShaderStage::Vertex | vulkan::ShaderStage::Fragment },
+                        vulkan::DescriptorBinding{ 1, vulkan::DescriptorType::CombinedImageSampler, vulkan::ShaderStage::Fragment },
+                        vulkan::DescriptorBinding{ 2, vulkan::DescriptorType::CombinedImageSampler, vulkan::ShaderStage::Fragment, static_cast<std::uint32_t>(kPointShadowMaps) }
+                    }
+                )
+            )
+        ) return false;
+
         vulkan::PipelineLayoutDesc ml;
-        ml.set_layouts    = { &m_draw_set_layout };
+        ml.set_layouts    = { &m_draw_set_layout, &m_scene_set_layout };
         ml.push_constants = { { vulkan::ShaderStage::Vertex, 0, 128 } };
         if (failed(m_mesh_layout.create(m_device, ml))) return false;
+        vulkan::PipelineLayoutDesc sl;
+        sl.push_constants = { { vulkan::ShaderStage::Vertex | vulkan::ShaderStage::Fragment, 0, 128 } };
+        if (failed(m_shadow_layout.create(m_device, sl))) return false;
+        const std::uint64_t align = std::max<std::uint64_t>(1, m_device.limits().minUniformBufferOffsetAlignment);
+        m_uniform_stride = (sizeof(SceneUniforms) + align - 1) / align * align;
+        if (!create_shadow_resources()) return false;
         vulkan::PipelineLayoutDesc ll;
         ll.push_constants = { { vulkan::ShaderStage::Vertex, 0, 80 } };
         if (failed(m_line_layout.create(m_device, ll))) return false;
@@ -1609,13 +2047,93 @@ private:
                 return false;
             vulkan::DescriptorPoolDesc pd;
             pd.max_sets = 1024;
-            pd.sizes = { { vulkan::DescriptorType::CombinedImageSampler, 2048 } };
+            pd.sizes = { { vulkan::DescriptorType::CombinedImageSampler, 4096 }, { vulkan::DescriptorType::UniformBuffer, 256 } };
             if (failed(pf.pool.create(m_device, pd))) return false;
         }
 
         m_ramp_pixels.assign(static_cast<std::size_t>(256) * kRampRows * 4, 0);
         create_targets(w, h);
         return m_target.valid();
+    }
+
+    bool create_shadow_resources() {
+        constexpr VkFormatFeatureFlags need = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+        const auto& phys = m_device.physical_device();
+        m_shadow_format = phys.supports_format(vulkan::Format::D32Float, need) ? vulkan::Format::D32Float : vulkan::Format::D16Unorm;
+        const bool linear = phys.supports_format(m_shadow_format, VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
+        vulkan::SamplerDesc s;
+        s.mag_filter = s.min_filter = linear ? vulkan::Filter::Linear : vulkan::Filter::Nearest;
+        s.mipmap = vulkan::MipmapMode::Nearest;
+        s.address_u = s.address_v = s.address_w = vulkan::AddressMode::ClampToEdge;
+        s.max_lod = 0.0f;
+        s.compare_enable = true;
+        s.compare_op = vulkan::CompareOp::LessEqual;
+        if (failed(m_shadow_sampler.create(m_device, s))) return false;
+        m_dummy_sun  = make_shadow_map(1, false);
+        m_dummy_cube = make_shadow_map(1, true);
+        if (!m_dummy_sun || !m_dummy_cube) return false;
+
+        return succeeded(submit_immediate(m_device, [&](vulkan::CommandBuffer& cmd) {
+            clear_shadow_map(cmd, *m_dummy_sun);
+            clear_shadow_map(cmd, *m_dummy_cube);
+        }));
+    }
+
+    std::unique_ptr<ShadowMap> make_shadow_map(unsigned int size, bool cube) {
+        auto map = std::make_unique<ShadowMap>();
+        map->size = size;
+        map->cube = cube;
+        map->image = std::make_unique<vulkan::Image>();
+        vulkan::ImageDesc d;
+        d.extent = { size, size, 1 };
+        d.format = m_shadow_format;
+        d.usage  = vulkan::ImageUsage::DepthAttachment | vulkan::ImageUsage::Sampled;
+        d.type   = cube ? vulkan::ImageType::Cube : vulkan::ImageType::Image2D;
+        d.name   = cube ? "fizmo point shadow map" : "fizmo sun shadow map";
+        if (failed(map->image->create(m_device, d))) return nullptr;
+
+        if (cube) {
+            vulkan::ImageViewDesc all;
+            all.as_cube = true;
+            if (failed(map->sample_view.create(m_device, *map->image, all))) return nullptr;
+
+            for (int f = 0; f < kCubeFaces; ++f) {
+                vulkan::ImageViewDesc face;
+                face.base_layer  = static_cast<std::uint32_t>(f);
+                face.layer_count = 1;
+                if (failed(map->face_views[static_cast<std::size_t>(f)].create(m_device, *map->image, face))) return nullptr;
+            }
+        }
+
+        return map;
+    }
+
+    const vulkan::ImageView& sample_view(const ShadowMap& map) const noexcept { return map.cube ? map.sample_view : map.image->view(); }
+
+    void clear_shadow_map(const vulkan::CommandBuffer& cmd, ShadowMap& map) const noexcept {
+        cmd.transition(*map.image, vulkan::ImageLayout::DepthAttachment);
+
+        for (int f = 0; f < (map.cube ? kCubeFaces : 1); ++f) {
+            vulkan::DepthAttachment depth;
+            depth.view  = &map.attachment(f);
+            depth.load  = vulkan::LoadOp::Clear;
+            depth.store = vulkan::StoreOp::Store;
+            depth.clear = vulkan::ClearDepth{ 1.0f, 0 };
+            vulkan::RenderingDesc rd;
+            rd.area  = { { 0, 0 }, { map.size, map.size } };
+            rd.depth = &depth;
+            cmd.begin_rendering(rd);
+            cmd.end_rendering();
+        }
+
+        cmd.transition(*map.image, vulkan::ImageLayout::ShaderReadOnly);
+    }
+
+    ShadowMap* ensure_shadow_map(std::unique_ptr<ShadowMap>& slot, unsigned int size, bool cube) {
+        if (slot && slot->size == size) return slot.get();
+        if (slot) m_retired_maps.push_back({ m_frame_serial, std::move(slot) });
+        slot = make_shadow_map(size, cube);
+        return slot.get();
     }
 
     vulkan::SampleCount pick_samples() const noexcept {
@@ -1672,6 +2190,8 @@ private:
         m_uploads_committed = false;
         m_buffer_uploads.clear();
         m_scenes.clear();
+        m_scene_lights.clear();
+        m_casters.clear();
         m_draws3d.clear();
         m_vertices3d.clear();
         m_lines3d.clear();
@@ -2122,6 +2642,11 @@ private:
             m_retired_buffers.end()
         );
 
+        m_retired_maps.erase(
+            std::remove_if(m_retired_maps.begin(), m_retired_maps.end(), [&](const RetiredMap& r) { return safe(r.frame); }),
+            m_retired_maps.end()
+        );
+
         for (auto it = m_meshes.begin(); it != m_meshes.end();) {
             if (it->second.last_used + kMeshEvictFrames <= now) { retire(it->second); it = m_meshes.erase(it); }
             else ++it;
@@ -2262,7 +2787,191 @@ private:
         cmd.end_rendering();
     }
 
-    void record_3d_pass(const vulkan::CommandBuffer& cmd, PerFrame& pf, const SceneRec& sc, std::size_t from, std::size_t to, bool clear, DescriptorCache& sets) {
+    void prepare_shadow_maps() {
+        for (SceneLightRec& sl : m_scene_lights) {
+            if (sl.sun_shadow && !ensure_shadow_map(m_sun_map, sl.sun_size, false)) {
+                sl.sun_shadow = false;
+                sl.uniforms.counts[1] &= ~kSunShadows;
+            }
+
+            for (std::uint32_t k = 0; k < sl.point_count; ++k) {
+                if (ensure_shadow_map(m_point_maps[k], sl.point_size, true)) continue;
+                sl.point_count = k;
+                break;
+            }
+
+            if (sl.point_count == 0) sl.uniforms.counts[1] &= ~kPointShadows;
+
+            for (int i = 0; i < sl.uniforms.counts[0]; ++i)
+                if (sl.uniforms.point_color[i][3] >= static_cast<float>(sl.point_count)) sl.uniforms.point_color[i][3] = -1.0f;
+        }
+    }
+
+    vulkan::DescriptorSet scene_descriptor(PerFrame& pf, std::size_t scene) {
+        vulkan::DescriptorSet set;
+        if (failed(pf.pool.allocate(m_scene_set_layout, set))) return set;
+        const SceneLightRec& sl = m_scene_lights[scene];
+        const ShadowMap& sun = sl.sun_shadow && m_sun_map ? *m_sun_map : *m_dummy_sun;
+        vulkan::DescriptorWriter w;
+        w.buffer(0, pf.scene_uniforms, vulkan::DescriptorType::UniformBuffer, scene * m_uniform_stride, sizeof(SceneUniforms));
+        w.image(1, sample_view(sun), m_shadow_sampler);
+
+        for (int k = 0; k < kPointShadowMaps; ++k) {
+            const bool used = static_cast<std::uint32_t>(k) < sl.point_count && m_point_maps[static_cast<std::size_t>(k)];
+            const ShadowMap& map = used ? *m_point_maps[static_cast<std::size_t>(k)] : *m_dummy_cube;
+            w.image(2, sample_view(map), m_shadow_sampler, vulkan::ImageLayout::ShaderReadOnly, vulkan::DescriptorType::CombinedImageSampler, static_cast<std::uint32_t>(k));
+        }
+
+        w.update(set);
+        return set;
+    }
+
+    void record_shadow_passes(const vulkan::CommandBuffer& cmd, PerFrame& pf, std::size_t scene, std::size_t first, std::size_t last) {
+        const SceneLightRec& sl = m_scene_lights[scene];
+        if (!sl.sun_shadow && sl.point_count == 0) return;
+        cmd.begin_label("fizmo shadows");
+
+        if (sl.sun_shadow && m_sun_map) {
+            ShadowMap& map = *m_sun_map;
+            const float light[4] = { sl.uniforms.sun_dir[0], sl.uniforms.sun_dir[1], sl.uniforms.sun_dir[2], 0.0f };
+            cmd.transition(*map.image, vulkan::ImageLayout::DepthAttachment);
+            record_shadow_view(cmd, pf, map, 0, sl.uniforms.sun_matrix, light, false, first, last);
+            cmd.transition(*map.image, vulkan::ImageLayout::ShaderReadOnly);
+        }
+
+        for (std::uint32_t k = 0; k < sl.point_count; ++k) {
+            if (!m_point_maps[k]) continue;
+            ShadowMap& map = *m_point_maps[k];
+            const PointShadowRec& ps = sl.points[k];
+            cmd.transition(*map.image, vulkan::ImageLayout::DepthAttachment);
+            for (int f = 0; f < kCubeFaces; ++f) record_shadow_view(cmd, pf, map, f, ps.faces[static_cast<std::size_t>(f)].data(), ps.light, true, first, last);
+            cmd.transition(*map.image, vulkan::ImageLayout::ShaderReadOnly);
+        }
+
+        cmd.end_label();
+    }
+
+    static bool outside_light(const Caster& c, const float* m, bool point, int face, const float* light) noexcept {
+        if (point) {
+            float dist2 = 0.0f;
+
+            for (int a = 0; a < 3; ++a) {
+                const float v = light[a] < c.lo[a] ? c.lo[a] - light[a] : (light[a] > c.hi[a] ? light[a] - c.hi[a] : 0.0f);
+                dist2 += v * v;
+            }
+
+            if (dist2 >= light[3] * light[3]) return true;
+            const int axis = face / 2;
+            return (face % 2 == 0) ? c.hi[axis] <= light[axis] : c.lo[axis] >= light[axis];
+        }
+
+        float center[3], half[3];
+        for (int a = 0; a < 3; ++a) { center[a] = 0.5f * (c.lo[a] + c.hi[a]); half[a] = 0.5f * (c.hi[a] - c.lo[a]); }
+
+        for (int r = 0; r < 3; ++r) {
+            const float* row = m + r * 4;
+            const float mid = row[0] * center[0] + row[1] * center[1] + row[2] * center[2] + row[3];
+            const float ext = std::fabs(row[0]) * half[0] + std::fabs(row[1]) * half[1] + std::fabs(row[2]) * half[2];
+            if (mid - ext > 1.0f) return true;
+            if (r < 2 && mid + ext < -1.0f) return true;
+        }
+
+        return false;
+    }
+
+    static graphics::FaceMask sun_faces(const float* dir) noexcept {
+        graphics::FaceMask m = graphics::face_bit(graphics::CellFace::None);
+        if (dir[0] > 0.0f) m |= graphics::face_bit(graphics::CellFace::NegX);
+        if (dir[0] < 0.0f) m |= graphics::face_bit(graphics::CellFace::PosX);
+        if (dir[1] > 0.0f) m |= graphics::face_bit(graphics::CellFace::NegY);
+        if (dir[1] < 0.0f) m |= graphics::face_bit(graphics::CellFace::PosY);
+        if (dir[2] > 0.0f) m |= graphics::face_bit(graphics::CellFace::NegZ);
+        if (dir[2] < 0.0f) m |= graphics::face_bit(graphics::CellFace::PosZ);
+        return m;
+    }
+
+    void record_shadow_view(const vulkan::CommandBuffer& cmd, PerFrame& pf, ShadowMap& map, int face, const float* light_vp,
+                            const float* light, bool point, std::size_t first, std::size_t last) {
+        vulkan::DepthAttachment depth;
+        depth.view  = &map.attachment(face);
+        depth.load  = vulkan::LoadOp::Clear;
+        depth.store = vulkan::StoreOp::Store;
+        depth.clear = vulkan::ClearDepth{ 1.0f, 0 };
+        vulkan::RenderingDesc rd;
+        rd.area  = { { 0, 0 }, { map.size, map.size } };
+        rd.depth = &depth;
+        cmd.begin_rendering(rd);
+        cmd.set_viewport({ 0.0f, 0.0f, static_cast<float>(map.size), static_cast<float>(map.size), 0.0f, 1.0f });
+        cmd.set_scissor({ { 0, 0 }, { map.size, map.size } });
+        const graphics::FaceMask toward_sun = point ? graphics::ALL_FACE_GROUPS : sun_faces(light);
+        const vulkan::Pipeline* bound = nullptr;
+        float push[32] = {};
+        std::copy(light_vp, light_vp + 16, push);
+        std::copy(light, light + 4, push + 28);
+
+        for (std::size_t i = first; i < last; ++i) {
+            const Caster& c = m_casters[i];
+            if (!c.vertices || outside_light(c, light_vp, point, face, light)) continue;
+            graphics::FaceMask faces = c.faces;
+
+            if (c.kind == Caster::Kind::Quads && c.axis_aligned) {
+                if (point) {
+                    const vector3d eye{ light[0], light[1], light[2] };
+                    faces &= graphics::facing_faces(eye, { c.lo[0], c.lo[1], c.lo[2] }, { c.hi[0], c.hi[1], c.hi[2] });
+                } else {
+                    faces &= toward_sun;
+                }
+
+                if (faces == 0) continue;
+            }
+
+            const vulkan::Pipeline* p = shadow_pipeline(c.kind, point);
+            if (!p) continue;
+            if (p != bound) { cmd.bind(*p); bound = p; }
+            std::copy(c.model, c.model + 12, push + 16);
+            cmd.push_constants(*p, vulkan::ShaderStage::Vertex | vulkan::ShaderStage::Fragment, push, sizeof(push));
+            cmd.bind_vertex_buffer(0, *c.vertices);
+
+            if (c.kind == Caster::Kind::Quads) {
+                if (!m_quad_indices) continue;
+                cmd.bind_index_buffer(*m_quad_indices, vulkan::IndexType::UInt32);
+                std::uint32_t run_first = 0, run_count = 0;
+
+                auto flush = [&]() {
+                    if (run_count == 0) return;
+                    cmd.draw_indexed(run_count * static_cast<std::uint32_t>(graphics::QuadMesh3D::INDICES_PER_QUAD), 1, 0,
+                                     c.vertex_base + static_cast<std::int32_t>(run_first * graphics::QuadMesh3D::VERTICES_PER_QUAD));
+                    run_count = 0;
+                };
+
+                for (std::size_t g = 0; g < graphics::CELL_FACE_GROUPS; ++g) {
+                    const graphics::QuadRange r = c.groups[g];
+                    if (r.count == 0) continue;
+                    if (!(faces & (1u << g))) { flush(); continue; }
+                    if (run_count == 0) run_first = r.first;
+                    if (run_first + run_count != r.first) { flush(); run_first = r.first; }
+                    run_count += r.count;
+                }
+
+                flush();
+                continue;
+            }
+
+            const std::uint32_t instances = c.kind == Caster::Kind::Instanced ? c.instance_count : 1u;
+            if (c.kind == Caster::Kind::Instanced) cmd.bind_vertex_buffer(1, pf.instances3d, static_cast<std::uint64_t>(c.instance_first) * sizeof(graphics::Instance3D));
+
+            if (c.indices) {
+                cmd.bind_index_buffer(*c.indices, vulkan::IndexType::UInt32);
+                cmd.draw_indexed(c.count, instances);
+            } else {
+                cmd.draw(c.count, instances);
+            }
+        }
+
+        cmd.end_rendering();
+    }
+
+    void record_3d_pass(const vulkan::CommandBuffer& cmd, PerFrame& pf, const SceneRec& sc, std::size_t scene, std::size_t from, std::size_t to, bool clear, DescriptorCache& sets) {
         const int x0 = std::max(sc.scene.x, 0), y0 = std::max(sc.scene.y, 0);
         const int x1 = std::min(sc.scene.x + static_cast<int>(sc.scene.width),  static_cast<int>(m_width));
         const int y1 = std::min(sc.scene.y + static_cast<int>(sc.scene.height), static_cast<int>(m_height));
@@ -2286,6 +2995,7 @@ private:
                                static_cast<float>(sc.scene.width), static_cast<float>(sc.scene.height), 0.0f, 1.0f });
             cmd.set_scissor({ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } });
             const vulkan::Pipeline* bound = nullptr;
+            vulkan::DescriptorSet lighting;
 
             for (std::size_t i = from; i < to; ++i) {
                 const Draw3D& d = m_draws3d[i];
@@ -2303,6 +3013,13 @@ private:
 
                 const vulkan::DescriptorSet set = descriptor_for(pf, d.view, d.sampler, sets);
                 if (!set.valid()) continue;
+
+                if (!lighting.valid()) {
+                    lighting = scene_descriptor(pf, scene);
+                    if (!lighting.valid()) continue;
+                    cmd.bind_descriptor_set(*p, 1, lighting);
+                }
+
                 cmd.bind_descriptor_set(*p, 0, set);
                 cmd.push_constants(*p, vulkan::ShaderStage::Vertex, d.push, 128);
 
@@ -2434,6 +3151,17 @@ private:
             pf.lines3d.write(m_lines3d.data(), bytes);
         }
 
+        if (!m_scene_lights.empty()) {
+            prepare_shadow_maps();
+            m_uniform_bytes.assign(static_cast<std::size_t>(m_uniform_stride * m_scene_lights.size()), 0);
+
+            for (std::size_t i = 0; i < m_scene_lights.size(); ++i)
+                std::memcpy(m_uniform_bytes.data() + i * m_uniform_stride, &m_scene_lights[i].uniforms, sizeof(SceneUniforms));
+
+            if (!ensure_buffer(m_device, pf.scene_uniforms, m_uniform_bytes.size(), vulkan::BufferUsage::Uniform, "fizmo scene lighting")) return;
+            pf.scene_uniforms.write(m_uniform_bytes.data(), m_uniform_bytes.size());
+        }
+
         cmd.begin_label("fizmo uploads");
 
         for (const Upload& u : m_uploads) {
@@ -2488,8 +3216,10 @@ private:
                 next_batch = std::max(next_batch, upto);
                 if (last) break;
                 const std::size_t draw_end = si + 1 < m_scenes.size() ? m_scenes[si + 1].first_draw : m_draws3d.size();
+                const std::size_t caster_end = si + 1 < m_scenes.size() ? m_scenes[si + 1].first_caster : m_casters.size();
+                record_shadow_passes(cmd, pf, si, m_scenes[si].first_caster, caster_end);
                 between_passes();
-                record_3d_pass(cmd, pf, m_scenes[si], m_scenes[si].first_draw, draw_end, clear_next, sets);
+                record_3d_pass(cmd, pf, m_scenes[si], si, m_scenes[si].first_draw, draw_end, clear_next, sets);
                 clear_next = false;
             }
 

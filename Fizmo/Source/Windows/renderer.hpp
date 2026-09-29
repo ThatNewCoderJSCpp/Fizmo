@@ -303,6 +303,7 @@ public:
         }
 
         for (std::size_t i = 0; i < 16; ++i) scene.view_proj[i] = static_cast<float>(vp.data[i]);
+        scene.origin[0] = m_origin_3d.x; scene.origin[1] = m_origin_3d.y; scene.origin[2] = m_origin_3d.z;
         scene.x = x; scene.y = y; scene.width = w; scene.height = h;
         m_impl->begin_3d(scene);
         return m_impl->in_3d();
@@ -312,6 +313,13 @@ public:
     bool in_3d() const noexcept { return m_impl && m_impl->in_3d(); }
 
     void set_light_3d(const graphics::Light3D& light) noexcept { if (m_impl) m_impl->set_light_3d(light); }
+
+    void set_scene_lighting(const graphics::SceneLighting3D& lighting) noexcept { if (m_impl) m_impl->set_scene_lighting(lighting); }
+
+    const graphics::SceneLighting3D& scene_lighting() const noexcept {
+        static const graphics::SceneLighting3D none{};
+        return m_impl ? m_impl->scene_lighting() : none;
+    }
 
     const vector3d& render_origin() const noexcept { return m_origin_3d; }
 

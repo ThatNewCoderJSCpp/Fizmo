@@ -365,6 +365,11 @@ struct DepthState {
     bool      test    = false;
     bool      write   = false;
     CompareOp compare = CompareOp::Less;
+    bool      clamp   = false;
+    bool      bias    = false;
+    float     bias_constant = 0.0f;
+    float     bias_slope    = 0.0f;
+    float     bias_clamp    = 0.0f;
 };
 
 struct GraphicsPipelineDesc {
@@ -449,6 +454,11 @@ public:
         raster.cullMode    = to_vk(desc.cull_mode);
         raster.frontFace   = to_vk(desc.front_face);
         raster.lineWidth   = device.features().wide_lines ? desc.line_width : 1.0f;
+        raster.depthClampEnable        = desc.depth.clamp && device.features().depth_clamp ? VK_TRUE : VK_FALSE;
+        raster.depthBiasEnable         = desc.depth.bias ? VK_TRUE : VK_FALSE;
+        raster.depthBiasConstantFactor = desc.depth.bias_constant;
+        raster.depthBiasSlopeFactor    = desc.depth.bias_slope;
+        raster.depthBiasClamp          = device.features().depth_bias_clamp ? desc.depth.bias_clamp : 0.0f;
         auto multisample = detail::make<VkPipelineMultisampleStateCreateInfo>(VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO);
         multisample.rasterizationSamples = to_vk(desc.samples);
         auto depth = detail::make<VkPipelineDepthStencilStateCreateInfo>(VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO);

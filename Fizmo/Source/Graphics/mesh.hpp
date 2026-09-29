@@ -11,6 +11,7 @@
 #include <vector>
 #include "color.hpp"
 #include "content_version.hpp"
+#include "lighting_3d.hpp"
 #include "texture.hpp"
 #include "../Vectors/vectors.hpp"
 
@@ -86,13 +87,16 @@ struct CompactVertex3D {
     CellFace      face      = CellFace::None;
     std::uint8_t  flags     = 0;
     std::uint8_t  shade     = 255;
+    std::uint32_t light     = LIGHT_FULL_SKY;
 
     constexpr CompactVertex3D() noexcept = default;
 
     CompactVertex3D(const vector3d& p, const Color& c, CellFace f = CellFace::None, std::uint8_t shade_level = 255,
-                    std::uint8_t variation_amount = 0, std::uint8_t flag_bits = 0) noexcept
+                    std::uint8_t variation_amount = 0, std::uint8_t flag_bits = 0, BakedLight baked = BakedLight::full_sky()) noexcept
         : x(static_cast<float>(p.x)), y(static_cast<float>(p.y)), z(static_cast<float>(p.z)),
-          rgba(Vertex3D::pack(c)), variation(variation_amount), face(f), flags(flag_bits), shade(shade_level) {}
+          rgba(Vertex3D::pack(c)), variation(variation_amount), face(f), flags(flag_bits), shade(shade_level), light(baked.packed()) {}
+
+    BakedLight baked_light() const noexcept { return BakedLight::unpack(light); }
 
     vector3d position() const noexcept { return { double(x), double(y), double(z) }; }
     Color    color()    const noexcept { Vertex3D v; v.rgba = rgba; return v.color(); }
@@ -110,7 +114,7 @@ struct CompactVertex3D {
     }
 };
 
-static_assert(sizeof(CompactVertex3D) == 20, "CompactVertex3D layout is shared with the GPU pipeline");
+static_assert(sizeof(CompactVertex3D) == 24, "CompactVertex3D layout is shared with the GPU pipeline");
 
 constexpr std::size_t CELL_FACE_GROUPS = 7;
 
@@ -225,16 +229,18 @@ struct Instance3D {
     float         x = 0.0f, y = 0.0f, z = 0.0f;
     float         scale = 1.0f;
     std::uint32_t rgba  = 0xFFFFFFFFu;
+    std::uint32_t light = LIGHT_FULL_SKY;
 
     constexpr Instance3D() noexcept = default;
-    Instance3D(float px, float py, float pz, float s, const Color& c) noexcept
-        : x(px), y(py), z(pz), scale(s), rgba(Vertex3D::pack(c)) {}
+    Instance3D(float px, float py, float pz, float s, const Color& c, BakedLight baked = BakedLight::full_sky()) noexcept
+        : x(px), y(py), z(pz), scale(s), rgba(Vertex3D::pack(c)), light(baked.packed()) {}
 };
 
-static_assert(sizeof(Instance3D) == 20, "Instance3D layout is shared with the GPU pipeline");
+static_assert(sizeof(Instance3D) == 24, "Instance3D layout is shared with the GPU pipeline");
 
 enum class Cull3D  : std::uint8_t { Back = 0, None, Front };   
 enum class Blend3D : std::uint8_t { Opaque = 0, Alpha, Additive };
+enum class Shadow3D : std::uint8_t { Cast = 0, None, CastOnly };
 
 struct Material3D {
     const Texture* texture     = nullptr;  
@@ -242,10 +248,22 @@ struct Material3D {
     Blend3D        blend       = Blend3D::Opaque;
     bool           depth_test  = true;
     bool           depth_write = true;     
+    bool           lit         = true;
+    Shadow3D       shadow      = Shadow3D::Cast;
+    std::uint32_t  light       = LIGHT_FULL_SKY;
 
     static Material3D opaque() noexcept { return {}; }
     static Material3D double_sided() noexcept { Material3D m; m.cull = Cull3D::None; return m; }
-    static Material3D transparent() noexcept { Material3D m; m.blend = Blend3D::Alpha; m.depth_write = false; m.cull = Cull3D::None; return m; }
+    static Material3D transparent() noexcept { Material3D m; m.blend = Blend3D::Alpha; m.depth_write = false; m.cull = Cull3D::None; m.shadow = Shadow3D::None; return m; }
+    static Material3D unlit() noexcept { Material3D m; m.lit = false; m.shadow = Shadow3D::None; return m; }
+    static Material3D shadow_caster() noexcept { Material3D m; m.shadow = Shadow3D::CastOnly; m.cull = Cull3D::None; return m; }
+
+    Material3D& with_light(BakedLight baked) noexcept { light = baked.packed(); return *this; }
+    Material3D& with_shadow(Shadow3D mode) noexcept { shadow = mode; return *this; }
+    Material3D& with_lit(bool on) noexcept { lit = on; return *this; }
+
+    bool visible()      const noexcept { return shadow != Shadow3D::CastOnly; }
+    bool casts_shadow() const noexcept { return shadow != Shadow3D::None && blend == Blend3D::Opaque; }
 };
 
 struct Light3D {
@@ -301,6 +319,30 @@ private:
 };
 
 
+struct Bounds3D {
+    float lo[3] = { 0.0f, 0.0f, 0.0f };
+    float hi[3] = { 0.0f, 0.0f, 0.0f };
+    bool  valid = false;
+
+    void include(float x, float y, float z) noexcept {
+        const float p[3] = { x, y, z };
+
+        for (int a = 0; a < 3; ++a) {
+            if (!valid || p[a] < lo[a]) lo[a] = p[a];
+            if (!valid || p[a] > hi[a]) hi[a] = p[a];
+        }
+
+        valid = true;
+    }
+
+    template <typename V>
+    static Bounds3D of(const std::vector<V>& vertices) noexcept {
+        Bounds3D b;
+        for (const V& v : vertices) b.include(v.x, v.y, v.z);
+        return b;
+    }
+};
+
 namespace detail {
 
 class MeshReleaseQueue {
@@ -338,6 +380,7 @@ struct MeshSlot3D : std::enable_shared_from_this<MeshSlot3D> {
     std::uint64_t gpu_key       = 0;
     std::size_t   element_count = 0;
     FaceGroups    groups{};
+    Bounds3D      bounds;
     Mesh3D        mesh;
     QuadMesh3D    quad_mesh;
     std::shared_ptr<MeshReleaseQueue> release;
@@ -369,6 +412,7 @@ public:
         h.m_slot->quads = false;
         h.m_slot->keep_cpu = keep_cpu_copy;
         h.m_slot->element_count = mesh.indexed() ? mesh.indices().size() : mesh.vertices().size();
+        h.m_slot->bounds = Bounds3D::of(mesh.vertices());
         h.m_slot->mesh = std::move(mesh);
         return h;
     }
@@ -381,6 +425,7 @@ public:
         if (!quads.grouped()) quads.finalize();
         h.m_slot->element_count = quads.quad_count();
         h.m_slot->groups = quads.groups();
+        h.m_slot->bounds = Bounds3D::of(quads.vertices());
         h.m_slot->quad_mesh = std::move(quads);
         return h;
     }
@@ -400,6 +445,8 @@ public:
         static const FaceGroups none{};
         return m_slot ? m_slot->groups : none;
     }
+
+    Bounds3D bounds() const noexcept { return m_slot ? m_slot->bounds : Bounds3D{}; }
 
     void reset() noexcept { m_slot.reset(); }
 

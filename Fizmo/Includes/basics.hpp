@@ -4,6 +4,7 @@
 #include "../Source/Basic/basic_includes.hpp"
 #include "../Source/Symbolic Math/Common/points.hpp"
 #include "../Source/Multiprecision/include.hpp"
+#include "../Source/Random/random_std_int.hpp"
 
 #if defined(FIZMO_BASIC) || defined(FIZMO_BASICS)
     #include "std_overloads.hpp"

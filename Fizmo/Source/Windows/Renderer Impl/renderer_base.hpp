@@ -209,6 +209,7 @@ public:
         try {
             if (!m_soft3d) m_soft3d.reset(new SoftwareRasterizer3D());
             m_soft3d->set_light(m_light3d);
+            m_soft3d->set_scene_lighting(&m_scene_lighting);
             m_soft3d->begin(scene);
             m_in_3d = true;
         } catch (...) {
@@ -233,20 +234,29 @@ public:
         if (m_soft3d) m_soft3d->set_light(light);
     }
 
+    virtual void set_scene_lighting(const graphics::SceneLighting3D& lighting) noexcept {
+        try {
+            m_scene_lighting = lighting;
+            if (m_soft3d) m_soft3d->set_scene_lighting(&m_scene_lighting);
+        } catch (...) {}
+    }
+
+    const graphics::SceneLighting3D& scene_lighting() const noexcept { return m_scene_lighting; }
+
     virtual void draw_mesh_3d(const graphics::Mesh3D& mesh, const float* model, const graphics::Material3D& mat) noexcept {
-        if (!m_in_3d || mesh.empty()) return;
+        if (!m_in_3d || mesh.empty() || !mat.visible()) return;
         const auto& v = mesh.vertices();
         const auto& i = mesh.indices();
         try { m_soft3d->draw(v.data(), v.size(), mesh.indexed() ? i.data() : nullptr, i.size(), model, mat); } catch (...) {}
     }
 
     virtual void draw_triangles_3d(const graphics::Vertex3D* v, std::size_t count, const float* model, const graphics::Material3D& mat) noexcept {
-        if (!m_in_3d || !v || count < 3) return;
+        if (!m_in_3d || !v || count < 3 || !mat.visible()) return;
         try { m_soft3d->draw(v, count, nullptr, 0, model, mat); } catch (...) {}
     }
 
     virtual void draw_quads_3d(const graphics::QuadMesh3D& quads, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) noexcept {
-        if (!m_in_3d || quads.empty()) return;
+        if (!m_in_3d || quads.empty() || !mat.visible()) return;
         try { m_soft3d->draw_quads(quads.vertices().data(), quads.quad_count(), model, cell_origin, mat); } catch (...) {}
     }
 
@@ -258,7 +268,7 @@ public:
     }
 
     virtual void draw_handle_3d(const std::shared_ptr<graphics::detail::MeshSlot3D>& slot, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) noexcept {
-        if (!m_in_3d || !slot || slot->element_count == 0) return;
+        if (!m_in_3d || !slot || slot->element_count == 0 || !mat.visible()) return;
         if (!slot->has_cpu_data()) { slot->lost = true; return; }
 
         try {
@@ -282,7 +292,7 @@ public:
     virtual std::uint64_t gpu_mesh_bytes() const noexcept { return 0; }
 
     virtual void draw_quad_batch_3d(const QuadBatchDraw* items, std::size_t count, const float* camera_frac, const graphics::Material3D& mat) noexcept {
-        if (!m_in_3d || !items) return;
+        if (!m_in_3d || !items || !mat.visible()) return;
 
         try {
             for (std::size_t i = 0; i < count; ++i) {
@@ -305,7 +315,7 @@ public:
 
     virtual void draw_instances_3d(const graphics::Mesh3D& mesh, const float* model, const graphics::Instance3D* instances,
                                    std::size_t count, const graphics::Material3D& mat) noexcept {
-        if (!m_in_3d || mesh.empty() || !instances || count == 0) return;
+        if (!m_in_3d || mesh.empty() || !instances || count == 0 || !mat.visible()) return;
 
         try {
             const auto& verts = mesh.vertices();
@@ -313,6 +323,8 @@ public:
             const std::size_t per = mesh.indexed() ? idx.size() : verts.size();
             m_instance_scratch.clear();
             m_instance_scratch.reserve(per * count);
+            m_instance_lights.clear();
+            m_instance_lights.reserve(per * count);
 
             for (std::size_t i = 0; i < count; ++i) {
                 const graphics::Instance3D& in = instances[i];
@@ -325,21 +337,24 @@ public:
                     v.set_color(graphics::Color(static_cast<std::uint8_t>(c.red() * tint[0] + 0.5f), static_cast<std::uint8_t>(c.green() * tint[1] + 0.5f),
                                                 static_cast<std::uint8_t>(c.blue() * tint[2] + 0.5f), static_cast<std::uint8_t>(c.alpha() * tint[3] + 0.5f)));
                     m_instance_scratch.push_back(v);
+                    m_instance_lights.push_back(in.light);
                 }
             }
 
-            m_soft3d->draw(m_instance_scratch.data(), m_instance_scratch.size(), nullptr, 0, model, mat);
+            m_soft3d->draw(m_instance_scratch.data(), m_instance_scratch.size(), nullptr, 0, model, mat, m_instance_lights.data());
         } catch (...) {}
     }
 
 protected:
     graphics::Light3D                     m_light3d;
+    graphics::SceneLighting3D             m_scene_lighting;
     bool                                  m_in_3d = false;
     std::unique_ptr<SoftwareRasterizer3D> m_soft3d;
     std::vector<graphics::Color>          m_soft3d_pixels;
     std::uint64_t                         m_soft3d_version = 0;
     const std::uint64_t                   m_epoch = next_content_version();
     std::vector<graphics::Vertex3D>       m_instance_scratch;
+    std::vector<std::uint32_t>            m_instance_lights;
 
 public:
 
