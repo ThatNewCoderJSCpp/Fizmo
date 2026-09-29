@@ -17,6 +17,7 @@
 #include <array>
 #include <climits>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -178,6 +179,9 @@ private:
         vulkan::DescriptorPool pool;
         vulkan::Buffer         vertices3d;
         vulkan::Buffer         lines3d;
+        vulkan::Buffer         batch_instances;
+        vulkan::Buffer         batch_commands;
+        vulkan::Buffer         instances3d;
     };
 
     struct GpuMesh {
@@ -187,16 +191,60 @@ private:
         bool          quads = false;
     };
 
+    struct ArenaRange {
+        std::uint32_t page  = 0;
+        std::uint32_t first = 0;
+        std::uint32_t count = 0;
+    };
+
+    struct ArenaPage {
+        std::unique_ptr<vulkan::Buffer>         buffer;
+        std::uint32_t                           capacity = 0;
+        std::uint32_t                           used     = 0;
+        std::map<std::uint32_t, std::uint32_t>  free;
+    };
+
     struct HandleMesh {
         std::weak_ptr<graphics::detail::MeshSlot3D> slot;
+        bool                                       quads = false;
+        ArenaRange                                 range;
         GpuMesh                                    mesh;
+        std::uint64_t                              bytes = 0;
     };
+
+    struct PendingHandle {
+        std::uint64_t                               key = 0;
+        std::shared_ptr<graphics::detail::MeshSlot3D> slot;
+    };
+
+    struct RetiredRange {
+        std::uint64_t frame;
+        ArenaRange    range;
+    };
+
+    struct BatchInstance {
+        std::int32_t rel_cell[3];
+        std::int32_t abs_cell[3];
+        float        frac[3];
+    };
+
+    struct IndirectCommand {
+        std::uint32_t index_count;
+        std::uint32_t instance_count;
+        std::uint32_t first_index;
+        std::int32_t  vertex_offset;
+        std::uint32_t first_instance;
+    };
+
+    static_assert(sizeof(BatchInstance) == 36, "batch instance layout must match the pipeline");
+    static_assert(sizeof(IndirectCommand) == 20, "indirect command layout must match VkDrawIndexedIndirectCommand");
 
     struct BufferUpload {
         vulkan::Buffer* dst    = nullptr;
         std::size_t     offset = 0;
         std::uint64_t   bytes  = 0;
         GpuMesh*        owner  = nullptr;
+        std::uint64_t   dst_offset = 0;
     };
 
     struct RetiredBuffer {
@@ -204,7 +252,7 @@ private:
         std::unique_ptr<vulkan::Buffer> buffer;
     };
 
-    enum class DrawKind3D : std::uint8_t { Mesh, Triangles, Lines };
+    enum class DrawKind3D : std::uint8_t { Mesh, Triangles, Lines, ArenaQuads, Batch, Instanced };
 
     struct Draw3D {
         DrawKind3D               kind    = DrawKind3D::Triangles;
@@ -215,6 +263,9 @@ private:
         std::uint8_t             sampler = NearestClamp;
         float                    push[32] = {};
         bool                     quads   = false;
+        std::uint32_t            page    = 0;
+        std::int32_t             vertex_offset = 0;
+        std::uint32_t            instance_first = 0, instance_count = 0;
     };
 
     struct SceneRec {
@@ -288,9 +339,20 @@ private:
     std::unique_ptr<vulkan::Buffer> m_quad_indices;
     std::uint64_t                 m_quad_index_capacity = 0;
     bool                          m_quad_index_pending  = false;
-    std::unordered_map<const graphics::detail::MeshSlot3D*, HandleMesh> m_handle_meshes;
-    std::vector<std::shared_ptr<graphics::detail::MeshSlot3D>> m_handle_uploads;
+    vulkan::ShaderModule          m_batch_vs, m_instanced_vs;
+    std::unordered_map<std::uint64_t, HandleMesh> m_handle_meshes;
+    std::vector<PendingHandle>    m_handle_uploads;
     std::uint64_t                 m_handle_bytes = 0;
+    std::uint64_t                 m_next_handle_key = 0;
+    std::shared_ptr<graphics::detail::MeshReleaseQueue> m_release_queue = std::make_shared<graphics::detail::MeshReleaseQueue>();
+    std::vector<ArenaPage>        m_arena;
+    std::vector<RetiredRange>     m_retired_ranges;
+    std::uint64_t                 m_arena_quads_used = 0;
+    std::vector<BatchInstance>    m_batch_instances;
+    std::vector<IndirectCommand>  m_batch_commands;
+    std::vector<std::vector<IndirectCommand>> m_page_commands;
+    std::vector<graphics::Instance3D> m_instances3d;
+    bool                          m_multi_draw = false;
     std::vector<RetiredBuffer>    m_retired_buffers;
     std::vector<BufferUpload>     m_buffer_uploads;
     std::vector<graphics::Vertex3D>  m_vertices3d;
@@ -336,6 +398,10 @@ public:
         m_quad_index_pending = false;
         m_retired_buffers.clear();
         m_pipelines3d.clear();
+        m_arena.clear();
+        m_retired_ranges.clear();
+        m_arena_quads_used = 0;
+        m_instanced_vs.destroy(); m_batch_vs.destroy();
         m_quad_fs.destroy(); m_quad_vs.destroy();
         m_line_fs.destroy(); m_line_vs.destroy(); m_mesh_fs.destroy(); m_mesh_vs.destroy();
         m_line_layout.destroy(); m_mesh_layout.destroy();
@@ -344,7 +410,7 @@ public:
         m_atlas.clear();
         m_textures.clear();
         m_texture_bytes = 0;
-        for (auto& pf : m_per_frame) { pf.lines3d.destroy(); pf.vertices3d.destroy(); pf.pool.destroy(); pf.ramp.destroy(); pf.staging.destroy(); pf.vertices.destroy(); }
+        for (auto& pf : m_per_frame) { pf.instances3d.destroy(); pf.batch_commands.destroy(); pf.batch_instances.destroy(); pf.lines3d.destroy(); pf.vertices3d.destroy(); pf.pool.destroy(); pf.ramp.destroy(); pf.staging.destroy(); pf.vertices.destroy(); }
         m_msaa_target.destroy();
         m_target.destroy();
         m_white.destroy();
@@ -819,7 +885,7 @@ public:
     void upload_handle_3d(const std::shared_ptr<graphics::detail::MeshSlot3D>& slot) noexcept override {
         if (!m_ready) { RendererImplBase::upload_handle_3d(slot); return; }
         if (!slot || slot->element_count == 0) return;
-        if (slot->owner_epoch == m_epoch && m_handle_meshes.count(slot.get())) return;
+        if (resident_handle(*slot)) return;
         if (!slot->has_cpu_data()) { slot->lost = true; return; }
 
         try { upload_slot(slot); } catch (...) {}
@@ -830,34 +896,136 @@ public:
         if (!m_in_3d || !slot || slot->element_count == 0 || slot->lost) return;
 
         try {
-            auto it = m_handle_meshes.find(slot.get());
+            HandleMesh* h = handle_for(slot);
+            if (!h) return;
 
-            if (it == m_handle_meshes.end() || slot->owner_epoch != m_epoch) {
-                if (!slot->has_cpu_data()) { slot->lost = true; return; }
-                if (!upload_slot(slot)) return;
-                it = m_handle_meshes.find(slot.get());
-                if (it == m_handle_meshes.end()) return;
-            }
-
-            GpuMesh& g = it->second.mesh;
-            g.last_used = m_frame_serial;
-
-            if (g.quads) {
-                push_quad_draw(g, model, cell_origin, mat);
+            if (h->quads) {
+                if (!ensure_quad_indices(h->range.count)) return;
+                Draw3D d;
+                d.kind  = DrawKind3D::ArenaQuads;
+                d.page  = h->range.page;
+                d.vertex_offset = static_cast<std::int32_t>(h->range.first * graphics::QuadMesh3D::VERTICES_PER_QUAD);
+                d.count = h->range.count * static_cast<std::uint32_t>(graphics::QuadMesh3D::INDICES_PER_QUAD);
+                if (!material(d, mat)) return;
+                d.state |= kQuads;
+                quad_push(d, model, cell_origin);
+                m_draws3d.push_back(d);
                 return;
             }
 
+            h->mesh.last_used = m_frame_serial;
             Draw3D d;
             d.kind  = DrawKind3D::Mesh;
-            d.mesh  = &g;
-            d.count = g.index_count ? g.index_count : g.vertex_count;
+            d.mesh  = &h->mesh;
+            d.count = h->mesh.index_count ? h->mesh.index_count : h->mesh.vertex_count;
             if (!material(d, mat)) return;
             mesh_push(d, model);
             m_draws3d.push_back(d);
         } catch (...) {}
     }
 
+    void draw_quad_batch_3d(const QuadBatchDraw* items, std::size_t count, const float* camera_frac, const graphics::Material3D& mat) noexcept override {
+        if (!m_ready) { RendererImplBase::draw_quad_batch_3d(items, count, camera_frac, mat); return; }
+        if (!m_in_3d || !items || count == 0) return;
+
+        try {
+            Draw3D base;
+            if (!material(base, mat)) return;
+            base.kind = DrawKind3D::Batch;
+            base.state |= kBatch;
+            std::copy(m_scenes.back().vp.begin(), m_scenes.back().vp.end(), base.push);
+            for (int a = 0; a < 3; ++a) base.push[16 + a] = camera_frac[a];
+            light_push(base.push + 20);
+            if (m_page_commands.size() < m_arena.size()) m_page_commands.resize(m_arena.size());
+            for (auto& cmds : m_page_commands) cmds.clear();
+            std::uint32_t largest = 0;
+
+            for (std::size_t i = 0; i < count; ++i) {
+                const QuadBatchDraw& item = items[i];
+                if (!item.slot || !item.slot->quads || item.slot->lost) continue;
+                HandleMesh* h = resident(*item.slot);
+                if (!h) h = handle_for(item.slot->shared_from_this());
+                if (!h || !h->quads) continue;
+                const std::uint32_t instance = static_cast<std::uint32_t>(m_batch_instances.size());
+                BatchInstance inst;
+
+                for (int a = 0; a < 3; ++a) {
+                    inst.rel_cell[a] = item.rel_cell[a];
+                    inst.abs_cell[a] = item.abs_cell[a];
+                    inst.frac[a]     = item.frac[a];
+                }
+
+                bool any = false;
+                std::uint32_t run_first = 0, run_count = 0;
+
+                auto flush = [&]() {
+                    if (run_count == 0) return;
+                    if (m_page_commands.size() <= h->range.page) m_page_commands.resize(h->range.page + 1);
+                    m_page_commands[h->range.page].push_back({
+                        run_count * static_cast<std::uint32_t>(graphics::QuadMesh3D::INDICES_PER_QUAD), 1, 0,
+                        static_cast<std::int32_t>((h->range.first + run_first) * graphics::QuadMesh3D::VERTICES_PER_QUAD), instance });
+                    largest = std::max(largest, run_count);
+                    run_count = 0;
+                    any = true;
+                };
+
+                for (std::size_t g = 0; g < graphics::CELL_FACE_GROUPS; ++g) {
+                    const graphics::QuadRange r = item.slot->groups[g];
+                    if (r.count == 0) continue;
+                    if (!(item.faces & (1u << g))) { flush(); continue; }
+                    if (run_count == 0) run_first = r.first;
+                    if (run_first + run_count != r.first) { flush(); run_first = r.first; }
+                    run_count += r.count;
+                }
+
+                flush();
+                if (any) m_batch_instances.push_back(inst);
+            }
+
+            if (largest == 0 || !ensure_quad_indices(largest)) return;
+
+            for (std::size_t page = 0; page < m_page_commands.size(); ++page) {
+                auto& cmds = m_page_commands[page];
+                if (cmds.empty()) continue;
+                Draw3D d = base;
+                d.page  = static_cast<std::uint32_t>(page);
+                d.first = static_cast<std::uint32_t>(m_batch_commands.size());
+                d.count = static_cast<std::uint32_t>(cmds.size());
+                m_batch_commands.insert(m_batch_commands.end(), cmds.begin(), cmds.end());
+                m_draws3d.push_back(d);
+            }
+        } catch (...) {}
+    }
+
+    void draw_instances_3d(const graphics::Mesh3D& mesh, const float* model, const graphics::Instance3D* instances,
+                           std::size_t count, const graphics::Material3D& mat) noexcept override {
+        if (!m_ready) { RendererImplBase::draw_instances_3d(mesh, model, instances, count, mat); return; }
+        if (!m_in_3d || mesh.empty() || !instances || count == 0) return;
+
+        try {
+            GpuMesh* g = mesh_for(mesh);
+            if (!g) return;
+            Draw3D d;
+            d.kind  = DrawKind3D::Instanced;
+            d.mesh  = g;
+            d.count = g->index_count ? g->index_count : g->vertex_count;
+            if (!material(d, mat)) return;
+            d.state |= kInstanced;
+            mesh_push(d, model);
+            d.instance_first = static_cast<std::uint32_t>(m_instances3d.size());
+            d.instance_count = static_cast<std::uint32_t>(count);
+            m_instances3d.insert(m_instances3d.end(), instances, instances + count);
+            m_draws3d.push_back(d);
+        } catch (...) {}
+    }
+
     std::uint64_t gpu_mesh_bytes() const noexcept override { return m_mesh_bytes + m_handle_bytes; }
+
+    std::uint64_t gpu_arena_bytes() const noexcept {
+        std::uint64_t total = 0;
+        for (const ArenaPage& p : m_arena) total += static_cast<std::uint64_t>(p.capacity) * kQuadBytes;
+        return total;
+    }
 
     void release_mesh(const graphics::Mesh3D& mesh) noexcept {
         auto it = m_meshes.find(&mesh);
@@ -873,6 +1041,29 @@ private:
     static constexpr std::uint32_t kQuads      = 1u << 7;
     static constexpr std::uint64_t kMinQuadIndexCapacity = 16384;
 
+    static constexpr std::uint32_t kBatch      = 1u << 8;
+    static constexpr std::uint32_t kInstanced  = 1u << 9;
+    static constexpr std::uint32_t kArenaPageQuads = 1u << 18;
+    static constexpr std::uint64_t kQuadBytes  = graphics::QuadMesh3D::VERTICES_PER_QUAD * sizeof(graphics::CompactVertex3D);
+
+    void light_push(float* out) const noexcept {
+        const double len = m_light3d.direction.magnitude();
+        const double k = len > 0.0 ? m_light3d.diffuse / len : 0.0;
+        out[0] = static_cast<float>(m_light3d.direction.x * k);
+        out[1] = static_cast<float>(m_light3d.direction.y * k);
+        out[2] = static_cast<float>(m_light3d.direction.z * k);
+        out[3] = m_light3d.ambient;
+    }
+
+    void quad_push(Draw3D& d, const float* model, const std::int32_t* cell_origin) const noexcept {
+        mesh_push(d, model);
+
+        for (int r = 0; r < 3; ++r) {
+            const std::int32_t c = cell_origin ? cell_origin[r] : 0;
+            std::memcpy(&d.push[16 + r * 4 + 3], &c, sizeof(c));
+        }
+    }
+
     void push_quad_draw(GpuMesh& g, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) {
         if (!ensure_quad_indices(g.vertex_count / graphics::QuadMesh3D::VERTICES_PER_QUAD)) return;
         Draw3D d;
@@ -882,13 +1073,7 @@ private:
         d.count = g.index_count;
         if (!material(d, mat)) return;
         d.state |= kQuads;
-        mesh_push(d, model);
-
-        for (int r = 0; r < 3; ++r) {
-            const std::int32_t c = cell_origin ? cell_origin[r] : 0;
-            std::memcpy(&d.push[16 + r * 4 + 3], &c, sizeof(c));
-        }
-
+        quad_push(d, model, cell_origin);
         m_draws3d.push_back(d);
     }
 
@@ -905,7 +1090,7 @@ private:
         m_quad_indices = std::move(buffer);
         m_quad_index_capacity = capacity;
         m_quad_index_pending = true;
-        m_buffer_uploads.push_back({ m_quad_indices.get(), offset, bytes, nullptr });
+        m_buffer_uploads.push_back({ m_quad_indices.get(), offset, bytes, nullptr, 0 });
         return true;
     }
 
@@ -919,8 +1104,8 @@ private:
         }
 
         g.bytes = vbytes + ibytes;
-        m_buffer_uploads.push_back({ g.vertices.get(), push_staging(vdata, static_cast<std::size_t>(vbytes)), vbytes, track_owner ? &g : nullptr });
-        if (ibytes) m_buffer_uploads.push_back({ g.indices.get(), push_staging(idata, static_cast<std::size_t>(ibytes)), ibytes, track_owner ? &g : nullptr });
+        m_buffer_uploads.push_back({ g.vertices.get(), push_staging(vdata, static_cast<std::size_t>(vbytes)), vbytes, track_owner ? &g : nullptr, 0 });
+        if (ibytes) m_buffer_uploads.push_back({ g.indices.get(), push_staging(idata, static_cast<std::size_t>(ibytes)), ibytes, track_owner ? &g : nullptr, 0 });
         return true;
     }
 
@@ -944,50 +1129,126 @@ private:
         return g;
     }
 
+    bool arena_alloc(std::uint32_t quads, ArenaRange& out) {
+        for (std::uint32_t p = 0; p < m_arena.size(); ++p) {
+            ArenaPage& page = m_arena[p];
+
+            for (auto it = page.free.begin(); it != page.free.end(); ++it) {
+                if (it->second < quads) continue;
+                out = { p, it->first, quads };
+                const std::uint32_t rest_first = it->first + quads, rest = it->second - quads;
+                page.free.erase(it);
+                if (rest) page.free.emplace(rest_first, rest);
+                page.used += quads;
+                m_arena_quads_used += quads;
+                return true;
+            }
+        }
+
+        ArenaPage page;
+        page.capacity = std::max(quads, kArenaPageQuads);
+        page.buffer = std::make_unique<vulkan::Buffer>();
+        if (failed(page.buffer->create(m_device, { page.capacity * kQuadBytes, vulkan::BufferUsage::Vertex, vulkan::MemoryUsage::GpuOnly, "fizmo quad arena" }))) return false;
+        if (page.capacity > quads) page.free.emplace(quads, page.capacity - quads);
+        page.used = quads;
+        out = { static_cast<std::uint32_t>(m_arena.size()), 0, quads };
+        m_arena.push_back(std::move(page));
+        m_arena_quads_used += quads;
+        return true;
+    }
+
+    void arena_free(const ArenaRange& r) {
+        if (r.count == 0 || r.page >= m_arena.size()) return;
+        ArenaPage& page = m_arena[r.page];
+        std::uint32_t first = r.first, count = r.count;
+        auto next = page.free.lower_bound(first);
+
+        if (next != page.free.begin()) {
+            auto prev = std::prev(next);
+            if (prev->first + prev->second == first) { first = prev->first; count += prev->second; page.free.erase(prev); }
+        }
+
+        if (next != page.free.end() && first + count == next->first) { count += next->second; page.free.erase(next); }
+        page.free.emplace(first, count);
+        page.used -= std::min(page.used, r.count);
+        m_arena_quads_used -= std::min<std::uint64_t>(m_arena_quads_used, r.count);
+    }
+
+    bool resident_handle(const graphics::detail::MeshSlot3D& slot) const noexcept {
+        return slot.owner_epoch == m_epoch && slot.gpu_key && m_handle_meshes.count(slot.gpu_key);
+    }
+
+    HandleMesh* resident(const graphics::detail::MeshSlot3D& slot) noexcept {
+        if (slot.owner_epoch != m_epoch || !slot.gpu_key) return nullptr;
+        auto it = m_handle_meshes.find(slot.gpu_key);
+        return it == m_handle_meshes.end() ? nullptr : &it->second;
+    }
+
+    HandleMesh* handle_for(const std::shared_ptr<graphics::detail::MeshSlot3D>& slot) {
+        if (HandleMesh* h = resident(*slot)) return h;
+
+        if (!slot->has_cpu_data()) { slot->lost = true; return nullptr; }
+        if (!upload_slot(slot)) return nullptr;
+        auto it = m_handle_meshes.find(slot->gpu_key);
+        return it == m_handle_meshes.end() ? nullptr : &it->second;
+    }
+
     bool upload_slot(const std::shared_ptr<graphics::detail::MeshSlot3D>& slot) {
-        auto it = m_handle_meshes.find(slot.get());
-        if (it != m_handle_meshes.end()) { retire_handle(it->second.mesh); m_handle_meshes.erase(it); }
+        if (!slot->gpu_key) slot->gpu_key = ++m_next_handle_key;
+        slot->release = m_release_queue;
+        release_handle(slot->gpu_key);
         HandleMesh h;
-        h.slot = slot;
-        h.mesh.quads     = slot->quads;
-        h.mesh.last_used = m_frame_serial;
-        bool ok = false;
+        h.slot  = slot;
+        h.quads = slot->quads;
 
         if (slot->quads) {
             const auto& verts = slot->quad_mesh.vertices();
-            h.mesh.vertex_count = static_cast<std::uint32_t>(verts.size());
-            h.mesh.index_count  = static_cast<std::uint32_t>(slot->quad_mesh.quad_count() * graphics::QuadMesh3D::INDICES_PER_QUAD);
-            ok = create_gpu_buffers(h.mesh, verts.data(), verts.size() * sizeof(graphics::CompactVertex3D), nullptr, 0, false);
+            const std::uint32_t quads = static_cast<std::uint32_t>(slot->quad_mesh.quad_count());
+            if (!arena_alloc(quads, h.range)) return false;
+            const std::uint64_t bytes = quads * kQuadBytes;
+            m_buffer_uploads.push_back({ m_arena[h.range.page].buffer.get(), push_staging(verts.data(), static_cast<std::size_t>(bytes)), bytes, nullptr, h.range.first * kQuadBytes });
+            h.bytes = bytes;
         } else {
             const auto& verts = slot->mesh.vertices();
             const auto& idx   = slot->mesh.indices();
             h.mesh.vertex_count = static_cast<std::uint32_t>(verts.size());
             h.mesh.index_count  = static_cast<std::uint32_t>(idx.size());
-            ok = create_gpu_buffers(h.mesh, verts.data(), verts.size() * sizeof(graphics::Vertex3D), idx.data(), idx.size() * sizeof(std::uint32_t), false);
+            h.mesh.last_used    = m_frame_serial;
+            if (!create_gpu_buffers(h.mesh, verts.data(), verts.size() * sizeof(graphics::Vertex3D), idx.data(), idx.size() * sizeof(std::uint32_t), false)) return false;
+            h.bytes = h.mesh.bytes;
         }
 
-        if (!ok) return false;
         slot->owner_epoch = m_epoch;
-        slot->gpu_bytes   = h.mesh.bytes;
+        slot->gpu_bytes   = h.bytes;
         slot->resident    = false;
         slot->lost        = false;
-        m_handle_bytes += h.mesh.bytes;
-        m_handle_meshes.emplace(slot.get(), std::move(h));
-        m_handle_uploads.push_back(slot);
+        m_handle_bytes += h.bytes;
+        m_handle_meshes.emplace(slot->gpu_key, std::move(h));
+        m_handle_uploads.push_back({ slot->gpu_key, slot });
         return true;
     }
 
-    void retire_handle(GpuMesh& g) {
-        m_handle_bytes -= std::min(m_handle_bytes, g.bytes);
-        if (g.vertices) m_retired_buffers.push_back({ m_frame_serial, std::move(g.vertices) });
-        if (g.indices)  m_retired_buffers.push_back({ m_frame_serial, std::move(g.indices) });
-        g.bytes = 0;
+    void release_handle(std::uint64_t key) {
+        auto it = m_handle_meshes.find(key);
+        if (it == m_handle_meshes.end()) return;
+        HandleMesh& h = it->second;
+        m_handle_bytes -= std::min(m_handle_bytes, h.bytes);
+
+        if (h.quads) {
+            m_retired_ranges.push_back({ m_frame_serial, h.range });
+        } else {
+            if (h.mesh.vertices) m_retired_buffers.push_back({ m_frame_serial, std::move(h.mesh.vertices) });
+            if (h.mesh.indices)  m_retired_buffers.push_back({ m_frame_serial, std::move(h.mesh.indices) });
+        }
+
+        m_handle_meshes.erase(it);
     }
 
     void commit_handle_uploads() noexcept {
-        for (const auto& slot : m_handle_uploads) {
-            slot->resident = true;
-            slot->drop_cpu_data();
+        for (const PendingHandle& p : m_handle_uploads) {
+            if (p.slot->gpu_key != p.key || !m_handle_meshes.count(p.key)) continue;
+            p.slot->resident = true;
+            p.slot->drop_cpu_data();
         }
 
         m_handle_uploads.clear();
@@ -995,11 +1256,10 @@ private:
     }
 
     void abandon_handle_uploads() noexcept {
-        for (const auto& slot : m_handle_uploads) {
-            auto it = m_handle_meshes.find(slot.get());
-            if (it != m_handle_meshes.end()) { retire_handle(it->second.mesh); m_handle_meshes.erase(it); }
-            slot->owner_epoch = 0;
-            slot->resident = false;
+        for (const PendingHandle& p : m_handle_uploads) {
+            release_handle(p.key);
+            p.slot->owner_epoch = 0;
+            p.slot->resident = false;
         }
 
         m_handle_uploads.clear();
@@ -1120,10 +1380,12 @@ private:
     vulkan::Pipeline* pipeline_3d(std::uint32_t key) {
         auto it = m_pipelines3d.find(key);
         if (it != m_pipelines3d.end()) return &it->second;
-        const bool lines = (key & kLines) != 0;
-        const bool quads = (key & kQuads) != 0;
+        const bool lines     = (key & kLines) != 0;
+        const bool batch     = (key & kBatch) != 0;
+        const bool quads     = (key & kQuads) != 0 || batch;
+        const bool instanced = (key & kInstanced) != 0;
         vulkan::GraphicsPipelineDesc d;
-        d.vertex_shader   = lines ? &m_line_vs : quads ? &m_quad_vs : &m_mesh_vs;
+        d.vertex_shader   = lines ? &m_line_vs : batch ? &m_batch_vs : quads ? &m_quad_vs : instanced ? &m_instanced_vs : &m_mesh_vs;
         d.fragment_shader = lines ? &m_line_fs : quads ? &m_quad_fs : &m_mesh_fs;
         d.layout          = lines ? &m_line_layout : &m_mesh_layout;
 
@@ -1135,6 +1397,19 @@ private:
                 { 4, 0, vulkan::Format::R32Float, 32 },
             };
             d.cull_mode = vulkan::CullMode::None;
+        } else if (batch) {
+            d.vertex_bindings   = {
+                { 0, sizeof(graphics::CompactVertex3D), vulkan::VertexRate::PerVertex },
+                { 1, sizeof(BatchInstance), vulkan::VertexRate::PerInstance },
+            };
+            d.vertex_attributes = {
+                { 0, 0, vulkan::Format::RGB32Float, 0 }, { 1, 0, vulkan::Format::RGBA8Unorm, 12 },
+                { 2, 0, vulkan::Format::R32Uint, 16 },
+                { 3, 1, vulkan::Format::RGB32Sint, 0 }, { 4, 1, vulkan::Format::RGB32Sint, 12 },
+                { 5, 1, vulkan::Format::RGB32Float, 24 },
+            };
+            const std::uint32_t cull = key & 3u;
+            d.cull_mode = cull == 1u ? vulkan::CullMode::None : cull == 2u ? vulkan::CullMode::Front : vulkan::CullMode::Back;
         } else if (quads) {
             d.vertex_bindings   = { { 0, sizeof(graphics::CompactVertex3D), vulkan::VertexRate::PerVertex } };
             d.vertex_attributes = {
@@ -1149,6 +1424,13 @@ private:
                 { 0, 0, vulkan::Format::RGB32Float, 0 },  { 1, 0, vulkan::Format::RGB32Float, 12 },
                 { 2, 0, vulkan::Format::RG32Float, 24 },  { 3, 0, vulkan::Format::RGBA8Unorm, 32 },
             };
+
+            if (instanced) {
+                d.vertex_bindings.push_back({ 1, sizeof(graphics::Instance3D), vulkan::VertexRate::PerInstance });
+                d.vertex_attributes.push_back({ 4, 1, vulkan::Format::RGBA32Float, 0 });
+                d.vertex_attributes.push_back({ 5, 1, vulkan::Format::RGBA8Unorm, 16 });
+            }
+
             const std::uint32_t cull = key & 3u;
             d.cull_mode = cull == 1u ? vulkan::CullMode::None : cull == 2u ? vulkan::CullMode::Front : vulkan::CullMode::Back;
         }
@@ -1174,7 +1456,7 @@ private:
             d.blend = { vulkan::BlendState::opaque() };
         }
 
-        d.name = lines ? "fizmo 3d lines" : quads ? "fizmo 3d quads" : "fizmo 3d mesh";
+        d.name = lines ? "fizmo 3d lines" : batch ? "fizmo 3d quad batch" : quads ? "fizmo 3d quads" : instanced ? "fizmo 3d instanced" : "fizmo 3d mesh";
         vulkan::Pipeline p;
         if (failed(p.create(m_device, d))) return nullptr;
         return &m_pipelines3d.emplace(key, std::move(p)).first->second;
@@ -1284,6 +1566,9 @@ private:
         if (failed(m_line_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kLine3DFrag, sizeof(gpu::kLine3DFrag) / 4), "fizmo line3d.frag"))) return false;
         if (failed(m_quad_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kQuad3DVert, sizeof(gpu::kQuad3DVert) / 4), "fizmo quad3d.vert"))) return false;
         if (failed(m_quad_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kQuad3DFrag, sizeof(gpu::kQuad3DFrag) / 4), "fizmo quad3d.frag"))) return false;
+        if (failed(m_batch_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kBatch3DVert, sizeof(gpu::kBatch3DVert) / 4), "fizmo batch3d.vert"))) return false;
+        if (failed(m_instanced_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kInstanced3DVert, sizeof(gpu::kInstanced3DVert) / 4), "fizmo instanced3d.vert"))) return false;
+        m_multi_draw = m_device.features().multi_draw_indirect && m_device.features().draw_indirect_first_instance;
         vulkan::PipelineLayoutDesc ml;
         ml.set_layouts    = { &m_draw_set_layout };
         ml.push_constants = { { vulkan::ShaderStage::Vertex, 0, 128 } };
@@ -1390,6 +1675,9 @@ private:
         m_draws3d.clear();
         m_vertices3d.clear();
         m_lines3d.clear();
+        m_batch_instances.clear();
+        m_batch_commands.clear();
+        m_instances3d.clear();
         m_in_3d = false;
         m_force_new_batch = false;
         m_vertices.clear();
@@ -1839,10 +2127,16 @@ private:
             else ++it;
         }
 
-        for (auto it = m_handle_meshes.begin(); it != m_handle_meshes.end();) {
-            if (it->second.slot.expired()) { retire_handle(it->second.mesh); it = m_handle_meshes.erase(it); }
-            else ++it;
-        }
+        m_release_queue->drain([this](std::uint64_t key) { release_handle(key); });
+
+        m_retired_ranges.erase(
+            std::remove_if(m_retired_ranges.begin(), m_retired_ranges.end(), [&](const RetiredRange& r) {
+                if (!safe(r.frame)) return false;
+                arena_free(r.range);
+                return true;
+            }),
+            m_retired_ranges.end()
+        );
 
         while (m_mesh_bytes > kMeshBudget) {
             auto oldest = m_meshes.end();
@@ -2012,6 +2306,39 @@ private:
                 cmd.bind_descriptor_set(*p, 0, set);
                 cmd.push_constants(*p, vulkan::ShaderStage::Vertex, d.push, 128);
 
+                if (d.kind == DrawKind3D::Batch || d.kind == DrawKind3D::ArenaQuads) {
+                    if (d.page >= m_arena.size() || !m_quad_indices) continue;
+                    cmd.bind_vertex_buffer(0, *m_arena[d.page].buffer);
+                    cmd.bind_index_buffer(*m_quad_indices, vulkan::IndexType::UInt32);
+
+                    if (d.kind == DrawKind3D::ArenaQuads) {
+                        cmd.draw_indexed(d.count, 1, 0, d.vertex_offset, 0);
+                        continue;
+                    }
+
+                    cmd.bind_vertex_buffer(1, pf.batch_instances);
+
+                    if (m_multi_draw) {
+                        cmd.draw_indexed_indirect(pf.batch_commands, static_cast<std::uint64_t>(d.first) * sizeof(IndirectCommand), d.count, sizeof(IndirectCommand));
+                    } else {
+                        for (std::uint32_t c = d.first; c < d.first + d.count; ++c) {
+                            const IndirectCommand& ic = m_batch_commands[c];
+                            cmd.draw_indexed(ic.index_count, ic.instance_count, ic.first_index, ic.vertex_offset, ic.first_instance);
+                        }
+                    }
+
+                    continue;
+                }
+
+                if (d.kind == DrawKind3D::Instanced) {
+                    if (!d.mesh || !d.mesh->vertices) continue;
+                    cmd.bind_vertex_buffer(0, *d.mesh->vertices);
+                    cmd.bind_vertex_buffer(1, pf.instances3d, static_cast<std::uint64_t>(d.instance_first) * sizeof(graphics::Instance3D));
+                    if (d.mesh->indices) { cmd.bind_index_buffer(*d.mesh->indices, vulkan::IndexType::UInt32); cmd.draw_indexed(d.count, d.instance_count); }
+                    else cmd.draw(d.count, d.instance_count);
+                    continue;
+                }
+
                 if (d.kind == DrawKind3D::Mesh) {
                     if (!d.mesh || !d.mesh->vertices) continue;
                     cmd.bind_vertex_buffer(0, *d.mesh->vertices);
@@ -2083,6 +2410,24 @@ private:
             pf.vertices3d.write(m_vertices3d.data(), bytes);
         }
 
+        if (!m_batch_instances.empty()) {
+            const std::uint64_t bytes = m_batch_instances.size() * sizeof(BatchInstance);
+            if (!ensure_buffer(m_device, pf.batch_instances, bytes, vulkan::BufferUsage::Vertex, "fizmo batch instances")) return;
+            pf.batch_instances.write(m_batch_instances.data(), bytes);
+        }
+
+        if (!m_batch_commands.empty() && m_multi_draw) {
+            const std::uint64_t bytes = m_batch_commands.size() * sizeof(IndirectCommand);
+            if (!ensure_buffer(m_device, pf.batch_commands, bytes, vulkan::BufferUsage::Indirect, "fizmo batch commands")) return;
+            pf.batch_commands.write(m_batch_commands.data(), bytes);
+        }
+
+        if (!m_instances3d.empty()) {
+            const std::uint64_t bytes = m_instances3d.size() * sizeof(graphics::Instance3D);
+            if (!ensure_buffer(m_device, pf.instances3d, bytes, vulkan::BufferUsage::Vertex, "fizmo 3d instances")) return;
+            pf.instances3d.write(m_instances3d.data(), bytes);
+        }
+
         if (!m_lines3d.empty()) {
             const std::uint64_t bytes = m_lines3d.size() * sizeof(gpu::LineVertex3D);
             if (!ensure_buffer(m_device, pf.lines3d, bytes, vulkan::BufferUsage::Vertex, "fizmo 3d lines")) return;
@@ -2097,7 +2442,7 @@ private:
         }
 
         for (const Upload& u : m_uploads) cmd.transition(*u.image, vulkan::ImageLayout::ShaderReadOnly);
-        for (const BufferUpload& u : m_buffer_uploads) cmd.copy_buffer(pf.staging, *u.dst, u.bytes, u.offset, 0);
+        for (const BufferUpload& u : m_buffer_uploads) cmd.copy_buffer(pf.staging, *u.dst, u.bytes, u.offset, u.dst_offset);
 
         if (!m_buffer_uploads.empty()) {
             cmd.memory_barrier(vulkan::PipelineStage::Transfer, vulkan::Access::TransferWrite,

@@ -182,6 +182,7 @@ private:
     static double component(const vector3d& p, int axis) noexcept { return axis == 0 ? p.x : (axis == 1 ? p.y : p.z); }
 
 public:
+
     void resolve(std::vector<graphics::Color>& out) const {
         const std::size_t n = m_depth.size();
         out.resize(n);

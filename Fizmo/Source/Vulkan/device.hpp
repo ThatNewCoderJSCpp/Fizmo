@@ -32,6 +32,8 @@ struct DeviceFeatures {
     bool fill_mode_non_solid   = false;   
     bool wide_lines            = false;
     bool swapchain             = false;
+    bool multi_draw_indirect   = false;
+    bool draw_indirect_first_instance = false;
 };
 
 namespace detail {
@@ -378,6 +380,8 @@ public:
         e2.features.samplerAnisotropy = s2.features.samplerAnisotropy;
         e2.features.fillModeNonSolid  = s2.features.fillModeNonSolid;
         e2.features.wideLines         = s2.features.wideLines;
+        e2.features.multiDrawIndirect         = s2.features.multiDrawIndirect;
+        e2.features.drawIndirectFirstInstance = s2.features.drawIndirectFirstInstance;
         auto& feat = state->features;
         feat.dynamic_rendering     = true;
         feat.synchronization2      = true;
@@ -387,6 +391,8 @@ public:
         feat.sampler_anisotropy    = s2.features.samplerAnisotropy == VK_TRUE;
         feat.fill_mode_non_solid   = s2.features.fillModeNonSolid == VK_TRUE;
         feat.wide_lines            = s2.features.wideLines == VK_TRUE;
+        feat.multi_draw_indirect   = s2.features.multiDrawIndirect == VK_TRUE;
+        feat.draw_indirect_first_instance = s2.features.drawIndirectFirstInstance == VK_TRUE;
         feat.swapchain             = desc.surface != nullptr;
         std::vector<const char*> extensions;
         if (desc.surface) extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);

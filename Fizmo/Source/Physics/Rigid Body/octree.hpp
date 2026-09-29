@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -123,54 +124,64 @@ public:
     static constexpr double TIGHT = 1.0;
     static constexpr double RECOMMENDED_LOOSENESS = 2.0;
 
-    Octree() noexcept = default;
+    Octree() { reset_root(); }
 
     explicit Octree(
         const AABB3D& bounds,
         std::size_t   max_per_node = 8,
         std::size_t   max_depth    = 6,
         double        looseness    = TIGHT
-    ) noexcept
-        : m_bounds(bounds),
-          m_max_entries(max_per_node),
-          m_max_depth(max_depth),
-          m_looseness(std::max(looseness, TIGHT)) { update_loose_bounds(); }
+    ) : m_max_entries(max_per_node), m_max_depth(max_depth), m_looseness(std::max(looseness, TIGHT)) {
+        reset_root();
+        m_nodes[ROOT].bounds = bounds;
+        m_nodes[ROOT].loose  = loosen(bounds);
+    }
+
+    void configure(std::size_t max_per_node, std::size_t max_depth, double looseness) {
+        m_max_entries = max_per_node;
+        m_max_depth   = max_depth;
+        m_looseness   = std::max(looseness, TIGHT);
+        if (m_scratch.size() < m_max_depth + 2) m_scratch.resize(m_max_depth + 2);
+    }
 
     void rebuild(const AABB3D& bounds, T** items, const AABB3D* aabbs, std::size_t n) {
         clear();
-        m_bounds = bounds;
-        update_loose_bounds();
+        m_nodes[ROOT].bounds = bounds;
+        m_nodes[ROOT].loose  = loosen(bounds);
         for (std::size_t i = 0; i < n; ++i) insert(items[i], aabbs[i]);
     }
 
     void insert(T* item, const AABB3D& item_aabb) {
-        if (m_divided) {
-            int q = find_child(item_aabb);
+        std::uint32_t n = ROOT;
 
-            if (q >= 0) {
-                m_children[q]->insert(item, item_aabb);
+        for (;;) {
+            Node& node = m_nodes[n];
+
+            if (node.first_child != NO_CHILD) {
+                const int q = find_child(node, item_aabb);
+                if (q >= 0) { n = node.first_child + static_cast<std::uint32_t>(q); continue; }
+                node.entries.push_back({ item, item_aabb });
                 return;
             }
 
-            m_entries.push_back({ item, item_aabb });
+            node.entries.push_back({ item, item_aabb });
+            if (node.entries.size() > m_max_entries && node.depth < m_max_depth) subdivide(n);
             return;
         }
-
-        m_entries.push_back({ item, item_aabb });
-        if (m_entries.size() > m_max_entries && m_depth < m_max_depth) subdivide();
     }
 
-    void clear() noexcept {
-        m_entries.clear();
-        m_divided = false;
-        for (auto& c : m_children) c.reset();
+    void clear() {
+        if (m_scratch.size() < m_max_depth + 2) m_scratch.resize(m_max_depth + 2);
+
+        for (std::size_t i = 0; i < m_used; ++i) {
+            m_nodes[i].entries.clear();
+            m_nodes[i].first_child = NO_CHILD;
+        }
+
+        m_used = 1;
     }
 
-    void query(const AABB3D& region, std::vector<T*>& out) const {
-        if (!m_loose_bounds.overlaps(region)) return;
-        for (auto& e : m_entries) { if (e.aabb.overlaps(region)) out.push_back(e.item); }
-        if (m_divided) { for (auto& c : m_children) c->query(region, out); }
-    }
+    void query(const AABB3D& region, std::vector<T*>& out) const { query_node(ROOT, region, out); }
 
     std::vector<T*> query(const AABB3D& region) const {
         std::vector<T*> out;
@@ -181,47 +192,66 @@ public:
     template <typename Fn>
     void find_pairs(Fn&& on_pair) const {
         if (is_loose()) {
-            for_each_entry([&](const Entry& e) { pair_with(e, on_pair); });
+            for_each_entry(ROOT, [&](const Entry& e) { pair_with(ROOT, e, on_pair); });
             return;
         }
 
-        std::vector<const Entry*> ancestors;
-        find_pairs_impl(on_pair, ancestors);
+        m_ancestors.clear();
+        find_pairs_impl(ROOT, on_pair);
     }
 
-    std::size_t count()      const noexcept { return count_impl(); }
-    std::size_t depth()      const noexcept { return depth_impl(0); }
-    std::size_t node_count() const noexcept { return node_count_impl(); }
-    const AABB3D& bounds()       const noexcept { return m_bounds; }
-    const AABB3D& loose_bounds() const noexcept { return m_loose_bounds; }
+    std::size_t count()      const noexcept { return count_impl(ROOT); }
+    std::size_t depth()      const noexcept { return depth_impl(ROOT); }
+    std::size_t node_count() const noexcept { return m_used; }
+    std::size_t pooled_nodes() const noexcept { return m_nodes.size(); }
+    const AABB3D& bounds()       const noexcept { return m_nodes[ROOT].bounds; }
+    const AABB3D& loose_bounds() const noexcept { return m_nodes[ROOT].loose; }
     double looseness()           const noexcept { return m_looseness; }
     bool   is_loose()            const noexcept { return m_looseness > TIGHT; }
 
 private:
+    static constexpr std::uint32_t ROOT     = 0;
+    static constexpr std::uint32_t NO_CHILD = 0xFFFFFFFFu;
+    static constexpr int           CHILDREN = 8;
+
+    struct Node {
+        AABB3D             bounds{};
+        AABB3D             loose{};
+        std::vector<Entry> entries;
+        std::uint32_t      first_child = NO_CHILD;
+        std::size_t        depth = 0;
+    };
+
+    void reset_root() {
+        m_scratch.resize(m_max_depth + 2);
+        m_nodes.resize(std::max<std::size_t>(m_nodes.size(), 1));
+        m_used = 1;
+        m_nodes[ROOT].first_child = NO_CHILD;
+        m_nodes[ROOT].depth = 0;
+    }
+
     AABB3D loosen(const AABB3D& b) const noexcept {
         const vector3d c = b.center();
         const vector3d h = b.extents() * m_looseness;
         return { c - h, c + h };
     }
 
-    void update_loose_bounds() noexcept { m_loose_bounds = loosen(m_bounds); }
-
-    AABB3D octant_bounds(int q) const noexcept {
-        vector3d mid = m_bounds.center();
-        vector3d lo = m_bounds.min, hi = m_bounds.max;
+    static AABB3D octant_bounds(const AABB3D& b, int q) noexcept {
+        vector3d mid = b.center();
+        vector3d lo = b.min, hi = b.max;
         if (q & 1) lo.x = mid.x; else hi.x = mid.x;
         if (q & 2) lo.y = mid.y; else hi.y = mid.y;
         if (q & 4) lo.z = mid.z; else hi.z = mid.z;
         return { lo, hi };
     }
 
-    int find_child(const AABB3D& item_aabb) const noexcept {
-        vector3d mid = m_bounds.center();
+    int find_child(const Node& node, const AABB3D& item_aabb) const noexcept {
+        vector3d mid = node.bounds.center();
 
         if (is_loose()) {
             const vector3d c = item_aabb.center();
             const int q = (c.x >= mid.x ? 1 : 0) | (c.y >= mid.y ? 2 : 0) | (c.z >= mid.z ? 4 : 0);
-            return loosen(octant_bounds(q)).contains(item_aabb) ? q : -1;
+            return loosen(octant_bounds(node.bounds, q)).contains(item_aabb) ? q : -1;
         }
 
         int q = 0;
@@ -231,97 +261,113 @@ private:
         return q;
     }
 
-    void subdivide() {
-        for (int q = 0; q < 8; ++q) {
-            m_children[q] = std::make_unique<Octree>(octant_bounds(q), m_max_entries, m_max_depth, m_looseness);
-            m_children[q]->m_depth = m_depth + 1;
+    void subdivide(std::uint32_t n) {
+        const std::uint32_t first = static_cast<std::uint32_t>(m_used);
+        m_used += CHILDREN;
+        if (m_nodes.size() < m_used) m_nodes.resize(m_used);
+        const AABB3D parent = m_nodes[n].bounds;
+        const std::size_t depth = m_nodes[n].depth + 1;
+
+        for (int q = 0; q < CHILDREN; ++q) {
+            Node& c = m_nodes[first + static_cast<std::uint32_t>(q)];
+            c.bounds = octant_bounds(parent, q);
+            c.loose  = loosen(c.bounds);
+            c.entries.clear();
+            c.first_child = NO_CHILD;
+            c.depth = depth;
         }
 
-        m_divided = true;
-        std::vector<Entry> keep;
+        m_nodes[n].first_child = first;
+        std::vector<Entry>& moving = m_scratch[depth];
+        moving.assign(m_nodes[n].entries.begin(), m_nodes[n].entries.end());
+        m_nodes[n].entries.clear();
 
-        for (auto& e : m_entries) {
-            int q = find_child(e.aabb);
-
-            if (q >= 0) {
-                m_children[q]->insert(e.item, e.aabb);
-            } else {
-                keep.push_back(std::move(e));
-            }
+        for (const Entry& e : moving) {
+            const int q = find_child(m_nodes[n], e.aabb);
+            if (q >= 0) insert_into(first + static_cast<std::uint32_t>(q), e);
+            else m_nodes[n].entries.push_back(e);
         }
 
-        m_entries = std::move(keep);
+        moving.clear();
+    }
+
+    void insert_into(std::uint32_t n, const Entry& e) {
+        Node& node = m_nodes[n];
+        node.entries.push_back(e);
+        if (node.entries.size() > m_max_entries && node.depth < m_max_depth) subdivide(n);
+    }
+
+    void query_node(std::uint32_t n, const AABB3D& region, std::vector<T*>& out) const {
+        const Node& node = m_nodes[n];
+        if (!node.loose.overlaps(region)) return;
+        for (const Entry& e : node.entries) if (e.aabb.overlaps(region)) out.push_back(e.item);
+        if (node.first_child == NO_CHILD) return;
+        for (int q = 0; q < CHILDREN; ++q) query_node(node.first_child + static_cast<std::uint32_t>(q), region, out);
     }
 
     template <typename Fn>
-    void for_each_entry(Fn&& fn) const {
-        for (auto& e : m_entries) fn(e);
-        if (m_divided) { for (auto& c : m_children) c->for_each_entry(fn); }
+    void for_each_entry(std::uint32_t n, Fn&& fn) const {
+        const Node& node = m_nodes[n];
+        for (const Entry& e : node.entries) fn(e);
+        if (node.first_child == NO_CHILD) return;
+        for (int q = 0; q < CHILDREN; ++q) for_each_entry(node.first_child + static_cast<std::uint32_t>(q), fn);
     }
 
     template <typename Fn>
-    void pair_with(const Entry& e, Fn& on_pair) const {
-        if (!m_loose_bounds.overlaps(e.aabb)) return;
+    void pair_with(std::uint32_t n, const Entry& e, Fn& on_pair) const {
+        const Node& node = m_nodes[n];
+        if (!node.loose.overlaps(e.aabb)) return;
         const std::less<const Entry*> before;
 
-        for (auto& other : m_entries) {
+        for (const Entry& other : node.entries)
             if (before(&e, &other) && other.aabb.overlaps(e.aabb)) on_pair(e.item, other.item);
-        }
 
-        if (m_divided) { for (auto& c : m_children) c->pair_with(e, on_pair); }
+        if (node.first_child == NO_CHILD) return;
+        for (int q = 0; q < CHILDREN; ++q) pair_with(node.first_child + static_cast<std::uint32_t>(q), e, on_pair);
     }
 
     template <typename Fn>
-    void find_pairs_impl(
-        Fn& on_pair,
-        std::vector<const Entry*>& ancestors
-    ) const {
-        for (std::size_t i = 0; i < m_entries.size(); ++i) {
-            for (std::size_t j = i + 1; j < m_entries.size(); ++j) {
-                if (m_entries[i].aabb.overlaps(m_entries[j].aabb)) on_pair(m_entries[i].item, m_entries[j].item);
-            }
+    void find_pairs_impl(std::uint32_t n, Fn& on_pair) const {
+        const Node& node = m_nodes[n];
 
-            for (auto* anc : ancestors) { if (m_entries[i].aabb.overlaps(anc->aabb)) on_pair(m_entries[i].item, anc->item); }
+        for (std::size_t i = 0; i < node.entries.size(); ++i) {
+            for (std::size_t j = i + 1; j < node.entries.size(); ++j)
+                if (node.entries[i].aabb.overlaps(node.entries[j].aabb)) on_pair(node.entries[i].item, node.entries[j].item);
+
+            for (const Entry* anc : m_ancestors)
+                if (node.entries[i].aabb.overlaps(anc->aabb)) on_pair(node.entries[i].item, anc->item);
         }
 
-        if (m_divided) {
-            std::size_t old = ancestors.size();
-            for (auto& e : m_entries) ancestors.push_back(&e);
-            for (auto& c : m_children) c->find_pairs_impl(on_pair, ancestors);
-            ancestors.resize(old);
-        }
+        if (node.first_child == NO_CHILD) return;
+        const std::size_t old = m_ancestors.size();
+        for (const Entry& e : node.entries) m_ancestors.push_back(&e);
+        for (int q = 0; q < CHILDREN; ++q) find_pairs_impl(node.first_child + static_cast<std::uint32_t>(q), on_pair);
+        m_ancestors.resize(old);
     }
 
-    std::size_t count_impl() const noexcept {
-        std::size_t n = m_entries.size();
-        if (m_divided) for (auto& c : m_children) n += c->count_impl();
-        return n;
+    std::size_t count_impl(std::uint32_t n) const noexcept {
+        const Node& node = m_nodes[n];
+        std::size_t c = node.entries.size();
+        if (node.first_child != NO_CHILD)
+            for (int q = 0; q < CHILDREN; ++q) c += count_impl(node.first_child + static_cast<std::uint32_t>(q));
+        return c;
     }
 
-    std::size_t depth_impl(std::size_t d) const noexcept {
-        if (!m_divided) return d;
-        std::size_t mx = d;
-        for (auto& c : m_children) mx = std::max(mx, c->depth_impl(d + 1));
+    std::size_t depth_impl(std::uint32_t n) const noexcept {
+        const Node& node = m_nodes[n];
+        if (node.first_child == NO_CHILD) return node.depth;
+        std::size_t mx = node.depth;
+        for (int q = 0; q < CHILDREN; ++q) mx = std::max(mx, depth_impl(node.first_child + static_cast<std::uint32_t>(q)));
         return mx;
     }
 
-    std::size_t node_count_impl() const noexcept {
-        std::size_t n = 1;
-        if (m_divided) for (auto& c : m_children) n += c->node_count_impl();
-        return n;
-    }
-
-private:
-    AABB3D      m_bounds{};
-    AABB3D      m_loose_bounds{};
-    std::size_t m_max_entries = 8;
-    std::size_t m_max_depth   = 6;
-    std::size_t m_depth       = 0;
-    double      m_looseness   = TIGHT;
-
-    std::vector<Entry>                     m_entries;
-    std::array<std::unique_ptr<Octree>, 8> m_children;
-    bool                                   m_divided = false;
+    std::vector<Node>                  m_nodes;
+    std::size_t                        m_used        = 1;
+    std::size_t                        m_max_entries = 8;
+    std::size_t                        m_max_depth   = 6;
+    double                             m_looseness   = TIGHT;
+    std::vector<std::vector<Entry>>    m_scratch;
+    mutable std::vector<const Entry*>  m_ancestors;
 };
 
 } // namespace physics

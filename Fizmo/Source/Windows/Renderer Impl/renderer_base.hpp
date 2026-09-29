@@ -34,6 +34,14 @@ struct RenderPoint {
 
 namespace detail {
 
+struct QuadBatchDraw {
+    graphics::detail::MeshSlot3D* slot = nullptr;
+    std::int32_t                  rel_cell[3] = { 0, 0, 0 };
+    std::int32_t                  abs_cell[3] = { 0, 0, 0 };
+    float                         frac[3]     = { 0.0f, 0.0f, 0.0f };
+    graphics::FaceMask            faces       = graphics::ALL_FACE_GROUPS;
+};
+
 class RendererImplBase {
 public:
     virtual ~RendererImplBase() noexcept = default;
@@ -273,6 +281,57 @@ public:
 
     virtual std::uint64_t gpu_mesh_bytes() const noexcept { return 0; }
 
+    virtual void draw_quad_batch_3d(const QuadBatchDraw* items, std::size_t count, const float* camera_frac, const graphics::Material3D& mat) noexcept {
+        if (!m_in_3d || !items) return;
+
+        try {
+            for (std::size_t i = 0; i < count; ++i) {
+                const QuadBatchDraw& item = items[i];
+                graphics::detail::MeshSlot3D* slot = item.slot;
+                if (!slot || !slot->quads || slot->element_count == 0) continue;
+                if (!slot->has_cpu_data()) { slot->lost = true; continue; }
+                float model[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+                for (int a = 0; a < 3; ++a) model[a * 4 + 3] = static_cast<float>(item.rel_cell[a]) + (item.frac[a] - camera_frac[a]);
+                const graphics::CompactVertex3D* v = slot->quad_mesh.vertices().data();
+
+                for (std::size_t g = 0; g < graphics::CELL_FACE_GROUPS; ++g) {
+                    const graphics::QuadRange r = slot->groups[g];
+                    if (r.count == 0 || !(item.faces & (1u << g))) continue;
+                    m_soft3d->draw_quads(v + r.first * graphics::QuadMesh3D::VERTICES_PER_QUAD, r.count, model, item.abs_cell, mat);
+                }
+            }
+        } catch (...) {}
+    }
+
+    virtual void draw_instances_3d(const graphics::Mesh3D& mesh, const float* model, const graphics::Instance3D* instances,
+                                   std::size_t count, const graphics::Material3D& mat) noexcept {
+        if (!m_in_3d || mesh.empty() || !instances || count == 0) return;
+
+        try {
+            const auto& verts = mesh.vertices();
+            const auto& idx = mesh.indices();
+            const std::size_t per = mesh.indexed() ? idx.size() : verts.size();
+            m_instance_scratch.clear();
+            m_instance_scratch.reserve(per * count);
+
+            for (std::size_t i = 0; i < count; ++i) {
+                const graphics::Instance3D& in = instances[i];
+                const float tint[4] = { (in.rgba & 0xFF) / 255.0f, ((in.rgba >> 8) & 0xFF) / 255.0f, ((in.rgba >> 16) & 0xFF) / 255.0f, (in.rgba >> 24) / 255.0f };
+
+                for (std::size_t k = 0; k < per; ++k) {
+                    graphics::Vertex3D v = verts[mesh.indexed() ? idx[k] : k];
+                    v.x = v.x * in.scale + in.x; v.y = v.y * in.scale + in.y; v.z = v.z * in.scale + in.z;
+                    const graphics::Color c = v.color();
+                    v.set_color(graphics::Color(static_cast<std::uint8_t>(c.red() * tint[0] + 0.5f), static_cast<std::uint8_t>(c.green() * tint[1] + 0.5f),
+                                                static_cast<std::uint8_t>(c.blue() * tint[2] + 0.5f), static_cast<std::uint8_t>(c.alpha() * tint[3] + 0.5f)));
+                    m_instance_scratch.push_back(v);
+                }
+            }
+
+            m_soft3d->draw(m_instance_scratch.data(), m_instance_scratch.size(), nullptr, 0, model, mat);
+        } catch (...) {}
+    }
+
 protected:
     graphics::Light3D                     m_light3d;
     bool                                  m_in_3d = false;
@@ -280,6 +339,7 @@ protected:
     std::vector<graphics::Color>          m_soft3d_pixels;
     std::uint64_t                         m_soft3d_version = 0;
     const std::uint64_t                   m_epoch = next_content_version();
+    std::vector<graphics::Vertex3D>       m_instance_scratch;
 
 public:
 
@@ -450,6 +510,7 @@ private:
         result.ascent  = lines.front().ascent;
         result.descent = lines.front().descent;
         if (!draw) return result;
+
         const text::TextAlign align = para.has_text_align() ? para.text_align() : text::TextAlign::Left;
         const int region = w > 0 ? static_cast<int>(w) : widest;
         int top = y;

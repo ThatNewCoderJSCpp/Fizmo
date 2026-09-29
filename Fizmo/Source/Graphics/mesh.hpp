@@ -2,8 +2,11 @@
 #define FIZMO_MESH_3D_HPP
 
 #include <cstddef>
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <utility>
 #include <vector>
 #include "color.hpp"
@@ -109,6 +112,31 @@ struct CompactVertex3D {
 
 static_assert(sizeof(CompactVertex3D) == 20, "CompactVertex3D layout is shared with the GPU pipeline");
 
+constexpr std::size_t CELL_FACE_GROUPS = 7;
+
+using FaceMask = std::uint8_t;
+constexpr FaceMask ALL_FACE_GROUPS = static_cast<FaceMask>((1u << CELL_FACE_GROUPS) - 1u);
+
+constexpr FaceMask face_bit(CellFace f) noexcept { return static_cast<FaceMask>(1u << static_cast<unsigned>(f)); }
+
+inline FaceMask facing_faces(const vector3d& eye, const vector3d& lo, const vector3d& hi) noexcept {
+    FaceMask m = face_bit(CellFace::None);
+    if (eye.x < hi.x) m |= face_bit(CellFace::NegX);
+    if (eye.x > lo.x) m |= face_bit(CellFace::PosX);
+    if (eye.y < hi.y) m |= face_bit(CellFace::NegY);
+    if (eye.y > lo.y) m |= face_bit(CellFace::PosY);
+    if (eye.z < hi.z) m |= face_bit(CellFace::NegZ);
+    if (eye.z > lo.z) m |= face_bit(CellFace::PosZ);
+    return m;
+}
+
+struct QuadRange {
+    std::uint32_t first = 0;
+    std::uint32_t count = 0;
+};
+
+using FaceGroups = std::array<QuadRange, CELL_FACE_GROUPS>;
+
 class QuadMesh3D {
 public:
     static constexpr std::size_t VERTICES_PER_QUAD = 4;
@@ -118,15 +146,54 @@ public:
 
     void add_quad(const CompactVertex3D& a, const CompactVertex3D& b, const CompactVertex3D& c, const CompactVertex3D& d) {
         m_vertices.push_back(a); m_vertices.push_back(b); m_vertices.push_back(c); m_vertices.push_back(d);
+        m_grouped = false;
         m_version.touch();
     }
 
-    void clear() noexcept { m_vertices.clear(); m_version.touch(); }
+    void finalize() {
+        const std::size_t quads = quad_count();
+        std::array<std::uint32_t, CELL_FACE_GROUPS> counts{};
+        bool sorted = true;
+        std::size_t last = 0;
+
+        for (std::size_t q = 0; q < quads; ++q) {
+            const std::size_t g = group_of(q);
+            ++counts[g];
+            if (g < last) sorted = false;
+            last = g;
+        }
+
+        std::uint32_t first = 0;
+        for (std::size_t g = 0; g < CELL_FACE_GROUPS; ++g) { m_groups[g] = { first, counts[g] }; first += counts[g]; }
+
+        if (!sorted) {
+            std::vector<CompactVertex3D> out(m_vertices.size());
+            std::array<std::uint32_t, CELL_FACE_GROUPS> cursor{};
+            for (std::size_t g = 0; g < CELL_FACE_GROUPS; ++g) cursor[g] = m_groups[g].first;
+
+            for (std::size_t q = 0; q < quads; ++q) {
+                const std::size_t dst = cursor[group_of(q)]++;
+                std::copy_n(&m_vertices[q * VERTICES_PER_QUAD], VERTICES_PER_QUAD, &out[dst * VERTICES_PER_QUAD]);
+            }
+
+            m_vertices.swap(out);
+        }
+
+        m_vertices.shrink_to_fit();
+        m_grouped = true;
+        m_version.touch();
+    }
+
+    bool              grouped() const noexcept { return m_grouped; }
+    const FaceGroups& groups()  const noexcept { return m_groups; }
+    QuadRange         group(CellFace f) const noexcept { return m_groups[static_cast<std::size_t>(f)]; }
+
+    void clear() noexcept { m_vertices.clear(); m_groups = {}; m_grouped = false; m_version.touch(); }
     void reserve(std::size_t quads) { m_vertices.reserve(quads * VERTICES_PER_QUAD); }
     void shrink_to_fit() { m_vertices.shrink_to_fit(); }
 
     const std::vector<CompactVertex3D>& vertices() const noexcept { return m_vertices; }
-    std::vector<CompactVertex3D>& edit_vertices() noexcept { m_version.touch(); return m_vertices; }
+    std::vector<CompactVertex3D>& edit_vertices() noexcept { m_grouped = false; m_version.touch(); return m_vertices; }
     void touch() noexcept { m_version.touch(); }
 
     bool          empty()        const noexcept { return m_vertices.size() < VERTICES_PER_QUAD; }
@@ -143,9 +210,28 @@ public:
     }
 
 private:
+    std::size_t group_of(std::size_t quad) const noexcept {
+        const auto f = static_cast<std::size_t>(m_vertices[quad * VERTICES_PER_QUAD].face);
+        return f < CELL_FACE_GROUPS ? f : CELL_FACE_GROUPS - 1;
+    }
+
     std::vector<CompactVertex3D> m_vertices;
+    FaceGroups                   m_groups{};
+    bool                         m_grouped = false;
     ContentVersion               m_version;
 };
+
+struct Instance3D {
+    float         x = 0.0f, y = 0.0f, z = 0.0f;
+    float         scale = 1.0f;
+    std::uint32_t rgba  = 0xFFFFFFFFu;
+
+    constexpr Instance3D() noexcept = default;
+    Instance3D(float px, float py, float pz, float s, const Color& c) noexcept
+        : x(px), y(py), z(pz), scale(s), rgba(Vertex3D::pack(c)) {}
+};
+
+static_assert(sizeof(Instance3D) == 20, "Instance3D layout is shared with the GPU pipeline");
 
 enum class Cull3D  : std::uint8_t { Back = 0, None, Front };   
 enum class Blend3D : std::uint8_t { Opaque = 0, Alpha, Additive };
@@ -217,16 +303,49 @@ private:
 
 namespace detail {
 
-struct MeshSlot3D {
+class MeshReleaseQueue {
+public:
+    void push(std::uint64_t key) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_keys.push_back(key);
+    }
+
+    template <typename Fn>
+    void drain(Fn&& fn) {
+        std::vector<std::uint64_t> keys;
+
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_keys.empty()) return;
+            keys.swap(m_keys);
+        }
+
+        for (std::uint64_t k : keys) fn(k);
+    }
+
+private:
+    std::mutex                 m_mutex;
+    std::vector<std::uint64_t> m_keys;
+};
+
+struct MeshSlot3D : std::enable_shared_from_this<MeshSlot3D> {
     bool          quads         = false;
     bool          keep_cpu      = false;
     bool          resident      = false;
     bool          lost          = false;
     std::uint64_t owner_epoch   = 0;
     std::uint64_t gpu_bytes     = 0;
+    std::uint64_t gpu_key       = 0;
     std::size_t   element_count = 0;
+    FaceGroups    groups{};
     Mesh3D        mesh;
     QuadMesh3D    quad_mesh;
+    std::shared_ptr<MeshReleaseQueue> release;
+
+    MeshSlot3D() = default;
+    MeshSlot3D(const MeshSlot3D&) = delete;
+    MeshSlot3D& operator=(const MeshSlot3D&) = delete;
+    ~MeshSlot3D() { if (release && gpu_key) release->push(gpu_key); }
 
     bool has_cpu_data() const noexcept { return quads ? !quad_mesh.empty() : !mesh.empty(); }
     std::size_t cpu_bytes() const noexcept { return quads ? quad_mesh.memory_bytes() : mesh.memory_bytes(); }
@@ -259,7 +378,9 @@ public:
         h.m_slot = std::make_shared<detail::MeshSlot3D>();
         h.m_slot->quads = true;
         h.m_slot->keep_cpu = keep_cpu_copy;
+        if (!quads.grouped()) quads.finalize();
         h.m_slot->element_count = quads.quad_count();
+        h.m_slot->groups = quads.groups();
         h.m_slot->quad_mesh = std::move(quads);
         return h;
     }
@@ -275,12 +396,41 @@ public:
     std::size_t   cpu_bytes()      const noexcept { return m_slot ? m_slot->cpu_bytes() : 0; }
     std::uint64_t gpu_bytes()      const noexcept { return m_slot ? m_slot->gpu_bytes : 0; }
 
+    const FaceGroups& groups() const noexcept {
+        static const FaceGroups none{};
+        return m_slot ? m_slot->groups : none;
+    }
+
     void reset() noexcept { m_slot.reset(); }
 
     const std::shared_ptr<detail::MeshSlot3D>& slot() const noexcept { return m_slot; }
 
 private:
     std::shared_ptr<detail::MeshSlot3D> m_slot;
+};
+
+class QuadBatch3D {
+public:
+    struct Item {
+        detail::MeshSlot3D* slot;
+        vector3d            offset;
+        FaceMask            faces;
+    };
+
+    void clear() noexcept { m_items.clear(); }
+    void reserve(std::size_t n) { m_items.reserve(n); }
+
+    void add(const MeshHandle3D& mesh, const vector3d& offset, FaceMask faces = ALL_FACE_GROUPS) {
+        if (!mesh.valid() || !mesh.is_quads() || faces == 0) return;
+        m_items.push_back({ mesh.slot().get(), offset, faces });
+    }
+
+    const std::vector<Item>& items() const noexcept { return m_items; }
+    std::size_t size()  const noexcept { return m_items.size(); }
+    bool        empty() const noexcept { return m_items.empty(); }
+
+private:
+    std::vector<Item> m_items;
 };
 
 } // namespace graphics

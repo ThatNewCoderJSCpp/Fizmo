@@ -150,6 +150,7 @@ enum class Format : std::uint32_t {
     RG32Float        = VK_FORMAT_R32G32_SFLOAT,
     RGB32Float       = VK_FORMAT_R32G32B32_SFLOAT,
     RGBA32Float      = VK_FORMAT_R32G32B32A32_SFLOAT,
+    RGB32Sint        = VK_FORMAT_R32G32B32_SINT,
     D16Unorm         = VK_FORMAT_D16_UNORM,
     D32Float         = VK_FORMAT_D32_SFLOAT,
     D24UnormS8Uint   = VK_FORMAT_D24_UNORM_S8_UINT,

@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstdint>
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -373,6 +374,55 @@ public:
         m_impl->draw_handle_3d(mesh.slot(), m, cell, material);
     }
 
+    void draw_quad_batch(const graphics::QuadBatch3D& batch, const graphics::Material3D& material = {}) noexcept {
+        if (!m_impl || batch.empty()) return;
+
+        try {
+            std::int64_t camera_cell[3];
+            float camera_frac[3];
+
+            for (int a = 0; a < 3; ++a) {
+                const double c = axis(m_origin_3d, a), f = std::floor(c);
+                camera_cell[a] = static_cast<std::int64_t>(f);
+                camera_frac[a] = static_cast<float>(c - f);
+            }
+
+            m_batch_scratch.clear();
+            m_batch_scratch.reserve(batch.size());
+
+            for (const graphics::QuadBatch3D::Item& item : batch.items()) {
+                detail::QuadBatchDraw d;
+                d.slot  = item.slot;
+                d.faces = item.faces;
+
+                for (int a = 0; a < 3; ++a) {
+                    const double o = axis(item.offset, a), f = std::floor(o);
+                    const std::int64_t cell = static_cast<std::int64_t>(f);
+                    d.abs_cell[a] = clamp_i32(cell);
+                    d.rel_cell[a] = clamp_i32(cell - camera_cell[a]);
+                    d.frac[a]     = static_cast<float>(o - f);
+                }
+
+                m_batch_scratch.push_back(d);
+            }
+
+            m_impl->draw_quad_batch_3d(m_batch_scratch.data(), m_batch_scratch.size(), camera_frac, material);
+        } catch (...) {}
+    }
+
+    void draw_instances(const graphics::Mesh3D& mesh, const vector3d& origin, const graphics::Instance3D* instances,
+                        std::size_t count, const graphics::Material3D& material = {}) noexcept {
+        if (!m_impl || !instances || count == 0) return;
+        float m[16];
+        to_origin_relative(translation(origin), m);
+        m_impl->draw_instances_3d(mesh, m, instances, count, material);
+    }
+
+    void draw_instances(const graphics::Mesh3D& mesh, const vector3d& origin, const std::vector<graphics::Instance3D>& instances,
+                        const graphics::Material3D& material = {}) noexcept {
+        draw_instances(mesh, origin, instances.data(), instances.size(), material);
+    }
+
     std::uint64_t gpu_mesh_bytes() const noexcept { return m_impl ? m_impl->gpu_mesh_bytes() : 0; }
 
     void draw_triangles_3d(const graphics::Vertex3D* vertices, std::size_t count, const graphics::Material3D& material = {}) noexcept {
@@ -452,6 +502,13 @@ private:
         return m;
     }
 
+    static double axis(const vector3d& v, int a) noexcept { return a == 0 ? v.x : (a == 1 ? v.y : v.z); }
+
+    static std::int32_t clamp_i32(std::int64_t v) noexcept {
+        constexpr std::int64_t lo = std::numeric_limits<std::int32_t>::min(), hi = std::numeric_limits<std::int32_t>::max();
+        return static_cast<std::int32_t>(v < lo ? lo : (v > hi ? hi : v));
+    }
+
     static void cell_origin(const vector3d& offset, std::int32_t* out) noexcept {
         out[0] = static_cast<std::int32_t>(std::floor(offset.x));
         out[1] = static_cast<std::int32_t>(std::floor(offset.y));
@@ -465,6 +522,7 @@ private:
 
     vector3d              m_origin_3d{};
     std::vector<vector3d> m_line_scratch;
+    std::vector<detail::QuadBatchDraw> m_batch_scratch;
 
     struct ResolvedRect { int x; int y; unsigned int w; unsigned int h; };
 
