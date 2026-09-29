@@ -9,6 +9,7 @@
 #include "../Source/Graphics/camera_3d.hpp"
 #include "../Source/Graphics/mesh.hpp"
 #include "../Source/Graphics/ray.hpp"
+#include "../Source/Graphics/lighting_3d.hpp"
 
 #include "../Source/Vulkan/include.hpp"
 
