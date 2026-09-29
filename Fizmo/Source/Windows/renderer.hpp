@@ -19,6 +19,8 @@
     #include "Renderer Impl/renderer_linux_impl.hpp"
 #endif
 
+#include <cmath>
+#include <cstdint>
 #include <initializer_list>
 #include <memory>
 #include <vector>
@@ -327,6 +329,52 @@ public:
         draw_mesh(mesh, translation(offset), material);
     }
 
+    void draw_quads(const graphics::QuadMesh3D& quads, const math::Matrix4d& model, const graphics::Material3D& material = {}) noexcept {
+        if (!m_impl) return;
+        float m[16];
+        to_origin_relative(model, m);
+        m_impl->draw_quads_3d(quads, m, nullptr, material);
+    }
+
+    void draw_quads_at(const graphics::QuadMesh3D& quads, const vector3d& offset, const graphics::Material3D& material = {}) noexcept {
+        if (!m_impl) return;
+        float m[16];
+        std::int32_t cell[3];
+        to_origin_relative(translation(offset), m);
+        cell_origin(offset, cell);
+        m_impl->draw_quads_3d(quads, m, cell, material);
+    }
+
+    graphics::MeshHandle3D upload_mesh(graphics::Mesh3D mesh, bool keep_cpu_copy = false) {
+        graphics::MeshHandle3D h = graphics::MeshHandle3D::from(std::move(mesh), keep_cpu_copy);
+        if (m_impl && !h.empty()) m_impl->upload_handle_3d(h.slot());
+        return h;
+    }
+
+    graphics::MeshHandle3D upload_quads(graphics::QuadMesh3D quads, bool keep_cpu_copy = false) {
+        graphics::MeshHandle3D h = graphics::MeshHandle3D::from(std::move(quads), keep_cpu_copy);
+        if (m_impl && !h.empty()) m_impl->upload_handle_3d(h.slot());
+        return h;
+    }
+
+    void draw_mesh(const graphics::MeshHandle3D& mesh, const math::Matrix4d& model, const graphics::Material3D& material = {}) noexcept {
+        if (!m_impl || mesh.empty()) return;
+        float m[16];
+        to_origin_relative(model, m);
+        m_impl->draw_handle_3d(mesh.slot(), m, nullptr, material);
+    }
+
+    void draw_mesh_at(const graphics::MeshHandle3D& mesh, const vector3d& offset, const graphics::Material3D& material = {}) noexcept {
+        if (!m_impl || mesh.empty()) return;
+        float m[16];
+        std::int32_t cell[3];
+        to_origin_relative(translation(offset), m);
+        cell_origin(offset, cell);
+        m_impl->draw_handle_3d(mesh.slot(), m, cell, material);
+    }
+
+    std::uint64_t gpu_mesh_bytes() const noexcept { return m_impl ? m_impl->gpu_mesh_bytes() : 0; }
+
     void draw_triangles_3d(const graphics::Vertex3D* vertices, std::size_t count, const graphics::Material3D& material = {}) noexcept {
         if (!m_impl) return;
         float m[16];
@@ -402,6 +450,12 @@ private:
         math::Matrix4d m = math::Matrix4d::identity();
         m.data[3] = t.x; m.data[7] = t.y; m.data[11] = t.z;
         return m;
+    }
+
+    static void cell_origin(const vector3d& offset, std::int32_t* out) noexcept {
+        out[0] = static_cast<std::int32_t>(std::floor(offset.x));
+        out[1] = static_cast<std::int32_t>(std::floor(offset.y));
+        out[2] = static_cast<std::int32_t>(std::floor(offset.z));
     }
 
     void to_origin_relative(const math::Matrix4d& model, float* out) const noexcept {

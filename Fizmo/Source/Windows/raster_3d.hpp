@@ -104,6 +104,84 @@ public:
 
     bool touched() const noexcept { return m_touched; }
 
+    void draw_quads(
+        const graphics::CompactVertex3D* v, std::size_t quads, const float* model,
+        const std::int32_t* cell_origin, const graphics::Material3D& mat
+    ) {
+        if (!v || quads == 0 || m_w <= 0 || m_h <= 0) return;
+        m_quad_scratch.clear();
+
+        for (std::size_t q = 0; q < quads; ++q) {
+            const graphics::CompactVertex3D* c = v + q * graphics::QuadMesh3D::VERTICES_PER_QUAD;
+            expand_quad(c, cell_origin);
+        }
+
+        draw(m_quad_scratch.data(), m_quad_scratch.size(), nullptr, 0, model, mat);
+    }
+
+    static void cell_breaks(double from, double to, std::vector<double>& out) {
+        out.clear();
+        out.push_back(0.0);
+        const double span = to - from;
+
+        if (std::fabs(span) > 1e-9) {
+            const double lo = std::min(from, to), hi = std::max(from, to);
+            for (double k = std::floor(lo) + 1.0; k < hi - 1e-9; k += 1.0) out.push_back((k - from) / span);
+        }
+
+        out.push_back(1.0);
+        std::sort(out.begin(), out.end());
+    }
+
+private:
+    void expand_quad(const graphics::CompactVertex3D* c, const std::int32_t* cell_origin) {
+        const vector3d a = c[0].position(), b = c[1].position(), d = c[3].position();
+        const vector3d n = c[0].normal();
+        const bool lit = (c[0].flags & graphics::CompactLit) != 0;
+        const bool tint = c[0].variation > 0 && c[0].face != graphics::CellFace::None;
+        const graphics::Color base = c[0].color();
+
+        auto emit = [&](double s0, double s1, double t0, double t1) {
+            const vector3d p00 = a + (b - a) * s0 + (d - a) * t0;
+            const vector3d p10 = a + (b - a) * s1 + (d - a) * t0;
+            const vector3d p11 = a + (b - a) * s1 + (d - a) * t1;
+            const vector3d p01 = a + (b - a) * s0 + (d - a) * t1;
+            int delta = 0;
+
+            if (tint) {
+                const vector3d mid = (p00 + p11) * 0.5 - n * 0.5;
+                const std::int32_t o[3] = { cell_origin ? cell_origin[0] : 0, cell_origin ? cell_origin[1] : 0, cell_origin ? cell_origin[2] : 0 };
+                delta = graphics::cell_variation(
+                    static_cast<std::int32_t>(std::floor(mid.x)) + o[0],
+                    static_cast<std::int32_t>(std::floor(mid.y)) + o[1],
+                    static_cast<std::int32_t>(std::floor(mid.z)) + o[2], c[0].variation);
+            }
+
+            const graphics::Color col = graphics::cell_tinted(base, delta, c[0].shade);
+            const vector3d vn = lit ? n : vector3d{ 0.0, 0.0, 0.0 };
+            const graphics::Vertex3D w0(p00, vn, col), w1(p10, vn, col), w2(p11, vn, col), w3(p01, vn, col);
+            m_quad_scratch.push_back(w0); m_quad_scratch.push_back(w1); m_quad_scratch.push_back(w2);
+            m_quad_scratch.push_back(w0); m_quad_scratch.push_back(w2); m_quad_scratch.push_back(w3);
+        };
+
+        if (!tint) { emit(0.0, 1.0, 0.0, 1.0); return; }
+        const int su = axis_of(b - a), sv = axis_of(d - a);
+        cell_breaks(component(a, su), component(b, su), m_breaks_s);
+        cell_breaks(component(a, sv), component(d, sv), m_breaks_t);
+
+        for (std::size_t j = 0; j + 1 < m_breaks_t.size(); ++j)
+            for (std::size_t i = 0; i + 1 < m_breaks_s.size(); ++i)
+                emit(m_breaks_s[i], m_breaks_s[i + 1], m_breaks_t[j], m_breaks_t[j + 1]);
+    }
+
+    static int axis_of(const vector3d& e) noexcept {
+        const double ax = std::fabs(e.x), ay = std::fabs(e.y), az = std::fabs(e.z);
+        return ax >= ay && ax >= az ? 0 : (ay >= az ? 1 : 2);
+    }
+
+    static double component(const vector3d& p, int axis) noexcept { return axis == 0 ? p.x : (axis == 1 ? p.y : p.z); }
+
+public:
     void resolve(std::vector<graphics::Color>& out) const {
         const std::size_t n = m_depth.size();
         out.resize(n);
@@ -303,6 +381,8 @@ private:
     int                m_w = 0, m_h = 0;
     std::vector<float> m_color;   
     std::vector<float> m_depth;
+    std::vector<graphics::Vertex3D> m_quad_scratch;
+    std::vector<double> m_breaks_s, m_breaks_t;
     float              m_light[3] = { 0.0f, -1.0f, 0.0f };
     float              m_ambient = 1.0f, m_diffuse = 0.0f;
     bool               m_touched = false;

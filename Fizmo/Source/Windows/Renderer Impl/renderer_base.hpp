@@ -237,6 +237,33 @@ public:
         try { m_soft3d->draw(v, count, nullptr, 0, model, mat); } catch (...) {}
     }
 
+    virtual void draw_quads_3d(const graphics::QuadMesh3D& quads, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) noexcept {
+        if (!m_in_3d || quads.empty()) return;
+        try { m_soft3d->draw_quads(quads.vertices().data(), quads.quad_count(), model, cell_origin, mat); } catch (...) {}
+    }
+
+    virtual void upload_handle_3d(const std::shared_ptr<graphics::detail::MeshSlot3D>& slot) noexcept {
+        if (!slot) return;
+        slot->owner_epoch = m_epoch;
+        slot->resident = false;
+        if (!slot->has_cpu_data()) slot->lost = slot->element_count > 0;
+    }
+
+    virtual void draw_handle_3d(const std::shared_ptr<graphics::detail::MeshSlot3D>& slot, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) noexcept {
+        if (!m_in_3d || !slot || slot->element_count == 0) return;
+        if (!slot->has_cpu_data()) { slot->lost = true; return; }
+
+        try {
+            if (slot->quads) {
+                m_soft3d->draw_quads(slot->quad_mesh.vertices().data(), slot->quad_mesh.quad_count(), model, cell_origin, mat);
+            } else {
+                const auto& v = slot->mesh.vertices();
+                const auto& i = slot->mesh.indices();
+                m_soft3d->draw(v.data(), v.size(), slot->mesh.indexed() ? i.data() : nullptr, i.size(), model, mat);
+            }
+        } catch (...) {}
+    }
+
     virtual void draw_lines_3d(const vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test) noexcept {
         if (!m_in_3d || !pts || count < 2) return;
         try { m_soft3d->lines(pts, count, color, width, depth_test); } catch (...) {}
@@ -244,12 +271,15 @@ public:
 
     bool in_3d() const noexcept { return m_in_3d; }
 
+    virtual std::uint64_t gpu_mesh_bytes() const noexcept { return 0; }
+
 protected:
     graphics::Light3D                     m_light3d;
     bool                                  m_in_3d = false;
     std::unique_ptr<SoftwareRasterizer3D> m_soft3d;
     std::vector<graphics::Color>          m_soft3d_pixels;
     std::uint64_t                         m_soft3d_version = 0;
+    const std::uint64_t                   m_epoch = next_content_version();
 
 public:
 
@@ -420,7 +450,6 @@ private:
         result.ascent  = lines.front().ascent;
         result.descent = lines.front().descent;
         if (!draw) return result;
-
         const text::TextAlign align = para.has_text_align() ? para.text_align() : text::TextAlign::Left;
         const int region = w > 0 ? static_cast<int>(w) : widest;
         int top = y;

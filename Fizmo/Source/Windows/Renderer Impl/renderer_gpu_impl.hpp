@@ -184,6 +184,12 @@ private:
         std::unique_ptr<vulkan::Buffer> vertices, indices;
         std::uint64_t stamp = 0, last_used = 0, bytes = 0;
         std::uint32_t vertex_count = 0, index_count = 0;
+        bool          quads = false;
+    };
+
+    struct HandleMesh {
+        std::weak_ptr<graphics::detail::MeshSlot3D> slot;
+        GpuMesh                                    mesh;
     };
 
     struct BufferUpload {
@@ -208,6 +214,7 @@ private:
         const vulkan::ImageView* view    = nullptr;
         std::uint8_t             sampler = NearestClamp;
         float                    push[32] = {};
+        bool                     quads   = false;
     };
 
     struct SceneRec {
@@ -277,6 +284,13 @@ private:
     std::unordered_map<std::uint32_t, vulkan::Pipeline> m_pipelines3d;
     std::unordered_map<const void*, GpuMesh> m_meshes;
     std::uint64_t                 m_mesh_bytes = 0;
+    vulkan::ShaderModule          m_quad_vs, m_quad_fs;
+    std::unique_ptr<vulkan::Buffer> m_quad_indices;
+    std::uint64_t                 m_quad_index_capacity = 0;
+    bool                          m_quad_index_pending  = false;
+    std::unordered_map<const graphics::detail::MeshSlot3D*, HandleMesh> m_handle_meshes;
+    std::vector<std::shared_ptr<graphics::detail::MeshSlot3D>> m_handle_uploads;
+    std::uint64_t                 m_handle_bytes = 0;
     std::vector<RetiredBuffer>    m_retired_buffers;
     std::vector<BufferUpload>     m_buffer_uploads;
     std::vector<graphics::Vertex3D>  m_vertices3d;
@@ -316,8 +330,13 @@ public:
         m_retired.clear();
         m_meshes.clear();
         m_mesh_bytes = 0;
+        lose_handles();
+        m_quad_indices.reset();
+        m_quad_index_capacity = 0;
+        m_quad_index_pending = false;
         m_retired_buffers.clear();
         m_pipelines3d.clear();
+        m_quad_fs.destroy(); m_quad_vs.destroy();
         m_line_fs.destroy(); m_line_vs.destroy(); m_mesh_fs.destroy(); m_mesh_vs.destroy();
         m_line_layout.destroy(); m_mesh_layout.destroy();
         m_depth.destroy();
@@ -787,6 +806,59 @@ public:
         } catch (...) {}
     }
 
+    void draw_quads_3d(const graphics::QuadMesh3D& quads, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) noexcept override {
+        if (!m_ready || !m_in_3d || quads.empty()) return;
+
+        try {
+            GpuMesh* g = quads_for(quads);
+            if (!g) return;
+            push_quad_draw(*g, model, cell_origin, mat);
+        } catch (...) {}
+    }
+
+    void upload_handle_3d(const std::shared_ptr<graphics::detail::MeshSlot3D>& slot) noexcept override {
+        if (!m_ready) { RendererImplBase::upload_handle_3d(slot); return; }
+        if (!slot || slot->element_count == 0) return;
+        if (slot->owner_epoch == m_epoch && m_handle_meshes.count(slot.get())) return;
+        if (!slot->has_cpu_data()) { slot->lost = true; return; }
+
+        try { upload_slot(slot); } catch (...) {}
+    }
+
+    void draw_handle_3d(const std::shared_ptr<graphics::detail::MeshSlot3D>& slot, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) noexcept override {
+        if (!m_ready) { RendererImplBase::draw_handle_3d(slot, model, cell_origin, mat); return; }
+        if (!m_in_3d || !slot || slot->element_count == 0 || slot->lost) return;
+
+        try {
+            auto it = m_handle_meshes.find(slot.get());
+
+            if (it == m_handle_meshes.end() || slot->owner_epoch != m_epoch) {
+                if (!slot->has_cpu_data()) { slot->lost = true; return; }
+                if (!upload_slot(slot)) return;
+                it = m_handle_meshes.find(slot.get());
+                if (it == m_handle_meshes.end()) return;
+            }
+
+            GpuMesh& g = it->second.mesh;
+            g.last_used = m_frame_serial;
+
+            if (g.quads) {
+                push_quad_draw(g, model, cell_origin, mat);
+                return;
+            }
+
+            Draw3D d;
+            d.kind  = DrawKind3D::Mesh;
+            d.mesh  = &g;
+            d.count = g.index_count ? g.index_count : g.vertex_count;
+            if (!material(d, mat)) return;
+            mesh_push(d, model);
+            m_draws3d.push_back(d);
+        } catch (...) {}
+    }
+
+    std::uint64_t gpu_mesh_bytes() const noexcept override { return m_mesh_bytes + m_handle_bytes; }
+
     void release_mesh(const graphics::Mesh3D& mesh) noexcept {
         auto it = m_meshes.find(&mesh);
         if (it == m_meshes.end()) return;
@@ -798,6 +870,161 @@ private:
     static constexpr std::uint32_t kDepthTest  = 1u << 4;
     static constexpr std::uint32_t kDepthWrite = 1u << 5;
     static constexpr std::uint32_t kLines      = 1u << 6;
+    static constexpr std::uint32_t kQuads      = 1u << 7;
+    static constexpr std::uint64_t kMinQuadIndexCapacity = 16384;
+
+    void push_quad_draw(GpuMesh& g, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) {
+        if (!ensure_quad_indices(g.vertex_count / graphics::QuadMesh3D::VERTICES_PER_QUAD)) return;
+        Draw3D d;
+        d.kind  = DrawKind3D::Mesh;
+        d.mesh  = &g;
+        d.quads = true;
+        d.count = g.index_count;
+        if (!material(d, mat)) return;
+        d.state |= kQuads;
+        mesh_push(d, model);
+
+        for (int r = 0; r < 3; ++r) {
+            const std::int32_t c = cell_origin ? cell_origin[r] : 0;
+            std::memcpy(&d.push[16 + r * 4 + 3], &c, sizeof(c));
+        }
+
+        m_draws3d.push_back(d);
+    }
+
+    bool ensure_quad_indices(std::uint64_t quads) {
+        if (quads <= m_quad_index_capacity && m_quad_indices) return true;
+        const std::uint64_t capacity = std::max<std::uint64_t>({ quads, m_quad_index_capacity * 2, kMinQuadIndexCapacity });
+        const std::uint64_t bytes = capacity * graphics::QuadMesh3D::INDICES_PER_QUAD * sizeof(std::uint32_t);
+        auto buffer = std::make_unique<vulkan::Buffer>();
+        if (failed(buffer->create(m_device, { bytes, vulkan::BufferUsage::Index, vulkan::MemoryUsage::GpuOnly, "fizmo quad indices" }))) return false;
+        const std::size_t offset = staging_reserve(static_cast<std::size_t>(bytes));
+        std::uint32_t* out = reinterpret_cast<std::uint32_t*>(m_staging.data() + offset);
+        graphics::QuadMesh3D::for_each_quad_index(static_cast<std::size_t>(capacity), [&out](std::uint32_t i) { *out++ = i; });
+        if (m_quad_indices) m_retired_buffers.push_back({ m_frame_serial, std::move(m_quad_indices) });
+        m_quad_indices = std::move(buffer);
+        m_quad_index_capacity = capacity;
+        m_quad_index_pending = true;
+        m_buffer_uploads.push_back({ m_quad_indices.get(), offset, bytes, nullptr });
+        return true;
+    }
+
+    bool create_gpu_buffers(GpuMesh& g, const void* vdata, std::uint64_t vbytes, const void* idata, std::uint64_t ibytes, bool track_owner) {
+        g.vertices = std::make_unique<vulkan::Buffer>();
+        if (failed(g.vertices->create(m_device, { vbytes, vulkan::BufferUsage::Vertex, vulkan::MemoryUsage::GpuOnly, "fizmo mesh vertices" }))) return false;
+
+        if (ibytes) {
+            g.indices = std::make_unique<vulkan::Buffer>();
+            if (failed(g.indices->create(m_device, { ibytes, vulkan::BufferUsage::Index, vulkan::MemoryUsage::GpuOnly, "fizmo mesh indices" }))) return false;
+        }
+
+        g.bytes = vbytes + ibytes;
+        m_buffer_uploads.push_back({ g.vertices.get(), push_staging(vdata, static_cast<std::size_t>(vbytes)), vbytes, track_owner ? &g : nullptr });
+        if (ibytes) m_buffer_uploads.push_back({ g.indices.get(), push_staging(idata, static_cast<std::size_t>(ibytes)), ibytes, track_owner ? &g : nullptr });
+        return true;
+    }
+
+    GpuMesh* quads_for(const graphics::QuadMesh3D& quads) {
+        const std::uint64_t stamp = quads.version();
+        auto it = m_meshes.find(&quads);
+        if (it != m_meshes.end() && it->second.stamp == stamp) { it->second.last_used = m_frame_serial; return &it->second; }
+        const auto& verts = quads.vertices();
+        const std::uint64_t vbytes = verts.size() * sizeof(graphics::CompactVertex3D);
+        GpuMesh fresh;
+        fresh.quads        = true;
+        fresh.stamp        = stamp;
+        fresh.last_used    = m_frame_serial;
+        fresh.vertex_count = static_cast<std::uint32_t>(verts.size());
+        fresh.index_count  = static_cast<std::uint32_t>(quads.quad_count() * graphics::QuadMesh3D::INDICES_PER_QUAD);
+        GpuMesh* g = nullptr;
+        if (it != m_meshes.end()) { retire(it->second); it->second = std::move(fresh); g = &it->second; }
+        else g = &m_meshes.emplace(&quads, std::move(fresh)).first->second;
+        if (!create_gpu_buffers(*g, verts.data(), vbytes, nullptr, 0, true)) { m_meshes.erase(&quads); return nullptr; }
+        m_mesh_bytes += g->bytes;
+        return g;
+    }
+
+    bool upload_slot(const std::shared_ptr<graphics::detail::MeshSlot3D>& slot) {
+        auto it = m_handle_meshes.find(slot.get());
+        if (it != m_handle_meshes.end()) { retire_handle(it->second.mesh); m_handle_meshes.erase(it); }
+        HandleMesh h;
+        h.slot = slot;
+        h.mesh.quads     = slot->quads;
+        h.mesh.last_used = m_frame_serial;
+        bool ok = false;
+
+        if (slot->quads) {
+            const auto& verts = slot->quad_mesh.vertices();
+            h.mesh.vertex_count = static_cast<std::uint32_t>(verts.size());
+            h.mesh.index_count  = static_cast<std::uint32_t>(slot->quad_mesh.quad_count() * graphics::QuadMesh3D::INDICES_PER_QUAD);
+            ok = create_gpu_buffers(h.mesh, verts.data(), verts.size() * sizeof(graphics::CompactVertex3D), nullptr, 0, false);
+        } else {
+            const auto& verts = slot->mesh.vertices();
+            const auto& idx   = slot->mesh.indices();
+            h.mesh.vertex_count = static_cast<std::uint32_t>(verts.size());
+            h.mesh.index_count  = static_cast<std::uint32_t>(idx.size());
+            ok = create_gpu_buffers(h.mesh, verts.data(), verts.size() * sizeof(graphics::Vertex3D), idx.data(), idx.size() * sizeof(std::uint32_t), false);
+        }
+
+        if (!ok) return false;
+        slot->owner_epoch = m_epoch;
+        slot->gpu_bytes   = h.mesh.bytes;
+        slot->resident    = false;
+        slot->lost        = false;
+        m_handle_bytes += h.mesh.bytes;
+        m_handle_meshes.emplace(slot.get(), std::move(h));
+        m_handle_uploads.push_back(slot);
+        return true;
+    }
+
+    void retire_handle(GpuMesh& g) {
+        m_handle_bytes -= std::min(m_handle_bytes, g.bytes);
+        if (g.vertices) m_retired_buffers.push_back({ m_frame_serial, std::move(g.vertices) });
+        if (g.indices)  m_retired_buffers.push_back({ m_frame_serial, std::move(g.indices) });
+        g.bytes = 0;
+    }
+
+    void commit_handle_uploads() noexcept {
+        for (const auto& slot : m_handle_uploads) {
+            slot->resident = true;
+            slot->drop_cpu_data();
+        }
+
+        m_handle_uploads.clear();
+        m_quad_index_pending = false;
+    }
+
+    void abandon_handle_uploads() noexcept {
+        for (const auto& slot : m_handle_uploads) {
+            auto it = m_handle_meshes.find(slot.get());
+            if (it != m_handle_meshes.end()) { retire_handle(it->second.mesh); m_handle_meshes.erase(it); }
+            slot->owner_epoch = 0;
+            slot->resident = false;
+        }
+
+        m_handle_uploads.clear();
+
+        if (m_quad_index_pending) {
+            if (m_quad_indices) m_retired_buffers.push_back({ m_frame_serial, std::move(m_quad_indices) });
+            m_quad_index_capacity = 0;
+            m_quad_index_pending = false;
+        }
+    }
+
+    void lose_handles() noexcept {
+        for (auto& kv : m_handle_meshes) {
+            if (auto slot = kv.second.slot.lock()) {
+                slot->resident = false;
+                slot->owner_epoch = 0;
+                slot->gpu_bytes = 0;
+                if (!slot->has_cpu_data()) slot->lost = true;
+            }
+        }
+
+        m_handle_meshes.clear();
+        m_handle_uploads.clear();
+        m_handle_bytes = 0;
+    }
 
     static std::uint32_t state_for(const graphics::Material3D& m) noexcept {
         return static_cast<std::uint32_t>(m.cull) | (static_cast<std::uint32_t>(m.blend) << 2)
@@ -894,9 +1121,10 @@ private:
         auto it = m_pipelines3d.find(key);
         if (it != m_pipelines3d.end()) return &it->second;
         const bool lines = (key & kLines) != 0;
+        const bool quads = (key & kQuads) != 0;
         vulkan::GraphicsPipelineDesc d;
-        d.vertex_shader   = lines ? &m_line_vs : &m_mesh_vs;
-        d.fragment_shader = lines ? &m_line_fs : &m_mesh_fs;
+        d.vertex_shader   = lines ? &m_line_vs : quads ? &m_quad_vs : &m_mesh_vs;
+        d.fragment_shader = lines ? &m_line_fs : quads ? &m_quad_fs : &m_mesh_fs;
         d.layout          = lines ? &m_line_layout : &m_mesh_layout;
 
         if (lines) {
@@ -907,6 +1135,14 @@ private:
                 { 4, 0, vulkan::Format::R32Float, 32 },
             };
             d.cull_mode = vulkan::CullMode::None;
+        } else if (quads) {
+            d.vertex_bindings   = { { 0, sizeof(graphics::CompactVertex3D), vulkan::VertexRate::PerVertex } };
+            d.vertex_attributes = {
+                { 0, 0, vulkan::Format::RGB32Float, 0 }, { 1, 0, vulkan::Format::RGBA8Unorm, 12 },
+                { 2, 0, vulkan::Format::R32Uint, 16 },
+            };
+            const std::uint32_t cull = key & 3u;
+            d.cull_mode = cull == 1u ? vulkan::CullMode::None : cull == 2u ? vulkan::CullMode::Front : vulkan::CullMode::Back;
         } else {
             d.vertex_bindings   = { { 0, sizeof(graphics::Vertex3D), vulkan::VertexRate::PerVertex } };
             d.vertex_attributes = {
@@ -938,7 +1174,7 @@ private:
             d.blend = { vulkan::BlendState::opaque() };
         }
 
-        d.name = lines ? "fizmo 3d lines" : "fizmo 3d mesh";
+        d.name = lines ? "fizmo 3d lines" : quads ? "fizmo 3d quads" : "fizmo 3d mesh";
         vulkan::Pipeline p;
         if (failed(p.create(m_device, d))) return nullptr;
         return &m_pipelines3d.emplace(key, std::move(p)).first->second;
@@ -1046,6 +1282,8 @@ private:
         if (failed(m_mesh_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kMesh3DFrag, sizeof(gpu::kMesh3DFrag) / 4), "fizmo mesh3d.frag"))) return false;
         if (failed(m_line_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kLine3DVert, sizeof(gpu::kLine3DVert) / 4), "fizmo line3d.vert"))) return false;
         if (failed(m_line_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kLine3DFrag, sizeof(gpu::kLine3DFrag) / 4), "fizmo line3d.frag"))) return false;
+        if (failed(m_quad_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kQuad3DVert, sizeof(gpu::kQuad3DVert) / 4), "fizmo quad3d.vert"))) return false;
+        if (failed(m_quad_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kQuad3DFrag, sizeof(gpu::kQuad3DFrag) / 4), "fizmo quad3d.frag"))) return false;
         vulkan::PipelineLayoutDesc ml;
         ml.set_layouts    = { &m_draw_set_layout };
         ml.push_constants = { { vulkan::ShaderStage::Vertex, 0, 128 } };
@@ -1141,7 +1379,11 @@ private:
     }
 
     void reset_recording() noexcept {
-        if (!m_uploads_committed) for (const BufferUpload& u : m_buffer_uploads) if (u.owner) u.owner->stamp = 0;
+        if (!m_uploads_committed) {
+            for (const BufferUpload& u : m_buffer_uploads) if (u.owner) u.owner->stamp = 0;
+            abandon_handle_uploads();
+        }
+
         m_uploads_committed = false;
         m_buffer_uploads.clear();
         m_scenes.clear();
@@ -1597,6 +1839,11 @@ private:
             else ++it;
         }
 
+        for (auto it = m_handle_meshes.begin(); it != m_handle_meshes.end();) {
+            if (it->second.slot.expired()) { retire_handle(it->second.mesh); it = m_handle_meshes.erase(it); }
+            else ++it;
+        }
+
         while (m_mesh_bytes > kMeshBudget) {
             auto oldest = m_meshes.end();
             for (auto it = m_meshes.begin(); it != m_meshes.end(); ++it)
@@ -1768,7 +2015,12 @@ private:
                 if (d.kind == DrawKind3D::Mesh) {
                     if (!d.mesh || !d.mesh->vertices) continue;
                     cmd.bind_vertex_buffer(0, *d.mesh->vertices);
-                    if (d.mesh->indices) { cmd.bind_index_buffer(*d.mesh->indices, vulkan::IndexType::UInt32); cmd.draw_indexed(d.count); }
+                    if (d.quads) {
+                        if (!m_quad_indices) continue;
+                        cmd.bind_index_buffer(*m_quad_indices, vulkan::IndexType::UInt32);
+                        cmd.draw_indexed(d.count);
+                    }
+                    else if (d.mesh->indices) { cmd.bind_index_buffer(*d.mesh->indices, vulkan::IndexType::UInt32); cmd.draw_indexed(d.count); }
                     else cmd.draw(d.count);
                 } else {
                     cmd.bind_vertex_buffer(0, pf.vertices3d);
@@ -1853,6 +2105,7 @@ private:
         }
 
         m_uploads_committed = true;
+        commit_handle_uploads();
         cmd.end_label();
         const bool must_clear = m_clear_pending || m_target_fresh;
 
