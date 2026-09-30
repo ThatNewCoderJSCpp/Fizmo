@@ -192,8 +192,10 @@ private:
                 }
 
                 case WM_KEYDOWN:
-                case WM_KEYUP: {
-                    event.type = (uMsg == WM_KEYDOWN) ? WindowEventType::KeyPress : WindowEventType::KeyRelease;
+                case WM_KEYUP:
+                case WM_SYSKEYDOWN:
+                case WM_SYSKEYUP: {
+                    event.type = (uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN) ? WindowEventType::KeyPress : WindowEventType::KeyRelease;
                     event.key = static_cast<unsigned int>(wParam);
                     bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
                     bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
@@ -248,6 +250,10 @@ private:
                         event.key_name == "Tab" || event.key_name == "Backspace" ||
                         event.key_name == "Escape"
                     ) {
+                        return 0;
+                    }
+
+                    if ((uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP) && (wParam == VK_MENU || wParam == VK_F10)) {
                         return 0;
                     }
 
