@@ -256,6 +256,7 @@ struct Material3D {
     Shadow3D       shadow      = Shadow3D::Cast;
     std::uint32_t  light       = LIGHT_FULL_SKY;
     View3D         view        = View3D::Everywhere;
+    bool           fog         = true;
 
     static Material3D opaque() noexcept { return {}; }
     static Material3D double_sided() noexcept { Material3D m; m.cull = Cull3D::None; return m; }
@@ -267,6 +268,7 @@ struct Material3D {
     Material3D& with_shadow(Shadow3D mode) noexcept { shadow = mode; return *this; }
     Material3D& with_lit(bool on) noexcept { lit = on; return *this; }
     Material3D& with_view(View3D mode) noexcept { view = mode; return *this; }
+    Material3D& with_fog(bool on) noexcept { fog = on; return *this; }
 
     bool visible()        const noexcept { return shadow != Shadow3D::CastOnly; }
     bool camera_visible() const noexcept { return visible() && view != View3D::ReflectionsOnly; }

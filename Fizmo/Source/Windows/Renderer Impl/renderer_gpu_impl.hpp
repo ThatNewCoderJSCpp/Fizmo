@@ -299,7 +299,7 @@ private:
     static constexpr double kAnchorDrift     = 0.5;
     static constexpr int    kAnchorAdvance   = 4;
     static constexpr std::uint32_t kSkyVertices = 3;
-    static constexpr std::uint32_t kFlagLit = 1u, kFlagLegacy = 4u;
+    static constexpr std::uint32_t kFlagLit = 1u, kFlagLegacy = 4u, kFlagNoFog = 64u;
     static constexpr double kPointNear     = 0.05;
     static constexpr double kSunUpLimit    = 0.99;
     static constexpr double kRadiansPerDegree = 3.14159265358979323846 / 180.0;
@@ -1290,7 +1290,7 @@ private:
     static void put_bits(float& slot, std::uint32_t value) noexcept { std::memcpy(&slot, &value, sizeof(value)); }
     static void put_bits(float& slot, std::int32_t value) noexcept { std::memcpy(&slot, &value, sizeof(value)); }
 
-    static std::uint32_t material_flags(const graphics::Material3D& m) noexcept { return m.lit ? kFlagLit : 0u; }
+    static std::uint32_t material_flags(const graphics::Material3D& m) noexcept { return (m.lit ? kFlagLit : 0u) | (m.fog ? 0u : kFlagNoFog); }
 
     void quad_push(Draw3D& d, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) const noexcept {
         mesh_push(d, model, mat);
@@ -2608,7 +2608,12 @@ private:
             if (!sl.wants_copy || !possible) continue;
             const std::size_t end = si + 1 < m_scenes.size() ? m_scenes[si + 1].first_draw : m_draws3d.size();
 
-            for (std::size_t i = sc.first_draw; i < end; ++i) {
+            std::size_t start = sc.first_draw;
+
+            for (std::size_t i = sc.first_draw; i < end; ++i)
+                if (!blended(m_draws3d[i]) && m_draws3d[i].count != 0 && m_draws3d[i].on_camera) start = i + 1;
+
+            for (std::size_t i = start; i < end; ++i) {
                 if (!blended(m_draws3d[i]) || m_draws3d[i].count == 0 || !m_draws3d[i].on_camera) continue;
                 sl.copy = true;
                 sl.copy_at = static_cast<std::uint32_t>(i);

@@ -444,6 +444,17 @@ public:
         draw_triangles_3d(vertices.data(), vertices.size(), material);
     }
 
+    void draw_triangles_3d(const graphics::Vertex3D* vertices, std::size_t count, const math::Matrix4d& model, const graphics::Material3D& material = {}) noexcept {
+        if (!m_impl) return;
+        float m[16];
+        to_origin_relative(model, m);
+        m_impl->draw_triangles_3d(vertices, count, m, material);
+    }
+
+    void draw_triangles_at(const std::vector<graphics::Vertex3D>& vertices, const vector3d& offset, const graphics::Material3D& material = {}) noexcept {
+        draw_triangles_3d(vertices.data(), vertices.size(), translation(offset), material);
+    }
+
     void draw_line_3d(const vector3d& a, const vector3d& b, const graphics::Color& color, float width = 1.0f, bool depth_test = true) noexcept {
         const vector3d pts[2] = { a - m_origin_3d, b - m_origin_3d };
         if (m_impl) m_impl->draw_lines_3d(pts, 2, color, width, depth_test);
