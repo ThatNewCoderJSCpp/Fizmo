@@ -64,14 +64,21 @@ struct SunShadow3D {
     float        normal_offset = 1.5f;
     float        softness      = 1.0f;
     float        strength      = 1.0f;
-    double       angle_step    = 0.25;
+    double       angle_step    = 0.5;
+    bool         crossfade     = true;
+    bool         soft          = false;
+    float        light_size    = 1.5f;
+    float        max_softness  = 12.0f;
+    unsigned int filter_taps   = 4;
 };
 
 struct PointShadows3D {
-    static constexpr unsigned int MAX_LIGHTS = 4;
+    static constexpr unsigned int MAX_LIGHTS = 8;
 
     bool         enabled    = false;
-    unsigned int max_lights = MAX_LIGHTS;
+    unsigned int max_lights = 4;
+    double       fade_distance = 4.0;
+    bool         hide_unshadowed = true;
     unsigned int resolution    = 512;
     float        bias          = 0.04f;
     float        normal_offset = 0.04f;
@@ -102,6 +109,16 @@ struct Volumetrics3D {
     float        density    = 0.02f;
     float        anisotropy = 0.6f;
     float        distance   = 96.0f;
+    float        intensity  = 1.0f;
+    float        near_bias  = 2.0f;
+};
+
+struct LightShafts3D {
+    bool         enabled  = false;
+    unsigned int samples  = 48;
+    float        strength = 0.35f;
+    float        decay    = 0.96f;
+    float        length   = 0.85f;
 };
 
 struct Surfaces3D {
@@ -111,6 +128,13 @@ struct Surfaces3D {
     float reflectivity   = 1.0f;
     float specular_power = 180.0f;
     float specular       = 2.5f;
+    bool  refraction          = false;
+    float refraction_strength = 1.0f;
+    float absorption          = 0.18f;
+    float scattering          = 0.35f;
+    bool  screen_reflections  = false;
+    unsigned int reflection_steps = 32;
+    float reflection_distance = 64.0f;
 };
 
 struct Medium3D {
@@ -150,6 +174,7 @@ struct SceneLighting3D {
     PointShadows3D point_shadows;
     Atmosphere3D   atmosphere;
     Volumetrics3D  volumetrics;
+    LightShafts3D  shafts;
     Surfaces3D     surfaces;
     Medium3D       medium;
     ToneMap3D      tone_map;

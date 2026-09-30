@@ -79,6 +79,7 @@ struct DepthAttachment {
     StoreOp          store  = StoreOp::DontCare;
     ClearDepth       clear;
     bool             has_stencil = false;
+    const ImageView* resolve = nullptr;
 };
 
 struct RenderingDesc {
@@ -140,6 +141,12 @@ public:
             depth.loadOp      = to_vk(desc.depth->load);
             depth.storeOp     = to_vk(desc.depth->store);
             depth.clearValue  = to_vk(desc.depth->clear);
+
+            if (desc.depth->resolve) {
+                depth.resolveMode        = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+                depth.resolveImageView   = desc.depth->resolve->handle();
+                depth.resolveImageLayout = to_vk(desc.depth->layout);
+            }
         }
 
         auto info = detail::make<VkRenderingInfo>(VK_STRUCTURE_TYPE_RENDERING_INFO);
@@ -301,6 +308,16 @@ public:
         region.dstOffsets[1]  = { dst_rect.offset.x + static_cast<std::int32_t>(dst_rect.extent.width),
                                   dst_rect.offset.y + static_cast<std::int32_t>(dst_rect.extent.height), 1 };
         fn().vkCmdBlitImage(m_cmd, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region, to_vk(filter));
+    }
+
+    void copy_image(const Image& src, const Image& dst) const noexcept {
+        VkImageCopy region{};
+        const VkImageAspectFlags aspect = to_vk(src.aspect());
+        region.srcSubresource = { aspect, 0, 0, 1 };
+        region.dstSubresource = { aspect, 0, 0, 1 };
+        const Extent3D e = src.extent();
+        region.extent = { e.width, e.height, e.depth };
+        fn().vkCmdCopyImage(m_cmd, src.handle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst.handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
     }
 
     void clear_color(native::Image image, const ClearColor& color, ImageLayout layout = ImageLayout::TransferDst) const noexcept {
