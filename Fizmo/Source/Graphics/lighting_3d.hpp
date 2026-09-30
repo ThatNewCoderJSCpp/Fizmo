@@ -98,6 +98,9 @@ struct Atmosphere3D {
     float    moon_radius   = 1.6f;
     float    sun_disk      = 6.0f;
     float    moon_disk     = 0.9f;
+    Color    sun_disk_color = Color(255, 232, 150);
+    float    glow_spread   = 6.0f;
+    float    glow_focus    = 64.0f;
     float    stars         = 0.0f;
     float    fog_density   = 0.004f;
     float    fog_start     = 24.0f;
@@ -119,6 +122,7 @@ struct LightShafts3D {
     float        strength = 0.35f;
     float        decay    = 0.96f;
     float        length   = 0.85f;
+    float        focus    = 12.0f;
 };
 
 struct Surfaces3D {
@@ -135,6 +139,24 @@ struct Surfaces3D {
     bool  screen_reflections  = false;
     unsigned int reflection_steps = 32;
     float reflection_distance = 64.0f;
+};
+
+struct ReflectionPlane3D {
+    vector3d point{};
+    vector3d normal{ 0.0, 0.0, 1.0 };
+
+    ReflectionPlane3D() = default;
+    ReflectionPlane3D(const vector3d& at, const vector3d& facing) noexcept : point(at), normal(facing) {}
+};
+
+struct PlanarReflections3D {
+    static constexpr unsigned int MAX_PLANES = 2;
+
+    bool         enabled    = false;
+    unsigned int max_planes = MAX_PLANES;
+    float        resolution = 1.0f;
+    float        distortion = 0.02f;
+    std::vector<ReflectionPlane3D> planes;
 };
 
 struct Medium3D {
@@ -175,6 +197,7 @@ struct SceneLighting3D {
     Atmosphere3D   atmosphere;
     Volumetrics3D  volumetrics;
     LightShafts3D  shafts;
+    PlanarReflections3D planar;
     Surfaces3D     surfaces;
     Medium3D       medium;
     ToneMap3D      tone_map;

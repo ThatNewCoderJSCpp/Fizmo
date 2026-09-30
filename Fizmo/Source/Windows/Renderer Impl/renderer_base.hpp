@@ -244,19 +244,19 @@ public:
     const graphics::SceneLighting3D& scene_lighting() const noexcept { return m_scene_lighting; }
 
     virtual void draw_mesh_3d(const graphics::Mesh3D& mesh, const float* model, const graphics::Material3D& mat) noexcept {
-        if (!m_in_3d || mesh.empty() || !mat.visible()) return;
+        if (!m_in_3d || mesh.empty() || !mat.camera_visible()) return;
         const auto& v = mesh.vertices();
         const auto& i = mesh.indices();
         try { m_soft3d->draw(v.data(), v.size(), mesh.indexed() ? i.data() : nullptr, i.size(), model, mat); } catch (...) {}
     }
 
     virtual void draw_triangles_3d(const graphics::Vertex3D* v, std::size_t count, const float* model, const graphics::Material3D& mat) noexcept {
-        if (!m_in_3d || !v || count < 3 || !mat.visible()) return;
+        if (!m_in_3d || !v || count < 3 || !mat.camera_visible()) return;
         try { m_soft3d->draw(v, count, nullptr, 0, model, mat); } catch (...) {}
     }
 
     virtual void draw_quads_3d(const graphics::QuadMesh3D& quads, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) noexcept {
-        if (!m_in_3d || quads.empty() || !mat.visible()) return;
+        if (!m_in_3d || quads.empty() || !mat.camera_visible()) return;
         try { m_soft3d->draw_quads(quads.vertices().data(), quads.quad_count(), model, cell_origin, mat); } catch (...) {}
     }
 
@@ -268,7 +268,7 @@ public:
     }
 
     virtual void draw_handle_3d(const std::shared_ptr<graphics::detail::MeshSlot3D>& slot, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) noexcept {
-        if (!m_in_3d || !slot || slot->element_count == 0 || !mat.visible()) return;
+        if (!m_in_3d || !slot || slot->element_count == 0 || !mat.camera_visible()) return;
         if (!slot->has_cpu_data()) { slot->lost = true; return; }
 
         try {
@@ -292,7 +292,7 @@ public:
     virtual std::uint64_t gpu_mesh_bytes() const noexcept { return 0; }
 
     virtual void draw_quad_batch_3d(const QuadBatchDraw* items, std::size_t count, const float* camera_frac, const graphics::Material3D& mat) noexcept {
-        if (!m_in_3d || !items || !mat.visible()) return;
+        if (!m_in_3d || !items || !mat.camera_visible()) return;
 
         try {
             for (std::size_t i = 0; i < count; ++i) {
@@ -315,7 +315,7 @@ public:
 
     virtual void draw_instances_3d(const graphics::Mesh3D& mesh, const float* model, const graphics::Instance3D* instances,
                                    std::size_t count, const graphics::Material3D& mat) noexcept {
-        if (!m_in_3d || mesh.empty() || !instances || count == 0 || !mat.visible()) return;
+        if (!m_in_3d || mesh.empty() || !instances || count == 0 || !mat.camera_visible()) return;
 
         try {
             const auto& verts = mesh.vertices();

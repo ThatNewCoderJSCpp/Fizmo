@@ -60,7 +60,8 @@ enum class CellFace : std::uint8_t { NegX = 0, PosX, NegY, PosY, NegZ, PosZ, Non
 enum CompactVertexFlags : std::uint8_t {
     CompactLit    = 1u << 0,
     CompactGlossy = 1u << 1,
-    CompactLiquid = 1u << 2
+    CompactLiquid = 1u << 2,
+    CompactMirror = 1u << 3
 };
 
 inline int cell_variation(std::int32_t x, std::int32_t y, std::int32_t z, unsigned int amount) noexcept {
@@ -243,6 +244,7 @@ static_assert(sizeof(Instance3D) == 24, "Instance3D layout is shared with the GP
 enum class Cull3D  : std::uint8_t { Back = 0, None, Front };   
 enum class Blend3D : std::uint8_t { Opaque = 0, Alpha, Additive };
 enum class Shadow3D : std::uint8_t { Cast = 0, None, CastOnly };
+enum class View3D  : std::uint8_t { Everywhere = 0, CameraOnly, ReflectionsOnly };
 
 struct Material3D {
     const Texture* texture     = nullptr;  
@@ -253,6 +255,7 @@ struct Material3D {
     bool           lit         = true;
     Shadow3D       shadow      = Shadow3D::Cast;
     std::uint32_t  light       = LIGHT_FULL_SKY;
+    View3D         view        = View3D::Everywhere;
 
     static Material3D opaque() noexcept { return {}; }
     static Material3D double_sided() noexcept { Material3D m; m.cull = Cull3D::None; return m; }
@@ -263,8 +266,11 @@ struct Material3D {
     Material3D& with_light(BakedLight baked) noexcept { light = baked.packed(); return *this; }
     Material3D& with_shadow(Shadow3D mode) noexcept { shadow = mode; return *this; }
     Material3D& with_lit(bool on) noexcept { lit = on; return *this; }
+    Material3D& with_view(View3D mode) noexcept { view = mode; return *this; }
 
-    bool visible()      const noexcept { return shadow != Shadow3D::CastOnly; }
+    bool visible()        const noexcept { return shadow != Shadow3D::CastOnly; }
+    bool camera_visible() const noexcept { return visible() && view != View3D::ReflectionsOnly; }
+    bool reflected()      const noexcept { return visible() && view != View3D::CameraOnly; }
     bool casts_shadow() const noexcept { return shadow != Shadow3D::None && blend == Blend3D::Opaque; }
 };
 
