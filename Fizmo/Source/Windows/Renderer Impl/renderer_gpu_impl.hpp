@@ -1796,6 +1796,7 @@ private:
         rec.wants_copy = rec.wants_rays || l.surfaces.refraction || (l.surfaces.screen_reflections && l.surfaces.reflection_steps > 0);
         if (rec.wants_rays) u.counts[1] |= kLightShafts;
         rec.sky = (flags & kAtmosphere) != 0;
+        plan_volume(rec, l, scene);
         return rec;
     }
 
@@ -1823,6 +1824,7 @@ private:
                 clip[row] = m[static_cast<std::size_t>(row * 4)] * r.x + m[static_cast<std::size_t>(row * 4 + 1)] * r.y + m[static_cast<std::size_t>(row * 4 + 2)] * r.z + m[static_cast<std::size_t>(row * 4 + 3)];
             
             if (clip[3] <= kPlaneNearW) return true;
+            clip[1] = -clip[1];
             for (int a = 0; a < 2; ++a) { const double ndc = clip[a] / clip[3]; lo[a] = std::min(lo[a], ndc); hi[a] = std::max(hi[a], ndc); }
         }
 
@@ -1905,10 +1907,10 @@ private:
         u.shafts[0] = l.volumetrics.intensity;
         u.shafts[1] = l.volumetrics.near_bias;
         Mat4f vp = scene.view_proj;
-        std::copy(vp.begin(), vp.end(), u.volume_proj);
         for (int c = 0; c < 4; ++c) vp[static_cast<std::size_t>(4 + c)] = -vp[static_cast<std::size_t>(4 + c)];
         const Mat4f inv = mat4_inverse(vp);
         std::copy(inv.begin(), inv.end(), u.inv_view_proj);
+        std::copy(vp.begin(), vp.end(), u.volume_proj);
         if (a.enabled) flags |= kAtmosphere;
         if (l.volumetrics.enabled && l.volumetrics.steps > 0) flags |= kVolumetric;
         if (l.tone_map.enabled) flags |= kToneMap;
@@ -3697,6 +3699,8 @@ private:
         const ShadowMap& sun_b = sl.sun_blend && m_sun_map_b ? *m_sun_map_b : sun;
         w.image(6, sample_view(sun_b), m_shadow_sampler);
         w.image(7, sample_view(sun_b), m_samplers[NearestClamp]);
+        const bool grid = volume && sl.volume && m_volume;
+        w.image(9, grid ? m_volume->view() : m_dummy_volume.view(), m_samplers[m_volume_sampler]);
 
         for (int k = 0; k < kPointShadowMaps; ++k) {
             const bool used = static_cast<std::uint32_t>(k) < sl.point_count && m_point_maps[static_cast<std::size_t>(k)];
@@ -3826,14 +3830,6 @@ private:
     static bool outside_light(const Caster& c, const float* m, bool point, int face, const float* light) noexcept {
         if (point) {
             if (outside_sphere(c, light)) return true;
-            float dist2 = 0.0f;
-
-            for (int a = 0; a < 3; ++a) {
-                const float v = light[a] < c.lo[a] ? c.lo[a] - light[a] : (light[a] > c.hi[a] ? light[a] - c.hi[a] : 0.0f);
-                dist2 += v * v;
-            }
-
-            if (dist2 >= light[3] * light[3]) return true;
             const int axis = face / 2;
             return (face % 2 == 0) ? c.hi[axis] <= light[axis] : c.lo[axis] >= light[axis];
         }
