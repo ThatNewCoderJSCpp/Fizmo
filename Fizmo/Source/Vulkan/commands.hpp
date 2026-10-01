@@ -330,6 +330,14 @@ public:
         fn().vkCmdFillBuffer(m_cmd, buffer.handle(), offset, size, value);
     }
 
+    void reset_timestamps(const TimestampPool& pool, std::uint32_t first, std::uint32_t count) const noexcept {
+        if (pool.valid() && count > 0) fn().vkCmdResetQueryPool(m_cmd, pool.handle(), first, count);
+    }
+
+    void write_timestamp(const TimestampPool& pool, std::uint32_t index, PipelineStage stage = PipelineStage::AllCommands) const noexcept {
+        if (pool.valid() && index < pool.count()) fn().vkCmdWriteTimestamp2(m_cmd, to_vk(stage), pool.handle(), index);
+    }
+
     void barrier(const ImageBarrier& b) const noexcept {
         auto ib = detail::make<VkImageMemoryBarrier2>(VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2);
         ib.srcStageMask  = to_vk(b.src_stage);

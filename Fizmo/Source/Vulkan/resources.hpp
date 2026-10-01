@@ -382,6 +382,55 @@ struct SamplerDesc {
     }
 };
 
+class TimestampPool {
+private:
+    static constexpr double kNanosecondsPerMs = 1e6;
+
+    FIZMO_VK_UNIQUE(VkQueryPool, vkDestroyQueryPool) m_pool;
+    std::uint32_t m_count = 0;
+    double        m_period_ns = 0.0;
+
+public:
+    TimestampPool() noexcept = default;
+
+    static bool supported(const Device& device) noexcept {
+        if (!device.valid()) return false;
+        const VkPhysicalDeviceLimits& l = device.state()->properties.limits;
+        return l.timestampComputeAndGraphics == VK_TRUE && l.timestampPeriod > 0.0f;
+    }
+
+    Result create(const Device& device, std::uint32_t count, const char* name = nullptr) noexcept {
+        m_pool.reset();
+        m_count = 0;
+        if (!supported(device) || count == 0) return Result::NotInitialized;
+        const auto* d = device.state();
+        auto info = detail::make<VkQueryPoolCreateInfo>(VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO);
+        info.queryType  = VK_QUERY_TYPE_TIMESTAMP;
+        info.queryCount = count;
+        VkQueryPool h = VK_NULL_HANDLE;
+        VkResult r = d->fn.vkCreateQueryPool(d->handle, &info, nullptr, &h);
+        if (r != VK_SUCCESS) return to_result(r);
+        m_pool = { d, h };
+        m_count = count;
+        m_period_ns = static_cast<double>(d->properties.limits.timestampPeriod);
+        if (name) d->set_name(VK_OBJECT_TYPE_QUERY_POOL, reinterpret_cast<std::uint64_t>(h), name);
+        return Result::Success;
+    }
+
+    bool read(std::uint32_t first, std::uint32_t count, std::uint64_t* out) const noexcept {
+        auto* d = m_pool.device();
+        if (!d || count == 0 || first + count > m_count) return false;
+        const VkResult r = d->fn.vkGetQueryPoolResults(d->handle, m_pool.get(), first, count, sizeof(std::uint64_t) * count, out, sizeof(std::uint64_t), VK_QUERY_RESULT_64_BIT);
+        return r == VK_SUCCESS;
+    }
+
+    void destroy() noexcept { m_pool.reset(); m_count = 0; }
+    bool valid() const noexcept { return static_cast<bool>(m_pool); }
+    VkQueryPool handle() const noexcept { return m_pool.get(); }
+    std::uint32_t count() const noexcept { return m_count; }
+    double ticks_to_ms(std::uint64_t ticks) const noexcept { return static_cast<double>(ticks) * m_period_ns / kNanosecondsPerMs; }
+};
+
 class Sampler {
 private:
     FIZMO_VK_UNIQUE(VkSampler, vkDestroySampler) m_sampler;

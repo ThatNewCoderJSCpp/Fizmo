@@ -70,6 +70,7 @@ struct SunShadow3D {
     float        light_size    = 1.5f;
     float        max_softness  = 12.0f;
     unsigned int filter_taps   = 4;
+    double       recenter      = 0.125;
 };
 
 struct PointShadows3D {
@@ -139,6 +140,7 @@ struct Volumetrics3D {
     float        distance   = 96.0f;
     float        intensity  = 1.0f;
     float        near_bias  = 2.0f;
+    unsigned int cell_size  = 8;
 };
 
 struct LightShafts3D {
@@ -169,9 +171,14 @@ struct Surfaces3D {
 struct ReflectionPlane3D {
     vector3d point{};
     vector3d normal{ 0.0, 0.0, 1.0 };
+    vector3d lo{};
+    vector3d hi{};
+    bool     bounded = false;
 
     ReflectionPlane3D() = default;
     ReflectionPlane3D(const vector3d& at, const vector3d& facing) noexcept : point(at), normal(facing) {}
+    ReflectionPlane3D(const vector3d& at, const vector3d& facing, const vector3d& min_corner, const vector3d& max_corner) noexcept
+        : point(at), normal(facing), lo(min_corner), hi(max_corner), bounded(true) {}
 };
 
 struct PlanarReflections3D {

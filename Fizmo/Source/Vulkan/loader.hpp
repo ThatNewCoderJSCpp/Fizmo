@@ -135,7 +135,12 @@
     X(vkCmdBlitImage)                           \
     X(vkCmdClearColorImage)                     \
     X(vkCmdFillBuffer)                          \
-    X(vkCmdUpdateBuffer)
+    X(vkCmdUpdateBuffer)                        \
+    X(vkCreateQueryPool)                        \
+    X(vkDestroyQueryPool)                       \
+    X(vkGetQueryPoolResults)                    \
+    X(vkCmdResetQueryPool)                      \
+    X(vkCmdWriteTimestamp2)
 
 namespace fizmo {
 namespace vulkan {

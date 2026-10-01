@@ -13,6 +13,8 @@
 #include "gpu_shaders_3d.hpp"
 #include "../raster_3d.hpp"
 
+#include "../../Basic/constants.hpp"
+
 #include <algorithm>
 #include <array>
 #include <climits>
@@ -147,8 +149,9 @@ private:
 
     struct CachedTexture {
         std::unique_ptr<vulkan::Image> image;
-        unsigned int                   width = 0, height = 0;
-        std::uint64_t                  stamp = 0;      
+        unsigned int                   width     = 0;
+        unsigned int                   height    = 0;
+        std::uint64_t                  stamp     = 0;      
         std::uint64_t                  last_used = 0;
         graphics::Texture              keep_alive;
     };
@@ -156,22 +159,31 @@ private:
     struct AtlasPage {
         std::unique_ptr<vulkan::Image> image;
         std::vector<std::uint8_t>      pixels;          
-        int shelf_x = 0, shelf_y = 0, shelf_h = 0;
-        int dirty_y0 = INT_MAX, dirty_y1 = 0;
+        int shelf_x  = 0;
+        int shelf_y  = 0;
+        int shelf_h  = 0;
+        int dirty_y0 = INT_MAX;
+        int dirty_y1 = 0;
     };
 
     struct Glyph {
         bool          placed = false;
         bool          color  = false;          
-        std::uint16_t page = 0, x = 0, y = 0, w = 0, h = 0;
-        int           left = 0, top = 0;
+        std::uint16_t page   = 0; 
+        std::uint16_t x      = 0;
+        std::uint16_t y      = 0;
+        std::uint16_t w      = 0;
+        std::uint16_t h      = 0;
+        int           left   = 0;
+        int           top    = 0;
     };
 
     struct CachedLayout {
-        text::RichText     text;
-        float              box_w = 0.0f, box_h = 0.0f;
-        gpu::TextDrawList  list;
-        std::uint64_t      last_used = 0;
+        text::RichText    text;
+        float             box_w = 0.0f;
+        float             box_h = 0.0f;
+        gpu::TextDrawList list;
+        std::uint64_t     last_used = 0;
     };
 
     struct PerFrame {
@@ -185,15 +197,27 @@ private:
         vulkan::Buffer         batch_commands;
         vulkan::Buffer         instances3d;
         vulkan::Buffer         scene_uniforms;
+        vulkan::TimestampPool  timestamps;
+        std::uint32_t          stamps_used = 0;
+        std::vector<std::pair<GpuPass, std::uint32_t>>               spans;
+        std::vector<std::pair<std::uint64_t, vulkan::DescriptorSet>> scene_sets;
     };
 
     struct GpuMesh {
-        std::unique_ptr<vulkan::Buffer> vertices, indices;
-        std::uint64_t stamp = 0, last_used = 0, bytes = 0;
-        std::uint32_t vertex_count = 0, index_count = 0;
-        bool          quads = false;
-        graphics::Bounds3D bounds;
-        graphics::FaceGroups groups{};
+        std::unique_ptr<vulkan::Buffer> vertices;
+        std::unique_ptr<vulkan::Buffer> indices;
+        std::uint64_t                   stamp        = 0;
+        std::uint64_t                   last_used    = 0;
+        std::uint64_t                   bytes        = 0;
+        std::uint32_t                   vertex_count = 0;
+        std::uint32_t                   index_count  = 0;
+        bool                            quads        = false;
+        graphics::Bounds3D              bounds;
+        graphics::FaceGroups            groups{};
+        std::uint64_t                   stamp        = 0;
+        std::uint64_t                   last_used    = 0;
+        std::uint64_t                   bytes        = 0;
+        std::uint64_t                   generation   = 0;
     };
 
     struct ArenaRange {
@@ -211,14 +235,14 @@ private:
 
     struct HandleMesh {
         std::weak_ptr<graphics::detail::MeshSlot3D> slot;
-        bool                                       quads = false;
-        ArenaRange                                 range;
-        GpuMesh                                    mesh;
-        std::uint64_t                              bytes = 0;
+        bool                                        quads = false;
+        ArenaRange                                  range;
+        GpuMesh                                     mesh;
+        std::uint64_t                               bytes = 0;
     };
 
     struct PendingHandle {
-        std::uint64_t                               key = 0;
+        std::uint64_t                                 key = 0;
         std::shared_ptr<graphics::detail::MeshSlot3D> slot;
     };
 
@@ -260,55 +284,85 @@ private:
     enum class DrawKind3D : std::uint8_t { Mesh, Triangles, Lines, ArenaQuads, Batch, Instanced };
 
     struct Draw3D {
-        DrawKind3D               kind    = DrawKind3D::Triangles;
-        std::uint32_t            state   = 0;          
-        GpuMesh*                 mesh    = nullptr;
-        std::uint32_t            first   = 0, count = 0;
-        const vulkan::ImageView* view    = nullptr;
-        std::uint8_t             sampler = NearestClamp;
-        float                    push[32] = {};
-        bool                     quads   = false;
-        std::uint32_t            page    = 0;
-        std::int32_t             vertex_offset = 0;
-        std::uint32_t            instance_first = 0, instance_count = 0;
-        bool                     on_camera = true;
+        DrawKind3D               kind           = DrawKind3D::Triangles;
+        std::uint32_t            state          = 0;          
+        GpuMesh*                 mesh           = nullptr;
+        std::uint32_t            first          = 0, count = 0;
+        const vulkan::ImageView* view           = nullptr;
+        std::uint8_t             sampler        = NearestClamp;
+        float                    push[32]       = {};
+        bool                     quads          = false;
+        std::uint32_t            page           = 0;
+        std::int32_t             vertex_offset  = 0;
+        std::uint32_t            instance_first = 0;
+        std::uint32_t            instance_count = 0;
+        bool                     on_camera      = true;
         bool                     in_reflections = true;
-        bool                     sky = false;
+        bool                     sky            = false;
     };
 
     struct SceneRec {
-        std::size_t   batch_index = 0;   
-        std::uint32_t first_draw  = 0;
+        std::size_t   batch_index  = 0;   
+        std::uint32_t first_draw   = 0;
         std::uint32_t first_caster = 0;
         Scene3D       scene;
         Mat4f         vp;                
     };
 
-    static constexpr int kMaxPointLights  = static_cast<int>(graphics::SceneLighting3D::MAX_POINT_LIGHTS);
-    static constexpr int kPointShadowMaps = static_cast<int>(graphics::PointShadows3D::MAX_LIGHTS);
-    static constexpr int kCubeFaces       = 6;
-    static constexpr std::int32_t kSceneEnabled = 1, kSunShadows = 2, kPointShadows = 4;
-    static constexpr std::int32_t kAtmosphere = 8, kVolumetric = 16, kToneMap = 32, kMedium = 64;
-    static constexpr std::int32_t kSceneCopy = 128, kScreenReflections = 256, kSoftShadows = 512, kLightShafts = 1024;
-    static constexpr std::int32_t kReflectionPass = 2048, kPlanarReflections = 4096;
-    static constexpr int kMaxPlanes = static_cast<int>(graphics::PlanarReflections3D::MAX_PLANES);
-    static constexpr int kMaxCapsules = static_cast<int>(graphics::CapsuleShadows3D::MAX_CAPSULES);
-    static constexpr double kPlaneFacing = 1e-3;
-    static constexpr std::uint32_t kBlendShift = 2, kBlendMask = 3u;
-    static constexpr double kSoftDegreesToSlope = 3.14159265358979323846 / 180.0;
-    static constexpr double kAnchorStart     = 0.02;
-    static constexpr double kAnchorBackTrack = 0.25;
-    static constexpr double kAnchorDrift     = 0.5;
-    static constexpr int    kAnchorAdvance   = 4;
-    static constexpr std::uint32_t kSkyVertices = 3;
-    static constexpr std::uint32_t kFlagLit = 1u, kFlagLegacy = 4u, kFlagNoFog = 64u;
-    static constexpr double kPointNear     = 0.05;
-    static constexpr double kSunUpLimit    = 0.99;
-    static constexpr double kRadiansPerDegree = 3.14159265358979323846 / 180.0;
-    static constexpr float  kCubeTexelSpan = 2.0f;
-    static constexpr std::uint32_t kShadowPointKey = 1u << 2;
-    static constexpr float  kShadowBiasConstant = 1.25f;
-    static constexpr float  kShadowBiasSlope    = 1.75f;
+    static constexpr int                 kMaxPointLights          = static_cast<int>(graphics::SceneLighting3D::MAX_POINT_LIGHTS);
+    static constexpr int                 kPointShadowMaps         = static_cast<int>(graphics::PointShadows3D::MAX_LIGHTS);
+    static constexpr int                 kCubeFaces               = 6;
+    static constexpr std::int32_t        kSceneEnabled            = 1;
+    static constexpr std::int32_t        kSunShadows              = 2;
+    static constexpr std::int32_t        kPointShadows            = 4;
+    static constexpr std::int32_t        kAtmosphere              = 8;
+    static constexpr std::int32_t        kVolumetric              = 16;
+    static constexpr std::int32_t        kToneMap                 = 32;
+    static constexpr std::int32_t        kMedium                  = 64;
+    static constexpr std::int32_t        kSceneCopy               = 128;
+    static constexpr std::int32_t        kScreenReflections       = 256;
+    static constexpr std::int32_t        kSoftShadows             = 512;
+    static constexpr std::int32_t        kLightShafts             = 1024;
+    static constexpr std::int32_t        kReflectionPass          = 2048;
+    static constexpr std::int32_t        kPlanarReflections       = 4096;
+    static constexpr std::int32_t        kVolumeGrid              = 8192;
+    static constexpr std::uint32_t       kVolumeGroup             = 8;
+    static constexpr std::uint32_t       kReflectionVolumeDivisor = 4;
+    static constexpr std::uint32_t       kMaxVolumeSlices         = 256;
+    static constexpr std::uint32_t       kMaxStorageSets          = 64;
+    static constexpr std::uint32_t       kMaxTimestamps           = 128;
+    static constexpr int                 kSceneSetShift           = 8;
+    static constexpr int                 kBoxCorners              = 8;
+    static constexpr double              kReflectionClipBias      = 0.01;
+    static constexpr double              kPlaneNearW              = 1e-3;
+    static constexpr double              kPlaneRectMargin         = 0.02;
+    static constexpr std::uint64_t       kHashSeed                = 1469598103934665603ull;
+    static constexpr std::uint64_t       kHashPrime               = 1099511628211ull;
+    static constexpr int                 kHashShift               = 29;
+    static constexpr double              kSignatureGrid           = 256.0;
+    static constexpr vulkan::ShaderStage kSceneStages             = vulkan::ShaderStage::Vertex | vulkan::ShaderStage::Fragment | vulkan::ShaderStage::Compute;
+    static constexpr std::int32_t        kPlanarReflections       = 4096;
+    static constexpr int                 kMaxPlanes               = static_cast<int>(graphics::PlanarReflections3D::MAX_PLANES);
+    static constexpr int                 kMaxCapsules             = static_cast<int>(graphics::CapsuleShadows3D::MAX_CAPSULES);
+    static constexpr double              kPlaneFacing             = 1e-3;
+    static constexpr std::uint32_t       kBlendShift              = 2;
+    static constexpr std::uint32_t       kBlendMask               = 3u;
+    static constexpr double              kSoftDegreesToSlope      = constants::pi_180();
+    static constexpr double              kAnchorStart             = 0.02;
+    static constexpr double              kAnchorBackTrack         = 0.25;
+    static constexpr double              kAnchorDrift             = 0.5;
+    static constexpr int                 kAnchorAdvance           = 4;
+    static constexpr std::uint32_t       kSkyVertices             = 3;
+    static constexpr std::uint32_t       kFlagLit                 = 1u;
+    static constexpr std::uint32_t       kFlagLegacy              = 4u;
+    static constexpr std::uint32_t       kFlagNoFog               = 64u;
+    static constexpr double              kPointNear               = 0.05;
+    static constexpr double              kSunUpLimit              = 0.99;
+    static constexpr double              kRadiansPerDegree        = constants::pi_180();
+    static constexpr float               kCubeTexelSpan           = 2.0f;
+    static constexpr std::uint32_t       kShadowPointKey          = 1u << 2;
+    static constexpr float               kShadowBiasConstant      = 1.25f;
+    static constexpr float               kShadowBiasSlope         = 1.75f;
 
     struct SceneUniforms {
         float        legacy[4]                       = { 0, 0, 0, 1 };
@@ -351,10 +405,13 @@ private:
         float        capsule_a[kMaxCapsules][4]      = {};
         float        capsule_b[kMaxCapsules][4]      = {};
         float        capsules[4]                     = {};
+        float        volume_grid[4]                  = {};
+        float        volume_proj[16]                 = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+        float        plane_rects[kMaxPlanes][4]      = {};
     };
 
-    static_assert(sizeof(SceneUniforms) == 2960, "scene uniforms must match the std140 block in the shaders");
-
+    static_assert(sizeof(SceneUniforms) == 3072, "scene uniforms must match the std140 block in the shaders");
+    
     struct Caster {
         enum class Kind : std::uint8_t { Mesh = 0, Instanced, Quads };
         Kind                  kind           = Kind::Mesh;
@@ -366,6 +423,7 @@ private:
         std::uint32_t         instance_count = 0;
         graphics::FaceGroups  groups{};
         graphics::FaceMask    faces          = graphics::ALL_FACE_GROUPS;
+        std::uint64_t         generation     = 0;
         bool                  axis_aligned   = true;
         float                 model[12]      = { 1,0,0,0, 0,1,0,0, 0,0,1,0 };
         float                 lo[3]          = { 0, 0, 0 };
@@ -375,35 +433,43 @@ private:
     struct PointShadowRec {
         float light[4] = { 0, 0, 0, 1 };
         Mat4f faces[kCubeFaces];
+        std::uint64_t key = 0;
     };
 
     struct SceneLightRec {
-        SceneUniforms uniforms;
-        bool          sun_shadow    = false;
-        bool          sun_blend     = false;
-        float         sun_dir_a[3]  = { 0, 0, -1 };
-        float         sun_dir_b[3]  = { 0, 0, -1 };
-        unsigned int  sun_size      = 0;
-        bool          wants_casters = false;
-        bool          sky           = false;
+        SceneUniforms                                uniforms;
+        bool                                         sun_shadow                 = false;
+        bool                                         sun_blend                  = false;
+        float                                        sun_dir_a[3]               = { 0, 0, -1 };
+        float                                        sun_dir_b[3]               = { 0, 0, -1 };
+        std::uint64_t                                sun_key_a                  = 0;
+        std::uint64_t                                sun_key_b                  = 0;
+        unsigned int                                 sun_size                   = 0;
+        bool                                         wants_casters              = false;
+        bool                                         sky                        = false;
         std::array<PointShadowRec, kPointShadowMaps> points{};
-        std::uint32_t point_count   = 0;
-        unsigned int  point_size    = 0;
-        bool          wants_copy    = false;
-        bool          wants_rays    = false;
-        std::uint32_t plane_count   = 0;
-        float         planes[kMaxPlanes][4] = {};
-        float         planar_scale  = 1.0f;
-        bool          copy          = false;
-        std::uint32_t copy_at       = 0;
+        std::uint32_t                                point_count                = 0;
+        unsigned int                                 point_size                 = 0;
+        bool                                         wants_copy                 = false;
+        bool                                         wants_rays                 = false;
+        std::uint32_t                                plane_count                = 0;
+        float                                        planes[kMaxPlanes][4]      = {};
+        int                                          plane_rects[kMaxPlanes][4] = {};
+        float                                        planar_scale               = 1.0f;
+        bool                                         copy                       = false;
+        std::uint32_t                                copy_at                    = 0;
+        bool                                         volume                     = false;
+        std::uint32_t                                volume_size[3]             = {};
     };
 
     struct ShadowMap {
-        std::unique_ptr<vulkan::Image>           image;
-        vulkan::ImageView                        sample_view;
+        std::unique_ptr<vulkan::Image>            image;
+        vulkan::ImageView                         sample_view;
         std::array<vulkan::ImageView, kCubeFaces> face_views;
-        unsigned int                             size = 0;
-        bool                                     cube = false;
+        unsigned int                              size      = 0;
+        bool                                      cube      = false;
+        bool                                      cached    = false;
+        std::uint64_t                             signature = 0;
 
         const vulkan::ImageView& attachment(int face) const noexcept { return cube ? face_views[static_cast<std::size_t>(face)] : image->view(); }
     };
@@ -423,26 +489,32 @@ private:
         std::unique_ptr<vulkan::Image> image;
     };
 
-    vulkan::Instance              m_instance;
-    vulkan::Surface               m_surface;
-    vulkan::Device                m_device;
-    vulkan::Swapchain             m_swapchain;
-    vulkan::FrameRing             m_frames;
-    vulkan::DescriptorSetLayout   m_draw_set_layout, m_present_set_layout;
-    vulkan::PipelineLayout        m_draw_layout, m_present_layout;
-    vulkan::ShaderModule          m_draw_vs, m_draw_fs, m_present_vs, m_present_fs;
-    vulkan::Pipeline              m_draw_pipeline, m_present_pipeline;
-    std::array<vulkan::Sampler, kSamplerCount> m_samplers;
-    vulkan::Image                 m_white;
-    vulkan::Image                 m_target;
-    vulkan::Image                 m_msaa_target;
-    std::array<PerFrame, kFramesInFlight> m_per_frame;
-    std::unordered_map<const void*, CachedTexture> m_textures;
-    std::vector<AtlasPage>        m_atlas;
-    std::unordered_map<std::uint64_t, Glyph> m_glyphs;             
+    vulkan::Instance                                             m_instance;
+    vulkan::Surface                                              m_surface;
+    vulkan::Device                                               m_device;
+    vulkan::Swapchain                                            m_swapchain;
+    vulkan::FrameRing                                            m_frames;
+    vulkan::DescriptorSetLayout                                  m_draw_set_layout;
+    vulkan::DescriptorSetLayout                                  m_present_set_layout;
+    vulkan::PipelineLayout                                       m_draw_layout;
+    vulkan::PipelineLayout                                       m_present_layout;
+    vulkan::ShaderModule                                         m_draw_vs;
+    vulkan::ShaderModule                                         m_draw_fs;
+    vulkan::ShaderModule                                         m_present_vs;
+    vulkan::ShaderModule                                         m_present_fs;
+    vulkan::Pipeline                                             m_draw_pipeline;
+    vulkan::Pipeline                                             m_present_pipeline;
+    std::array<vulkan::Sampler, kSamplerCount>                   m_samplers;
+    vulkan::Image                                                m_white;
+    vulkan::Image                                                m_target;
+    vulkan::Image                                                m_msaa_target;
+    std::array<PerFrame, kFramesInFlight>                        m_per_frame;
+    std::unordered_map<const void*, CachedTexture>               m_textures;
+    std::vector<AtlasPage>                                       m_atlas;
+    std::unordered_map<std::uint64_t, Glyph>                     m_glyphs;             
     std::unordered_map<std::uint64_t, std::vector<CachedLayout>> m_layouts;
-    std::vector<Retired>          m_retired;
-    gpu::TextEngine               m_text;
+    std::vector<Retired>                                         m_retired;
+    gpu::TextEngine                                              m_text;
 
     bool                 m_ready          = false;
     bool                 m_text_ok        = false;
@@ -455,82 +527,107 @@ private:
     vulkan::SampleCount  m_samples        = vulkan::SampleCount::X1;
     vulkan::ClearColor   m_clear_color;
     vulkan::Rect2D       m_scissor;
-    unsigned int         m_width  = 0;
-    unsigned int         m_height = 0;
-    std::uint64_t        m_frame_serial = 1;
-    std::uint64_t        m_texture_bytes = 0;
+    unsigned int         m_width          = 0;
+    unsigned int         m_height         = 0;
+    std::uint64_t        m_frame_serial   = 1;
+    std::uint64_t        m_texture_bytes  = 0;
 
-    std::vector<gpu::Vertex>   m_vertices;
-    std::vector<Batch>         m_batches;
-    std::vector<Upload>        m_uploads;
-    std::vector<std::uint8_t>  m_staging;
-    std::vector<std::uint8_t>  m_ramp_pixels;
-    std::uint32_t              m_ramp_used = 0;
+    std::vector<gpu::Vertex>                         m_vertices;
+    std::vector<Batch>                               m_batches;
+    std::vector<Upload>                              m_uploads;
+    std::vector<std::uint8_t>                        m_staging;
+    std::vector<std::uint8_t>                        m_ramp_pixels;
+    std::uint32_t                                    m_ramp_used = 0;
     std::unordered_map<std::uint64_t, std::uint32_t> m_ramp_rows;
-    std::vector<gpu::Vec2>     m_tris;
-    std::vector<gpu::Vec2>     m_points;
-    std::vector<gpu::Vec2>     m_wave;
+    std::vector<gpu::Vec2>                           m_tris;
+    std::vector<gpu::Vec2>                           m_points;
+    std::vector<gpu::Vec2>                           m_wave;
 
-    vulkan::Image                 m_depth;
-    vulkan::Image                 m_scene_color;
-    vulkan::Image                 m_scene_depth;
-    vulkan::ImageView             m_scene_depth_view;
-    vulkan::Format                m_depth_format = vulkan::Format::D32Float;
-    vulkan::PipelineLayout        m_mesh_layout, m_line_layout;
-    vulkan::ShaderModule          m_mesh_vs, m_mesh_fs, m_line_vs, m_line_fs;
-    std::unordered_map<std::uint32_t, vulkan::Pipeline> m_pipelines3d;
-    std::unordered_map<const void*, GpuMesh> m_meshes;
-    std::uint64_t                 m_mesh_bytes = 0;
-    vulkan::ShaderModule          m_quad_vs, m_quad_fs;
-    std::unique_ptr<vulkan::Buffer> m_quad_indices;
-    std::uint64_t                 m_quad_index_capacity = 0;
-    bool                          m_quad_index_pending  = false;
-    vulkan::ShaderModule          m_batch_vs, m_instanced_vs;
-    std::unordered_map<std::uint64_t, HandleMesh> m_handle_meshes;
-    std::vector<PendingHandle>    m_handle_uploads;
-    std::uint64_t                 m_handle_bytes = 0;
-    std::uint64_t                 m_next_handle_key = 0;
-    std::shared_ptr<graphics::detail::MeshReleaseQueue> m_release_queue = std::make_shared<graphics::detail::MeshReleaseQueue>();
-    std::vector<ArenaPage>        m_arena;
-    std::vector<RetiredRange>     m_retired_ranges;
-    std::uint64_t                 m_arena_quads_used = 0;
-    std::vector<BatchInstance>    m_batch_instances;
-    std::vector<IndirectCommand>  m_batch_commands;
-    std::vector<std::vector<IndirectCommand>> m_page_commands;
-    std::vector<graphics::Instance3D> m_instances3d;
-    bool                          m_multi_draw = false;
-    std::vector<RetiredBuffer>    m_retired_buffers;
-    std::vector<BufferUpload>     m_buffer_uploads;
-    std::vector<graphics::Vertex3D>  m_vertices3d;
-    std::vector<gpu::LineVertex3D>   m_lines3d;
-    std::vector<Draw3D>           m_draws3d;
-    std::vector<SceneRec>         m_scenes;
-    std::vector<SceneLightRec>    m_scene_lights;
-    std::vector<Caster>           m_casters;
-    std::vector<std::uint8_t>     m_uniform_bytes;
-    std::uint64_t                 m_uniform_stride = sizeof(SceneUniforms);
-    vulkan::DescriptorSetLayout   m_scene_set_layout;
-    vulkan::PipelineLayout        m_shadow_layout;
-    vulkan::ShaderModule          m_shadow_mesh_vs, m_shadow_instanced_vs, m_shadow_quad_vs, m_shadow_point_fs;
-    vulkan::ShaderModule          m_sky_vs, m_sky_fs;
-    vulkan::Pipeline              m_sky_pipeline;
-    vulkan::ShaderModule          m_rays_fs;
-    vulkan::Pipeline              m_rays_pipeline;
-    std::unordered_map<std::uint32_t, vulkan::Pipeline> m_shadow_pipelines;
-    vulkan::Sampler               m_shadow_sampler;
-    vulkan::Format                m_shadow_format = vulkan::Format::D16Unorm;
-    std::unique_ptr<ShadowMap>    m_sun_map;
-    std::unique_ptr<ShadowMap>    m_sun_map_b;
-    std::array<ReflectionTarget, kMaxPlanes> m_reflections;
-    mutable vector3d              m_sun_a{ 0.0, 0.0, -1.0 }, m_sun_b{ 0.0, 0.0, -1.0 }, m_sun_prev{ 0.0, 0.0, -1.0 };
-    mutable bool                  m_sun_anchored = false;
+    vulkan::Image                                            m_depth;
+    vulkan::Image                                            m_scene_color;
+    vulkan::Image                                            m_scene_depth;
+    vulkan::ImageView                                        m_scene_depth_view;
+    vulkan::Format                                           m_depth_format = vulkan::Format::D32Float;
+    vulkan::PipelineLayout                                   m_mesh_layout;
+    vulkan::PipelineLayout                                   m_line_layout;
+    vulkan::ShaderModule                                     m_mesh_vs;
+    vulkan::ShaderModule                                     m_mesh_fs;
+    vulkan::ShaderModule                                     m_line_vs;
+    vulkan::ShaderModule                                     m_line_fs;
+    std::unordered_map<std::uint32_t, vulkan::Pipeline>      m_pipelines3d;
+    std::unordered_map<const void*, GpuMesh>                 m_meshes;
+    std::uint64_t                                            m_mesh_bytes = 0;
+    vulkan::ShaderModule                                     m_quad_vs;
+    vulkan::ShaderModule                                     m_quad_fs;
+    std::unique_ptr<vulkan::Buffer>                          m_quad_indices;
+    std::uint64_t                                            m_quad_index_capacity = 0;
+    bool                                                     m_quad_index_pending  = false;
+    vulkan::ShaderModule                                     m_batch_vs;
+    vulkan::ShaderModule                                     m_instanced_vs;
+    std::unordered_map<std::uint64_t, HandleMesh>            m_handle_meshes;
+    std::vector<PendingHandle>                               m_handle_uploads;
+    std::uint64_t                                            m_handle_bytes = 0;
+    std::uint64_t                                            m_next_handle_key = 0;
+    std::shared_ptr<graphics::detail::MeshReleaseQueue>      m_release_queue = std::make_shared<graphics::detail::MeshReleaseQueue>();
+    std::vector<ArenaPage>                                   m_arena;
+    std::vector<RetiredRange>                                m_retired_ranges;
+    std::uint64_t                                            m_arena_quads_used = 0;
+    std::vector<BatchInstance>                               m_batch_instances;
+    std::vector<IndirectCommand>                             m_batch_commands;
+    std::vector<std::vector<IndirectCommand>>                m_page_commands;
+    std::vector<graphics::Instance3D>                        m_instances3d;
+    bool                                                     m_multi_draw = false;
+    std::vector<RetiredBuffer>                               m_retired_buffers;
+    std::vector<BufferUpload>                                m_buffer_uploads;
+    std::vector<graphics::Vertex3D>                          m_vertices3d;
+    std::vector<gpu::LineVertex3D>                           m_lines3d;
+    std::vector<Draw3D>                                      m_draws3d;
+    std::vector<SceneRec>                                    m_scenes;
+    std::vector<SceneLightRec>                               m_scene_lights;
+    std::vector<Caster>                                      m_casters;
+    std::vector<std::uint8_t>                                m_uniform_bytes;
+    std::uint64_t                                            m_uniform_stride = sizeof(SceneUniforms);
+    vulkan::DescriptorSetLayout                              m_scene_set_layout;
+    vulkan::PipelineLayout                                   m_shadow_layout;
+    vulkan::ShaderModule                                     m_shadow_mesh_vs;
+    vulkan::ShaderModule                                     m_shadow_instanced_vs;
+    vulkan::ShaderModule                                     m_shadow_quad_vs;
+    vulkan::ShaderModule                                     m_shadow_point_fs;
+    vulkan::ShaderModule                                     m_sky_vs;
+    vulkan::ShaderModule                                     m_sky_fs;
+    vulkan::Pipeline                                         m_sky_pipeline;
+    vulkan::ShaderModule                                     m_rays_fs;
+    vulkan::Pipeline                                         m_rays_pipeline;
+    vulkan::ShaderModule                                     m_volume_cs;
+    vulkan::DescriptorSetLayout                              m_volume_set_layout;
+    vulkan::PipelineLayout                                   m_volume_layout;
+    vulkan::Pipeline                                         m_volume_pipeline;
+    std::unique_ptr<vulkan::Image>                           m_volume;
+    vulkan::Image                                            m_dummy_volume;
+    std::uint8_t                                             m_volume_sampler = LinearClamp;
+    std::unordered_map<std::uint32_t, vulkan::Pipeline>      m_shadow_pipelines;
+    vulkan::Sampler                                          m_shadow_sampler;
+    vulkan::Format                                           m_shadow_format = vulkan::Format::D16Unorm;
+    std::unique_ptr<ShadowMap>                               m_sun_map;
+    std::unique_ptr<ShadowMap>                               m_sun_map_b;
+    std::array<ReflectionTarget, kMaxPlanes>                 m_reflections;
+    mutable vector3d                                         m_sun_a{ 0.0, 0.0, -1.0 };
+    mutable vector3d                                         m_sun_b{ 0.0, 0.0, -1.0 };
+    mutable vector3d                                         m_sun_prev{ 0.0, 0.0, -1.0 };
+    mutable bool                                             m_sun_anchored = false;
     std::array<std::unique_ptr<ShadowMap>, kPointShadowMaps> m_point_maps;
-    std::unique_ptr<ShadowMap>    m_dummy_sun, m_dummy_cube;
-    std::vector<RetiredMap>       m_retired_maps;
-    mutable std::vector<std::pair<double, std::size_t>> m_light_order;
-    mutable std::vector<std::pair<double, std::size_t>> m_capsule_order;
-    bool                          m_force_new_batch = false;
-    bool                          m_uploads_committed = false;
+    std::unique_ptr<ShadowMap>                               m_dummy_sun;
+    std::unique_ptr<ShadowMap>                               m_dummy_cube;
+    std::vector<RetiredMap>                                  m_retired_maps;
+    mutable std::vector<std::pair<double, std::size_t>>      m_light_order;
+    mutable std::vector<std::pair<double, std::size_t>>      m_capsule_order;
+    bool                                                     m_force_new_batch = false;
+    bool                                                     m_gpu_timing = false;
+    GpuTimings                                               m_timings;
+    std::vector<std::uint64_t>                               m_stamp_values;
+    std::uint64_t                                            m_mesh_generation = 0;
+    std::array<std::uint64_t, kPointShadowMaps>              m_point_signatures{};
+    bool                                                     m_uploads_committed = false;
 
 public:
     RendererImplGPU() noexcept = default;
@@ -538,6 +635,13 @@ public:
 
     const char* backend_name() const noexcept override { return "vulkan"; }
     bool        is_gpu()       const noexcept override { return true; }
+
+    void set_gpu_timing(bool enabled) noexcept override {
+        m_gpu_timing = enabled;
+        if (!enabled) m_timings = {};
+    }
+
+    GpuTimings gpu_timings() const noexcept override { return m_timings; }
 
     bool initialize(void* native_handle, unsigned int w, unsigned int h) noexcept override {
         shutdown();
@@ -572,22 +676,47 @@ public:
         m_retired_maps.clear();
         m_sun_map.reset();
         m_sun_map_b.reset();
-        for (auto& r : m_reflections) { r.color.reset(); r.msaa.reset(); r.depth.reset(); r.width = r.height = 0; }
+
+        for (auto& r : m_reflections) { 
+            r.color.reset(); 
+            r.msaa.reset(); 
+            r.depth.reset(); 
+            r.width = r.height = 0; 
+        }
+        
         for (auto& m : m_point_maps) m.reset();
         m_dummy_sun.reset();
         m_dummy_cube.reset();
         m_shadow_sampler.destroy();
-        m_rays_pipeline.destroy(); m_rays_fs.destroy();
-        m_sky_pipeline.destroy(); m_sky_fs.destroy(); m_sky_vs.destroy();
-        m_shadow_point_fs.destroy(); m_shadow_quad_vs.destroy(); m_shadow_instanced_vs.destroy(); m_shadow_mesh_vs.destroy();
+        m_rays_pipeline.destroy(); 
+        m_volume_pipeline.destroy(); 
+        m_volume_layout.destroy(); 
+        m_volume_set_layout.destroy(); 
+        m_volume_cs.destroy();
+        m_volume.reset();
+        m_dummy_volume.destroy();
+        m_rays_fs.destroy();
+        m_sky_pipeline.destroy(); 
+        m_sky_fs.destroy(); 
+        m_sky_vs.destroy();
+        m_shadow_point_fs.destroy(); 
+        m_shadow_quad_vs.destroy(); 
+        m_shadow_instanced_vs.destroy(); 
+        m_shadow_mesh_vs.destroy();
         m_shadow_layout.destroy();
         m_arena.clear();
         m_retired_ranges.clear();
         m_arena_quads_used = 0;
-        m_instanced_vs.destroy(); m_batch_vs.destroy();
-        m_quad_fs.destroy(); m_quad_vs.destroy();
-        m_line_fs.destroy(); m_line_vs.destroy(); m_mesh_fs.destroy(); m_mesh_vs.destroy();
-        m_line_layout.destroy(); m_mesh_layout.destroy();
+        m_instanced_vs.destroy(); 
+        m_batch_vs.destroy();
+        m_quad_fs.destroy(); 
+        m_quad_vs.destroy();
+        m_line_fs.destroy(); 
+        m_line_vs.destroy(); 
+        m_mesh_fs.destroy(); 
+        m_mesh_vs.destroy();
+        m_line_layout.destroy(); 
+        m_mesh_layout.destroy();
         m_scene_set_layout.destroy();
         m_scene_depth_view.destroy();
         m_scene_depth.destroy();
@@ -597,15 +726,37 @@ public:
         m_atlas.clear();
         m_textures.clear();
         m_texture_bytes = 0;
-        for (auto& pf : m_per_frame) { pf.scene_uniforms.destroy(); pf.instances3d.destroy(); pf.batch_commands.destroy(); pf.batch_instances.destroy(); pf.lines3d.destroy(); pf.vertices3d.destroy(); pf.pool.destroy(); pf.ramp.destroy(); pf.staging.destroy(); pf.vertices.destroy(); }
+
+        for (auto& pf : m_per_frame) { 
+            pf.timestamps.destroy(); 
+            pf.spans.clear(); 
+            pf.stamps_used = 0;
+            pf.scene_uniforms.destroy(); 
+            pf.instances3d.destroy(); 
+            pf.batch_commands.destroy(); 
+            pf.batch_instances.destroy(); 
+            pf.lines3d.destroy(); 
+            pf.vertices3d.destroy(); 
+            pf.pool.destroy(); 
+            pf.ramp.destroy(); 
+            pf.staging.destroy(); 
+            pf.vertices.destroy(); 
+        }
+        
         m_msaa_target.destroy();
         m_target.destroy();
         m_white.destroy();
         for (auto& s : m_samplers) s.destroy();
-        m_present_pipeline.destroy(); m_draw_pipeline.destroy();
-        m_present_fs.destroy(); m_present_vs.destroy(); m_draw_fs.destroy(); m_draw_vs.destroy();
-        m_present_layout.destroy(); m_draw_layout.destroy();
-        m_present_set_layout.destroy(); m_draw_set_layout.destroy();
+        m_present_pipeline.destroy(); 
+        m_draw_pipeline.destroy();
+        m_present_fs.destroy(); 
+        m_present_vs.destroy(); 
+        m_draw_fs.destroy(); 
+        m_draw_vs.destroy();
+        m_present_layout.destroy(); 
+        m_draw_layout.destroy();
+        m_present_set_layout.destroy(); 
+        m_draw_set_layout.destroy();
         m_frames.destroy();
         m_swapchain.destroy();
         m_device.destroy();
@@ -1386,20 +1537,59 @@ private:
         return out;
     }
 
-    static Mat4f sun_matrix(const vector3d& direction, const vector3d& origin, const graphics::SunShadow3D& s, double step_degrees) noexcept {
+    static double sun_cell(const graphics::SunShadow3D& s) noexcept {
+        const double texel = 2.0 * s.distance / static_cast<double>(s.resolution);
+        return std::max(texel, std::ceil(std::max(s.recenter, 0.0) * s.distance / texel) * texel);
+    }
+
+    static double sun_extent(const graphics::SunShadow3D& s) noexcept {
+        return s.distance + 0.5 * sun_cell(s);
+    }
+
+    static void mix_hash(std::uint64_t& h, std::uint64_t v) noexcept {
+        h = (h ^ v) * kHashPrime;
+        h ^= h >> kHashShift;
+    }
+
+    static std::uint64_t grid_key(double v) noexcept {
+        return static_cast<std::uint64_t>(static_cast<std::int64_t>(std::llround(v * kSignatureGrid)));
+    }
+
+    static std::uint64_t float_key(float v) noexcept {
+        std::uint32_t bits = 0;
+        std::memcpy(&bits, &v, sizeof(bits));
+        return bits;
+    }
+
+    static Mat4f sun_matrix(
+        const vector3d& direction, 
+        const vector3d& origin, 
+        const graphics::SunShadow3D& s, 
+        double step_degrees, 
+        std::uint64_t* key = nullptr
+    ) noexcept {
         const vector3d f = quantized_direction(direction, step_degrees);
         const vector3d up = std::fabs(f.z) > kSunUpLimit ? vector3d{ 0.0, 1.0, 0.0 } : vector3d{ 0.0, 0.0, 1.0 };
         vector3d r = f.cross(up);
         r = r / r.magnitude();
         const vector3d u = r.cross(f);
-        const double texel = 2.0 * s.distance / static_cast<double>(s.resolution);
+        const double cell = sun_cell(s), extent = sun_extent(s);
         const double ox = origin.dot(r), oy = origin.dot(u), oz = origin.dot(f);
-        const double cx = std::floor(ox / texel) * texel, cy = std::floor(oy / texel) * texel;
-        const double near_z = std::floor(oz / texel) * texel - s.depth_range, range = s.depth_range + s.distance;
+        const double cx = (std::floor(ox / cell) + 0.5) * cell, cy = (std::floor(oy / cell) + 0.5) * cell;
+        const double near_z = std::floor(oz / cell) * cell - s.depth_range, range = s.depth_range + extent + cell;
         Mat4f m = mat4_identity();
-        set_row(m, 0, r / s.distance, (ox - cx) / s.distance);
-        set_row(m, 1, u / s.distance, (oy - cy) / s.distance);
+        set_row(m, 0, r / extent, (ox - cx) / extent);
+        set_row(m, 1, u / extent, (oy - cy) / extent);
         set_row(m, 2, f / range, (oz - near_z) / range);
+
+        if (key) {
+            std::uint64_t h = kHashSeed;
+            for (double v : { f.x, f.y, f.z }) mix_hash(h, float_key(static_cast<float>(v)));
+            for (double v : { cx, cy, near_z, extent, range }) mix_hash(h, grid_key(v));
+            mix_hash(h, s.resolution);
+            *key = h;
+        }
+
         return m;
     }
 
@@ -1520,6 +1710,10 @@ private:
                 ps.light[0] = pos[0]; ps.light[1] = pos[1]; ps.light[2] = pos[2]; ps.light[3] = p.radius;
                 const vector3d at{ pos[0], pos[1], pos[2] };
                 for (int f = 0; f < kCubeFaces; ++f) ps.faces[static_cast<std::size_t>(f)] = cube_face_matrix(f, at);
+                ps.key = kHashSeed;
+                for (double v : { p.position.x, p.position.y, p.position.z }) mix_hash(ps.key, grid_key(v));
+                mix_hash(ps.key, float_key(p.radius));
+                mix_hash(ps.key, l.point_shadows.resolution);
                 col[3] = static_cast<float>(rec.point_count);
                 ++rec.point_count;
             }
@@ -1542,12 +1736,12 @@ private:
         if (s.enabled && l.sun_intensity > 0.0f && s.resolution > 0 && s.distance > 0.0 && sun_len > 0.0) {
             const SunAnchors anchors = s.crossfade ? sun_anchors(sun, s.angle_step) : SunAnchors{};
             const vector3d dir_a = s.crossfade ? anchors.a : quantized_direction(sun, s.angle_step);
-            const Mat4f m = sun_matrix(dir_a, origin, s, 0.0);
+            const Mat4f m = sun_matrix(dir_a, origin, s, 0.0, &rec.sun_key_a);
             std::copy(m.begin(), m.end(), u.sun_matrix);
             rec.sun_dir_a[0] = static_cast<float>(dir_a.x); rec.sun_dir_a[1] = static_cast<float>(dir_a.y); rec.sun_dir_a[2] = static_cast<float>(dir_a.z);
 
             if (anchors.blend) {
-                const Mat4f mb = sun_matrix(anchors.b, origin, s, 0.0);
+                const Mat4f mb = sun_matrix(anchors.b, origin, s, 0.0, &rec.sun_key_b);
                 std::copy(mb.begin(), mb.end(), u.sun_matrix_b);
                 u.sun_mix[0] = static_cast<float>(anchors.t);
                 u.sun_mix[1] = 1.0f;
@@ -1555,13 +1749,13 @@ private:
                 rec.sun_dir_b[0] = static_cast<float>(anchors.b.x); rec.sun_dir_b[1] = static_cast<float>(anchors.b.y); rec.sun_dir_b[2] = static_cast<float>(anchors.b.z);
             }
 
-            const double texel = 2.0 * s.distance / static_cast<double>(s.resolution);
+            const double texel = 2.0 * sun_extent(s) / static_cast<double>(s.resolution);
             u.sun_shadow[0] = s.bias;
             u.sun_shadow[1] = static_cast<float>(s.normal_offset * texel);
             u.sun_shadow[2] = s.softness / static_cast<float>(s.resolution);
             u.sun_shadow[3] = s.strength;
-            const double range = s.depth_range + s.distance;
-            u.soft[0] = static_cast<float>(range * std::tan(s.light_size * kSoftDegreesToSlope) / (2.0 * s.distance));
+            const double range = s.depth_range + sun_extent(s) + sun_cell(s);
+            u.soft[0] = static_cast<float>(range * std::tan(s.light_size * kSoftDegreesToSlope) / (2.0 * sun_extent(s)));
             u.soft[1] = s.max_softness / static_cast<float>(s.resolution);
             u.soft[2] = static_cast<float>(std::max(1u, s.filter_taps));
             u.soft[3] = s.softness / static_cast<float>(s.resolution);
@@ -1586,6 +1780,8 @@ private:
                 const vector3d n = plane.normal / len;
                 const double d = n.dot(plane.point - origin);
                 if (d >= -kPlaneFacing) continue;
+                int* rect = rec.plane_rects[rec.plane_count];
+                if (!plane_rect(plane, origin, scene, pr.distortion, rect)) continue;
                 float* out = rec.planes[rec.plane_count];
                 out[0] = static_cast<float>(n.x); out[1] = static_cast<float>(n.y); out[2] = static_cast<float>(n.z); out[3] = static_cast<float>(d);
                 std::copy(out, out + 4, u.planes[rec.plane_count]);
@@ -1607,13 +1803,65 @@ private:
         return rec;
     }
 
+    static bool plane_rect(
+        const graphics::ReflectionPlane3D& plane, 
+        const vector3d& origin, 
+        const Scene3D& scene, 
+        float distortion, 
+        int* rect
+    ) noexcept {
+        const int x0 = scene.x, y0 = scene.y;
+        const int x1 = scene.x + static_cast<int>(scene.width), y1 = scene.y + static_cast<int>(scene.height);
+        rect[0] = x0; rect[1] = y0; rect[2] = x1; rect[3] = y1;
+        if (!plane.bounded) return true;
+        double lo[2] = { std::numeric_limits<double>::max(), std::numeric_limits<double>::max() };
+        double hi[2] = { -std::numeric_limits<double>::max(), -std::numeric_limits<double>::max() };
+        const Mat4f& m = scene.view_proj;
+
+        for (int k = 0; k < kBoxCorners; ++k) {
+            const vector3d c{ (k & 1) ? plane.hi.x : plane.lo.x, (k & 2) ? plane.hi.y : plane.lo.y, (k & 4) ? plane.hi.z : plane.lo.z };
+            const vector3d r = c - origin;
+            double clip[4];
+
+            for (int row = 0; row < 4; ++row)
+                clip[row] = m[static_cast<std::size_t>(row * 4)] * r.x + m[static_cast<std::size_t>(row * 4 + 1)] * r.y + m[static_cast<std::size_t>(row * 4 + 2)] * r.z + m[static_cast<std::size_t>(row * 4 + 3)];
+            
+            if (clip[3] <= kPlaneNearW) return true;
+            for (int a = 0; a < 2; ++a) { const double ndc = clip[a] / clip[3]; lo[a] = std::min(lo[a], ndc); hi[a] = std::max(hi[a], ndc); }
+        }
+
+        const double margin = static_cast<double>(distortion) + kPlaneRectMargin;
+        const double w = scene.width, h = scene.height;
+        rect[0] = std::max(x0, static_cast<int>(std::floor(x0 + ((lo[0] - margin) * 0.5 + 0.5) * w)));
+        rect[1] = std::max(y0, static_cast<int>(std::floor(y0 + ((lo[1] - margin) * 0.5 + 0.5) * h)));
+        rect[2] = std::min(x1, static_cast<int>(std::ceil(x0 + ((hi[0] + margin) * 0.5 + 0.5) * w)));
+        rect[3] = std::min(y1, static_cast<int>(std::ceil(y0 + ((hi[1] + margin) * 0.5 + 0.5) * h)));
+        return rect[2] > rect[0] && rect[3] > rect[1];
+    }
+
+    static void plan_volume(SceneLightRec& rec, const graphics::SceneLighting3D& l, const Scene3D& scene) noexcept {
+        const std::int32_t flags = rec.uniforms.counts[1];
+        if ((flags & kVolumetric) == 0 || (flags & kMedium) != 0 || scene.width == 0 || scene.height == 0) return;
+        const unsigned int cell = std::max(1u, l.volumetrics.cell_size);
+        rec.volume_size[0] = (scene.width + cell - 1) / cell;
+        rec.volume_size[1] = (scene.height + cell - 1) / cell;
+        rec.volume_size[2] = std::min(std::max(1u, l.volumetrics.steps), kMaxVolumeSlices);
+        for (int a = 0; a < 3; ++a) rec.uniforms.volume_grid[a] = static_cast<float>(rec.volume_size[a]);
+        rec.uniforms.counts[1] |= kVolumeGrid;
+        rec.volume = true;
+    }
+
     static void unit_into(float* out, const vector3d& v) noexcept {
         const double len = v.magnitude();
         const vector3d n = len > 0.0 ? v / len : vector3d{ 0.0, 0.0, 1.0 };
         out[0] = static_cast<float>(n.x); out[1] = static_cast<float>(n.y); out[2] = static_cast<float>(n.z);
     }
 
-    static std::int32_t environment_uniforms(SceneUniforms& u, const graphics::SceneLighting3D& l, const Scene3D& scene) noexcept {
+    static std::int32_t environment_uniforms(
+        SceneUniforms& u, 
+        const graphics::SceneLighting3D& l, 
+        const Scene3D& scene
+    ) noexcept {
         std::int32_t flags = 0;
         const graphics::Atmosphere3D& a = l.atmosphere;
         rgb_into(u.sky_zenith, a.zenith, 1.0f);
@@ -1661,6 +1909,7 @@ private:
         u.shafts[0] = l.volumetrics.intensity;
         u.shafts[1] = l.volumetrics.near_bias;
         Mat4f vp = scene.view_proj;
+        std::copy(vp.begin(), vp.end(), u.volume_proj);
         for (int c = 0; c < 4; ++c) vp[static_cast<std::size_t>(4 + c)] = -vp[static_cast<std::size_t>(4 + c)];
         const Mat4f inv = mat4_inverse(vp);
         std::copy(inv.begin(), inv.end(), u.inv_view_proj);
@@ -1758,10 +2007,11 @@ private:
 
     static Caster mesh_caster(const GpuMesh& g) noexcept {
         Caster c;
-        c.kind     = Caster::Kind::Mesh;
-        c.vertices = g.vertices.get();
-        c.indices  = g.indices.get();
-        c.count    = g.index_count ? g.index_count : g.vertex_count;
+        c.kind       = Caster::Kind::Mesh;
+        c.vertices   = g.vertices.get();
+        c.indices    = g.indices.get();
+        c.count      = g.index_count ? g.index_count : g.vertex_count;
+        c.generation = g.generation;
         return c;
     }
 
@@ -1772,6 +2022,7 @@ private:
         c.vertex_base = static_cast<std::int32_t>(h.range.first * graphics::QuadMesh3D::VERTICES_PER_QUAD);
         c.groups      = groups;
         c.faces       = faces;
+        c.generation  = h.mesh.generation;
         return c;
     }
 
@@ -1900,7 +2151,6 @@ private:
 
     HandleMesh* handle_for(const std::shared_ptr<graphics::detail::MeshSlot3D>& slot) {
         if (HandleMesh* h = resident(*slot)) return h;
-
         if (!slot->has_cpu_data()) { slot->lost = true; return nullptr; }
         if (!upload_slot(slot)) return nullptr;
         auto it = m_handle_meshes.find(slot->gpu_key);
@@ -1914,6 +2164,7 @@ private:
         HandleMesh h;
         h.slot  = slot;
         h.quads = slot->quads;
+        h.mesh.generation = ++m_mesh_generation;
 
         if (slot->quads) {
             const auto& verts = slot->quad_mesh.vertices();
@@ -2048,7 +2299,6 @@ private:
         const std::uint64_t stamp = mesh.version();
         auto it = m_meshes.find(&mesh);
         if (it != m_meshes.end() && it->second.stamp == stamp) { it->second.last_used = m_frame_serial; return &it->second; }
-
         const auto& verts = mesh.vertices();
         const auto& idx   = mesh.indices();
         const std::uint64_t vbytes = verts.size() * sizeof(graphics::Vertex3D);
@@ -2063,6 +2313,7 @@ private:
         }
 
         fresh.stamp        = stamp;
+        fresh.generation   = ++m_mesh_generation;
         fresh.last_used    = m_frame_serial;
         fresh.bytes        = vbytes + ibytes;
         fresh.vertex_count = static_cast<std::uint32_t>(verts.size());
@@ -2100,35 +2351,42 @@ private:
 
         if (lines) {
             d.vertex_bindings   = { { 0, sizeof(gpu::LineVertex3D), vulkan::VertexRate::PerVertex } };
+            
             d.vertex_attributes = {
                 { 0, 0, vulkan::Format::RGB32Float, 0 },  { 1, 0, vulkan::Format::RGB32Float, 12 },
                 { 2, 0, vulkan::Format::RGBA8Unorm, 24 }, { 3, 0, vulkan::Format::R32Float, 28 },
                 { 4, 0, vulkan::Format::R32Float, 32 },
             };
+
             d.cull_mode = vulkan::CullMode::None;
         } else if (batch) {
             d.vertex_bindings   = {
                 { 0, sizeof(graphics::CompactVertex3D), vulkan::VertexRate::PerVertex },
                 { 1, sizeof(BatchInstance), vulkan::VertexRate::PerInstance },
             };
+
             d.vertex_attributes = {
                 { 0, 0, vulkan::Format::RGB32Float, 0 }, { 1, 0, vulkan::Format::RGBA8Unorm, 12 },
                 { 2, 0, vulkan::Format::R32Uint, 16 },   { 3, 0, vulkan::Format::RGBA8Unorm, 20 },
                 { 4, 1, vulkan::Format::RGB32Sint, 0 },  { 5, 1, vulkan::Format::RGB32Sint, 12 },
                 { 6, 1, vulkan::Format::RGB32Float, 24 },
             };
+
             const std::uint32_t cull = key & 3u;
             d.cull_mode = cull == 1u ? vulkan::CullMode::None : cull == 2u ? vulkan::CullMode::Front : vulkan::CullMode::Back;
         } else if (quads) {
             d.vertex_bindings   = { { 0, sizeof(graphics::CompactVertex3D), vulkan::VertexRate::PerVertex } };
+            
             d.vertex_attributes = {
                 { 0, 0, vulkan::Format::RGB32Float, 0 }, { 1, 0, vulkan::Format::RGBA8Unorm, 12 },
                 { 2, 0, vulkan::Format::R32Uint, 16 },   { 3, 0, vulkan::Format::RGBA8Unorm, 20 },
             };
+
             const std::uint32_t cull = key & 3u;
             d.cull_mode = cull == 1u ? vulkan::CullMode::None : cull == 2u ? vulkan::CullMode::Front : vulkan::CullMode::Back;
         } else {
             d.vertex_bindings   = { { 0, sizeof(graphics::Vertex3D), vulkan::VertexRate::PerVertex } };
+            
             d.vertex_attributes = {
                 { 0, 0, vulkan::Format::RGB32Float, 0 },  { 1, 0, vulkan::Format::RGB32Float, 12 },
                 { 2, 0, vulkan::Format::RG32Float, 24 },  { 3, 0, vulkan::Format::RGBA8Unorm, 32 },
@@ -2374,26 +2632,38 @@ private:
         if (failed(m_sky_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kSky3DVert, sizeof(gpu::kSky3DVert) / 4), "fizmo sky.vert"))) return false;
         if (failed(m_sky_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kSky3DFrag, sizeof(gpu::kSky3DFrag) / 4), "fizmo sky.frag"))) return false;
         if (failed(m_rays_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kRays3DFrag, sizeof(gpu::kRays3DFrag) / 4), "fizmo rays.frag"))) return false;
+        if (failed(m_volume_cs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kVolume3DComp, sizeof(gpu::kVolume3DComp) / 4), "fizmo volume.comp"))) return false;
         m_multi_draw = m_device.features().multi_draw_indirect && m_device.features().draw_indirect_first_instance;
 
         if (
             failed(
                 m_scene_set_layout.create(
                     m_device, {
-                        vulkan::DescriptorBinding{ 0, vulkan::DescriptorType::UniformBuffer, vulkan::ShaderStage::Vertex | vulkan::ShaderStage::Fragment },
-                        vulkan::DescriptorBinding{ 1, vulkan::DescriptorType::CombinedImageSampler, vulkan::ShaderStage::Fragment },
-                        vulkan::DescriptorBinding{ 2, vulkan::DescriptorType::CombinedImageSampler, vulkan::ShaderStage::Fragment, static_cast<std::uint32_t>(kPointShadowMaps) },
-                        vulkan::DescriptorBinding{ 3, vulkan::DescriptorType::CombinedImageSampler, vulkan::ShaderStage::Fragment },
-                        vulkan::DescriptorBinding{ 4, vulkan::DescriptorType::CombinedImageSampler, vulkan::ShaderStage::Fragment },
-                        vulkan::DescriptorBinding{ 5, vulkan::DescriptorType::CombinedImageSampler, vulkan::ShaderStage::Fragment },
-                        vulkan::DescriptorBinding{ 6, vulkan::DescriptorType::CombinedImageSampler, vulkan::ShaderStage::Fragment },
-                        vulkan::DescriptorBinding{ 7, vulkan::DescriptorType::CombinedImageSampler, vulkan::ShaderStage::Fragment },
-                        vulkan::DescriptorBinding{ 8, vulkan::DescriptorType::CombinedImageSampler, vulkan::ShaderStage::Fragment, static_cast<std::uint32_t>(kMaxPlanes) }
+                        vulkan::DescriptorBinding{ 0, vulkan::DescriptorType::UniformBuffer, kSceneStages },
+                        vulkan::DescriptorBinding{ 1, vulkan::DescriptorType::CombinedImageSampler, kSceneStages },
+                        vulkan::DescriptorBinding{ 2, vulkan::DescriptorType::CombinedImageSampler, kSceneStages, static_cast<std::uint32_t>(kPointShadowMaps) },
+                        vulkan::DescriptorBinding{ 3, vulkan::DescriptorType::CombinedImageSampler, kSceneStages },
+                        vulkan::DescriptorBinding{ 4, vulkan::DescriptorType::CombinedImageSampler, kSceneStages },
+                        vulkan::DescriptorBinding{ 5, vulkan::DescriptorType::CombinedImageSampler, kSceneStages },
+                        vulkan::DescriptorBinding{ 6, vulkan::DescriptorType::CombinedImageSampler, kSceneStages },
+                        vulkan::DescriptorBinding{ 7, vulkan::DescriptorType::CombinedImageSampler, kSceneStages },
+                        vulkan::DescriptorBinding{ 8, vulkan::DescriptorType::CombinedImageSampler, kSceneStages, static_cast<std::uint32_t>(kMaxPlanes) },
+                        vulkan::DescriptorBinding{ 9, vulkan::DescriptorType::CombinedImageSampler, kSceneStages }
                     }
                 )
             )
         ) return false;
 
+        if (failed(m_volume_set_layout.create(m_device, { vulkan::DescriptorBinding{ 0, vulkan::DescriptorType::StorageImage, vulkan::ShaderStage::Compute } }))) return false;
+        vulkan::PipelineLayoutDesc vl;
+        vl.set_layouts = { &m_volume_set_layout, &m_scene_set_layout };
+        if (failed(m_volume_layout.create(m_device, vl))) return false;
+        vulkan::ComputePipelineDesc vd;
+        vd.shader = &m_volume_cs;
+        vd.layout = &m_volume_layout;
+        vd.name   = "fizmo volume light";
+        if (failed(m_volume_pipeline.create(m_device, vd))) return false;
+        if (!create_dummy_volume()) return false;
         vulkan::PipelineLayoutDesc ml;
         ml.set_layouts    = { &m_draw_set_layout, &m_scene_set_layout };
         ml.push_constants = { { vulkan::ShaderStage::Vertex, 0, 128 } };
@@ -2407,8 +2677,10 @@ private:
         vulkan::PipelineLayoutDesc ll;
         ll.push_constants = { { vulkan::ShaderStage::Vertex, 0, 80 } };
         if (failed(m_line_layout.create(m_device, ll))) return false;
+
         m_depth_format = m_device.physical_device().supports_format(vulkan::Format::D32Float, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
                        ? vulkan::Format::D32Float : vulkan::Format::D24UnormS8Uint;
+
         const vulkan::AddressMode modes[3] = { vulkan::AddressMode::ClampToEdge, vulkan::AddressMode::Repeat, vulkan::AddressMode::MirroredRepeat };
 
         for (int i = 0; i < kSamplerCount; ++i) {
@@ -2438,15 +2710,70 @@ private:
             if (failed(pf.ramp.create(m_device, rd))) return false;
             if (failed(submit_immediate(m_device, [&](vulkan::CommandBuffer& cmd) { cmd.transition(pf.ramp, vulkan::ImageLayout::ShaderReadOnly); })))
                 return false;
+
             vulkan::DescriptorPoolDesc pd;
             pd.max_sets = 1024;
-            pd.sizes = { { vulkan::DescriptorType::CombinedImageSampler, 4096 }, { vulkan::DescriptorType::UniformBuffer, 256 } };
+            pd.sizes = { { vulkan::DescriptorType::CombinedImageSampler, 4096 }, { vulkan::DescriptorType::UniformBuffer, 256 }, { vulkan::DescriptorType::StorageImage, kMaxStorageSets } };
             if (failed(pf.pool.create(m_device, pd))) return false;
         }
 
         m_ramp_pixels.assign(static_cast<std::size_t>(256) * kRampRows * 4, 0);
         create_targets(w, h);
         return m_target.valid();
+    }
+
+    bool create_dummy_volume() {
+        const bool linear = m_device.physical_device().supports_format(vulkan::Format::R32Float, VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
+        m_volume_sampler = linear ? LinearClamp : NearestClamp;
+        vulkan::ImageDesc d;
+        d.extent = { 1, 1, 1 };
+        d.type   = vulkan::ImageType::Image3D;
+        d.format = vulkan::Format::R32Float;
+        d.usage  = vulkan::ImageUsage::Sampled | vulkan::ImageUsage::Storage;
+        d.name   = "fizmo empty volume";
+        if (failed(m_dummy_volume.create(m_device, d))) return false;
+        return succeeded(submit_immediate(m_device, [&](vulkan::CommandBuffer& cmd) { cmd.transition(m_dummy_volume, vulkan::ImageLayout::ShaderReadOnly); }));
+    }
+
+    bool ensure_volume(const std::uint32_t* size) {
+        if (m_volume && m_volume->extent().width == size[0] && m_volume->extent().height == size[1] && m_volume->extent().depth == size[2]) return true;
+        if (m_volume) m_retired.push_back({ m_frame_serial, std::move(m_volume) });
+        vulkan::ImageDesc d;
+        d.extent = { size[0], size[1], size[2] };
+        d.type   = vulkan::ImageType::Image3D;
+        d.format = vulkan::Format::R32Float;
+        d.usage  = vulkan::ImageUsage::Sampled | vulkan::ImageUsage::Storage;
+        d.name   = "fizmo volume light";
+        m_volume = std::make_unique<vulkan::Image>();
+        if (succeeded(m_volume->create(m_device, d))) return true;
+        m_volume.reset();
+        return false;
+    }
+
+    void prepare_volumes() {
+        for (SceneLightRec& sl : m_scene_lights) {
+            if (!sl.volume || ensure_volume(sl.volume_size)) continue;
+            sl.volume = false;
+            sl.uniforms.counts[1] &= ~kVolumeGrid;
+        }
+    }
+
+    void record_volume_pass(const vulkan::CommandBuffer& cmd, PerFrame& pf, std::size_t scene) {
+        const SceneLightRec& sl = m_scene_lights[scene];
+        if (!sl.volume || !m_volume) return;
+        vulkan::DescriptorSet target;
+        if (failed(pf.pool.allocate(m_volume_set_layout, target))) return;
+        const vulkan::DescriptorSet lighting = scene_descriptor(pf, scene, false, -1, false);
+        if (!lighting.valid()) return;
+        vulkan::DescriptorWriter().storage_image(0, m_volume->view()).update(target);
+        cmd.begin_label("fizmo volume light");
+        cmd.transition(*m_volume, vulkan::ImageLayout::General);
+        cmd.bind(m_volume_pipeline);
+        cmd.bind_descriptor_set(m_volume_pipeline, 0, target);
+        cmd.bind_descriptor_set(m_volume_pipeline, 1, lighting);
+        cmd.dispatch((sl.volume_size[0] + kVolumeGroup - 1) / kVolumeGroup, (sl.volume_size[1] + kVolumeGroup - 1) / kVolumeGroup);
+        cmd.transition(*m_volume, vulkan::ImageLayout::ShaderReadOnly);
+        cmd.end_label();
     }
 
     bool create_shadow_resources() {
@@ -2561,7 +2888,9 @@ private:
             vulkan::Access::ColorAttachmentWrite | vulkan::Access::DepthAttachmentWrite,
             vulkan::PipelineStage::Transfer | vulkan::PipelineStage::FragmentShader | vulkan::PipelineStage::EarlyFragmentTests | vulkan::PipelineStage::ColorAttachmentOutput,
             vulkan::Access::TransferRead | vulkan::Access::ShaderRead | vulkan::Access::DepthAttachmentRead | vulkan::Access::DepthAttachmentWrite |
-            vulkan::Access::ColorAttachmentRead | vulkan::Access::ColorAttachmentWrite);
+            vulkan::Access::ColorAttachmentRead | vulkan::Access::ColorAttachmentWrite
+        );
+        
         cmd.transition(m_target, vulkan::ImageLayout::TransferSrc);
         cmd.transition(m_scene_color, vulkan::ImageLayout::TransferDst);
         cmd.copy_image(m_target, m_scene_color);
@@ -2614,10 +2943,11 @@ private:
     SceneUniforms reflection_uniforms(std::size_t scene, std::uint32_t plane) const {
         const SceneLightRec& sl = m_scene_lights[scene];
         SceneUniforms u = sl.uniforms;
-        u.counts[1] &= ~(kSceneCopy | kScreenReflections | kLightShafts | kPlanarReflections);
+        u.counts[1] &= ~(kSceneCopy | kScreenReflections | kLightShafts | kPlanarReflections | kSoftShadows);
         u.counts[1] |= kReflectionPass;
+        u.volume[3] = std::max(1.0f, std::floor(u.volume[3] / static_cast<float>(kReflectionVolumeDivisor)));
         std::copy(sl.planes[plane], sl.planes[plane] + 4, u.clip);
-        const Mat4f vpr = mat4_mul(m_scenes[scene].vp, reflection_matrix(sl.planes[plane]));
+        const Mat4f vpr = reflected_view_proj(scene, plane);
         std::copy(vpr.begin(), vpr.end(), u.view_proj);
         const Mat4f inv = mat4_inverse(vpr);
         std::copy(inv.begin(), inv.end(), u.inv_view_proj);
@@ -2639,6 +2969,14 @@ private:
             u.screen[3] = static_cast<float>(sc.scene.height) / h;
             u.target[0] = 1.0f / w;
             u.target[1] = 1.0f / h;
+
+
+            for (std::uint32_t k = 0; k < sl.plane_count; ++k) {
+                const int* r = sl.plane_rects[k];
+                u.plane_rects[k][0] = static_cast<float>(r[0]) / w; u.plane_rects[k][1] = static_cast<float>(r[1]) / h;
+                u.plane_rects[k][2] = static_cast<float>(r[2]) / w; u.plane_rects[k][3] = static_cast<float>(r[3]) / h;
+            }
+
             sl.copy = false;
             u.counts[1] &= ~(kSceneCopy | kScreenReflections);
             if (!sl.wants_copy || !possible) continue;
@@ -3336,9 +3674,12 @@ private:
         return m_scene_lights.size() + scene * static_cast<std::size_t>(kMaxPlanes) + static_cast<std::size_t>(plane);
     }
 
-    vulkan::DescriptorSet scene_descriptor(PerFrame& pf, std::size_t scene, bool copies = false, int reflection_plane = -1) {
+    vulkan::DescriptorSet scene_descriptor(PerFrame& pf, std::size_t scene, bool copies = false, int reflection_plane = -1, bool volume = true) {
+        const std::uint64_t key = (static_cast<std::uint64_t>(scene) << kSceneSetShift) | (static_cast<std::uint64_t>(reflection_plane + 1) << 2) | (copies ? 2u : 0u) | (volume ? 1u : 0u);
+        for (const auto& cached : pf.scene_sets) if (cached.first == key) return cached.second;
         vulkan::DescriptorSet set;
         if (failed(pf.pool.allocate(m_scene_set_layout, set))) return set;
+        pf.scene_sets.emplace_back(key, set);
         const SceneLightRec& sl = m_scene_lights[scene];
         const ShadowMap& sun = sl.sun_shadow && m_sun_map ? *m_sun_map : *m_dummy_sun;
         vulkan::DescriptorWriter w;
@@ -3371,41 +3712,125 @@ private:
         return set;
     }
 
+    static bool holds(const std::unique_ptr<ShadowMap>& map, std::uint64_t signature) noexcept {
+        return map && map->cached && map->signature == signature;
+    }
+
+    void render_shadow_map(const vulkan::CommandBuffer& cmd, PerFrame& pf, ShadowMap& map, std::uint64_t signature, const Mat4f* faces, const float* light, bool point, std::size_t first, std::size_t last) {
+        cmd.transition(*map.image, vulkan::ImageLayout::DepthAttachment);
+        const int views = point ? kCubeFaces : 1;
+        for (int f = 0; f < views; ++f) record_shadow_view(cmd, pf, map, f, faces[static_cast<std::size_t>(f)].data(), light, point, first, last);
+        cmd.transition(*map.image, vulkan::ImageLayout::ShaderReadOnly);
+        map.signature = signature;
+        map.cached    = true;
+    }
+
     void record_shadow_passes(const vulkan::CommandBuffer& cmd, PerFrame& pf, std::size_t scene, std::size_t first, std::size_t last) {
         const SceneLightRec& sl = m_scene_lights[scene];
         if (!sl.sun_shadow && sl.point_count == 0) return;
+        const double* origin = m_scenes[scene].scene.origin;
         cmd.begin_label("fizmo shadows");
 
         if (sl.sun_shadow && m_sun_map) {
-            ShadowMap& map = *m_sun_map;
-            const float light[4] = { sl.sun_dir_a[0], sl.sun_dir_a[1], sl.sun_dir_a[2], 0.0f };
-            cmd.transition(*map.image, vulkan::ImageLayout::DepthAttachment);
-            record_shadow_view(cmd, pf, map, 0, sl.uniforms.sun_matrix, light, false, first, last);
-            cmd.transition(*map.image, vulkan::ImageLayout::ShaderReadOnly);
+            Mat4f ma, mb;
+            std::copy(sl.uniforms.sun_matrix, sl.uniforms.sun_matrix + 16, ma.begin());
+            std::copy(sl.uniforms.sun_matrix_b, sl.uniforms.sun_matrix_b + 16, mb.begin());
+            const std::uint64_t sig_a = shadow_signature(sl.sun_key_a, first, last, ma.data(), nullptr, origin);
+            const bool blend = sl.sun_blend && m_sun_map_b;
+            const std::uint64_t sig_b = blend ? shadow_signature(sl.sun_key_b, first, last, mb.data(), nullptr, origin) : 0;
+            if (!holds(m_sun_map, sig_a) && holds(m_sun_map_b, sig_a)) std::swap(m_sun_map, m_sun_map_b);
+            if (blend && !holds(m_sun_map_b, sig_b) && holds(m_sun_map, sig_b)) std::swap(m_sun_map, m_sun_map_b);
+            const float light_a[4] = { sl.sun_dir_a[0], sl.sun_dir_a[1], sl.sun_dir_a[2], 0.0f };
+            const float light_b[4] = { sl.sun_dir_b[0], sl.sun_dir_b[1], sl.sun_dir_b[2], 0.0f };
+            if (!holds(m_sun_map, sig_a)) render_shadow_map(cmd, pf, *m_sun_map, sig_a, &ma, light_a, false, first, last);
+            if (blend && !holds(m_sun_map_b, sig_b)) render_shadow_map(cmd, pf, *m_sun_map_b, sig_b, &mb, light_b, false, first, last);
         }
 
-        if (sl.sun_shadow && sl.sun_blend && m_sun_map_b) {
-            ShadowMap& map = *m_sun_map_b;
-            const float light[4] = { sl.sun_dir_b[0], sl.sun_dir_b[1], sl.sun_dir_b[2], 0.0f };
-            cmd.transition(*map.image, vulkan::ImageLayout::DepthAttachment);
-            record_shadow_view(cmd, pf, map, 0, sl.uniforms.sun_matrix_b, light, false, first, last);
-            cmd.transition(*map.image, vulkan::ImageLayout::ShaderReadOnly);
+        for (std::uint32_t k = 0; k < sl.point_count; ++k)
+            m_point_signatures[k] = shadow_signature(sl.points[k].key, first, last, nullptr, sl.points[k].light, origin);
+
+        for (std::uint32_t k = 0; k < sl.point_count; ++k) {
+            if (holds(m_point_maps[k], m_point_signatures[k])) continue;
+
+            for (std::size_t j = 0; j < m_point_maps.size(); ++j) {
+                if (j == k || !holds(m_point_maps[j], m_point_signatures[k])) continue;
+                if (j < sl.point_count && holds(m_point_maps[j], m_point_signatures[j])) continue;
+                if (m_point_maps[j]->size != m_point_maps[k]->size) continue;
+                std::swap(m_point_maps[j], m_point_maps[k]);
+                break;
+            }
         }
 
         for (std::uint32_t k = 0; k < sl.point_count; ++k) {
-            if (!m_point_maps[k]) continue;
-            ShadowMap& map = *m_point_maps[k];
+            if (!m_point_maps[k] || holds(m_point_maps[k], m_point_signatures[k])) continue;
             const PointShadowRec& ps = sl.points[k];
-            cmd.transition(*map.image, vulkan::ImageLayout::DepthAttachment);
-            for (int f = 0; f < kCubeFaces; ++f) record_shadow_view(cmd, pf, map, f, ps.faces[static_cast<std::size_t>(f)].data(), ps.light, true, first, last);
-            cmd.transition(*map.image, vulkan::ImageLayout::ShaderReadOnly);
+            render_shadow_map(cmd, pf, *m_point_maps[k], m_point_signatures[k], ps.faces, ps.light, true, first, last);
         }
 
         cmd.end_label();
     }
 
+    static bool outside_sphere(const Caster& c, const float* light) noexcept {
+        float dist2 = 0.0f;
+
+        for (int a = 0; a < 3; ++a) {
+            const float v = light[a] < c.lo[a] ? c.lo[a] - light[a] : (light[a] > c.hi[a] ? light[a] - c.hi[a] : 0.0f);
+            dist2 += v * v;
+        }
+
+        return dist2 >= light[3] * light[3];
+    }
+
+    std::uint64_t caster_signature(const Caster& c, const double* origin) const noexcept {
+        std::uint64_t h = kHashSeed;
+        mix_hash(h, static_cast<std::uint64_t>(c.kind));
+        mix_hash(h, reinterpret_cast<std::uintptr_t>(c.vertices));
+        mix_hash(h, reinterpret_cast<std::uintptr_t>(c.indices));
+        mix_hash(h, c.generation);
+        mix_hash(h, c.count);
+        mix_hash(h, static_cast<std::uint64_t>(static_cast<std::int64_t>(c.vertex_base)));
+        mix_hash(h, c.faces);
+        for (const graphics::QuadRange& r : c.groups) { mix_hash(h, r.first); mix_hash(h, r.count); }
+
+        for (int r = 0; r < 3; ++r) {
+            for (int k = 0; k < 3; ++k) mix_hash(h, float_key(c.model[r * 4 + k]));
+            mix_hash(h, grid_key(static_cast<double>(c.model[r * 4 + 3]) + origin[r]));
+        }
+
+        if (c.kind == Caster::Kind::Instanced) {
+            const std::size_t end = std::min<std::size_t>(m_instances3d.size(), static_cast<std::size_t>(c.instance_first) + c.instance_count);
+
+            for (std::size_t i = c.instance_first; i < end; ++i) {
+                std::uint32_t words[sizeof(graphics::Instance3D) / sizeof(std::uint32_t)];
+                std::memcpy(words, &m_instances3d[i], sizeof(words));
+                for (std::uint32_t w : words) mix_hash(h, w);
+            }
+        }
+
+        return h;
+    }
+
+    std::uint64_t shadow_signature(std::uint64_t key, std::size_t first, std::size_t last, const float* m, const float* light, const double* origin) const noexcept {
+        std::uint64_t sum = 0, count = 0;
+
+        for (std::size_t i = first; i < last; ++i) {
+            const Caster& c = m_casters[i];
+            if (!c.vertices) continue;
+            if (light ? outside_sphere(c, light) : outside_light(c, m, false, 0, nullptr)) continue;
+            sum += caster_signature(c, origin);
+            ++count;
+        }
+
+        std::uint64_t h = key;
+        mix_hash(h, sum);
+        mix_hash(h, count);
+        return h;
+    }
+
     static bool outside_light(const Caster& c, const float* m, bool point, int face, const float* light) noexcept {
         if (point) {
+            if (outside_sphere(c, light)) return true;
+            const int axis = face / 2;
             float dist2 = 0.0f;
 
             for (int a = 0; a < 3; ++a) {
@@ -3443,8 +3868,17 @@ private:
         return m;
     }
 
-    void record_shadow_view(const vulkan::CommandBuffer& cmd, PerFrame& pf, ShadowMap& map, int face, const float* light_vp,
-                            const float* light, bool point, std::size_t first, std::size_t last) {
+    void record_shadow_view(
+        const vulkan::CommandBuffer& cmd, 
+        PerFrame& pf, 
+        ShadowMap& map, 
+        int face, 
+        const float* light_vp,
+        const float* light, 
+        bool point, 
+        std::size_t first, 
+        std::size_t last
+    ) {
         vulkan::DepthAttachment depth;
         depth.view  = &map.attachment(face);
         depth.load  = vulkan::LoadOp::Clear;
@@ -3581,6 +4015,26 @@ private:
         return (state & ~kCullMask) | flipped;
     }
 
+    static Mat4f oblique_clip(const Mat4f& m, const float* plane) noexcept {
+        const Mat4f inv = mat4_inverse(m);
+        const double c[4] = { plane[0], plane[1], plane[2], -(plane[3] + kReflectionClipBias) };
+        double cc[4] = {};
+
+        for (int j = 0; j < 4; ++j)
+            for (int i = 0; i < 4; ++i) cc[j] += static_cast<double>(inv[static_cast<std::size_t>(i * 4 + j)]) * c[i];
+
+        auto sign = [](double v) { return v > 0.0 ? 1.0 : (v < 0.0 ? -1.0 : 0.0); };
+        const double reach = cc[0] * sign(cc[0]) + cc[1] * sign(cc[1]) + cc[2] + cc[3];
+        if (!(reach > 0.0) || !std::isfinite(reach)) return m;
+        Mat4f out = m;
+        for (int k = 0; k < 4; ++k) out[static_cast<std::size_t>(8 + k)] = static_cast<float>(c[k] / reach);
+        return out;
+    }
+
+    Mat4f reflected_view_proj(std::size_t scene, std::uint32_t plane) const noexcept {
+        return mat4_mul(m_scenes[scene].vp, reflection_matrix(m_scene_lights[scene].planes[plane]));
+    }
+
     static Mat4f reflection_matrix(const float* plane) noexcept {
         Mat4f r = mat4_identity();
         for (int i = 0; i < 3; ++i) {
@@ -3626,17 +4080,27 @@ private:
         return &t;
     }
 
-    void record_reflection_pass(const vulkan::CommandBuffer& cmd, PerFrame& pf, const SceneRec& sc, std::size_t scene, std::uint32_t plane,
-                                std::size_t from, std::size_t to, DescriptorCache& sets) {
+    void record_reflection_pass(
+        const vulkan::CommandBuffer& cmd, 
+        PerFrame& pf, 
+        const SceneRec& sc, 
+        std::size_t scene, 
+        std::uint32_t plane,
+        std::size_t from, 
+        std::size_t to, 
+        DescriptorCache& sets
+    ) {
         SceneLightRec& sl = m_scene_lights[scene];
         ReflectionTarget& t = m_reflections[plane];
         if (!t.color || !t.depth) return;
         const float scale = sl.planar_scale;
         const float sx = static_cast<float>(sc.scene.x) * scale, sy = static_cast<float>(sc.scene.y) * scale;
         const float sw = static_cast<float>(sc.scene.width) * scale, sh = static_cast<float>(sc.scene.height) * scale;
-        const int x0 = std::max(static_cast<int>(sx), 0), y0 = std::max(static_cast<int>(sy), 0);
-        const int x1 = std::min(static_cast<int>(sx + sw + 0.5f), static_cast<int>(t.width));
-        const int y1 = std::min(static_cast<int>(sy + sh + 0.5f), static_cast<int>(t.height));
+        const int* area = sl.plane_rects[plane];
+        const int x0 = std::max(static_cast<int>(std::floor(area[0] * scale)), 0);
+        const int y0 = std::max(static_cast<int>(std::floor(area[1] * scale)), 0);
+        const int x1 = std::min(static_cast<int>(std::ceil(area[2] * scale)), static_cast<int>(t.width));
+        const int y1 = std::min(static_cast<int>(std::ceil(area[3] * scale)), static_cast<int>(t.height));
         if (x1 <= x0 || y1 <= y0) return;
         cmd.begin_label("fizmo planar reflection");
         if (t.msaa) cmd.transition(*t.msaa, vulkan::ImageLayout::ColorAttachment);
@@ -3664,7 +4128,7 @@ private:
         const vulkan::DescriptorSet lighting = scene_descriptor(pf, scene, false, static_cast<int>(plane));
 
         if (lighting.valid()) {
-            const Mat4f vpr = mat4_mul(sc.vp, reflection_matrix(sl.planes[plane]));
+            const Mat4f vpr = oblique_clip(reflected_view_proj(scene, plane), sl.planes[plane]);
             const vulkan::Pipeline* bound = nullptr;
 
             if (sl.sky) {
@@ -3822,11 +4286,92 @@ private:
         cmd.end_rendering();
     }
 
+    void record_present(
+        const vulkan::CommandBuffer& cmd, 
+        const vulkan::Frame& f, 
+        const vulkan::DescriptorSet& present_set
+    ) {
+        const bool same_size = f.extent.width == m_width && f.extent.height == m_height;
+        vulkan::DescriptorWriter().image(0, m_target.view(), m_samplers[same_size ? NearestClamp : LinearClamp]).update(present_set);
+        vulkan::ColorAttachment out;
+        out.view = f.target_view;
+        out.load = vulkan::LoadOp::DontCare;
+        cmd.begin_rendering({ { { 0, 0 }, f.extent }, out });
+        cmd.bind(m_present_pipeline);
+        cmd.set_viewport_and_scissor(f.extent);
+        cmd.bind_descriptor_set(m_present_pipeline, 0, present_set);
+        cmd.draw(3);
+        cmd.end_rendering();
+    }
+
+    void record_uploads(const vulkan::CommandBuffer& cmd, PerFrame& pf) {
+        for (const Upload& u : m_uploads) {
+            cmd.transition(*u.image, vulkan::ImageLayout::TransferDst);
+            cmd.copy_buffer_to_image_region(pf.staging, *u.image, u.offset, u.at, u.size);
+        }
+
+        for (const Upload& u : m_uploads) cmd.transition(*u.image, vulkan::ImageLayout::ShaderReadOnly);
+        
+        if (!m_buffer_uploads.empty()) {
+            cmd.memory_barrier(
+                vulkan::PipelineStage::VertexInput, vulkan::Access::VertexRead | vulkan::Access::IndexRead,
+                vulkan::PipelineStage::Transfer, vulkan::Access::TransferWrite
+            );
+        }
+
+        for (const BufferUpload& u : m_buffer_uploads) cmd.copy_buffer(pf.staging, *u.dst, u.bytes, u.offset, u.dst_offset);
+
+        if (!m_buffer_uploads.empty()) {
+            cmd.memory_barrier(vulkan::PipelineStage::Transfer, vulkan::Access::TransferWrite,
+                               vulkan::PipelineStage::VertexInput, vulkan::Access::VertexRead | vulkan::Access::IndexRead);
+        }
+    }
+
+    void collect_timings(PerFrame& pf) {
+        const std::uint32_t used = pf.stamps_used;
+        pf.stamps_used = 0;
+        if (used == 0 || !pf.timestamps.valid()) return;
+        m_stamp_values.resize(used);
+        if (!pf.timestamps.read(0, used, m_stamp_values.data())) return;
+        GpuTimings t;
+        t.valid = true;
+
+        for (const auto& span : pf.spans) {
+            const std::uint64_t a = m_stamp_values[span.second], b = m_stamp_values[span.second + 1];
+            if (b > a) t.pass_ms[static_cast<std::size_t>(span.first)] += pf.timestamps.ticks_to_ms(b - a);
+        }
+
+        if (m_stamp_values[used - 1] > m_stamp_values[0]) t.total_ms = pf.timestamps.ticks_to_ms(m_stamp_values[used - 1] - m_stamp_values[0]);
+        m_timings = t;
+    }
+
+    void start_timings(const vulkan::CommandBuffer& cmd, PerFrame& pf) {
+        pf.spans.clear();
+        pf.stamps_used = 0;
+        if (!m_gpu_timing) return;
+        if (!pf.timestamps.valid() && failed(pf.timestamps.create(m_device, kMaxTimestamps, "fizmo gpu timings"))) return;
+        cmd.reset_timestamps(pf.timestamps, 0, kMaxTimestamps);
+    }
+
+    template <typename Body>
+    void timed(const vulkan::CommandBuffer& cmd, PerFrame& pf, GpuPass pass, Body&& body) {
+        if (!m_gpu_timing || !pf.timestamps.valid() || pf.stamps_used + 2 > kMaxTimestamps) { body(); return; }
+        const std::uint32_t first = pf.stamps_used;
+        pf.stamps_used += 2;
+        cmd.write_timestamp(pf.timestamps, first);
+        body();
+        cmd.write_timestamp(pf.timestamps, first + 1);
+        pf.spans.emplace_back(pass, first);
+    }
+
     void record_frame(vulkan::Frame& f) {
         collect_garbage();
         PerFrame& pf = m_per_frame[f.frame_index];
         pf.pool.reset();
+        pf.scene_sets.clear();
+        collect_timings(pf);
         const vulkan::CommandBuffer& cmd = f.cmd;
+        start_timings(cmd, pf);
 
         for (AtlasPage& pg : m_atlas) {
             if (pg.dirty_y0 >= pg.dirty_y1) continue;
@@ -3901,6 +4446,7 @@ private:
             prepare_shadow_maps();
             plan_scene_copies();
             prepare_reflections();
+            prepare_volumes();
             const std::size_t scenes = m_scene_lights.size();
             m_uniform_bytes.assign(static_cast<std::size_t>(m_uniform_stride * scenes * (1 + kMaxPlanes)), 0);
 
@@ -3918,25 +4464,7 @@ private:
         }
 
         cmd.begin_label("fizmo uploads");
-
-        for (const Upload& u : m_uploads) {
-            cmd.transition(*u.image, vulkan::ImageLayout::TransferDst);
-            cmd.copy_buffer_to_image_region(pf.staging, *u.image, u.offset, u.at, u.size);
-        }
-
-        for (const Upload& u : m_uploads) cmd.transition(*u.image, vulkan::ImageLayout::ShaderReadOnly);
-        if (!m_buffer_uploads.empty()) {
-            cmd.memory_barrier(vulkan::PipelineStage::VertexInput, vulkan::Access::VertexRead | vulkan::Access::IndexRead,
-                               vulkan::PipelineStage::Transfer, vulkan::Access::TransferWrite);
-        }
-
-        for (const BufferUpload& u : m_buffer_uploads) cmd.copy_buffer(pf.staging, *u.dst, u.bytes, u.offset, u.dst_offset);
-
-        if (!m_buffer_uploads.empty()) {
-            cmd.memory_barrier(vulkan::PipelineStage::Transfer, vulkan::Access::TransferWrite,
-                               vulkan::PipelineStage::VertexInput, vulkan::Access::VertexRead | vulkan::Access::IndexRead);
-        }
-
+        timed(cmd, pf, GpuPass::Uploads, [&]() { record_uploads(cmd, pf); });
         m_uploads_committed = true;
         commit_handle_uploads();
         cmd.end_label();
@@ -3958,8 +4486,10 @@ private:
                         vulkan::Access::ColorAttachmentWrite | vulkan::Access::DepthAttachmentWrite,
                         vulkan::PipelineStage::ColorAttachmentOutput | vulkan::PipelineStage::EarlyFragmentTests,
                         vulkan::Access::ColorAttachmentRead | vulkan::Access::ColorAttachmentWrite |
-                        vulkan::Access::DepthAttachmentRead | vulkan::Access::DepthAttachmentWrite);
+                        vulkan::Access::DepthAttachmentRead | vulkan::Access::DepthAttachmentWrite
+                    );
                 }
+
                 had_pass = true;
             };
 
@@ -3969,7 +4499,7 @@ private:
 
                 if (upto > next_batch || (last && clear_next)) {
                     between_passes();
-                    record_2d_pass(cmd, pf, next_batch, upto, clear_next, sets);
+                    timed(cmd, pf, GpuPass::Overlay, [&]() { record_2d_pass(cmd, pf, next_batch, upto, clear_next, sets); });
                     clear_next = false;
                 }
 
@@ -3977,10 +4507,15 @@ private:
                 if (last) break;
                 const std::size_t draw_end = si + 1 < m_scenes.size() ? m_scenes[si + 1].first_draw : m_draws3d.size();
                 const std::size_t caster_end = si + 1 < m_scenes.size() ? m_scenes[si + 1].first_caster : m_casters.size();
-                record_shadow_passes(cmd, pf, si, m_scenes[si].first_caster, caster_end);
-                for (std::uint32_t k = 0; k < m_scene_lights[si].plane_count; ++k) record_reflection_pass(cmd, pf, m_scenes[si], si, k, m_scenes[si].first_draw, draw_end, sets);
+                timed(cmd, pf, GpuPass::Shadows, [&]() { record_shadow_passes(cmd, pf, si, m_scenes[si].first_caster, caster_end); });
+                timed(cmd, pf, GpuPass::Volume, [&]() { record_volume_pass(cmd, pf, si); });
+
+                timed(cmd, pf, GpuPass::Reflections, [&]() {
+                    for (std::uint32_t k = 0; k < m_scene_lights[si].plane_count; ++k) record_reflection_pass(cmd, pf, m_scenes[si], si, k, m_scenes[si].first_draw, draw_end, sets);
+                });
+
                 between_passes();
-                record_3d_pass(cmd, pf, m_scenes[si], si, m_scenes[si].first_draw, draw_end, clear_next, sets);
+                timed(cmd, pf, GpuPass::Scene, [&]() { record_3d_pass(cmd, pf, m_scenes[si], si, m_scenes[si].first_draw, draw_end, clear_next, sets); });
                 clear_next = false;
             }
 
@@ -3992,20 +4527,13 @@ private:
         cmd.begin_label("fizmo present");
         vulkan::DescriptorSet present_set;
 
-        if (succeeded(pf.pool.allocate(m_present_set_layout, present_set))) {
-            const bool same_size = f.extent.width == m_width && f.extent.height == m_height;
-            vulkan::DescriptorWriter().image(0, m_target.view(), m_samplers[same_size ? NearestClamp : LinearClamp]).update(present_set);
-            vulkan::ColorAttachment out;
-            out.view = f.target_view;
-            out.load = vulkan::LoadOp::DontCare;
-            cmd.begin_rendering({ { { 0, 0 }, f.extent }, out });
-            cmd.bind(m_present_pipeline);
-            cmd.set_viewport_and_scissor(f.extent);
-            cmd.bind_descriptor_set(m_present_pipeline, 0, present_set);
-            cmd.draw(3);
-            cmd.end_rendering();
-        }
-
+        if (
+            succeeded(pf.pool.allocate(m_present_set_layout, present_set))
+        ) timed(
+            cmd, pf, GpuPass::Present, 
+            [&]() { record_present(cmd, f, present_set); }
+        );
+        
         cmd.end_label();
     }
 };

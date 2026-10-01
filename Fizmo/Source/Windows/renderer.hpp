@@ -41,6 +41,7 @@ private:
     std::unique_ptr<detail::RendererImplBase> m_impl;
     RendererBackend m_requested = RendererBackend::Auto;
     bool m_vsync = true;
+    bool m_gpu_timing = false;
 
 public:
     explicit Renderer(Window& window, RendererBackend backend = RendererBackend::Auto) noexcept
@@ -62,6 +63,7 @@ public:
         if (m_requested != RendererBackend::Software) {
             auto gpu = std::make_unique<detail::RendererImplGPU>();
             gpu->set_vsync(m_vsync);
+            gpu->set_gpu_timing(m_gpu_timing);
             if (gpu->initialize(handle, m_window->width(), m_window->height())) m_impl = std::move(gpu);
         }
 
@@ -108,13 +110,23 @@ public:
         if (m_impl) m_impl->set_vsync(enabled);
     }
 
+    void set_gpu_timing(bool enabled) noexcept {
+        m_gpu_timing = enabled;
+        if (m_impl) m_impl->set_gpu_timing(enabled);
+    }
+
+    bool       gpu_timing()  const noexcept { return m_gpu_timing; }
+    GpuTimings gpu_timings() const noexcept { return m_impl ? m_impl->gpu_timings() : GpuTimings{}; }
+
     bool vsync() const noexcept { return m_vsync; }
     void begin_frame() noexcept { if (m_impl) m_impl->begin_frame(); }
+
     void present() noexcept {
         if (!m_impl) return;
         if (m_impl->in_3d()) m_impl->end_3d();
         m_impl->present();
     }
+
     void clear(const graphics::Color& color = graphics::Color()) noexcept { if (m_impl) m_impl->clear(color); }
     bool capture(images::BitmapImage& out) noexcept { return m_impl && m_impl->capture(out); }
 

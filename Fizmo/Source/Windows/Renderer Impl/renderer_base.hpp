@@ -18,6 +18,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <array>
 
 namespace fizmo {
 namespace windows {
@@ -30,6 +31,31 @@ struct RenderPoint {
 
     template <typename X, typename Y, typename = typename std::enable_if<std::is_arithmetic<X>::value && std::is_arithmetic<Y>::value>::type>
     constexpr RenderPoint(X px, Y py) noexcept : x(static_cast<float>(px)), y(static_cast<float>(py)) {}
+};
+
+enum class GpuPass : std::uint8_t { Uploads = 0, Shadows, Volume, Reflections, Scene, Overlay, Present, Count };
+
+inline const char* gpu_pass_name(GpuPass pass) noexcept {
+    switch (pass) {
+        case GpuPass::Uploads:     return "Uploads";
+        case GpuPass::Shadows:     return "Shadows";
+        case GpuPass::Volume:      return "Volumetrics";
+        case GpuPass::Reflections: return "Reflections";
+        case GpuPass::Scene:       return "Scene";
+        case GpuPass::Overlay:     return "Overlay";
+        case GpuPass::Present:     return "Present";
+        default:                   return "";
+    }
+}
+
+struct GpuTimings {
+    static constexpr std::size_t PASSES = static_cast<std::size_t>(GpuPass::Count);
+
+    bool                          valid    = false;
+    double                        total_ms = 0.0;
+    std::array<double, PASSES>    pass_ms{};
+
+    double ms(GpuPass pass) const noexcept { return pass_ms[static_cast<std::size_t>(pass)]; }
 };
 
 namespace detail {
@@ -88,6 +114,8 @@ public:
     virtual const char* backend_name() const noexcept { return "software"; }
     virtual bool is_gpu() const noexcept { return false; }
     virtual void set_vsync(bool /*enabled*/) noexcept {}
+    virtual void set_gpu_timing(bool) noexcept {}
+    virtual GpuTimings gpu_timings() const noexcept { return {}; }
 
     virtual void draw_pixel_buffer(
         int dx, int dy, unsigned int dw, unsigned int dh,
