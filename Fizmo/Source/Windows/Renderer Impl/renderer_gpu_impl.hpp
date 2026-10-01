@@ -209,15 +209,12 @@ private:
         std::uint64_t                   stamp        = 0;
         std::uint64_t                   last_used    = 0;
         std::uint64_t                   bytes        = 0;
+        std::uint64_t                   generation   = 0;
         std::uint32_t                   vertex_count = 0;
         std::uint32_t                   index_count  = 0;
         bool                            quads        = false;
         graphics::Bounds3D              bounds;
         graphics::FaceGroups            groups{};
-        std::uint64_t                   stamp        = 0;
-        std::uint64_t                   last_used    = 0;
-        std::uint64_t                   bytes        = 0;
-        std::uint64_t                   generation   = 0;
     };
 
     struct ArenaRange {
@@ -341,7 +338,6 @@ private:
     static constexpr int                 kHashShift               = 29;
     static constexpr double              kSignatureGrid           = 256.0;
     static constexpr vulkan::ShaderStage kSceneStages             = vulkan::ShaderStage::Vertex | vulkan::ShaderStage::Fragment | vulkan::ShaderStage::Compute;
-    static constexpr std::int32_t        kPlanarReflections       = 4096;
     static constexpr int                 kMaxPlanes               = static_cast<int>(graphics::PlanarReflections3D::MAX_PLANES);
     static constexpr int                 kMaxCapsules             = static_cast<int>(graphics::CapsuleShadows3D::MAX_CAPSULES);
     static constexpr double              kPlaneFacing             = 1e-3;
@@ -3830,7 +3826,6 @@ private:
     static bool outside_light(const Caster& c, const float* m, bool point, int face, const float* light) noexcept {
         if (point) {
             if (outside_sphere(c, light)) return true;
-            const int axis = face / 2;
             float dist2 = 0.0f;
 
             for (int a = 0; a < 3; ++a) {
