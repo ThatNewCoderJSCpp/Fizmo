@@ -292,6 +292,7 @@ private:
     static constexpr std::int32_t kSceneCopy = 128, kScreenReflections = 256, kSoftShadows = 512, kLightShafts = 1024;
     static constexpr std::int32_t kReflectionPass = 2048, kPlanarReflections = 4096;
     static constexpr int kMaxPlanes = static_cast<int>(graphics::PlanarReflections3D::MAX_PLANES);
+    static constexpr int kMaxCapsules = static_cast<int>(graphics::CapsuleShadows3D::MAX_CAPSULES);
     static constexpr double kPlaneFacing = 1e-3;
     static constexpr std::uint32_t kBlendShift = 2, kBlendMask = 3u;
     static constexpr double kSoftDegreesToSlope = 3.14159265358979323846 / 180.0;
@@ -310,46 +311,50 @@ private:
     static constexpr float  kShadowBiasSlope    = 1.75f;
 
     struct SceneUniforms {
-        float        legacy[4]       = { 0, 0, 0, 1 };
-        float        sun_dir[4]      = { 0, 0, -1, 0 };
-        float        sun_color[4]    = { 0, 0, 0, 1 };
-        float        sky_color[4]    = { 1, 1, 1, 0 };
-        float        block_color[4]  = { 1, 1, 1, 1 };
-        float        params[4]       = { 0, 1, 0, 0 };
-        std::int32_t counts[4]       = { 0, 0, 0, 0 };
-        float        sun_matrix[16]  = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
-        float        sun_shadow[4]   = { 0, 0, 0, 0 };
-        float        point_shadow[4] = { 0, 0, 0, 0 };
+        float        legacy[4]                       = { 0, 0, 0, 1 };
+        float        sun_dir[4]                      = { 0, 0, -1, 0 };
+        float        sun_color[4]                    = { 0, 0, 0, 1 };
+        float        sky_color[4]                    = { 1, 1, 1, 0 };
+        float        block_color[4]                  = { 1, 1, 1, 1 };
+        float        params[4]                       = { 0, 1, 0, 0 };
+        std::int32_t counts[4]                       = { 0, 0, 0, 0 };
+        float        sun_matrix[16]                  = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+        float        sun_shadow[4]                   = { 0, 0, 0, 0 };
+        float        point_shadow[4]                 = { 0, 0, 0, 0 };
         float        point_pos[kMaxPointLights][4]   = {};
         float        point_color[kMaxPointLights][4] = {};
-        float        sky_zenith[4]   = {};
-        float        sky_horizon[4]  = {};
-        float        sky_glow[4]     = {};
-        float        sky_sun[4]      = {};
-        float        sky_moon[4]     = {};
-        float        sky_params[4]   = { 0, 0, 0, 1 };
-        float        medium_color[4] = { 0, 0, 0, 1 };
-        float        volume[4]       = {};
-        float        waves[4]        = {};
-        float        gloss[4]        = {};
-        float        inv_view_proj[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
-        float        view_proj[16]   = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
-        float        screen[4]       = { 0, 0, 1, 1 };
-        float        target[4]       = { 1, 1, 0, 0 };
-        float        water[4]        = {};
-        float        soft[4]         = {};
-        float        shafts[4]       = { 1, 1, 0, 0 };
-        float        rays[4]         = {};
-        float        sun_matrix_b[16] = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
-        float        sun_mix[4]      = {};
-        float        planes[kMaxPlanes][4] = {};
-        float        plane_info[4]   = {};
-        float        clip[4]         = {};
-        float        sun_disk[4]     = { 1, 1, 1, 64 };
-        float        glow[4]         = { 6, 0, 0, 0 };
+        float        sky_zenith[4]                   = {};
+        float        sky_horizon[4]                  = {};
+        float        sky_glow[4]                     = {};
+        float        sky_sun[4]                      = {};
+        float        sky_moon[4]                     = {};
+        float        sky_params[4]                   = { 0, 0, 0, 1 };
+        float        medium_color[4]                 = { 0, 0, 0, 1 };
+        float        volume[4]                       = {};
+        float        waves[4]                        = {};
+        float        gloss[4]                        = {};
+        float        inv_view_proj[16]               = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+        float        view_proj[16]                   = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+        float        screen[4]                       = { 0, 0, 1, 1 };
+        float        target[4]                       = { 1, 1, 0, 0 };
+        float        water[4]                        = {};
+        float        soft[4]                         = {};
+        float        shafts[4]                       = { 1, 1, 0, 0 };
+        float        rays[4]                         = {};
+        float        sun_matrix_b[16]                = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
+        float        sun_mix[4]                      = {};
+        float        planes[kMaxPlanes][4]           = {};
+        float        plane_info[4]                   = {};
+        float        clip[4]                         = {};
+        float        sun_disk[4]                     = { 1, 1, 1, 64 };
+        float        glow[4]                         = { 6, 0, 0, 0 };
+        float        glow[4]                         = { 6, 0, 0, 0 };
+        float        capsule_a[kMaxCapsules][4]      = {};
+        float        capsule_b[kMaxCapsules][4]      = {};
+        float        capsules[4]                     = {};
     };
 
-    static_assert(sizeof(SceneUniforms) == 2816, "scene uniforms must match the std140 block in the shaders");
+    static_assert(sizeof(SceneUniforms) == 2976, "scene uniforms must match the std140 block in the shaders");
 
     struct Caster {
         enum class Kind : std::uint8_t { Mesh = 0, Instanced, Quads };
@@ -524,6 +529,7 @@ private:
     std::unique_ptr<ShadowMap>    m_dummy_sun, m_dummy_cube;
     std::vector<RetiredMap>       m_retired_maps;
     mutable std::vector<std::pair<double, std::size_t>> m_light_order;
+    mutable std::vector<std::pair<double, std::size_t>> m_capsule_order;
     bool                          m_force_new_batch = false;
     bool                          m_uploads_committed = false;
 
@@ -1418,6 +1424,34 @@ private:
         return m;
     }
 
+    void capsule_uniforms(SceneUniforms& u, const graphics::CapsuleShadows3D& c, const vector3d& origin) const {
+        if (!c.enabled || c.strength <= 0.0f) return;
+        std::vector<std::pair<double, std::size_t>>& order = m_capsule_order;
+        order.clear();
+
+        for (std::size_t i = 0; i < c.capsules.size(); ++i) {
+            const graphics::CapsuleOccluder3D& o = c.capsules[i];
+            if (o.radius <= 0.0f) continue;
+            const vector3d mid = (o.start + o.end) * 0.5 - origin;
+            order.emplace_back(mid.dot(mid), i);
+        }
+
+        const std::size_t n = std::min(order.size(), graphics::CapsuleShadows3D::MAX_CAPSULES);
+        std::partial_sort(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(n), order.end());
+
+        for (std::size_t k = 0; k < n; ++k) {
+            const graphics::CapsuleOccluder3D& o = c.capsules[order[k].second];
+            const vector3d a = o.start - origin, b = o.end - origin;
+            u.capsule_a[k][0] = static_cast<float>(a.x); u.capsule_a[k][1] = static_cast<float>(a.y); u.capsule_a[k][2] = static_cast<float>(a.z); u.capsule_a[k][3] = o.radius;
+            u.capsule_b[k][0] = static_cast<float>(b.x); u.capsule_b[k][1] = static_cast<float>(b.y); u.capsule_b[k][2] = static_cast<float>(b.z);
+        }
+
+        u.capsules[0] = static_cast<float>(n);
+        u.capsules[1] = static_cast<float>(std::tan(c.sun_size * kSoftDegreesToSlope));
+        u.capsules[2] = c.point_size;
+        u.capsules[3] = c.strength;
+    }
+
     SceneLightRec snapshot_lighting(const Scene3D& scene) const {
         SceneLightRec rec;
         SceneUniforms& u = rec.uniforms;
@@ -1493,6 +1527,7 @@ private:
         }
 
         u.counts[0] = static_cast<std::int32_t>(count);
+        capsule_uniforms(u, l.capsule_shadows, origin);
 
         if (rec.point_count > 0) {
             flags |= kPointShadows;

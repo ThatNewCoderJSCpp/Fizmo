@@ -86,6 +86,31 @@ struct PointShadows3D {
     float        strength      = 1.0f;
 };
 
+struct CapsuleOccluder3D {
+    vector3d start{};
+    vector3d end{};
+    float    radius = 0.3f;
+
+    CapsuleOccluder3D() = default;
+    CapsuleOccluder3D(const vector3d& a, const vector3d& b, float r) noexcept : start(a), end(b), radius(r) {}
+
+    static CapsuleOccluder3D standing(const vector3d& feet, double height, double radius) noexcept {
+        const double top = height > 2.0 * radius ? height - radius : radius;
+        return { feet + vector3d{ 0.0, 0.0, radius }, feet + vector3d{ 0.0, 0.0, top }, static_cast<float>(radius) };
+    }
+};
+
+struct CapsuleShadows3D {
+    static constexpr std::size_t MAX_CAPSULES = 4;
+
+    bool  enabled    = false;
+    float sun_size   = 1.0f;
+    float point_size = 0.2f;
+    float strength   = 1.0f;
+
+    std::vector<CapsuleOccluder3D> capsules;
+};
+
 struct Atmosphere3D {
     bool     enabled       = false;
     vector3d sun_position  { 0.35, 0.2, 1.0 };
@@ -194,6 +219,7 @@ struct SceneLighting3D {
 
     SunShadow3D    sun_shadow;
     PointShadows3D point_shadows;
+    CapsuleShadows3D capsule_shadows;
     Atmosphere3D   atmosphere;
     Volumetrics3D  volumetrics;
     LightShafts3D  shafts;
