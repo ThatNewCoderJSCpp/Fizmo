@@ -348,13 +348,12 @@ private:
         float        clip[4]                         = {};
         float        sun_disk[4]                     = { 1, 1, 1, 64 };
         float        glow[4]                         = { 6, 0, 0, 0 };
-        float        glow[4]                         = { 6, 0, 0, 0 };
         float        capsule_a[kMaxCapsules][4]      = {};
         float        capsule_b[kMaxCapsules][4]      = {};
         float        capsules[4]                     = {};
     };
 
-    static_assert(sizeof(SceneUniforms) == 2976, "scene uniforms must match the std140 block in the shaders");
+    static_assert(sizeof(SceneUniforms) == 2960, "scene uniforms must match the std140 block in the shaders");
 
     struct Caster {
         enum class Kind : std::uint8_t { Mesh = 0, Instanced, Quads };
