@@ -61,7 +61,8 @@ enum CompactVertexFlags : std::uint8_t {
     CompactLit    = 1u << 0,
     CompactGlossy = 1u << 1,
     CompactLiquid = 1u << 2,
-    CompactMirror = 1u << 3
+    CompactMirror = 1u << 3,
+    CompactFlow   = 1u << 4
 };
 
 inline int cell_variation(std::int32_t x, std::int32_t y, std::int32_t z, unsigned int amount) noexcept {

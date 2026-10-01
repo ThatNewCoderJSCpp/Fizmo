@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.1.24
+    VERSION 0.1.25
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
