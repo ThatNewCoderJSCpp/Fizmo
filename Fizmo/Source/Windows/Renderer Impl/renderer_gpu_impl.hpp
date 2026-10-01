@@ -273,6 +273,7 @@ private:
         std::uint32_t            instance_first = 0, instance_count = 0;
         bool                     on_camera = true;
         bool                     in_reflections = true;
+        bool                     sky = false;
     };
 
     struct SceneRec {
@@ -1974,6 +1975,7 @@ private:
         d.state = state_for(m);
         d.on_camera      = m.camera_visible();
         d.in_reflections = m.reflected();
+        d.sky            = !m.fog;
 
         if (m.texture && m.texture->valid()) {
             d.view    = texture_view(*m.texture);
@@ -2608,13 +2610,9 @@ private:
             if (!sl.wants_copy || !possible) continue;
             const std::size_t end = si + 1 < m_scenes.size() ? m_scenes[si + 1].first_draw : m_draws3d.size();
 
-            std::size_t start = sc.first_draw;
-
-            for (std::size_t i = sc.first_draw; i < end; ++i)
-                if (!blended(m_draws3d[i]) && m_draws3d[i].count != 0 && m_draws3d[i].on_camera) start = i + 1;
-
-            for (std::size_t i = start; i < end; ++i) {
-                if (!blended(m_draws3d[i]) || m_draws3d[i].count == 0 || !m_draws3d[i].on_camera) continue;
+            for (std::size_t i = sc.first_draw; i < end; ++i) {
+                const Draw3D& d = m_draws3d[i];
+                if (!blended(d) || d.sky || d.count == 0 || !d.on_camera) continue;
                 sl.copy = true;
                 sl.copy_at = static_cast<std::uint32_t>(i);
                 break;
