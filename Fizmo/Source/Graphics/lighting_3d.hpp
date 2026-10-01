@@ -173,7 +173,8 @@ struct ReflectionPlane3D {
     vector3d normal{ 0.0, 0.0, 1.0 };
     vector3d lo{};
     vector3d hi{};
-    bool     bounded = false;
+    bool     bounded    = false;
+    float    resolution = 0.0f;
 
     ReflectionPlane3D() = default;
     ReflectionPlane3D(const vector3d& at, const vector3d& facing) noexcept : point(at), normal(facing) {}

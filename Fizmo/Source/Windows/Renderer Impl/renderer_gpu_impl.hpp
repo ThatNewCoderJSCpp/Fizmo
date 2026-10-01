@@ -451,7 +451,7 @@ private:
         std::uint32_t                                plane_count                = 0;
         float                                        planes[kMaxPlanes][4]      = {};
         int                                          plane_rects[kMaxPlanes][4] = {};
-        float                                        planar_scale               = 1.0f;
+        float                                        plane_scales[kMaxPlanes]   = {};
         bool                                         copy                       = false;
         std::uint32_t                                copy_at                    = 0;
         bool                                         volume                     = false;
@@ -1781,11 +1781,11 @@ private:
                 float* out = rec.planes[rec.plane_count];
                 out[0] = static_cast<float>(n.x); out[1] = static_cast<float>(n.y); out[2] = static_cast<float>(n.z); out[3] = static_cast<float>(d);
                 std::copy(out, out + 4, u.planes[rec.plane_count]);
+                rec.plane_scales[rec.plane_count] = std::min(plane.resolution > 0.0f ? plane.resolution : pr.resolution, 1.0f);
                 ++rec.plane_count;
             }
 
             if (rec.plane_count > 0) {
-                rec.planar_scale = std::min(pr.resolution, 1.0f);
                 u.plane_info[0] = static_cast<float>(rec.plane_count);
                 u.plane_info[1] = pr.distortion;
                 u.counts[1] |= kPlanarReflections;
@@ -2924,10 +2924,10 @@ private:
     void prepare_reflections() {
         for (SceneLightRec& sl : m_scene_lights) {
             if (sl.plane_count == 0) continue;
-            const unsigned int w = std::max(1u, static_cast<unsigned int>(std::lround(m_width * sl.planar_scale)));
-            const unsigned int h = std::max(1u, static_cast<unsigned int>(std::lround(m_height * sl.planar_scale)));
 
             for (std::uint32_t k = 0; k < sl.plane_count; ++k) {
+                const unsigned int w = std::max(1u, static_cast<unsigned int>(std::lround(m_width * sl.plane_scales[k])));
+                const unsigned int h = std::max(1u, static_cast<unsigned int>(std::lround(m_height * sl.plane_scales[k])));
                 if (ensure_reflection_target(k, w, h)) continue;
                 sl.plane_count = k;
                 break;
@@ -4084,7 +4084,7 @@ private:
         SceneLightRec& sl = m_scene_lights[scene];
         ReflectionTarget& t = m_reflections[plane];
         if (!t.color || !t.depth) return;
-        const float scale = sl.planar_scale;
+        const float scale = sl.plane_scales[plane];
         const float sx = static_cast<float>(sc.scene.x) * scale, sy = static_cast<float>(sc.scene.y) * scale;
         const float sw = static_cast<float>(sc.scene.width) * scale, sh = static_cast<float>(sc.scene.height) * scale;
         const int* area = sl.plane_rects[plane];
