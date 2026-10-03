@@ -1290,6 +1290,19 @@ public:
         } catch (...) {}
     }
 
+    static constexpr std::size_t kSwellPush = 24;
+
+    void swell_into(float* out) const noexcept {
+        const graphics::Swell3D& w = m_scene_lighting.surfaces.swell;
+        const bool on = m_scene_lighting.enabled && w.active();
+        out[0] = on ? w.height : 0.0f;
+        out[1] = w.wavenumber;
+        out[2] = w.dir_x;
+        out[3] = w.dir_y;
+        for (std::size_t i = 0; i < graphics::Swell3D::COUNT; ++i) out[4 + i] = w.phase[i];
+        out[4 + graphics::Swell3D::COUNT] = 0.0f;
+    }
+
     void draw_quad_batch_3d(const QuadBatchDraw* items, std::size_t count, const float* camera_frac, const graphics::Material3D& mat) noexcept override {
         if (!m_ready) { RendererImplBase::draw_quad_batch_3d(items, count, camera_frac, mat); return; }
         if (!m_in_3d || !items || count == 0) return;
@@ -1305,6 +1318,7 @@ public:
             std::copy(m_scenes.back().vp.begin(), m_scenes.back().vp.end(), base.push);
             for (int a = 0; a < 3; ++a) base.push[16 + a] = camera_frac[a];
             put_bits(base.push[23], material_flags(mat));
+            swell_into(base.push + kSwellPush);
             if (m_page_commands.size() < m_arena.size()) m_page_commands.resize(m_arena.size());
             for (auto& cmds : m_page_commands) cmds.clear();
             std::uint32_t largest = 0;

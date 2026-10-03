@@ -152,6 +152,22 @@ struct LightShafts3D {
     float        focus    = 12.0f;
 };
 
+struct Swell3D {
+    static constexpr std::size_t COUNT = 3;
+
+    static constexpr float ANGLES[COUNT]     = { 0.0f, 0.5f, -0.7f };
+    static constexpr float WAVENUMBER[COUNT] = { 1.0f, 1.37f, 1.83f };
+    static constexpr float AMPLITUDE[COUNT]  = { 1.0f, 0.4f, 0.18f };
+
+    float height       = 0.0f;
+    float wavenumber   = 0.45f;
+    float dir_x        = 1.0f;
+    float dir_y        = 0.0f;
+    float phase[COUNT] = { 0.0f, 0.0f, 0.0f };
+
+    bool active() const noexcept { return height > 0.0f; }
+};
+
 struct Surfaces3D {
     float wave_strength  = 0.08f;
     float wave_scale     = 0.9f;
@@ -166,6 +182,7 @@ struct Surfaces3D {
     bool  screen_reflections  = false;
     unsigned int reflection_steps = 32;
     float reflection_distance = 64.0f;
+    Swell3D swell;
 };
 
 struct ReflectionPlane3D {

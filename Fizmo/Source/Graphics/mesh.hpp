@@ -65,6 +65,14 @@ enum CompactVertexFlags : std::uint8_t {
     CompactFlow   = 1u << 4
 };
 
+constexpr int          COMPACT_SWELL_SHIFT = 5;
+constexpr std::uint8_t COMPACT_SWELL_MAX   = 7;
+
+inline std::uint8_t compact_swell(double scale) noexcept {
+    const double s = scale < 0.0 ? 0.0 : (scale > 1.0 ? 1.0 : scale);
+    return static_cast<std::uint8_t>(static_cast<std::uint8_t>(s * COMPACT_SWELL_MAX + 0.5) << COMPACT_SWELL_SHIFT);
+}
+
 inline int cell_variation(std::int32_t x, std::int32_t y, std::int32_t z, unsigned int amount) noexcept {
     if (amount == 0) return 0;
     std::uint32_t h = static_cast<std::uint32_t>(x) * 374761393u
