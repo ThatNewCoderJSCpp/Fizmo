@@ -164,6 +164,7 @@ struct Swell3D {
     float dir_x        = 1.0f;
     float dir_y        = 0.0f;
     float phase[COUNT] = { 0.0f, 0.0f, 0.0f };
+    float detail       = 48.0f;
 
     bool active() const noexcept { return height > 0.0f; }
 };

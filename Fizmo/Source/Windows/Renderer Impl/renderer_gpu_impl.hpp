@@ -404,9 +404,11 @@ private:
         float        volume_grid[4]                  = {};
         float        volume_proj[16]                 = { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 };
         float        plane_rects[kMaxPlanes][4]      = {};
+        float        swell[4]                        = {};
+        float        swell_phase[4]                  = {};
     };
 
-    static_assert(sizeof(SceneUniforms) == 3072, "scene uniforms must match the std140 block in the shaders");
+    static_assert(sizeof(SceneUniforms) == 3104, "scene uniforms must match the std140 block in the shaders");
     
     struct Caster {
         enum class Kind : std::uint8_t { Mesh = 0, Instanced, Quads };
@@ -1300,7 +1302,7 @@ public:
         out[2] = w.dir_x;
         out[3] = w.dir_y;
         for (std::size_t i = 0; i < graphics::Swell3D::COUNT; ++i) out[4 + i] = w.phase[i];
-        out[4 + graphics::Swell3D::COUNT] = 0.0f;
+        out[4 + graphics::Swell3D::COUNT] = w.detail;
     }
 
     void draw_quad_batch_3d(const QuadBatchDraw* items, std::size_t count, const float* camera_frac, const graphics::Material3D& mat) noexcept override {
@@ -1896,6 +1898,13 @@ private:
         u.volume[1] = l.volumetrics.anisotropy;
         u.volume[2] = l.volumetrics.distance;
         u.volume[3] = static_cast<float>(l.volumetrics.steps);
+        const graphics::Swell3D& sw = l.surfaces.swell;
+        u.swell[0] = sw.active() ? sw.height : 0.0f;
+        u.swell[1] = sw.wavenumber;
+        u.swell[2] = sw.dir_x;
+        u.swell[3] = sw.dir_y;
+        for (std::size_t i = 0; i < graphics::Swell3D::COUNT; ++i) u.swell_phase[i] = sw.phase[i];
+        u.swell_phase[3] = sw.detail;
         u.waves[0] = l.surfaces.wave_strength;
         u.waves[1] = l.surfaces.wave_scale;
         u.waves[2] = l.surfaces.wave_speed;
