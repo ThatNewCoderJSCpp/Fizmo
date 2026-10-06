@@ -117,6 +117,7 @@ public:
 
     bool       gpu_timing()  const noexcept { return m_gpu_timing; }
     GpuTimings gpu_timings() const noexcept { return m_impl ? m_impl->gpu_timings() : GpuTimings{}; }
+    GpuMemory  gpu_memory()  const noexcept { return m_impl ? m_impl->gpu_memory() : GpuMemory{}; }
 
     bool vsync() const noexcept { return m_vsync; }
     void begin_frame() noexcept { if (m_impl) m_impl->begin_frame(); }

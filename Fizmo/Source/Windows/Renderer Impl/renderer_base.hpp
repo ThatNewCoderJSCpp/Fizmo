@@ -58,6 +58,16 @@ struct GpuTimings {
     double ms(GpuPass pass) const noexcept { return pass_ms[static_cast<std::size_t>(pass)]; }
 };
 
+struct GpuMemory {
+    bool          valid        = false;
+    bool          measured     = false;
+    std::uint64_t used         = 0;
+    std::uint64_t budget       = 0;
+    std::uint64_t total        = 0;
+    std::uint64_t shared_used  = 0;
+    std::uint64_t shared_total = 0;
+};
+
 namespace detail {
 
 struct QuadBatchDraw {
@@ -116,6 +126,7 @@ public:
     virtual void set_vsync(bool /*enabled*/) noexcept {}
     virtual void set_gpu_timing(bool) noexcept {}
     virtual GpuTimings gpu_timings() const noexcept { return {}; }
+    virtual GpuMemory gpu_memory() const noexcept { return {}; }
 
     virtual void draw_pixel_buffer(
         int dx, int dy, unsigned int dw, unsigned int dh,

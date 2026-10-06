@@ -22,6 +22,15 @@ struct DeviceDesc {
     std::vector<const char*> extra_extensions;
 };
 
+struct MemoryReport {
+    bool          measured      = false;
+    std::uint64_t device_used   = 0;
+    std::uint64_t device_budget = 0;
+    std::uint64_t device_total  = 0;
+    std::uint64_t shared_used   = 0;
+    std::uint64_t shared_total  = 0;
+};
+
 struct DeviceFeatures {
     bool dynamic_rendering     = false;   
     bool synchronization2      = false;   
@@ -53,6 +62,7 @@ struct DeviceState {
     VkPhysicalDeviceProperties       properties{};
     VkPhysicalDeviceMemoryProperties memory{};
     DeviceFeatures                   features;
+    bool                             memory_budget = false;
 
     QueueSlot graphics;   
     QueueSlot present;    
@@ -403,6 +413,12 @@ public:
         std::vector<const char*> extensions;
         if (desc.surface) extensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         for (const char* e : desc.extra_extensions) extensions.push_back(e);
+
+        if (best.gpu.supports_extension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME)) {
+            extensions.push_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+            state->memory_budget = true;
+        }
+
         auto info = detail::make<VkDeviceCreateInfo>(VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO);
         info.pNext                   = &e2;
         info.queueCreateInfoCount    = static_cast<std::uint32_t>(queue_infos.size());
@@ -450,6 +466,33 @@ public:
     detail::DeviceState*       state()        noexcept { return m_state.get(); }
 
     PhysicalDevice physical_device() const noexcept { return PhysicalDevice(m_state->instance, m_state->physical); }
+
+    MemoryReport memory_report() const noexcept {
+        MemoryReport r;
+        if (!valid()) return r;
+        auto budget = detail::make<VkPhysicalDeviceMemoryBudgetPropertiesEXT>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT);
+        auto props  = detail::make<VkPhysicalDeviceMemoryProperties2>(VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2);
+        if (m_state->memory_budget) props.pNext = &budget;
+        m_state->instance->fn.vkGetPhysicalDeviceMemoryProperties2(m_state->physical, &props);
+        r.measured = m_state->memory_budget;
+
+        for (std::uint32_t i = 0; i < props.memoryProperties.memoryHeapCount; ++i) {
+            const bool local = (props.memoryProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0;
+            const std::uint64_t size = props.memoryProperties.memoryHeaps[i].size;
+            const std::uint64_t used = m_state->memory_budget ? budget.heapUsage[i] : 0;
+
+            if (local) {
+                r.device_total  += size;
+                r.device_used   += used;
+                r.device_budget += m_state->memory_budget ? budget.heapBudget[i] : size;
+            } else {
+                r.shared_total += size;
+                r.shared_used  += used;
+            }
+        }
+
+        return r;
+    }
     const DeviceFeatures& features() const noexcept { return m_state->features; }
     const VkPhysicalDeviceLimits& limits() const noexcept { return m_state->properties.limits; }
     std::string name() const { return m_state->properties.deviceName; }

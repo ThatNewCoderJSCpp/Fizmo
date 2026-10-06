@@ -641,6 +641,19 @@ public:
 
     GpuTimings gpu_timings() const noexcept override { return m_timings; }
 
+    GpuMemory gpu_memory() const noexcept override {
+        const vulkan::MemoryReport r = m_device.memory_report();
+        GpuMemory m;
+        m.valid        = m_device.valid();
+        m.measured     = r.measured;
+        m.used         = r.device_used;
+        m.budget       = r.device_budget;
+        m.total        = r.device_total;
+        m.shared_used  = r.shared_used;
+        m.shared_total = r.shared_total;
+        return m;
+    }
+
     bool initialize(void* native_handle, unsigned int w, unsigned int h) noexcept override {
         shutdown();
 
