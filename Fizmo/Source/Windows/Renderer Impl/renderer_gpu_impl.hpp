@@ -309,6 +309,11 @@ private:
     static constexpr int                 kMaxPointLights          = static_cast<int>(graphics::SceneLighting3D::MAX_POINT_LIGHTS);
     static constexpr int                 kPointShadowMaps         = static_cast<int>(graphics::PointShadows3D::MAX_LIGHTS);
     static constexpr int                 kCubeFaces               = 6;
+    static constexpr std::uint8_t        kAllCubeFaces            = 0x3F;
+    static constexpr float               kNoCone                  = -3.0f;
+    static constexpr double              kCubeFaceSpread          = 0.9553166181245093;
+    static constexpr double              kConeMargin              = 0.05;
+    static constexpr double              kMinConeGap              = 1e-3;
     static constexpr std::int32_t        kSceneEnabled            = 1;
     static constexpr std::int32_t        kSunShadows              = 2;
     static constexpr std::int32_t        kPointShadows            = 4;
@@ -406,9 +411,11 @@ private:
         float        plane_rects[kMaxPlanes][4]      = {};
         float        swell[4]                        = {};
         float        swell_phase[4]                  = {};
+        float        point_spot[kMaxPointLights][4]  = {};
+        float        point_map[kPointShadowMaps][4]  = {};
     };
 
-    static_assert(sizeof(SceneUniforms) == 3104, "scene uniforms must match the std140 block in the shaders");
+    static_assert(sizeof(SceneUniforms) == 4256, "scene uniforms must match the std140 block in the shaders");
     
     struct Caster {
         enum class Kind : std::uint8_t { Mesh = 0, Instanced, Quads };
@@ -429,9 +436,14 @@ private:
     };
 
     struct PointShadowRec {
-        float light[4] = { 0, 0, 0, 1 };
-        Mat4f faces[kCubeFaces];
-        std::uint64_t key = 0;
+        float         light[4] = { 0, 0, 0, 1 };
+        Mat4f         faces[kCubeFaces];
+        std::uint64_t key      = 0;
+        std::uint8_t  mask     = kAllCubeFaces;
+        bool          moving   = false;
+        bool          render   = false;
+        std::uint64_t id       = 0;
+        double        world[3] = { 0, 0, 0 };
     };
 
     struct SceneLightRec {
@@ -448,6 +460,7 @@ private:
         std::array<PointShadowRec, kPointShadowMaps> points{};
         std::uint32_t                                point_count                = 0;
         unsigned int                                 point_size                 = 0;
+        unsigned int                                 moving_faces               = 0;
         bool                                         wants_copy                 = false;
         bool                                         wants_rays                 = false;
         std::uint32_t                                plane_count                = 0;
@@ -468,6 +481,10 @@ private:
         bool                                      cube      = false;
         bool                                      cached    = false;
         std::uint64_t                             signature = 0;
+        std::uint64_t                             light_id  = 0;
+        std::uint8_t                              mask      = 0;
+        double                                    world[3]  = { 0, 0, 0 };
+        float                                     radius    = 1.0f;
 
         const vulkan::ImageView& attachment(int face) const noexcept { return cube ? face_views[static_cast<std::size_t>(face)] : image->view(); }
     };
@@ -625,6 +642,8 @@ private:
     std::vector<std::uint64_t>                               m_stamp_values;
     std::uint64_t                                            m_mesh_generation = 0;
     std::array<std::uint64_t, kPointShadowMaps>              m_point_signatures{};
+    std::uint32_t                                            m_point_kept   = 0;
+    std::uint32_t                                            m_moving_turn  = 0;
     bool                                                     m_uploads_committed = false;
 
 public:
@@ -1618,6 +1637,31 @@ private:
         return m;
     }
 
+    static void spot_uniform(float* out, const graphics::PointLight3D& p) noexcept {
+        out[0] = out[1] = out[2] = 0.0f;
+        out[3] = kNoCone;
+        const double len = p.direction.magnitude();
+        if (!p.is_spot() || len <= 0.0) return;
+        const double outer = std::cos(p.cone * kRadiansPerDegree);
+        const double inner = std::cos(p.cone * (1.0 - std::clamp(static_cast<double>(p.cone_softness), 0.0, 1.0)) * kRadiansPerDegree);
+        const double sharp = 1.0 / std::max(inner - outer, kMinConeGap);
+        const vector3d dir = p.direction / len * sharp;
+        out[0] = static_cast<float>(dir.x); out[1] = static_cast<float>(dir.y); out[2] = static_cast<float>(dir.z);
+        out[3] = static_cast<float>(outer);
+    }
+
+    static std::uint8_t cone_faces(const graphics::PointLight3D& p) noexcept {
+        const double len = p.direction.magnitude();
+        if (!p.is_spot() || len <= 0.0) return kAllCubeFaces;
+        const vector3d dir = p.direction / len;
+        const double reach = std::min(p.cone * kRadiansPerDegree + kCubeFaceSpread + kConeMargin, constants::pi());
+        const double limit = std::cos(reach);
+        const double along[kCubeFaces] = { dir.x, -dir.x, dir.y, -dir.y, dir.z, -dir.z };
+        std::uint8_t mask = 0;
+        for (int f = 0; f < kCubeFaces; ++f) if (along[f] >= limit) mask = static_cast<std::uint8_t>(mask | (1u << f));
+        return mask == 0 ? kAllCubeFaces : mask;
+    }
+
     static Mat4f cube_face_matrix(int face, const vector3d& light) noexcept {
         static const double axes[kCubeFaces][3][3] = {
             { {  0,  0, -1 }, {  0, -1,  0 }, {  1,  0,  0 } },
@@ -1719,6 +1763,7 @@ private:
             float* pos = u.point_pos[k];
             float* col = u.point_color[k];
             pos[0] = static_cast<float>(rel.x); pos[1] = static_cast<float>(rel.y); pos[2] = static_cast<float>(rel.z); pos[3] = p.radius;
+            spot_uniform(u.point_spot[k], p);
             const double dist = std::sqrt(all[k].first);
             double weight = fade(count_cut, dist);
             col[3] = -1.0f;
@@ -1739,6 +1784,16 @@ private:
                 for (double v : { p.position.x, p.position.y, p.position.z }) mix_hash(ps.key, grid_key(v));
                 mix_hash(ps.key, float_key(p.radius));
                 mix_hash(ps.key, l.point_shadows.resolution);
+                ps.mask   = cone_faces(p);
+                ps.moving = p.moving;
+                ps.id     = p.id;
+                ps.world[0] = p.position.x; ps.world[1] = p.position.y; ps.world[2] = p.position.z;
+                mix_hash(ps.key, ps.mask);
+
+                if (p.is_spot()) {
+                    for (double v : { p.direction.x, p.direction.y, p.direction.z }) mix_hash(ps.key, grid_key(v));
+                    mix_hash(ps.key, float_key(p.cone));
+                }
                 col[3] = static_cast<float>(rec.point_count);
                 ++rec.point_count;
             }
@@ -1750,6 +1805,7 @@ private:
         if (rec.point_count > 0) {
             flags |= kPointShadows;
             rec.point_size = l.point_shadows.resolution;
+            rec.moving_faces = l.point_shadows.moving_faces;
             u.point_shadow[0] = l.point_shadows.bias;
             u.point_shadow[1] = l.point_shadows.strength;
             u.point_shadow[2] = l.point_shadows.normal_offset;
@@ -3678,6 +3734,65 @@ private:
         cmd.end_rendering();
     }
 
+    void plan_point_shadows(SceneLightRec& sl, std::size_t scene) {
+        if (scene >= m_scenes.size()) return;
+        const std::size_t first = m_scenes[scene].first_caster;
+        const std::size_t last = scene + 1 < m_scenes.size() ? m_scenes[scene + 1].first_caster : m_casters.size();
+        const double* origin = m_scenes[scene].scene.origin;
+
+        for (std::uint32_t k = 0; k < sl.point_count; ++k)
+            m_point_signatures[k] = shadow_signature(sl.points[k].key, first, last, nullptr, sl.points[k].light, origin);
+
+        for (std::uint32_t k = 0; k < sl.point_count; ++k)
+            if (!holds(m_point_maps[k], m_point_signatures[k])) claim(sl, k, [&](const ShadowMap& m) { return m.cached && m.signature == m_point_signatures[k]; });
+
+        unsigned int moving_faces = 0;
+        m_point_kept = 0;
+        const std::uint32_t turn = sl.point_count > 0 ? m_moving_turn++ % sl.point_count : 0;
+
+        for (std::uint32_t step = 0; step < sl.point_count; ++step) {
+            const std::uint32_t k = (step + turn) % sl.point_count;
+            PointShadowRec& ps = sl.points[k];
+            ps.render = !holds(m_point_maps[k], m_point_signatures[k]);
+            const unsigned int faces = face_count(ps.mask);
+
+            if (ps.render && ps.moving && sl.moving_faces > 0 && moving_faces + faces > sl.moving_faces && ps.id != 0) {
+                auto stale = [&](const ShadowMap& m) { return m.cached && m.light_id == ps.id && (m.mask & ps.mask) == ps.mask; };
+                if (stale(*m_point_maps[k]) || claim(sl, k, stale)) { ps.render = false; m_point_kept |= 1u << k; }
+            }
+
+            if (ps.render && ps.moving) moving_faces += faces;
+        }
+
+        for (std::uint32_t k = 0; k < sl.point_count; ++k) {
+            const PointShadowRec& ps = sl.points[k];
+            const ShadowMap& map = *m_point_maps[k];
+            const double* world = ps.render ? ps.world : map.world;
+            float* out = sl.uniforms.point_map[k];
+            for (int a = 0; a < 3; ++a) out[a] = static_cast<float>(world[a] - origin[a]);
+            out[3] = ps.render ? ps.light[3] : map.radius;
+        }
+    }
+
+    static unsigned int face_count(std::uint8_t mask) noexcept {
+        unsigned int n = 0;
+        for (int f = 0; f < kCubeFaces; ++f) if (mask & (1u << f)) ++n;
+        return n;
+    }
+
+    template <typename Match>
+    bool claim(const SceneLightRec& sl, std::uint32_t k, Match&& match) {
+        for (std::size_t j = 0; j < m_point_maps.size(); ++j) {
+            if (j == k || !m_point_maps[j] || (m_point_kept & (1u << j)) || !match(*m_point_maps[j])) continue;
+            if (j < sl.point_count && holds(m_point_maps[j], m_point_signatures[j])) continue;
+            if (m_point_maps[j]->size != m_point_maps[k]->size) continue;
+            std::swap(m_point_maps[j], m_point_maps[k]);
+            return true;
+        }
+
+        return false;
+    }
+
     void prepare_shadow_maps() {
         for (SceneLightRec& sl : m_scene_lights) {
             if (sl.sun_shadow && !ensure_shadow_map(m_sun_map, sl.sun_size, false)) {
@@ -3698,6 +3813,7 @@ private:
             }
 
             if (sl.point_count == 0) sl.uniforms.counts[1] &= ~kPointShadows;
+            else plan_point_shadows(sl, static_cast<std::size_t>(&sl - m_scene_lights.data()));
 
             for (int i = 0; i < sl.uniforms.counts[0]; ++i)
                 if (sl.uniforms.point_color[i][3] >= static_cast<float>(sl.point_count)) sl.uniforms.point_color[i][3] = -1.0f;
@@ -3752,10 +3868,15 @@ private:
         return map && map->cached && map->signature == signature;
     }
 
-    void render_shadow_map(const vulkan::CommandBuffer& cmd, PerFrame& pf, ShadowMap& map, std::uint64_t signature, const Mat4f* faces, const float* light, bool point, std::size_t first, std::size_t last) {
+    void render_shadow_map(const vulkan::CommandBuffer& cmd, PerFrame& pf, ShadowMap& map, std::uint64_t signature, const Mat4f* faces, const float* light, bool point, std::size_t first, std::size_t last, std::uint8_t mask = kAllCubeFaces) {
         cmd.transition(*map.image, vulkan::ImageLayout::DepthAttachment);
         const int views = point ? kCubeFaces : 1;
-        for (int f = 0; f < views; ++f) record_shadow_view(cmd, pf, map, f, faces[static_cast<std::size_t>(f)].data(), light, point, first, last);
+
+        for (int f = 0; f < views; ++f) {
+            if (point && (mask & (1u << f)) == 0) continue;
+            record_shadow_view(cmd, pf, map, f, faces[static_cast<std::size_t>(f)].data(), light, point, first, last);
+        }
+
         cmd.transition(*map.image, vulkan::ImageLayout::ShaderReadOnly);
         map.signature = signature;
         map.cached    = true;
@@ -3782,25 +3903,15 @@ private:
             if (blend && !holds(m_sun_map_b, sig_b)) render_shadow_map(cmd, pf, *m_sun_map_b, sig_b, &mb, light_b, false, first, last);
         }
 
-        for (std::uint32_t k = 0; k < sl.point_count; ++k)
-            m_point_signatures[k] = shadow_signature(sl.points[k].key, first, last, nullptr, sl.points[k].light, origin);
-
         for (std::uint32_t k = 0; k < sl.point_count; ++k) {
-            if (holds(m_point_maps[k], m_point_signatures[k])) continue;
-
-            for (std::size_t j = 0; j < m_point_maps.size(); ++j) {
-                if (j == k || !holds(m_point_maps[j], m_point_signatures[k])) continue;
-                if (j < sl.point_count && holds(m_point_maps[j], m_point_signatures[j])) continue;
-                if (m_point_maps[j]->size != m_point_maps[k]->size) continue;
-                std::swap(m_point_maps[j], m_point_maps[k]);
-                break;
-            }
-        }
-
-        for (std::uint32_t k = 0; k < sl.point_count; ++k) {
-            if (!m_point_maps[k] || holds(m_point_maps[k], m_point_signatures[k])) continue;
             const PointShadowRec& ps = sl.points[k];
-            render_shadow_map(cmd, pf, *m_point_maps[k], m_point_signatures[k], ps.faces, ps.light, true, first, last);
+            if (!ps.render || !m_point_maps[k]) continue;
+            ShadowMap& map = *m_point_maps[k];
+            render_shadow_map(cmd, pf, map, m_point_signatures[k], ps.faces, ps.light, true, first, last, ps.mask);
+            map.light_id = ps.id;
+            map.mask     = ps.mask;
+            map.radius   = ps.light[3];
+            std::copy(ps.world, ps.world + 3, map.world);
         }
 
         cmd.end_label();

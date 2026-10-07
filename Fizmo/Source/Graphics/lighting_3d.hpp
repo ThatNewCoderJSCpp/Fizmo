@@ -44,15 +44,31 @@ struct BakedLight {
 constexpr std::uint32_t LIGHT_FULL_SKY = BakedLight::full_sky().packed();
 
 struct PointLight3D {
-    vector3d position{};
-    Color    color         = Color(255, 255, 255);
-    float    intensity     = 1.0f;
-    float    radius        = 8.0f;
-    bool     casts_shadows = false;
+    static constexpr float FULL_CONE = 180.0f;
+
+    vector3d      position{};
+    Color         color         = Color(255, 255, 255);
+    float         intensity     = 1.0f;
+    float         radius        = 8.0f;
+    bool          casts_shadows = false;
+    vector3d      direction{ 0.0, 0.0, -1.0 };
+    float         cone          = 0.0f;
+    float         cone_softness = 0.2f;
+    bool          moving        = false;
+    std::uint64_t id            = 0;
 
     PointLight3D() = default;
     PointLight3D(const vector3d& at, const Color& c, float strength, float reach, bool shadows = false) noexcept
         : position(at), color(c), intensity(strength), radius(reach), casts_shadows(shadows) {}
+
+    static PointLight3D spot(const vector3d& at, const vector3d& facing, const Color& c, float strength, float reach, float half_angle, bool shadows = false) noexcept {
+        PointLight3D l(at, c, strength, reach, shadows);
+        l.direction = facing;
+        l.cone      = half_angle;
+        return l;
+    }
+
+    bool is_spot() const noexcept { return cone > 0.0f && cone < FULL_CONE; }
 };
 
 struct SunShadow3D {
@@ -85,6 +101,7 @@ struct PointShadows3D {
     float        normal_offset = 0.04f;
     float        softness      = 1.0f;
     float        strength      = 1.0f;
+    unsigned int moving_faces  = 12;
 };
 
 struct CapsuleOccluder3D {
