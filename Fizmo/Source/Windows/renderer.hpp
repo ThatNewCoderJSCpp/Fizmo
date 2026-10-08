@@ -119,6 +119,9 @@ public:
     GpuTimings gpu_timings() const noexcept { return m_impl ? m_impl->gpu_timings() : GpuTimings{}; }
     GpuMemory  gpu_memory()  const noexcept { return m_impl ? m_impl->gpu_memory() : GpuMemory{}; }
 
+    void  set_render_scale(float scale) noexcept { if (m_impl) m_impl->set_render_scale(scale); }
+    float render_scale() const noexcept { return m_impl ? m_impl->render_scale() : 1.0f; }
+
     bool vsync() const noexcept { return m_vsync; }
     void begin_frame() noexcept { if (m_impl) m_impl->begin_frame(); }
 

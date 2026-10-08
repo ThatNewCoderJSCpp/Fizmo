@@ -303,6 +303,8 @@ private:
         std::uint32_t first_draw   = 0;
         std::uint32_t first_caster = 0;
         Scene3D       scene;
+        Scene3D       full;
+        bool          scaled       = false;
         Mat4f         vp;                
     };
 
@@ -310,6 +312,9 @@ private:
     static constexpr int                 kPointShadowMaps         = static_cast<int>(graphics::PointShadows3D::MAX_LIGHTS);
     static constexpr int                 kCubeFaces               = 6;
     static constexpr std::uint8_t        kAllCubeFaces            = 0x3F;
+    static constexpr float               kMinRenderScale          = 0.25f;
+    static constexpr float               kFullRenderScale         = 1.0f;
+    static constexpr std::uint32_t       kOpaqueWhite             = 0xFFFFFFFFu;
     static constexpr float               kNoCone                  = -3.0f;
     static constexpr double              kCubeFaceSpread          = 0.9553166181245093;
     static constexpr double              kConeMargin              = 0.05;
@@ -560,6 +565,8 @@ private:
 
     vulkan::Image                                            m_depth;
     vulkan::Image                                            m_scene_color;
+    vulkan::Image                                            m_upscale;
+    float                                                    m_render_scale = 1.0f;
     vulkan::Image                                            m_scene_depth;
     vulkan::ImageView                                        m_scene_depth_view;
     vulkan::Format                                           m_depth_format = vulkan::Format::D32Float;
@@ -751,6 +758,7 @@ public:
         m_scene_depth_view.destroy();
         m_scene_depth.destroy();
         m_scene_color.destroy();
+        m_upscale.destroy();
         m_depth.destroy();
         m_glyphs.clear();
         m_atlas.clear();
@@ -1164,9 +1172,17 @@ public:
             rec.first_draw   = static_cast<std::uint32_t>(m_draws3d.size());
             rec.first_caster = static_cast<std::uint32_t>(m_casters.size());
             rec.scene        = scene;
+            rec.full         = scene;
             rec.vp           = scene.view_proj;
-            for (int c = 0; c < 4; ++c) rec.vp[4 + c] = -rec.vp[4 + c];   
-            m_scene_lights.push_back(snapshot_lighting(scene));
+            for (int c = 0; c < 4; ++c) rec.vp[4 + c] = -rec.vp[4 + c];
+
+            if (m_render_scale < kFullRenderScale && m_upscale.valid() && scene.width > 0 && scene.height > 0) {
+                rec.scene.width  = std::max(1u, static_cast<unsigned int>(std::lround(scene.width * m_render_scale)));
+                rec.scene.height = std::max(1u, static_cast<unsigned int>(std::lround(scene.height * m_render_scale)));
+                rec.scaled       = rec.scene.width < scene.width || rec.scene.height < scene.height;
+            }
+
+            m_scene_lights.push_back(snapshot_lighting(rec.scene));
             m_scenes.push_back(rec);
             m_in_3d = true;
             m_force_new_batch = true;
@@ -1176,7 +1192,52 @@ public:
     void end_3d() noexcept override {
         if (!m_in_3d) return;
         m_in_3d = false;
-        m_force_new_batch = true;   
+        m_force_new_batch = true;
+        if (m_scenes.empty() || !m_scenes.back().scaled || !m_upscale.valid()) return;
+
+        try {
+            const SceneRec& sc = m_scenes.back();
+            const float tw = static_cast<float>(m_width), th = static_cast<float>(m_height);
+            const float u0 = static_cast<float>(sc.scene.x) / tw, v0 = static_cast<float>(sc.scene.y) / th;
+            const float u1 = static_cast<float>(sc.scene.x + static_cast<int>(sc.scene.width)) / tw;
+            const float v1 = static_cast<float>(sc.scene.y + static_cast<int>(sc.scene.height)) / th;
+            add_textured_quad(static_cast<float>(sc.full.x), static_cast<float>(sc.full.y), static_cast<float>(sc.full.width), static_cast<float>(sc.full.height),
+                              u0, v0, u1, v1, kOpaqueWhite, &m_upscale.view(), LinearClamp);
+            m_force_new_batch = true;
+        } catch (...) {}
+    }
+
+    void set_render_scale(float scale) noexcept override {
+        const float s = std::min(std::max(scale, kMinRenderScale), kFullRenderScale);
+        m_render_scale = s;
+        if (s < kFullRenderScale && !m_upscale.valid() && m_ready) create_upscale();
+    }
+
+    float render_scale() const noexcept override { return m_render_scale; }
+
+    void create_upscale() noexcept {
+        vulkan::ImageDesc ud;
+        ud.extent = { m_width, m_height, 1 };
+        ud.format = vulkan::Format::RGBA8Unorm;
+        ud.usage  = vulkan::ImageUsage::Sampled | vulkan::ImageUsage::TransferDst;
+        ud.name   = "fizmo scaled scene";
+        if (failed(m_upscale.create(m_device, ud))) m_upscale.destroy();
+    }
+
+    void record_upscale_copy(const vulkan::CommandBuffer& cmd, const SceneRec& sc) {
+        if (!sc.scaled || !m_upscale.valid()) return;
+        const int x0 = std::max(sc.scene.x, 0), y0 = std::max(sc.scene.y, 0);
+        const int x1 = std::min(sc.scene.x + static_cast<int>(sc.scene.width), static_cast<int>(m_width));
+        const int y1 = std::min(sc.scene.y + static_cast<int>(sc.scene.height), static_cast<int>(m_height));
+        if (x1 <= x0 || y1 <= y0) return;
+        const vulkan::Rect2D r{ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } };
+        cmd.begin_label("fizmo render scale");
+        cmd.transition(m_target, vulkan::ImageLayout::TransferSrc);
+        cmd.transition(m_upscale, vulkan::ImageLayout::TransferDst);
+        cmd.blit(m_target.handle(), r, m_upscale.handle(), r, vulkan::Filter::Nearest);
+        cmd.transition(m_upscale, vulkan::ImageLayout::ShaderReadOnly);
+        cmd.transition(m_target, vulkan::ImageLayout::ColorAttachment);
+        cmd.end_label();
     }
 
     void set_light_3d(const graphics::Light3D& light) noexcept override {
@@ -3116,6 +3177,8 @@ private:
         dd.name    = "fizmo depth buffer";
         m_depth.create(m_device, dd);
         create_scene_copies();
+        m_upscale.destroy();
+        if (m_render_scale < kFullRenderScale) create_upscale();
         m_target_fresh = true;
 
         if (m_clip_active) {
@@ -4654,6 +4717,7 @@ private:
 
                 between_passes();
                 timed(cmd, pf, GpuPass::Scene, [&]() { record_3d_pass(cmd, pf, m_scenes[si], si, m_scenes[si].first_draw, draw_end, clear_next, sets); });
+                record_upscale_copy(cmd, m_scenes[si]);
                 clear_next = false;
             }
 

@@ -125,6 +125,8 @@ public:
     virtual bool is_gpu() const noexcept { return false; }
     virtual void set_vsync(bool /*enabled*/) noexcept {}
     virtual void set_gpu_timing(bool) noexcept {}
+    virtual void set_render_scale(float) noexcept {}
+    virtual float render_scale() const noexcept { return 1.0f; }
     virtual GpuTimings gpu_timings() const noexcept { return {}; }
     virtual GpuMemory gpu_memory() const noexcept { return {}; }
 
