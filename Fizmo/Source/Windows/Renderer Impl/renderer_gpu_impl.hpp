@@ -314,7 +314,8 @@ private:
     static constexpr std::uint8_t        kAllCubeFaces            = 0x3F;
     static constexpr float               kMinRenderScale          = 0.25f;
     static constexpr float               kFullRenderScale         = 1.0f;
-    static constexpr std::uint32_t       kOpaqueWhite             = 0xFFFFFFFFu;
+    static constexpr std::uint32_t       kUpscalePushBytes        = 32;
+    static constexpr std::uint32_t       kFullscreenVertices      = 3;
     static constexpr float               kNoCone                  = -3.0f;
     static constexpr double              kCubeFaceSpread          = 0.9553166181245093;
     static constexpr double              kConeMargin              = 0.05;
@@ -524,6 +525,9 @@ private:
     vulkan::ShaderModule                                         m_present_fs;
     vulkan::Pipeline                                             m_draw_pipeline;
     vulkan::Pipeline                                             m_present_pipeline;
+    vulkan::PipelineLayout                                       m_upscale_layout;
+    vulkan::ShaderModule                                         m_upscale_fs;
+    vulkan::Pipeline                                             m_upscale_pipeline;
     std::array<vulkan::Sampler, kSamplerCount>                   m_samplers;
     vulkan::Image                                                m_white;
     vulkan::Image                                                m_target;
@@ -567,6 +571,8 @@ private:
     vulkan::Image                                            m_scene_color;
     vulkan::Image                                            m_upscale;
     float                                                    m_render_scale = 1.0f;
+    UpscaleFilter                                            m_upscale_filter = UpscaleFilter::Bilinear;
+    float                                                    m_sharpness      = 0.0f;
     vulkan::Image                                            m_scene_depth;
     vulkan::ImageView                                        m_scene_depth_view;
     vulkan::Format                                           m_depth_format = vulkan::Format::D32Float;
@@ -787,6 +793,9 @@ public:
         for (auto& s : m_samplers) s.destroy();
         m_present_pipeline.destroy(); 
         m_draw_pipeline.destroy();
+        m_upscale_pipeline.destroy();
+        m_upscale_layout.destroy();
+        m_upscale_fs.destroy();
         m_present_fs.destroy(); 
         m_present_vs.destroy(); 
         m_draw_fs.destroy(); 
@@ -1193,18 +1202,6 @@ public:
         if (!m_in_3d) return;
         m_in_3d = false;
         m_force_new_batch = true;
-        if (m_scenes.empty() || !m_scenes.back().scaled || !m_upscale.valid()) return;
-
-        try {
-            const SceneRec& sc = m_scenes.back();
-            const float tw = static_cast<float>(m_width), th = static_cast<float>(m_height);
-            const float u0 = static_cast<float>(sc.scene.x) / tw, v0 = static_cast<float>(sc.scene.y) / th;
-            const float u1 = static_cast<float>(sc.scene.x + static_cast<int>(sc.scene.width)) / tw;
-            const float v1 = static_cast<float>(sc.scene.y + static_cast<int>(sc.scene.height)) / th;
-            add_textured_quad(static_cast<float>(sc.full.x), static_cast<float>(sc.full.y), static_cast<float>(sc.full.width), static_cast<float>(sc.full.height),
-                              u0, v0, u1, v1, kOpaqueWhite, &m_upscale.view(), LinearClamp);
-            m_force_new_batch = true;
-        } catch (...) {}
     }
 
     void set_render_scale(float scale) noexcept override {
@@ -1215,6 +1212,11 @@ public:
 
     float render_scale() const noexcept override { return m_render_scale; }
 
+    void set_upscale(UpscaleFilter filter, float sharpness) noexcept override {
+        m_upscale_filter = filter;
+        m_sharpness      = std::min(std::max(sharpness, 0.0f), 1.0f);
+    }
+
     void create_upscale() noexcept {
         vulkan::ImageDesc ud;
         ud.extent = { m_width, m_height, 1 };
@@ -1224,8 +1226,8 @@ public:
         if (failed(m_upscale.create(m_device, ud))) m_upscale.destroy();
     }
 
-    void record_upscale_copy(const vulkan::CommandBuffer& cmd, const SceneRec& sc) {
-        if (!sc.scaled || !m_upscale.valid()) return;
+    void record_upscale(const vulkan::CommandBuffer& cmd, PerFrame& pf, const SceneRec& sc) {
+        if (!sc.scaled || !m_upscale.valid() || !m_upscale_pipeline.valid()) return;
         const int x0 = std::max(sc.scene.x, 0), y0 = std::max(sc.scene.y, 0);
         const int x1 = std::min(sc.scene.x + static_cast<int>(sc.scene.width), static_cast<int>(m_width));
         const int y1 = std::min(sc.scene.y + static_cast<int>(sc.scene.height), static_cast<int>(m_height));
@@ -1237,6 +1239,39 @@ public:
         cmd.blit(m_target.handle(), r, m_upscale.handle(), r, vulkan::Filter::Nearest);
         cmd.transition(m_upscale, vulkan::ImageLayout::ShaderReadOnly);
         cmd.transition(m_target, vulkan::ImageLayout::ColorAttachment);
+        vulkan::DescriptorSet set;
+
+        if (succeeded(pf.pool.allocate(m_present_set_layout, set))) {
+            const int fx0 = std::max(sc.full.x, 0), fy0 = std::max(sc.full.y, 0);
+            const int fx1 = std::min(sc.full.x + static_cast<int>(sc.full.width), static_cast<int>(m_width));
+            const int fy1 = std::min(sc.full.y + static_cast<int>(sc.full.height), static_cast<int>(m_height));
+
+            if (fx1 > fx0 && fy1 > fy0) {
+                vulkan::DescriptorWriter().image(0, m_upscale.view(), m_samplers[LinearClamp]).update(set);
+                const vulkan::Rect2D full{ { fx0, fy0 }, { static_cast<std::uint32_t>(fx1 - fx0), static_cast<std::uint32_t>(fy1 - fy0) } };
+                const float tw = static_cast<float>(m_width), th = static_cast<float>(m_height);
+
+                const float push[8] = {
+                    static_cast<float>(x0) / tw, static_cast<float>(y0) / th, static_cast<float>(x1) / tw, static_cast<float>(y1) / th,
+                    1.0f / tw, 1.0f / th, m_sharpness, static_cast<float>(m_upscale_filter)
+                };
+
+                cmd.memory_barrier(
+                    vulkan::PipelineStage::ColorAttachmentOutput, vulkan::Access::ColorAttachmentWrite,
+                    vulkan::PipelineStage::ColorAttachmentOutput, vulkan::Access::ColorAttachmentRead | vulkan::Access::ColorAttachmentWrite
+                );
+
+                cmd.begin_rendering({ full, color_attachment(false) });
+                cmd.bind(m_upscale_pipeline);
+                cmd.set_viewport({ static_cast<float>(sc.full.x), static_cast<float>(sc.full.y), static_cast<float>(sc.full.width), static_cast<float>(sc.full.height), 0.0f, 1.0f });
+                cmd.set_scissor(full);
+                cmd.bind_descriptor_set(m_upscale_pipeline, 0, set);
+                cmd.push_constants(m_upscale_pipeline, vulkan::ShaderStage::Fragment, push, kUpscalePushBytes);
+                cmd.draw(kFullscreenVertices);
+                cmd.end_rendering();
+            }
+        }
+
         cmd.end_label();
     }
 
@@ -2768,6 +2803,19 @@ private:
         present.color_formats   = { m_swapchain.format() };
         present.name            = "fizmo present";
         if (failed(m_present_pipeline.create(m_device, present))) return false;
+        if (failed(m_upscale_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kUpscaleFrag, sizeof(gpu::kUpscaleFrag) / 4), "fizmo upscale.frag"))) return false;
+        vulkan::PipelineLayoutDesc ul;
+        ul.set_layouts    = { &m_present_set_layout };
+        ul.push_constants = { { vulkan::ShaderStage::Fragment, 0, kUpscalePushBytes } };
+        if (failed(m_upscale_layout.create(m_device, ul))) return false;
+        vulkan::GraphicsPipelineDesc upscale;
+        upscale.vertex_shader   = &m_present_vs;
+        upscale.fragment_shader = &m_upscale_fs;
+        upscale.layout          = &m_upscale_layout;
+        upscale.samples         = m_samples;
+        upscale.color_formats   = { vulkan::Format::RGBA8Unorm };
+        upscale.name            = "fizmo upscale";
+        if (failed(m_upscale_pipeline.create(m_device, upscale))) return false;
         if (failed(m_mesh_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kMesh3DVert, sizeof(gpu::kMesh3DVert) / 4), "fizmo mesh3d.vert"))) return false;
         if (failed(m_mesh_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kMesh3DFrag, sizeof(gpu::kMesh3DFrag) / 4), "fizmo mesh3d.frag"))) return false;
         if (failed(m_line_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kLine3DVert, sizeof(gpu::kLine3DVert) / 4), "fizmo line3d.vert"))) return false;
@@ -3033,7 +3081,7 @@ private:
         if (failed(m_scene_depth_view.create(m_device, m_scene_depth, vd))) m_scene_depth_view.destroy();
     }
 
-    void copy_scene(const vulkan::CommandBuffer& cmd) {
+    void copy_scene(const vulkan::CommandBuffer& cmd, vulkan::Rect2D area) {
         cmd.memory_barrier(
             vulkan::PipelineStage::ColorAttachmentOutput | vulkan::PipelineStage::LateFragmentTests,
             vulkan::Access::ColorAttachmentWrite | vulkan::Access::DepthAttachmentWrite,
@@ -3044,12 +3092,12 @@ private:
         
         cmd.transition(m_target, vulkan::ImageLayout::TransferSrc);
         cmd.transition(m_scene_color, vulkan::ImageLayout::TransferDst);
-        cmd.copy_image(m_target, m_scene_color);
+        cmd.copy_image(m_target, m_scene_color, area);
 
         if (!m_msaa_target.valid()) {
             cmd.transition(m_depth, vulkan::ImageLayout::TransferSrc);
             cmd.transition(m_scene_depth, vulkan::ImageLayout::TransferDst);
-            cmd.copy_image(m_depth, m_scene_depth);
+            cmd.copy_image(m_depth, m_scene_depth, area);
             cmd.transition(m_depth, vulkan::ImageLayout::DepthAttachment);
         }
 
@@ -4298,10 +4346,14 @@ private:
         const float sx = static_cast<float>(sc.scene.x) * scale, sy = static_cast<float>(sc.scene.y) * scale;
         const float sw = static_cast<float>(sc.scene.width) * scale, sh = static_cast<float>(sc.scene.height) * scale;
         const int* area = sl.plane_rects[plane];
-        const int x0 = std::max(static_cast<int>(std::floor(area[0] * scale)), 0);
-        const int y0 = std::max(static_cast<int>(std::floor(area[1] * scale)), 0);
-        const int x1 = std::min(static_cast<int>(std::ceil(area[2] * scale)), static_cast<int>(t.width));
-        const int y1 = std::min(static_cast<int>(std::ceil(area[3] * scale)), static_cast<int>(t.height));
+        const int ax0 = std::max(static_cast<int>(std::floor(sx)), 0);
+        const int ay0 = std::max(static_cast<int>(std::floor(sy)), 0);
+        const int ax1 = std::min(static_cast<int>(std::ceil(sx + sw)), static_cast<int>(t.width));
+        const int ay1 = std::min(static_cast<int>(std::ceil(sy + sh)), static_cast<int>(t.height));
+        const int x0 = std::max(static_cast<int>(std::floor(area[0] * scale)), ax0);
+        const int y0 = std::max(static_cast<int>(std::floor(area[1] * scale)), ay0);
+        const int x1 = std::min(static_cast<int>(std::ceil(area[2] * scale)), ax1);
+        const int y1 = std::min(static_cast<int>(std::ceil(area[3] * scale)), ay1);
         if (x1 <= x0 || y1 <= y0) return;
         cmd.begin_label("fizmo planar reflection");
         if (t.msaa) cmd.transition(*t.msaa, vulkan::ImageLayout::ColorAttachment);
@@ -4320,7 +4372,7 @@ private:
         depth.clear       = vulkan::ClearDepth{ 1.0f, 0 };
         depth.has_stencil = vulkan::has_stencil(m_depth_format);
         vulkan::RenderingDesc rd;
-        rd.area   = { { 0, 0 }, { t.width, t.height } };
+        rd.area   = { { ax0, ay0 }, { static_cast<std::uint32_t>(ax1 - ax0), static_cast<std::uint32_t>(ay1 - ay0) } };
         rd.colors = color;
         rd.depth  = &depth;
         cmd.begin_rendering(rd);
@@ -4382,6 +4434,8 @@ private:
         if ((x1 <= x0 || y1 <= y0 || from >= to) && !clear && !m_scene_lights[scene].sky) return;
         const SceneLightRec& sl = m_scene_lights[scene];
         const bool splits = sl.copy && sl.copy_at >= from && sl.copy_at <= to && x1 > x0 && y1 > y0;
+        const vulkan::Rect2D whole{ { 0, 0 }, { m_width, m_height } };
+        const vulkan::Rect2D drawn = x1 > x0 && y1 > y0 ? vulkan::Rect2D{ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } } : whole;
         cmd.transition(m_depth, vulkan::ImageLayout::DepthAttachment);
         if (splits && m_msaa_target.valid()) prepare_depth_resolve(cmd);
 
@@ -4395,7 +4449,7 @@ private:
             depth.has_stencil = vulkan::has_stencil(m_depth_format);
             depth.resolve     = first && splits && m_msaa_target.valid() ? &m_scene_depth.view() : nullptr;
             vulkan::RenderingDesc rd;
-            rd.area   = { { 0, 0 }, { m_width, m_height } };
+            rd.area   = first && clear ? whole : drawn;
             rd.colors = color;
             rd.depth  = &depth;
             cmd.begin_rendering(rd);
@@ -4430,7 +4484,7 @@ private:
 
                 if (splits && i == sl.copy_at) {
                     cmd.end_rendering();
-                    copy_scene(cmd);
+                    copy_scene(cmd, drawn);
                     open(false);
                     bound = nullptr;
                     lighting = scene_descriptor(pf, scene, true);
@@ -4470,7 +4524,7 @@ private:
 
             if (splits && sl.copy_at == to) {
                 cmd.end_rendering();
-                copy_scene(cmd);
+                copy_scene(cmd, drawn);
                 open(false);
                 lighting = scene_descriptor(pf, scene, true);
             }
@@ -4717,7 +4771,7 @@ private:
 
                 between_passes();
                 timed(cmd, pf, GpuPass::Scene, [&]() { record_3d_pass(cmd, pf, m_scenes[si], si, m_scenes[si].first_draw, draw_end, clear_next, sets); });
-                record_upscale_copy(cmd, m_scenes[si]);
+                timed(cmd, pf, GpuPass::Upscale, [&]() { record_upscale(cmd, pf, m_scenes[si]); });
                 clear_next = false;
             }
 

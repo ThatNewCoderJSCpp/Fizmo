@@ -33,7 +33,9 @@ struct RenderPoint {
     constexpr RenderPoint(X px, Y py) noexcept : x(static_cast<float>(px)), y(static_cast<float>(py)) {}
 };
 
-enum class GpuPass : std::uint8_t { Uploads = 0, Shadows, Volume, Reflections, Scene, Overlay, Present, Count };
+enum class GpuPass : std::uint8_t { Uploads = 0, Shadows, Volume, Reflections, Scene, Upscale, Overlay, Present, Count };
+
+enum class UpscaleFilter : std::uint8_t { Nearest = 0, Bilinear, Sharp };
 
 inline const char* gpu_pass_name(GpuPass pass) noexcept {
     switch (pass) {
@@ -42,6 +44,7 @@ inline const char* gpu_pass_name(GpuPass pass) noexcept {
         case GpuPass::Volume:      return "Volumetrics";
         case GpuPass::Reflections: return "Reflections";
         case GpuPass::Scene:       return "Scene";
+        case GpuPass::Upscale:     return "Upscale";
         case GpuPass::Overlay:     return "Overlay";
         case GpuPass::Present:     return "Present";
         default:                   return "";
@@ -127,6 +130,7 @@ public:
     virtual void set_gpu_timing(bool) noexcept {}
     virtual void set_render_scale(float) noexcept {}
     virtual float render_scale() const noexcept { return 1.0f; }
+    virtual void set_upscale(UpscaleFilter, float) noexcept {}
     virtual GpuTimings gpu_timings() const noexcept { return {}; }
     virtual GpuMemory gpu_memory() const noexcept { return {}; }
 

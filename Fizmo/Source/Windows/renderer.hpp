@@ -121,6 +121,7 @@ public:
 
     void  set_render_scale(float scale) noexcept { if (m_impl) m_impl->set_render_scale(scale); }
     float render_scale() const noexcept { return m_impl ? m_impl->render_scale() : 1.0f; }
+    void  set_upscale(UpscaleFilter filter, float sharpness) noexcept { if (m_impl) m_impl->set_upscale(filter, sharpness); }
 
     bool vsync() const noexcept { return m_vsync; }
     void begin_frame() noexcept { if (m_impl) m_impl->begin_frame(); }

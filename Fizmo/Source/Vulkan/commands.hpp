@@ -320,6 +320,17 @@ public:
         fn().vkCmdCopyImage(m_cmd, src.handle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst.handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
     }
 
+    void copy_image(const Image& src, const Image& dst, Rect2D area) const noexcept {
+        VkImageCopy region{};
+        const VkImageAspectFlags aspect = to_vk(src.aspect());
+        region.srcSubresource = { aspect, 0, 0, 1 };
+        region.dstSubresource = { aspect, 0, 0, 1 };
+        region.srcOffset      = { area.offset.x, area.offset.y, 0 };
+        region.dstOffset      = { area.offset.x, area.offset.y, 0 };
+        region.extent         = { area.extent.width, area.extent.height, 1 };
+        fn().vkCmdCopyImage(m_cmd, src.handle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst.handle(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    }
+
     void clear_color(native::Image image, const ClearColor& color, ImageLayout layout = ImageLayout::TransferDst) const noexcept {
         const VkClearColorValue value = to_vk(color).color;
         const VkImageSubresourceRange range{ VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS };
