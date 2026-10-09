@@ -1,7 +1,8 @@
 #ifndef FIZMO_X11_COMPAT_HPP
 #define FIZMO_X11_COMPAT_HPP
 
-#include "Basic/fizmo_defines.hpp"
+#include <cstdint>
+#include "Basic/platform_includes.hpp"
 
 #ifdef OS_LINUX
 

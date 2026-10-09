@@ -28,30 +28,21 @@ public:
     RichText() = default;
     explicit RichText(const TextStyle& base) : m_base(base) {}
 
-    RichText(std::string text, const TextStyle& style) : m_base(style) {
-        if (!text.empty()) m_spans.push_back({ std::move(text), TextStyle{}, std::string() });
-    }
+    RichText(std::string text, const TextStyle& style);
 
     RichText& add(std::string text, const TextStyle& style = TextStyle{}) {
         if (!text.empty()) m_spans.push_back({ std::move(text), style, std::string() });
         return *this;
     }
 
-    RichText& add(std::string text, const TextStyle& style, std::string family) {
-        if (!text.empty()) m_spans.push_back({ std::move(text), style, std::move(family) });
-        return *this;
-    }
+    RichText& add(std::string text, const TextStyle& style, std::string family);
 
     RichText& add(TextSpan span) {
         if (!span.text.empty()) m_spans.push_back(std::move(span));
         return *this;
     }
 
-    RichText& newline() {
-        if (m_spans.empty()) m_spans.push_back({ "\n", TextStyle{}, std::string() });
-        else m_spans.back().text += '\n';
-        return *this;
-    }
+    RichText& newline();
 
     const TextStyle&             base()  const noexcept { return m_base; }
     TextStyle&                   base()        noexcept { return m_base; }

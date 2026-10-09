@@ -12,9 +12,14 @@
 #include "../Source/Graphics/ray.hpp"
 #include "../Source/Graphics/lighting_3d.hpp"
 
-#include "../Source/Vulkan/include.hpp"
-#include "../Source/OpenGL/include.hpp"
 #include "../Source/GPU/include.hpp"
+
+#ifdef FIZMO_GPU_BACKENDS
+    #include "../Source/Vulkan/include.hpp"
+    #include "../Source/OpenGL/include.hpp"
+    #include "../Source/GPU/vulkan_backend.hpp"
+    #include "../Source/GPU/opengl_backend.hpp"
+#endif
 
 #include "../Source/Input/keys.hpp"
 #include "../Source/Input/input_types.hpp"

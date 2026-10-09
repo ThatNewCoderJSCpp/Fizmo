@@ -6,15 +6,9 @@
 #include "../Graphics/color.hpp"
 #include "window_events.hpp"
 #include "../Input/keybord.hpp"
-#include "Windows Impl/window_base.hpp"
+#include "Windows Impl/window_factory.hpp"
 #include "window_types.hpp"
 #include "../Input/gestures.hpp"
-
-#if defined(OS_WINDOWS)
-    #include "Windows Impl/window_windows_impl.hpp"
-#elif defined(OS_LINUX)
-    #include "Windows Impl/window_linux_impl.hpp"
-#endif
 
 namespace fizmo {
 namespace windows {
@@ -30,38 +24,12 @@ private:
     bool m_gestures_enabled = true;
     std::unique_ptr<detail::ImplBase> m_impl;
 
-    void emit_gesture(const input::GestureData& g) noexcept {
-        WindowEvent e;
-        e.type = WindowEventType::Gesture;
-        e.gesture = g;
-        e.fx = g.x;
-        e.fy = g.y;
-        e.x = g.x < 0.0f ? 0u : static_cast<unsigned int>(g.x);
-        e.y = g.y < 0.0f ? 0u : static_cast<unsigned int>(g.y);
-        e.pointer = input::PointerType::Touch;
-        m_event_handler.dispatch_event(e);
-    }
+    void emit_gesture(const input::GestureData& g) noexcept;
 
-    void feed_gestures(const WindowEvent& e) noexcept {
-        if (!m_gestures_enabled || e.pointer != input::PointerType::Touch) return;
-        auto emit = [this](const input::GestureData& g) { emit_gesture(g); };
-        try {
-            switch (e.type) {
-                case WindowEventType::TouchDown:   m_gestures.touch_down(e.pointer_id, e.fx, e.fy, emit); break;
-                case WindowEventType::TouchMove:   m_gestures.touch_move(e.pointer_id, e.fx, e.fy, emit); break;
-                case WindowEventType::TouchUp:     m_gestures.touch_up(e.pointer_id, e.fx, e.fy, emit); break;
-                case WindowEventType::TouchCancel: m_gestures.touch_cancel(e.pointer_id, emit); break;
-                default: break;
-            }
-        } catch (...) {}
-    }
+    void feed_gestures(const WindowEvent& e) noexcept;
 
 public:
-    Window(unsigned int w, unsigned int h, const std::string& t, const graphics::Color& background_color = graphics::Color()) noexcept : m_width(w), m_height(h), m_title(t), m_color(background_color) {
-    #if defined(OS_WINDOWS) || defined(OS_LINUX)
-        m_impl = std::make_unique<detail::WindowImpl>(this, background_color);
-    #endif
-    }
+    Window(unsigned int w, unsigned int h, const std::string& t, const graphics::Color& background_color = graphics::Color()) noexcept;
 
     ~Window() = default;
 
@@ -98,12 +66,7 @@ public:
     void remove_event_listeners(WindowEventType type) noexcept { m_event_handler.remove_event_listeners(type); }
 
     bool create() noexcept { return m_impl->create(m_width, m_height, m_title); }
-    void poll_events() noexcept {
-        m_impl->poll_events();
-        if (m_gestures_enabled && m_gestures.active_touches() > 0) {
-            try { m_gestures.update([this](const input::GestureData& g) { emit_gesture(g); }); } catch (...) {}
-        }
-    }
+    void poll_events() noexcept;
     bool is_open() const noexcept { return m_impl->is_open(); }
     void invalidate() noexcept { m_impl->invalidate(); }
     void* native_handle() const noexcept { return m_impl->native_handle(); }
@@ -153,19 +116,9 @@ public:
     bool gestures_enabled() const noexcept { return m_gestures_enabled; }
 };
 
-inline std::vector<MonitorInfo> monitors() {
-#if defined(OS_WINDOWS) || defined(OS_LINUX)
-    try { return detail::platform_monitors(); } catch (...) { return {}; }
-#else
-    return {};
-#endif
-}
+ std::vector<MonitorInfo> monitors();
 
-inline MonitorInfo primary_monitor() {
-    const std::vector<MonitorInfo> list = monitors();
-    for (const MonitorInfo& m : list) if (m.primary) return m;
-    return list.empty() ? MonitorInfo{} : list.front();
-}
+ MonitorInfo primary_monitor();
 
 class CursorLock {
 private:

@@ -79,23 +79,7 @@ public:
         double frame_duration,
         int start_x = 0, int start_y = 0,
         LoopMode loop = LoopMode::Loop
-    ) {
-        Animation a(std::move(name), loop);
-        a.reserve(count);
-
-        for (unsigned int i = 0; i < count; ++i) {
-            int col = static_cast<int>(i % columns);
-            int row = static_cast<int>(i / columns);
-
-            a.add_frame(
-                start_x + col * static_cast<int>(cell_w),
-                start_y + row * static_cast<int>(cell_h),
-                cell_w, cell_h, frame_duration
-            );
-        }
-        
-        return a;
-    }
+    );
 };
 
 } // namespace graphics

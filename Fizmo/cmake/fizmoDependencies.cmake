@@ -14,7 +14,8 @@ if(WIN32)
     # These don't need to be "found"; the linker already knows where they are
     list(APPEND FIZMO_DEPENDENCY_TARGETS
         gdi32 user32 kernel32 ole32 oleaut32 uuid comdlg32 shell32
-        winmm wsock32 ws2_32 bcrypt secur32 crypt32 dwrite msimg32)
+        winmm wsock32 ws2_32 bcrypt secur32 crypt32 dwrite msimg32
+        iphlpapi advapi32)
 
 elseif(UNIX)
     find_dependency(X11)                      # -lX11 

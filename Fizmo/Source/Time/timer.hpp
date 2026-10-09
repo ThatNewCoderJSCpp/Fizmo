@@ -94,19 +94,7 @@ protected:
         lock.lock();
     }
 
-    void shutdown() noexcept {
-        {
-            std::lock_guard<std::mutex> lock(mtx_);
-            stop_requested_ = true;
-            paused_ = false;
-        }
-
-        cv_.notify_all();
-
-        if (worker_.joinable() && worker_.get_id() != std::this_thread::get_id()) {
-            worker_.join();
-        }
-    }
+    void shutdown() noexcept;
 
 public:
     bool is_running() const noexcept {
@@ -119,25 +107,9 @@ public:
         return paused_;
     }
 
-    void pause() noexcept {
-        {
-            std::lock_guard<std::mutex> lock(mtx_);
-            if (!running_ || paused_) return;
-            paused_ = true;
-        }
+    void pause() noexcept;
 
-        cv_.notify_all();
-    }
-
-    void resume() noexcept {
-        {
-            std::lock_guard<std::mutex> lock(mtx_);
-            if (!paused_) return;
-            paused_ = false;
-        }
-
-        cv_.notify_all();
-    }
+    void resume() noexcept;
 
     void stop() noexcept { shutdown(); }
 
@@ -152,16 +124,7 @@ public:
         return static_cast<bool>(error_);
     }
 
-    void rethrow_if_error() const {
-        std::exception_ptr e;
-
-        {
-            std::lock_guard<std::mutex> lock(mtx_);
-            e = error_;
-        }
-
-        if (e) std::rethrow_exception(e);
-    }
+    void rethrow_if_error() const;
 };
 
 } // namespace detail

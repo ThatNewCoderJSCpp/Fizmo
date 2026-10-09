@@ -20,7 +20,7 @@ private:
 
 public:
     explicit SystemTracking(std::chrono::milliseconds interval = std::chrono::milliseconds(1000), std::size_t history = 240)
-        : m_cpu(interval, history), m_ram(interval, history), m_storage(interval, history), m_network(interval, history), m_gpu(interval, history) {}
+;
 
     SystemTracking(const SystemTracking&) = delete;
     SystemTracking& operator=(const SystemTracking&) = delete;
@@ -37,14 +37,7 @@ public:
     const NetworkTracking& network() const noexcept { return m_network; }
     const GPUTracking&     gpu()     const noexcept { return m_gpu; }
 
-    bool start() {
-        bool ok = m_cpu.start();
-        ok = m_ram.start() && ok;
-        ok = m_storage.start() && ok;
-        ok = m_network.start() && ok;
-        ok = m_gpu.start() && ok;
-        return ok;
-    }
+    bool start();
 
     void stop() noexcept {
         m_cpu.stop();
@@ -54,17 +47,9 @@ public:
         m_gpu.stop();
     }
 
-    bool running() const {
-        return m_cpu.running() || m_ram.running() || m_storage.running() || m_network.running() || m_gpu.running();
-    }
+    bool running() const;
 
-    void set_interval(std::chrono::milliseconds interval) noexcept {
-        m_cpu.set_interval(interval);
-        m_ram.set_interval(interval);
-        m_storage.set_interval(interval);
-        m_network.set_interval(interval);
-        m_gpu.set_interval(interval);
-    }
+    void set_interval(std::chrono::milliseconds interval) noexcept;
 
     template <typename Target>
     void attach(Target& target) {
@@ -83,9 +68,7 @@ public:
         m_gpu.detach();
     }
 
-    std::string report() const {
-        return m_cpu.report() + m_ram.report() + m_gpu.report() + m_storage.report() + m_network.report();
-    }
+    std::string report() const;
 };
 
 } // namespace system

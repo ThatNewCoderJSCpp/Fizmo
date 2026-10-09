@@ -21,32 +21,12 @@ public:
     TLSContext(const TLSContext&) = delete;
     TLSContext& operator=(const TLSContext&) = delete;
 
-    TLSContext(TLSContext&& other) noexcept : m_initialized(false) {
-        std::lock_guard<std::mutex> lock(other.m_ctx_mutex);
-        other.release_unlocked();
-        m_config = std::move(other.m_config);
-    }
+    TLSContext(TLSContext&& other) noexcept;
 
-    TLSContext& operator=(TLSContext&& other) noexcept {
-        if (this != &other) {
-            std::unique_lock<std::mutex> lk1(m_ctx_mutex, std::defer_lock);
-            std::unique_lock<std::mutex> lk2(other.m_ctx_mutex, std::defer_lock);
-            std::lock(lk1, lk2);
-            release_unlocked();
-            other.release_unlocked();
-            m_config = std::move(other.m_config);
-        }
-
-        return *this;
-    }
+    TLSContext& operator=(TLSContext&& other) noexcept;
 
 public:
-    TLSContext& set_protocol_range(TLSVersion min_ver, TLSVersion max_ver) noexcept {
-        std::lock_guard<std::mutex> lock(m_ctx_mutex);
-        m_config.min_version = min_ver;
-        m_config.max_version = max_ver;
-        return *this;
-    }
+    TLSContext& set_protocol_range(TLSVersion min_ver, TLSVersion max_ver) noexcept;
 
     TLSContext& set_cipher_suites(const std::vector<std::string>& suites) {
         std::lock_guard<std::mutex> lock(m_ctx_mutex);
@@ -54,11 +34,7 @@ public:
         return *this;
     }
 
-    TLSContext& set_cipher_suites(std::vector<std::string>&& suites) noexcept {
-        std::lock_guard<std::mutex> lock(m_ctx_mutex);
-        m_config.cipher_suites = std::move(suites);
-        return *this;
-    }
+    TLSContext& set_cipher_suites(std::vector<std::string>&& suites) noexcept;
 
     TLSContext& set_certificate(const CertificateData& cert) {
         std::lock_guard<std::mutex> lock(m_ctx_mutex);
@@ -66,11 +42,7 @@ public:
         return *this;
     }
 
-    TLSContext& set_certificate(CertificateData&& cert) noexcept {
-        std::lock_guard<std::mutex> lock(m_ctx_mutex);
-        m_config.certificate = std::move(cert);
-        return *this;
-    }
+    TLSContext& set_certificate(CertificateData&& cert) noexcept;
 
     TLSContext& set_ca_store_path(const std::string& path) {
         std::lock_guard<std::mutex> lock(m_ctx_mutex);
@@ -90,20 +62,10 @@ public:
         return *this;
     }
 
-    TLSContext& set_check_revocation(bool enable) noexcept {
-        std::lock_guard<std::mutex> lock(m_ctx_mutex);
-        m_config.check_revocation = enable;
-        return *this;
-    }
+    TLSContext& set_check_revocation(bool enable) noexcept;
 
 public:
-    bool initialize() noexcept {
-        std::lock_guard<std::mutex> lock(m_ctx_mutex);
-        if (m_initialized) return true;
-        if (!m_credentials.acquire(m_config)) return false;
-        m_initialized = true;
-        return true;
-    }
+    bool initialize() noexcept;
 
     void release() noexcept {
         std::lock_guard<std::mutex> lock(m_ctx_mutex);
@@ -146,25 +108,7 @@ public:
     static const char* version_to_string(TLSVersion v) noexcept { return tls_version_to_string(v); }
     static const char* verify_mode_to_string(VerifyMode m) noexcept { return security::verify_mode_to_string(m); }
 
-    std::string to_string() const {
-        std::lock_guard<std::mutex> lock(m_ctx_mutex);
-        std::string result = "TLSContext [";
-        result += tls_version_to_string(m_config.min_version);
-        result += " - ";
-        result += tls_version_to_string(m_config.max_version);
-        result += "] backend=";
-        result += detail::kBackendName;
-        result += " use=";
-        result += (m_config.use == ContextUse::Server) ? "server" : "client";
-        result += " verify=";
-        result += security::verify_mode_to_string(m_config.verify_mode);
-        result += " cert=";
-        result += m_config.certificate.empty() ? "none" : "loaded";
-        result += " ca=";
-        result += m_config.ca_store_path.empty() ? "system" : m_config.ca_store_path;
-        result += m_initialized ? " (active)" : " (not initialized)";
-        return result;
-    }
+    std::string to_string() const;
 
 private:
     TLSConfig                 m_config;

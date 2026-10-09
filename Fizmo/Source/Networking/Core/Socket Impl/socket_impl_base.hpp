@@ -51,12 +51,10 @@ protected:
     unsigned int m_receive_timeout_ms;
 
     explicit SocketImplBase(SocketType type, AddressFamily family = AddressFamily::IPv4) noexcept
-        : m_connected(false), m_type(type), m_family(family),
-          m_connect_timeout_ms(0), m_send_timeout_ms(0), m_receive_timeout_ms(0) {}
+;
 
     explicit SocketImplBase(SocketType type, AddressFamily family, bool connected) noexcept
-        : m_connected(connected), m_type(type), m_family(family),
-          m_connect_timeout_ms(0), m_send_timeout_ms(0), m_receive_timeout_ms(0) {}
+;
 
 public:
     virtual ~SocketImplBase() = default;

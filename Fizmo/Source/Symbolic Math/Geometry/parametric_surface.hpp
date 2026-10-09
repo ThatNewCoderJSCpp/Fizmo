@@ -31,36 +31,18 @@ public:
     const std::string& v_var()          const { return v_; }
 
 public:
-    const vectors::SymbolicVector3& r_u() const {
-        if (!ru_) ru_ = std::make_unique<vectors::SymbolicVector3>(r_.differentiate(u_));
-        return *ru_;
-    }
+    const vectors::SymbolicVector3& r_u() const;
 
-    const vectors::SymbolicVector3& r_v() const {
-        if (!rv_) rv_ = std::make_unique<vectors::SymbolicVector3>(r_.differentiate(v_));
-        return *rv_;
-    }
+    const vectors::SymbolicVector3& r_v() const;
 
-    const vectors::SymbolicVector3& r_uu() const {
-        if (!ruu_) ruu_ = std::make_unique<vectors::SymbolicVector3>(r_u().differentiate(u_));
-        return *ruu_;
-    }
+    const vectors::SymbolicVector3& r_uu() const;
 
-    const vectors::SymbolicVector3& r_uv() const {
-        if (!ruv_) ruv_ = std::make_unique<vectors::SymbolicVector3>(r_u().differentiate(v_));
-        return *ruv_;
-    }
+    const vectors::SymbolicVector3& r_uv() const;
 
-    const vectors::SymbolicVector3& r_vv() const {
-        if (!rvv_) rvv_ = std::make_unique<vectors::SymbolicVector3>(r_v().differentiate(v_));
-        return *rvv_;
-    }
+    const vectors::SymbolicVector3& r_vv() const;
 
 public:
-    const vectors::SymbolicVector3& normal() const {
-        if (!normal_) normal_ = std::make_unique<vectors::SymbolicVector3>(r_u().cross(r_v()));
-        return *normal_;
-    }
+    const vectors::SymbolicVector3& normal() const;
 
     const vectors::SymbolicVector3& u_cross_v()    const { return normal();              }
           vectors::SymbolicVector3  v_cross_u()    const { return -normal();             }
@@ -83,16 +65,7 @@ public:
         return (e() * G() - cas::Const(2.0) * f() * F() + g() * E()) / (cas::Const(2.0) * (E() * G() - F() * F()));
     }
 
-    const matrices::SymbolicMatrixNM& jacobian() const {
-        if (!jac_) {
-            jac_ = std::make_unique<matrices::SymbolicMatrixNM>(matrices::SymbolicMatrixNM{
-                {r_u().x, r_v().x},
-                {r_u().y, r_v().y},
-                {r_u().z, r_v().z}
-            });
-        }
-        return *jac_;
-    }
+    const matrices::SymbolicMatrixNM& jacobian() const;
 
     matrices::SymbolicMatrix2x2 metric() const {
         return {
@@ -129,51 +102,26 @@ public:
         return f_on_surface * area_element();
     }
 
-    cas::Expression flux_integrand(const vectors::SymbolicVector3& F, const std::string& xv, const std::string& yv, const std::string& zv) const {
-        vectors::SymbolicVector3 F_on_surface = parameterize(F, xv, yv, zv);
-        const auto& n = normal();
-        return F_on_surface.x * n.x + F_on_surface.y * n.y + F_on_surface.z * n.z;
-    }
+    cas::Expression flux_integrand(const vectors::SymbolicVector3& F, const std::string& xv, const std::string& yv, const std::string& zv) const;
 
 public:
     integration::IntegrationResult2D surface_area(
         const std::string& outer, double outer_lo, double outer_hi,
         const std::string& inner, double inner_lo, double inner_hi,
         integration::IntegrationConfig2D cfg = {}
-    ) const {
-        return integration::Integrator2D::integrate(
-            area_element(), outer, outer_lo, outer_hi, inner, inner_lo, inner_hi, cfg
-        );
-    }
+    ) const;
 
     integration::IntegrationResult2D surface_area(
         const std::string& outer, double outer_lo, double outer_hi,
         const std::string& inner, integration::IntegrationBound inner_lo, integration::IntegrationBound inner_hi,
         integration::IntegrationConfig2D cfg = {}
-    ) const {
-        cas::Expression ae = area_element();
-        const std::string& ov = outer;
-        const std::string& iv = inner;
-
-        auto f2d = [ae, ov, iv](double o, double i) -> double {
-            return ae.evaluate({{ ov, o }, { iv, i }});
-        };
-
-        return integration::Integrator2D::integrate(
-            f2d, outer_lo, outer_hi,
-            std::move(inner_lo), std::move(inner_hi), cfg
-        );
-    }
+    ) const;
 
     integration::IntegrationResult2D surface_area(
         const std::string& outer, double outer_lo, double outer_hi,
         const std::string& inner, const cas::Expression& inner_lo, const cas::Expression& inner_hi,
         integration::IntegrationConfig2D cfg = {}
-    ) const {
-        return integration::Integrator2D::integrate(
-            area_element(), outer, outer_lo, outer_hi, inner, inner_lo, inner_hi, cfg
-        );
-    }
+    ) const;
 
     integration::IntegrationResult2D scalar_surface_integral(
         const cas::Expression& f,
@@ -181,11 +129,7 @@ public:
         const std::string& outer, double outer_lo, double outer_hi,
         const std::string& inner, double inner_lo, double inner_hi,
         integration::IntegrationConfig2D cfg = {}
-    ) const {
-        return integration::Integrator2D::integrate(
-            scalar_integrand(f, xv, yv, zv), outer, outer_lo, outer_hi, inner, inner_lo, inner_hi, cfg
-        );
-    }
+    ) const;
 
     integration::IntegrationResult2D scalar_surface_integral(
         const cas::Expression& f,
@@ -193,20 +137,7 @@ public:
         const std::string& outer, double outer_lo, double outer_hi,
         const std::string& inner, integration::IntegrationBound inner_lo, integration::IntegrationBound inner_hi,
         integration::IntegrationConfig2D cfg = {}
-    ) const {
-        cas::Expression integrand = scalar_integrand(f, xv, yv, zv);
-        const std::string& ov = outer;
-        const std::string& iv = inner;
-
-        auto f2d = [integrand, ov, iv](double o, double i) -> double {
-            return integrand.evaluate({{ ov, o }, { iv, i }});
-        };
-
-        return integration::Integrator2D::integrate(
-            f2d, outer_lo, outer_hi,
-            std::move(inner_lo), std::move(inner_hi), cfg
-        );
-    }
+    ) const;
 
     integration::IntegrationResult2D scalar_surface_integral(
         const cas::Expression& f,
@@ -214,11 +145,7 @@ public:
         const std::string& outer, double outer_lo, double outer_hi,
         const std::string& inner, const cas::Expression& inner_lo, const cas::Expression& inner_hi,
         integration::IntegrationConfig2D cfg = {}
-    ) const {
-        return integration::Integrator2D::integrate(
-            scalar_integrand(f, xv, yv, zv), outer, outer_lo, outer_hi, inner, inner_lo, inner_hi, cfg
-        );
-    }
+    ) const;
 
     integration::IntegrationResult2D flux_integral(
         const vectors::SymbolicVector3& F,
@@ -226,11 +153,7 @@ public:
         const std::string& outer, double outer_lo, double outer_hi,
         const std::string& inner, double inner_lo, double inner_hi,
         integration::IntegrationConfig2D cfg = {}
-    ) const {
-        return integration::Integrator2D::integrate(
-            flux_integrand(F, xv, yv, zv), outer, outer_lo, outer_hi, inner, inner_lo, inner_hi, cfg
-        );
-    }
+    ) const;
 
     integration::IntegrationResult2D flux_integral(
         const vectors::SymbolicVector3& F,
@@ -238,20 +161,7 @@ public:
         const std::string& outer, double outer_lo, double outer_hi,
         const std::string& inner, integration::IntegrationBound inner_lo, integration::IntegrationBound inner_hi,
         integration::IntegrationConfig2D cfg = {}
-    ) const {
-        cas::Expression integrand = flux_integrand(F, xv, yv, zv);
-        const std::string& ov = outer;
-        const std::string& iv = inner;
-
-        auto f2d = [integrand, ov, iv](double o, double i) -> double {
-            return integrand.evaluate({{ ov, o }, { iv, i }});
-        };
-
-        return integration::Integrator2D::integrate(
-            f2d, outer_lo, outer_hi,
-            std::move(inner_lo), std::move(inner_hi), cfg
-        );
-    }
+    ) const;
 
     integration::IntegrationResult2D flux_integral(
         const vectors::SymbolicVector3& F,
@@ -259,11 +169,7 @@ public:
         const std::string& outer, double outer_lo, double outer_hi,
         const std::string& inner, const cas::Expression& inner_lo, const cas::Expression& inner_hi,
         integration::IntegrationConfig2D cfg = {}
-    ) const {
-        return integration::Integrator2D::integrate(
-            flux_integrand(F, xv, yv, zv), outer, outer_lo, outer_hi, inner, inner_lo, inner_hi, cfg
-        );
-    }
+    ) const;
 
 public:
     ParametricSurface substitute(const std::string& var, double val) const {

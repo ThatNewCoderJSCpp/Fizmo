@@ -61,11 +61,7 @@ struct PipelineLayoutImpl : Object {
     std::uint32_t                                     push_size   = 0;
     ShaderStage                                       push_stages = ShaderStage::None;
 
-    virtual std::uint32_t array_capacity(std::uint32_t group, std::uint32_t binding) const noexcept {
-        if (group >= groups.size() || !groups[group]) return 0;
-        const BindGroupLayoutEntry* e = groups[group]->find(binding);
-        return e ? e->count : 0;
-    }
+    virtual std::uint32_t array_capacity(std::uint32_t group, std::uint32_t binding) const noexcept;
 };
 
 struct ResourceBinding {
@@ -179,12 +175,7 @@ struct PassRecord {
     std::uint32_t     groups_count  = 0;
     std::uint32_t     label         = UINT32_MAX;
 
-    Extent2D attachment_extent() const noexcept {
-        const TextureImpl* t = color_count ? colors[0].texture : depth;
-        if (!t) return {};
-        const std::uint32_t mip = color_count ? colors[0].mip : 0;
-        return { std::max(1u, t->desc.extent.width >> mip), std::max(1u, t->desc.extent.height >> mip) };
-    }
+    Extent2D attachment_extent() const noexcept;
 };
 
 struct CopyRecord {
@@ -216,12 +207,7 @@ struct CommandStream {
         bytes.clear();
     }
 
-    std::uint32_t store(const void* data, std::size_t size) {
-        const std::uint32_t at = static_cast<std::uint32_t>(bytes.size());
-        bytes.resize(bytes.size() + size);
-        if (size) std::memcpy(bytes.data() + at, data, size);
-        return at;
-    }
+    std::uint32_t store(const void* data, std::size_t size);
 
     const char* text(std::uint32_t at) const noexcept { return reinterpret_cast<const char*>(bytes.data() + at); }
 };
@@ -300,25 +286,11 @@ public:
     virtual bool   read_timestamps(QuerySetImpl& set, std::uint32_t first, std::uint32_t count, std::uint64_t* nanoseconds) = 0;
 };
 
-inline Extent3D mip_extent(const TextureDesc& d, std::uint32_t mip) noexcept {
-    return { std::max(1u, d.extent.width >> mip), std::max(1u, d.extent.height >> mip), d.dimension == TextureDimension::D3 ? std::max(1u, d.extent.depth >> mip) : 1u };
-}
+Extent3D mip_extent(const TextureDesc& d, std::uint32_t mip) noexcept;
 
-inline std::uint32_t full_mip_count(Extent3D e) noexcept {
-    std::uint32_t largest = std::max(e.width, std::max(e.height, e.depth));
-    std::uint32_t levels = 1;
-    while (largest > 1) { largest >>= 1; ++levels; }
-    return levels;
-}
+std::uint32_t full_mip_count(Extent3D e) noexcept;
 
-inline Result validate(const TextureDesc& d) noexcept {
-    if (d.extent.width == 0 || d.extent.height == 0 || d.extent.depth == 0 || d.format == Format::Undefined) return Result::InvalidArgument;
-    if (d.dimension == TextureDimension::Cube && d.extent.width != d.extent.height) return Result::InvalidArgument;
-    if (d.dimension != TextureDimension::D3 && d.extent.depth != 1) return Result::InvalidArgument;
-    if (d.samples > 1 && (d.dimension != TextureDimension::D2 || d.mip_levels != 1)) return Result::InvalidArgument;
-    if (d.samples > 1 && (any(d.usage, TextureUsage::Sampled) || any(d.usage, TextureUsage::Storage))) return Result::Unsupported;
-    return Result::Success;
-}
+Result validate(const TextureDesc& d) noexcept;
 
 } // namespace detail
 } // namespace gpu

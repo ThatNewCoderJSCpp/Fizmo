@@ -172,7 +172,7 @@ inline BOOL CALLBACK collect_monitor(HMONITOR m, HDC, LPRECT, LPARAM data) {
 
 } // namespace win32
 
-inline std::vector<MonitorInfo> platform_monitors() {
+std::vector<MonitorInfo> platform_monitors() {
     win32::enable_dpi_awareness();
     std::vector<MonitorInfo> out;
     EnumDisplayMonitors(nullptr, nullptr, &win32::collect_monitor, reinterpret_cast<LPARAM>(&out));

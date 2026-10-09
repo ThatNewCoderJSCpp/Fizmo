@@ -1570,7 +1570,7 @@ private:
     }
 };
 
-inline std::vector<MonitorInfo> platform_monitors() {
+std::vector<MonitorInfo> platform_monitors() {
     ::Display* d = XOpenDisplay(nullptr);
     if (!d) return {};
     std::vector<MonitorInfo> out = x11ext::query_monitors(d);

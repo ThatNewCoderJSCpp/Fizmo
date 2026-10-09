@@ -5,6 +5,13 @@
 
 #ifdef OS_WINDOWS
 
+#ifndef TCP_FASTOPEN
+    #define TCP_FASTOPEN 15
+#endif
+#ifndef TCP_KEEPCNT
+    #define TCP_KEEPCNT 16
+#endif
+
 namespace fizmo {
 namespace networking {
 namespace core {

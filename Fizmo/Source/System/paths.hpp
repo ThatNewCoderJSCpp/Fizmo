@@ -30,13 +30,7 @@ namespace fs = std::filesystem;
 
 namespace detail {
 
-inline fs::path u8(const std::string& s) {
-#if defined(__cpp_char8_t)
-    return fs::path(std::u8string(reinterpret_cast<const char8_t*>(s.data()), s.size()));
-#else
-    return fs::u8path(s);
-#endif
-}
+ fs::path u8(const std::string& s);
 
 inline std::string env(const char* name) {
     const char* v = std::getenv(name);
@@ -61,24 +55,7 @@ inline fs::path with_app(fs::path base, const std::string& app) {
 
 } // namespace detail
 
-inline fs::path executable_path() {
-#if defined(OS_WINDOWS)
-    std::wstring buf(MAX_PATH, L'\0');
-    for (;;) {
-        const DWORD n = GetModuleFileNameW(nullptr, &buf[0], static_cast<DWORD>(buf.size()));
-        if (n == 0) return {};
-        if (n < buf.size()) { buf.resize(n); break; }
-        buf.resize(buf.size() * 2);
-    }
-    return fs::path(buf);
-#elif defined(OS_LINUX)
-    std::error_code ec;
-    fs::path p = fs::read_symlink("/proc/self/exe", ec);
-    return ec ? fs::path() : p;
-#else
-    return {};
-#endif
-}
+ fs::path executable_path();
 
 inline fs::path executable_dir() {
     const fs::path p = executable_path();
@@ -91,22 +68,7 @@ inline fs::path current_dir() {
     return ec ? fs::path(".") : p;
 }
 
-inline fs::path home_dir() {
-#if defined(OS_WINDOWS)
-    fs::path p = detail::known_folder(FOLDERID_Profile);
-    if (p.empty()) p = fs::path(detail::env("USERPROFILE"));
-    return p;
-#elif defined(OS_LINUX)
-    std::string h = detail::env("HOME");
-    if (h.empty()) {
-        const passwd* pw = getpwuid(getuid());
-        if (pw && pw->pw_dir) h = pw->pw_dir;
-    }
-    return fs::path(h);
-#else
-    return fs::path(detail::env("HOME"));
-#endif
-}
+ fs::path home_dir();
 
 inline fs::path temp_dir() {
     std::error_code ec;
@@ -114,41 +76,13 @@ inline fs::path temp_dir() {
     return ec ? fs::path(".") : p;
 }
 
-inline fs::path data_dir(const std::string& app = std::string()) {
-#if defined(OS_WINDOWS)
-    return detail::with_app(detail::known_folder(FOLDERID_RoamingAppData), app);
-#else
-    const std::string x = detail::env("XDG_DATA_HOME");
-    return detail::with_app(x.empty() ? home_dir() / ".local" / "share" : fs::path(x), app);
-#endif
-}
+ fs::path data_dir(const std::string& app = std::string());
 
-inline fs::path config_dir(const std::string& app = std::string()) {
-#if defined(OS_WINDOWS)
-    return detail::with_app(detail::known_folder(FOLDERID_RoamingAppData), app);
-#else
-    const std::string x = detail::env("XDG_CONFIG_HOME");
-    return detail::with_app(x.empty() ? home_dir() / ".config" : fs::path(x), app);
-#endif
-}
+ fs::path config_dir(const std::string& app = std::string());
 
-inline fs::path cache_dir(const std::string& app = std::string()) {
-#if defined(OS_WINDOWS)
-    return detail::with_app(detail::known_folder(FOLDERID_LocalAppData), app) / "Cache";
-#else
-    const std::string x = detail::env("XDG_CACHE_HOME");
-    return detail::with_app(x.empty() ? home_dir() / ".cache" : fs::path(x), app);
-#endif
-}
+ fs::path cache_dir(const std::string& app = std::string());
 
-inline fs::path documents_dir() {
-#if defined(OS_WINDOWS)
-    return detail::known_folder(FOLDERID_Documents);
-#else
-    const std::string x = detail::env("XDG_DOCUMENTS_DIR");
-    return x.empty() ? home_dir() / "Documents" : fs::path(x);
-#endif
-}
+ fs::path documents_dir();
 
 inline fs::path ensure_dir(const fs::path& p) {
     std::error_code ec;
@@ -163,51 +97,11 @@ inline std::string to_utf8(const fs::path& p) {
 
 inline fs::path from_utf8(const std::string& s) { return detail::u8(s); }
 
-inline std::optional<std::vector<std::uint8_t>> read_bytes(const fs::path& p) {
-    std::ifstream f(p, std::ios::binary | std::ios::ate);
-    if (!f) return std::nullopt;
-    const std::streamoff size = f.tellg();
-    if (size < 0) return std::nullopt;
-    std::vector<std::uint8_t> out(static_cast<std::size_t>(size));
-    f.seekg(0);
-    if (size > 0 && !f.read(reinterpret_cast<char*>(out.data()), size)) return std::nullopt;
-    return out;
-}
+ std::optional<std::vector<std::uint8_t>> read_bytes(const fs::path& p);
 
-inline std::optional<std::string> read_text(const fs::path& p) {
-    std::ifstream f(p, std::ios::binary | std::ios::ate);
-    if (!f) return std::nullopt;
-    const std::streamoff size = f.tellg();
-    if (size < 0) return std::nullopt;
-    std::string out(static_cast<std::size_t>(size), '\0');
-    f.seekg(0);
-    if (size > 0 && !f.read(&out[0], size)) return std::nullopt;
-    return out;
-}
+ std::optional<std::string> read_text(const fs::path& p);
 
-inline bool write_file(const fs::path& p, const void* data, std::size_t size) {
-    std::error_code ec;
-    if (p.has_parent_path()) fs::create_directories(p.parent_path(), ec);
-    std::random_device rd;
-    fs::path tmp = p;
-    tmp += ".tmp" + std::to_string(rd());
-
-    {
-        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
-        if (!f) return false;
-        if (size && !f.write(static_cast<const char*>(data), static_cast<std::streamsize>(size))) { f.close(); fs::remove(tmp, ec); return false; }
-        f.flush();
-        if (!f) { f.close(); fs::remove(tmp, ec); return false; }
-    }
-
-#if defined(OS_WINDOWS)
-    if (!MoveFileExW(tmp.c_str(), p.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) { fs::remove(tmp, ec); return false; }
-#else
-    fs::rename(tmp, p, ec);
-    if (ec) { fs::remove(tmp, ec); return false; }
-#endif
-    return true;
-}
+ bool write_file(const fs::path& p, const void* data, std::size_t size);
 
 inline bool write_file(const fs::path& p, const std::string& text) { return write_file(p, text.data(), text.size()); }
 inline bool write_file(const fs::path& p, const std::vector<std::uint8_t>& bytes) { return write_file(p, bytes.data(), bytes.size()); }
@@ -230,68 +124,19 @@ public:
     }
 
     AssetPaths(const AssetPaths& o) { std::lock_guard<std::mutex> g(o.m_lock); m_roots = o.m_roots; }
-    AssetPaths& operator=(const AssetPaths& o) {
-        if (this == &o) return *this;
-        std::vector<fs::path> copy;
-        { std::lock_guard<std::mutex> g(o.m_lock); copy = o.m_roots; }
-        std::lock_guard<std::mutex> g(m_lock);
-        m_roots = std::move(copy);
-        return *this;
-    }
+    AssetPaths& operator=(const AssetPaths& o);
 
-    void add_defaults() {
-        const std::string env = detail::env("FIZMO_ASSET_PATH");
-#if defined(OS_WINDOWS)
-        const char sep = ';';
-#else
-        const char sep = ':';
-#endif
-        std::size_t start = 0;
-        while (!env.empty() && start <= env.size()) {
-            std::size_t end = env.find(sep, start);
-            if (end == std::string::npos) end = env.size();
-            if (end > start) add_root(detail::u8(env.substr(start, end - start)));
-            start = end + 1;
-        }
-        const fs::path exe = executable_dir();
-        add_root(exe / "assets");
-        add_root(exe);
-        add_root(current_dir() / "assets");
-        add_root(current_dir());
-    }
+    void add_defaults();
 
-    void add_root(const fs::path& root, bool front = false) {
-        std::error_code ec;
-        fs::path p = fs::weakly_canonical(root, ec);
-        if (ec) p = root;
-        std::lock_guard<std::mutex> g(m_lock);
-        for (const fs::path& r : m_roots) if (r == p) return;
-        if (front) m_roots.insert(m_roots.begin(), p);
-        else m_roots.push_back(p);
-    }
+    void add_root(const fs::path& root, bool front = false);
 
-    bool remove_root(const fs::path& root) {
-        std::error_code ec;
-        fs::path p = fs::weakly_canonical(root, ec);
-        if (ec) p = root;
-        std::lock_guard<std::mutex> g(m_lock);
-        for (auto it = m_roots.begin(); it != m_roots.end(); ++it) if (*it == p) { m_roots.erase(it); return true; }
-        return false;
-    }
+    bool remove_root(const fs::path& root);
 
     void clear() { std::lock_guard<std::mutex> g(m_lock); m_roots.clear(); }
 
     std::vector<fs::path> roots() const { std::lock_guard<std::mutex> g(m_lock); return m_roots; }
 
-    std::optional<fs::path> resolve(const fs::path& relative) const {
-        std::error_code ec;
-        if (relative.is_absolute()) return fs::exists(relative, ec) ? std::optional<fs::path>(relative) : std::nullopt;
-        for (const fs::path& r : roots()) {
-            const fs::path candidate = r / relative;
-            if (fs::exists(candidate, ec)) return candidate;
-        }
-        return std::nullopt;
-    }
+    std::optional<fs::path> resolve(const fs::path& relative) const;
 
     std::optional<fs::path> resolve(const std::string& relative) const { return resolve(detail::u8(relative)); }
     std::optional<fs::path> resolve(const char* relative) const { return resolve(detail::u8(relative ? relative : "")); }

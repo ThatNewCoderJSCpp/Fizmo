@@ -29,8 +29,7 @@ public:
                      std::string u = "u",
                      std::string v = "v",
                      std::string w = "w")
-        : r_(std::move(x_uvw), std::move(y_uvw), std::move(z_uvw)),
-          u_(std::move(u)), v_(std::move(v)), w_(std::move(w)) {}
+;
 
 public:
     const vectors::SymbolicVector3& r() const { return r_; }
@@ -39,32 +38,14 @@ public:
     const std::string& w_var() const { return w_; }
 
 public:
-    const vectors::SymbolicVector3& r_u() const {
-        if (!ru_) ru_ = std::make_unique<vectors::SymbolicVector3>(r_.differentiate(u_));
-        return *ru_;
-    }
+    const vectors::SymbolicVector3& r_u() const;
 
-    const vectors::SymbolicVector3& r_v() const {
-        if (!rv_) rv_ = std::make_unique<vectors::SymbolicVector3>(r_.differentiate(v_));
-        return *rv_;
-    }
+    const vectors::SymbolicVector3& r_v() const;
 
-    const vectors::SymbolicVector3& r_w() const {
-        if (!rw_) rw_ = std::make_unique<vectors::SymbolicVector3>(r_.differentiate(w_));
-        return *rw_;
-    }
+    const vectors::SymbolicVector3& r_w() const;
 
 public:
-    const matrices::SymbolicMatrixNM& jacobian() const {
-        if (!jac_) {
-            jac_ = std::make_unique<matrices::SymbolicMatrixNM>(matrices::SymbolicMatrixNM{
-                { r_u().x, r_v().x, r_w().x },
-                { r_u().y, r_v().y, r_w().y },
-                { r_u().z, r_v().z, r_w().z }
-            });
-        }
-        return *jac_;
-    }
+    const matrices::SymbolicMatrixNM& jacobian() const;
 
     cas::Expression jacobian_determinant() const { return jacobian().determinant(); }
     cas::Expression volume_element() const { return ABS(jacobian_determinant()); }
@@ -112,15 +93,7 @@ public:
         const std::string& middle, double middle_lo, double middle_hi,
         const std::string& inner,  double inner_lo,  double inner_hi,
         integration::IntegrationConfig3D cfg = {}
-    ) const {
-        return integration::Integrator3D::integrate(
-            scalar_integrand(f, xv, yv, zv),
-            outer, outer_lo, outer_hi,
-            middle, middle_lo, middle_hi,
-            inner, inner_lo, inner_hi,
-            cfg
-        );
-    }
+    ) const;
 
     integration::IntegrationResult3D scalar_volume_integral(
         const cas::Expression& f,
@@ -129,24 +102,7 @@ public:
         const std::string& middle, integration::IntegrationBound middle_lo, integration::IntegrationBound middle_hi,
         const std::string& inner,  integration::IntegrationBound2 inner_lo, integration::IntegrationBound2 inner_hi,
         integration::IntegrationConfig3D cfg = {}
-    ) const {
-        cas::Expression integrand = scalar_integrand(f, xv, yv, zv);
-        const std::string& ov = outer;
-        const std::string& mv = middle;
-        const std::string& iv = inner;
-
-        auto f3d = [integrand, ov, mv, iv](double o, double m, double i) -> double {
-            return integrand.evaluate({{ ov, o }, { mv, m }, { iv, i }});
-        };
-
-        return integration::Integrator3D::integrate(
-            f3d,
-            outer_lo, outer_hi,
-            std::move(middle_lo), std::move(middle_hi),
-            std::move(inner_lo),  std::move(inner_hi),
-            cfg
-        );
-    }
+    ) const;
 
 public:
     ParametricVolume substitute(const std::string& var, double val) const {

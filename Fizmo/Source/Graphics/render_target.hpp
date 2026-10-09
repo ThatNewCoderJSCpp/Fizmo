@@ -11,10 +11,7 @@ namespace graphics {
 
 namespace detail {
 
-inline std::uint64_t next_render_target_id() noexcept {
-    static std::atomic<std::uint64_t> counter{ 0 };
-    return counter.fetch_add(1, std::memory_order_relaxed) + 1;
-}
+std::uint64_t next_render_target_id() noexcept;
 
 struct RenderTargetSlot {
     std::uint64_t id         = next_render_target_id();
@@ -35,12 +32,7 @@ public:
     RenderTarget() = default;
 
     RenderTarget(unsigned int width, unsigned int height, SampleFilter filter = SampleFilter::Bilinear, WrapMode wrap = WrapMode::Clamp)
-        : m_slot(std::make_shared<detail::RenderTargetSlot>()) {
-        m_slot->width  = width;
-        m_slot->height = height;
-        m_slot->filter = filter;
-        m_slot->wrap   = wrap;
-    }
+;
 
     bool valid() const noexcept { return m_slot && m_slot->width > 0 && m_slot->height > 0; }
     explicit operator bool() const noexcept { return valid(); }
@@ -55,13 +47,7 @@ public:
     void set_filter(SampleFilter f) noexcept { if (m_slot) m_slot->filter = f; }
     void set_wrap(WrapMode w) noexcept { if (m_slot) m_slot->wrap = w; }
 
-    void resize(unsigned int width, unsigned int height) {
-        if (!m_slot) m_slot = std::make_shared<detail::RenderTargetSlot>();
-        if (m_slot->width == width && m_slot->height == height) return;
-        m_slot->width  = width;
-        m_slot->height = height;
-        ++m_slot->generation;
-    }
+    void resize(unsigned int width, unsigned int height);
 
     const std::shared_ptr<detail::RenderTargetSlot>& slot() const noexcept { return m_slot; }
 

@@ -68,12 +68,7 @@ public:
     void translate(double dx, double dy) noexcept { m_x += dx; m_y += dy; }
 
     // Moves in the sprite's own facing (local +x is "forward" at rotation 0).
-    void move_local(double forward, double sideways) noexcept {
-        const double rad = m_rotation * constants::pi_180();
-        const double c = std::cos(rad), s = std::sin(rad);
-        m_x += forward * c - sideways * s;
-        m_y += forward * s + sideways * c;
-    }
+    void move_local(double forward, double sideways) noexcept;
 
     // ---- rotation -------------------------------------------------------------------------------
     double rotation() const noexcept { return m_rotation; }
@@ -94,16 +89,10 @@ public:
     void scale_by(double fx, double fy) noexcept { m_scale_x *= fx; m_scale_y *= fy; }
 
     // Sets the scale so the current frame is drawn at w x h (keeps the sign of the current scale).
-    void set_size(double w, double h) noexcept {
-        if (m_source_rect.w) m_scale_x = std::copysign(w / m_source_rect.w, m_scale_x);
-        if (m_source_rect.h) m_scale_y = std::copysign(h / m_source_rect.h, m_scale_y);
-    }
+    void set_size(double w, double h) noexcept;
 
     // Uniform scale that fits the frame inside w x h.
-    void fit_size(double w, double h) noexcept {
-        if (!m_source_rect.w || !m_source_rect.h) return;
-        set_scale(std::min(w / m_source_rect.w, h / m_source_rect.h));
-    }
+    void fit_size(double w, double h) noexcept;
 
     // ---- flipping (texture only; geometry and hit area stay put) ----------------------------------
     bool flipped_h() const noexcept { return m_flip_h; }
@@ -116,22 +105,14 @@ public:
     // ---- pivot ----------------------------------------------------------------------------------
     RectOrigin origin() const noexcept { return m_origin; }
 
-    void set_origin(RectOrigin o) noexcept {
-        m_origin = o;
-        const int col = static_cast<int>(o) % 3, row = static_cast<int>(o) / 3;
-        m_pivot_x = col * 0.5;
-        m_pivot_y = row * 0.5;
-    }
+    void set_origin(RectOrigin o) noexcept;
 
     double pivot_x() const noexcept { return m_pivot_x; }
     double pivot_y() const noexcept { return m_pivot_y; }
     void set_pivot(double nx, double ny) noexcept { m_pivot_x = nx; m_pivot_y = ny; }
 
     // Pivot in source-frame pixels (e.g. a character's feet at (16, 30) in a 32x32 frame).
-    void set_pivot_pixels(double px, double py) noexcept {
-        m_pivot_x = m_source_rect.w ? px / m_source_rect.w : 0.0;
-        m_pivot_y = m_source_rect.h ? py / m_source_rect.h : 0.0;
-    }
+    void set_pivot_pixels(double px, double py) noexcept;
 
     // ---- appearance -----------------------------------------------------------------------------
     float opacity() const noexcept { return m_opacity; }
@@ -171,23 +152,7 @@ public:
         unsigned int frame_w, unsigned int frame_h,
         unsigned int columns = 0,
         unsigned int margin = 0, unsigned int spacing = 0
-    ) noexcept {
-        if (frame_w == 0 || frame_h == 0) return false;
-
-        if (columns == 0) {
-            const unsigned int tw = m_texture.width();
-            if (tw < 2 * margin + frame_w) return false;
-            columns = (tw - 2 * margin + spacing) / (frame_w + spacing);
-            if (columns == 0) return false;
-        }
-
-        const unsigned int col = index % columns, row = index / columns;
-        const unsigned long long fx = margin + static_cast<unsigned long long>(col) * (frame_w + spacing);
-        const unsigned long long fy = margin + static_cast<unsigned long long>(row) * (frame_h + spacing);
-        if (m_texture.valid() && (fx + frame_w > m_texture.width() || fy + frame_h > m_texture.height())) return false;
-        m_source_rect = TextureRect(static_cast<int>(fx), static_cast<int>(fy), frame_w, frame_h);
-        return true;
-    }
+    ) noexcept;
 
     unsigned int frame_width()  const noexcept { return m_source_rect.w; }
     unsigned int frame_height() const noexcept { return m_source_rect.h; }
@@ -197,47 +162,15 @@ public:
 
     // ---- transforms -----------------------------------------------------------------------------
     // Maps source-frame pixel coordinates (0..frame_w, 0..frame_h) to world coordinates.
-    math::Matrix3d transform() const noexcept {
-        const double rad = m_rotation * constants::pi_180();
-        const double c = std::cos(rad), s = std::sin(rad);
-        const double px = m_pivot_x * m_source_rect.w, py = m_pivot_y * m_source_rect.h;
-        const double a = c * m_scale_x, b = -s * m_scale_y;
-        const double d = s * m_scale_x, e =  c * m_scale_y;
+    math::Matrix3d transform() const noexcept;
 
-        return math::Matrix3d{
-            a, b, m_x - (a * px + b * py),
-            d, e, m_y - (d * px + e * py),
-            0.0, 0.0, 1.0
-        };
-    }
-
-    vector2d local_to_world(double lx, double ly) const noexcept {
-        const math::Matrix3d m = transform();
-        return { m.data[0] * lx + m.data[1] * ly + m.data[2], m.data[3] * lx + m.data[4] * ly + m.data[5] };
-    }
+    vector2d local_to_world(double lx, double ly) const noexcept;
 
     // Inverse of local_to_world. Returns false when the sprite has zero scale.
-    bool world_to_local(double wx, double wy, double& lx, double& ly) const noexcept {
-        if (m_scale_x == 0.0 || m_scale_y == 0.0) return false;
-        const double rad = m_rotation * constants::pi_180();
-        const double c = std::cos(rad), s = std::sin(rad);
-        const double dx = wx - m_x, dy = wy - m_y;
-        lx = ( dx * c + dy * s) / m_scale_x + m_pivot_x * m_source_rect.w;
-        ly = (-dx * s + dy * c) / m_scale_y + m_pivot_y * m_source_rect.h;
-        return true;
-    }
+    bool world_to_local(double wx, double wy, double& lx, double& ly) const noexcept;
 
     // Texel under a world point, honouring flips; false when the point is outside the sprite.
-    bool texel_at(double wx, double wy, int& tx, int& ty) const noexcept {
-        double lx = 0.0, ly = 0.0;
-        if (!world_to_local(wx, wy, lx, ly)) return false;
-        if (lx < 0.0 || ly < 0.0 || lx >= m_source_rect.w || ly >= m_source_rect.h) return false;
-        if (m_flip_h) lx = m_source_rect.w - lx;
-        if (m_flip_v) ly = m_source_rect.h - ly;
-        tx = m_source_rect.x + std::min(static_cast<int>(lx), static_cast<int>(m_source_rect.w) - 1);
-        ty = m_source_rect.y + std::min(static_cast<int>(ly), static_cast<int>(m_source_rect.h) - 1);
-        return true;
-    }
+    bool texel_at(double wx, double wy, int& tx, int& ty) const noexcept;
 
     // ---- bounds & hit testing -------------------------------------------------------------------
     struct Bounds {
@@ -247,84 +180,31 @@ public:
     };
 
     // Axis-aligned bounds ignoring rotation (position, pivot and scale only).
-    Bounds bounds() const noexcept {
-        const double px = m_pivot_x * m_source_rect.w, py = m_pivot_y * m_source_rect.h;
-        const double ax = -px * m_scale_x, bx = (m_source_rect.w - px) * m_scale_x;
-        const double ay = -py * m_scale_y, by = (m_source_rect.h - py) * m_scale_y;
-        return { m_x + std::min(ax, bx), m_y + std::min(ay, by), std::abs(bx - ax), std::abs(by - ay) };
-    }
+    Bounds bounds() const noexcept;
 
     // Axis-aligned bounds of the rotated quad.
-    Bounds rotated_bounds() const noexcept {
-        const SpriteQuad q = quad();
-        double x0 = q.x[0], x1 = q.x[0], y0 = q.y[0], y1 = q.y[0];
-
-        for (int i = 1; i < 4; ++i) {
-            x0 = std::min(x0, q.x[i]); x1 = std::max(x1, q.x[i]);
-            y0 = std::min(y0, q.y[i]); y1 = std::max(y1, q.y[i]);
-        }
-
-        return { x0, y0, x1 - x0, y1 - y0 };
-    }
+    Bounds rotated_bounds() const noexcept;
 
     // Exact test against the rotated, scaled quad.
-    bool contains(double px, double py) const noexcept {
-        if (m_source_rect.is_empty()) return false;
-        double lx = 0.0, ly = 0.0;
-        if (!world_to_local(px, py, lx, ly)) return false;
-        return lx >= 0.0 && lx < m_source_rect.w && ly >= 0.0 && ly < m_source_rect.h;
-    }
+    bool contains(double px, double py) const noexcept;
 
     // Like contains(), but also requires the texel under the point to have alpha >= threshold.
-    bool contains_opaque(double px, double py, std::uint8_t alpha_threshold = 1) const noexcept {
-        int tx = 0, ty = 0;
-        if (!m_texture.valid() || !texel_at(px, py, tx, ty)) return false;
-        return m_texture.sample(tx + 0.5, ty + 0.5).alpha() >= alpha_threshold;
-    }
+    bool contains_opaque(double px, double py, std::uint8_t alpha_threshold = 1) const noexcept;
 
     // World-space corners, ordered to match the source rect (see SpriteQuad). Flips permute the corners
     // so the texture is mirrored in place.
-    SpriteQuad quad() const noexcept {
-        const math::Matrix3d m = transform();
-        const double w = m_source_rect.w, h = m_source_rect.h;
-        const double lx[4] = { 0.0, w, w, 0.0 };
-        const double ly[4] = { 0.0, 0.0, h, h };
-        double gx[4], gy[4];
+    SpriteQuad quad() const noexcept;
 
-        for (int i = 0; i < 4; ++i) {
-            gx[i] = m.data[0] * lx[i] + m.data[1] * ly[i] + m.data[2];
-            gy[i] = m.data[3] * lx[i] + m.data[4] * ly[i] + m.data[5];
-        }
-
-        // corner index flips: bit 0 swaps left/right (0<->1, 2<->3), bit 1 swaps top/bottom (0<->3, 1<->2)
-        static constexpr int order[4][4] = { { 0, 1, 2, 3 }, { 1, 0, 3, 2 }, { 3, 2, 1, 0 }, { 2, 3, 0, 1 } };
-        const int* o = order[(m_flip_h ? 1 : 0) | (m_flip_v ? 2 : 0)];
-        SpriteQuad q;
-
-        for (int i = 0; i < 4; ++i) { q.x[i] = gx[o[i]]; q.y[i] = gy[o[i]]; }
-        return q;
-    }
-
-    bool drawable() const noexcept {
-        return m_visible && m_texture.valid() && !m_source_rect.is_empty() && m_opacity > 0.0f && m_tint.alpha() > 0
-            && m_scale_x != 0.0 && m_scale_y != 0.0;
-    }
+    bool drawable() const noexcept;
 
     bool operator<(const Sprite& o) const noexcept { return m_z_order < o.m_z_order; }
     bool operator>(const Sprite& o) const noexcept { return m_z_order > o.m_z_order; }
 };
 
 // Stable sort by z_order (lowest first) for a list of sprites about to be drawn.
-inline void sort_by_z(std::vector<Sprite*>& sprites) {
-    std::stable_sort(sprites.begin(), sprites.end(), [](const Sprite* a, const Sprite* b) { return a->z_order() < b->z_order(); });
-}
+void sort_by_z(std::vector<Sprite*>& sprites);
 
-inline void AnimationController::apply_frame() noexcept {
-    if (!m_animation || m_animation->empty()) return;
-    const auto& rect = m_animation->frame(m_index).rect;
-    if (m_target) { m_target->set_source_rect(rect); }
-    if (m_on_frame_changed) { m_on_frame_changed(m_index); }
-}
+
 
 } // namespace graphics
 } // namespace fizmo

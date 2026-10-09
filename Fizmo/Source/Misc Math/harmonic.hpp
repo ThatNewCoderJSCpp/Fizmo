@@ -2,6 +2,7 @@
 #define HARMONIC_NUMBERS_HPP
 
 #include "alternating_power.hpp"
+#include "../Standard Overloads/pow.hpp"
 
 namespace fizmo {
 namespace math {

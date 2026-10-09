@@ -9,15 +9,7 @@ namespace graphics {
 
 enum class BlendMode : std::uint8_t { Normal = 0, Add, Multiply, Screen, Count };
 
-inline const char* blend_mode_name(BlendMode m) noexcept {
-    switch (m) {
-        case BlendMode::Normal:   return "Normal";
-        case BlendMode::Add:      return "Add";
-        case BlendMode::Multiply: return "Multiply";
-        case BlendMode::Screen:   return "Screen";
-        default:                  return "";
-    }
-}
+const char* blend_mode_name(BlendMode m) noexcept;
 
 struct Vertex2D {
     float x = 0.0f;

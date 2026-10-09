@@ -37,55 +37,11 @@ public:
     InputManager(const InputManager&) = delete;
     InputManager& operator=(const InputManager&) = delete;
 
-    void connect(WindowEventHandler& handler) noexcept {
-        disconnect();
-        m_handler = &handler;
-        listen(WindowEventType::KeyPress,         [this](const WindowEvent& e) { on_key_press(e); });
-        listen(WindowEventType::KeyRelease,       [this](const WindowEvent& e) { on_key_release(e); });
-        listen(WindowEventType::MouseClick,       [this](const WindowEvent& e) { on_mouse_click(e); });
-        listen(WindowEventType::MouseRelease,     [this](const WindowEvent& e) { on_mouse_release(e); });
-        listen(WindowEventType::MouseMove,        [this](const WindowEvent& e) { on_mouse_move(e); });
-        listen(WindowEventType::MouseScroll,      [this](const WindowEvent& e) { on_mouse_scroll(e); });
-        listen(WindowEventType::MouseDoubleClick, [this](const WindowEvent& e) { on_mouse_double_click(e); });
-        listen(WindowEventType::WindowBlur,       [this](const WindowEvent&) { reset(); });
-        listen(WindowEventType::TextInput,        [this](const WindowEvent& e) { m_text += e.text; });
-        listen(WindowEventType::TextEditing,      [this](const WindowEvent& e) { m_composition = e.text; m_composition_cursor = e.text_cursor; });
-        listen(WindowEventType::TouchDown,        [this](const WindowEvent& e) { on_touch(e, 0); });
-        listen(WindowEventType::TouchMove,        [this](const WindowEvent& e) { on_touch(e, 1); });
-        listen(WindowEventType::TouchUp,          [this](const WindowEvent& e) { on_touch(e, 2); });
-        listen(WindowEventType::TouchCancel,      [this](const WindowEvent& e) { on_touch(e, 2); });
-        listen(WindowEventType::PenDown,          [this](const WindowEvent& e) { on_touch(e, 0); });
-        listen(WindowEventType::PenMove,          [this](const WindowEvent& e) { if (e.in_contact) on_touch(e, 1); });
-        listen(WindowEventType::PenUp,            [this](const WindowEvent& e) { on_touch(e, 2); });
-        listen(WindowEventType::Gesture,          [this](const WindowEvent& e) { m_gestures.push_back(e.gesture); });
-        listen(WindowEventType::FilesDropped,     [this](const WindowEvent& e) { m_dropped.insert(m_dropped.end(), e.paths.begin(), e.paths.end()); });
-    }
+    void connect(WindowEventHandler& handler) noexcept;
 
-    void disconnect() noexcept {
-        if (!m_handler) return;
-        for (std::uint64_t id : m_listener_ids) m_handler->remove_event_listener(id);
-        m_listener_ids.clear();
-        m_handler = nullptr;
-    }
+    void disconnect() noexcept;
 
-    void end_frame() noexcept {
-        m_just_pressed.reset();
-        m_just_released.reset();
-        m_double_pressed.reset();
-        m_logical_just_pressed.reset();
-        m_logical_just_released.reset();
-        m_mouse_just_pressed.reset();
-        m_mouse_just_released.reset();
-        m_mouse_double.reset();
-        m_scroll_delta = 0;
-        m_scroll_x = 0.0f;
-        m_scroll_y = 0.0f;
-        m_mouse_dx = 0;
-        m_mouse_dy = 0;
-        m_text.clear();
-        m_gestures.clear();
-        m_dropped.clear();
-    }
+    void end_frame() noexcept;
 
     bool is_key_down(input::Key k) const noexcept { return test(m_down, k); }
     bool is_key_just_pressed(input::Key k) const noexcept { return test(m_just_pressed, k); }
@@ -102,12 +58,7 @@ public:
     bool is_key_just_pressed(const std::string& name) const noexcept { return is_logical_key_just_pressed(input::key_from_name(name)); }
     bool is_key_just_released(const std::string& name) const noexcept { return is_logical_key_just_released(input::key_from_name(name)); }
     bool is_key_double_pressed(const std::string& name) const noexcept { return physical_of_name(name, &InputManager::is_key_double_pressed); }
-    double key_hold_duration(const std::string& name) const noexcept {
-        const input::Key logical = input::key_from_name(name);
-        if (!is_logical_key_down(logical)) return 0.0;
-        for (std::size_t i = 1; i < kKeys; ++i) if (m_down.test(i) && m_logical_of[i] == logical) return seconds_since(m_press_time[i]);
-        return 0.0;
-    }
+    double key_hold_duration(const std::string& name) const noexcept;
     bool is_key_held(const std::string& name, double min_seconds) const noexcept { return is_key_down(name) && key_hold_duration(name) >= min_seconds; }
 
     input::Modifiers modifiers() const noexcept { return m_mods; }
@@ -144,16 +95,7 @@ public:
     const std::vector<input::GestureData>& gestures() const noexcept { return m_gestures; }
     const std::vector<std::string>& dropped_files() const noexcept { return m_dropped; }
 
-    void reset() noexcept {
-        m_down.reset();
-        m_logical_down.reset();
-        m_mouse_down.reset();
-        m_touches.clear();
-        m_composition.clear();
-        m_mods = input::Modifiers::None;
-        m_last_release.fill(TimePoint{});
-        end_frame();
-    }
+    void reset() noexcept;
 
 private:
     template <typename F>
@@ -163,141 +105,29 @@ private:
     static std::size_t index(input::Key k) noexcept { const std::size_t i = static_cast<std::size_t>(k); return i < kKeys ? i : 0; }
     static bool test(const std::bitset<kKeys>& set, input::Key k) noexcept { const std::size_t i = index(k); return i != 0 && set.test(i); }
 
-    bool physical_of_name(const std::string& name, bool (InputManager::*query)(input::Key) const noexcept) const noexcept {
-        const input::Key logical = input::key_from_name(name);
-        if (logical == input::Key::Unknown) return false;
-        for (std::size_t i = 1; i < kKeys; ++i) if (m_logical_of[i] == logical && (this->*query)(static_cast<input::Key>(i))) return true;
-        return (this->*query)(logical);
-    }
+    bool physical_of_name(const std::string& name, bool (InputManager::*query)(input::Key) const noexcept) const noexcept;
 
-    static input::Key resolve(input::Key k, const WindowEvent& e) noexcept {
-        if (k != input::Key::Unknown) return k;
-        if (e.physical_key != input::Key::Unknown) return e.physical_key;
-        if (e.logical_key != input::Key::Unknown) return e.logical_key;
-        return input::key_from_name(e.key_name);
-    }
+    static input::Key resolve(input::Key k, const WindowEvent& e) noexcept;
 
-    void on_key_press(const WindowEvent& e) {
-        m_mods = e.mods;
-        const input::Key physical = resolve(e.physical_key, e);
-        const input::Key logical = resolve(e.logical_key, e);
-        const std::size_t p = index(physical);
-        if (p == 0) return;
-        const TimePoint now = Clock::now();
+    void on_key_press(const WindowEvent& e);
 
-        if (m_down.test(p)) {
-            if (m_logical_of[p] != logical) {
-                release_logical(m_logical_of[p]);
-                press_logical(logical, p);
-            }
-            return;
-        }
+    void on_key_release(const WindowEvent& e);
 
-        m_down.set(p);
-        m_just_pressed.set(p);
-        m_press_time[p] = now;
+    void press_logical(input::Key logical, std::size_t physical);
 
-        if (m_last_release[p] != TimePoint{} && std::chrono::duration<double>(now - m_last_release[p]).count() <= kDoubleTapWindow) {
-            m_double_pressed.set(p);
-            m_last_release[p] = TimePoint{};
-        }
+    void release_logical(input::Key logical);
 
-        press_logical(logical, p);
-    }
+    void on_mouse_click(const WindowEvent& e);
 
-    void on_key_release(const WindowEvent& e) {
-        m_mods = e.mods;
-        const std::size_t p = index(resolve(e.physical_key, e));
-        if (p == 0 || !m_down.test(p)) return;
-        m_down.reset(p);
-        m_just_released.set(p);
-        m_last_release[p] = Clock::now();
-        release_logical(m_logical_of[p]);
-        m_logical_of[p] = input::Key::Unknown;
-    }
+    void on_mouse_release(const WindowEvent& e);
 
-    void press_logical(input::Key logical, std::size_t physical) {
-        m_logical_of[physical] = logical;
-        const std::size_t l = index(logical);
-        if (l == 0) return;
-        if (m_logical_count[l]++ == 0) {
-            m_logical_down.set(l);
-            m_logical_just_pressed.set(l);
-        }
-    }
+    void on_mouse_move(const WindowEvent& e);
 
-    void release_logical(input::Key logical) {
-        const std::size_t l = index(logical);
-        if (l == 0 || m_logical_count[l] == 0) return;
-        if (--m_logical_count[l] == 0) {
-            m_logical_down.reset(l);
-            m_logical_just_released.set(l);
-        }
-    }
+    void on_mouse_scroll(const WindowEvent& e);
 
-    void on_mouse_click(const WindowEvent& e) {
-        m_mouse_x = static_cast<int>(e.x);
-        m_mouse_y = static_cast<int>(e.y);
-        if (e.button >= kButtons) return;
-        if (!m_mouse_down.test(e.button)) {
-            m_mouse_down.set(e.button);
-            m_mouse_just_pressed.set(e.button);
-            m_mouse_press_time[e.button] = Clock::now();
-        }
-    }
+    void on_mouse_double_click(const WindowEvent& e);
 
-    void on_mouse_release(const WindowEvent& e) {
-        m_mouse_x = static_cast<int>(e.x);
-        m_mouse_y = static_cast<int>(e.y);
-        if (e.button >= kButtons) return;
-        if (m_mouse_down.test(e.button)) {
-            m_mouse_down.reset(e.button);
-            m_mouse_just_released.set(e.button);
-        }
-    }
-
-    void on_mouse_move(const WindowEvent& e) {
-        m_mouse_x = static_cast<int>(e.x);
-        m_mouse_y = static_cast<int>(e.y);
-        m_mouse_dx += e.dx;
-        m_mouse_dy += e.dy;
-    }
-
-    void on_mouse_scroll(const WindowEvent& e) {
-        m_scroll_delta += e.scroll_delta;
-        m_scroll_x += e.scroll_x;
-        m_scroll_y += e.scroll_y != 0.0f ? e.scroll_y : static_cast<float>(e.scroll_delta);
-    }
-
-    void on_mouse_double_click(const WindowEvent& e) {
-        m_mouse_x = static_cast<int>(e.x);
-        m_mouse_y = static_cast<int>(e.y);
-        if (e.button < kButtons) m_mouse_double.set(e.button);
-    }
-
-    void on_touch(const WindowEvent& e, int phase) {
-        auto it = m_touches.begin();
-        while (it != m_touches.end() && it->id != e.pointer_id) ++it;
-
-        if (phase == 2) {
-            if (it != m_touches.end()) m_touches.erase(it);
-            return;
-        }
-
-        if (it == m_touches.end()) {
-            TouchPoint t;
-            t.id = e.pointer_id;
-            t.type = e.pointer;
-            t.start_x = e.fx;
-            t.start_y = e.fy;
-            m_touches.push_back(t);
-            it = m_touches.end() - 1;
-        }
-
-        it->x = e.fx;
-        it->y = e.fy;
-        it->pressure = e.pressure;
-    }
+    void on_touch(const WindowEvent& e, int phase);
 
 private:
     WindowEventHandler*        m_handler = nullptr;

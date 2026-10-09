@@ -66,28 +66,12 @@ struct SymbolicVector2 {
     SymbolicVector2 differentiate_recursive(const std::string& var, unsigned n) const { return { DIFFERENTIATE_RECURSIVE(x, var, n), DIFFERENTIATE_RECURSIVE(y, var, n) }; }
     SymbolicVector2 substitute(const std::string& var, double val)           const { return { SUBSTITUTE(x, var, val),  SUBSTITUTE(y, var, val)  }; }
     SymbolicVector2 substitute(const std::string& var, const cas::Expression& r)  const { return { SUBSTITUTE(x, var, r),    SUBSTITUTE(y, var, r)    }; }
-    SymbolicVector2 substitute(std::initializer_list<std::pair<std::string, double>> pairs) const {
-        auto sx = x, sy = y;
-        for (auto& [n, v] : pairs) { sx = SUBSTITUTE(sx, n, v); sy = SUBSTITUTE(sy, n, v); }
-        return { sx, sy };
-    }
-    SymbolicVector2 substitute(std::initializer_list<std::pair<std::string, cas::Expression>> pairs) const {
-        auto sx = x, sy = y;
-        for (auto& [n, v] : pairs) { sx = SUBSTITUTE(sx, n, v); sy = SUBSTITUTE(sy, n, v); }
-        return { sx, sy };
-    }
+    SymbolicVector2 substitute(std::initializer_list<std::pair<std::string, double>> pairs) const;
+    SymbolicVector2 substitute(std::initializer_list<std::pair<std::string, cas::Expression>> pairs) const;
     SymbolicVector2 partial_evaluate(const std::string& var, double val)          const { return { PARTIAL_EVALUATE(x, var, val),  PARTIAL_EVALUATE(y, var, val)  }; }
     SymbolicVector2 partial_evaluate(const std::string& var, const cas::Expression& r) const { return { PARTIAL_EVALUATE(x, var, r),    PARTIAL_EVALUATE(y, var, r)    }; }
-    SymbolicVector2 partial_evaluate(std::initializer_list<std::pair<std::string, double>> pairs) const {
-        auto sx = x, sy = y;
-        for (auto& [n, v] : pairs) { sx = PARTIAL_EVALUATE(sx, n, v); sy = PARTIAL_EVALUATE(sy, n, v); }
-        return { sx, sy };
-    }
-    SymbolicVector2 partial_evaluate(std::initializer_list<std::pair<std::string, cas::Expression>> pairs) const {
-        auto sx = x, sy = y;
-        for (auto& [n, v] : pairs) { sx = PARTIAL_EVALUATE(sx, n, v); sy = PARTIAL_EVALUATE(sy, n, v); }
-        return { sx, sy };
-    }
+    SymbolicVector2 partial_evaluate(std::initializer_list<std::pair<std::string, double>> pairs) const;
+    SymbolicVector2 partial_evaluate(std::initializer_list<std::pair<std::string, cas::Expression>> pairs) const;
     SymbolicVector2 rewrite(const cas::RewriterConfig& cfg = {}) const { return { REWRITE(x, cfg),       REWRITE(y, cfg)       }; }
     SymbolicVector2 simplify()                                                        const { return { SIMPLIFY(x),           SIMPLIFY(y)           }; }
     SymbolicVector2 full_simplify(const cas::RewriterConfig& cfg = {}) const { return { FULL_SIMPLIFY(x, cfg), FULL_SIMPLIFY(y, cfg) }; }
@@ -146,32 +130,16 @@ struct SymbolicVector3 {
     SymbolicVector3 reject_from(const SymbolicVector3& onto)    const { return *this - project_onto(onto); }
     SymbolicVector3 reflect(const SymbolicVector3& n)           const { auto s = dot(n) * 2.0; return *this - n * s; }
     SymbolicVector3 differentiate(const std::string& var)       const { return { DIFFERENTIATE(x, var), DIFFERENTIATE(y, var), DIFFERENTIATE(z, var) }; }
-    SymbolicVector3 differentiate_iterative(const std::string& var, unsigned n)  const { return { DIFFERENTIATE_ITERATIVE(x, var, n), DIFFERENTIATE_ITERATIVE(y, var, n), DIFFERENTIATE_ITERATIVE(z, var, n) }; }
-    SymbolicVector3 differentiate_recursive(const std::string& var, unsigned n)  const { return { DIFFERENTIATE_RECURSIVE(x, var, n), DIFFERENTIATE_RECURSIVE(y, var, n), DIFFERENTIATE_RECURSIVE(z, var, n) }; }
+    SymbolicVector3 differentiate_iterative(const std::string& var, unsigned n)  const;
+    SymbolicVector3 differentiate_recursive(const std::string& var, unsigned n)  const;
     SymbolicVector3 substitute(const std::string& var, double val)               const { return { SUBSTITUTE(x, var, val), SUBSTITUTE(y, var, val), SUBSTITUTE(z, var, val) }; }
     SymbolicVector3 substitute(const std::string& var, const cas::Expression& r) const { return { SUBSTITUTE(x, var, r),   SUBSTITUTE(y, var, r),   SUBSTITUTE(z, var, r)   }; }
-    SymbolicVector3 substitute(std::initializer_list<std::pair<std::string, double>> pairs) const {
-        auto sx = x, sy = y, sz = z;
-        for (auto& [n, v] : pairs) { sx = SUBSTITUTE(sx, n, v); sy = SUBSTITUTE(sy, n, v); sz = SUBSTITUTE(sz, n, v); }
-        return { sx, sy, sz };
-    }
-    SymbolicVector3 substitute(std::initializer_list<std::pair<std::string, cas::Expression>> pairs) const {
-        auto sx = x, sy = y, sz = z;
-        for (auto& [n, v] : pairs) { sx = SUBSTITUTE(sx, n, v); sy = SUBSTITUTE(sy, n, v); sz = SUBSTITUTE(sz, n, v); }
-        return { sx, sy, sz };
-    }
-    SymbolicVector3 partial_evaluate(const std::string& var, double val)                          const { return { PARTIAL_EVALUATE(x, var, val), PARTIAL_EVALUATE(y, var, val), PARTIAL_EVALUATE(z, var, val) }; }
+    SymbolicVector3 substitute(std::initializer_list<std::pair<std::string, double>> pairs) const;
+    SymbolicVector3 substitute(std::initializer_list<std::pair<std::string, cas::Expression>> pairs) const;
+    SymbolicVector3 partial_evaluate(const std::string& var, double val)                          const;
     SymbolicVector3 partial_evaluate(const std::string& var, const cas::Expression& r)            const { return { PARTIAL_EVALUATE(x, var, r),   PARTIAL_EVALUATE(y, var, r),   PARTIAL_EVALUATE(z, var, r)   }; }
-    SymbolicVector3 partial_evaluate(std::initializer_list<std::pair<std::string, double>> pairs) const {
-        auto sx = x, sy = y, sz = z;
-        for (auto& [n, v] : pairs) { sx = PARTIAL_EVALUATE(sx, n, v); sy = PARTIAL_EVALUATE(sy, n, v); sz = PARTIAL_EVALUATE(sz, n, v); }
-        return { sx, sy, sz };
-    }
-    SymbolicVector3 partial_evaluate(std::initializer_list<std::pair<std::string, cas::Expression>> pairs) const {
-        auto sx = x, sy = y, sz = z;
-        for (auto& [n, v] : pairs) { sx = PARTIAL_EVALUATE(sx, n, v); sy = PARTIAL_EVALUATE(sy, n, v); sz = PARTIAL_EVALUATE(sz, n, v); }
-        return { sx, sy, sz };
-    }
+    SymbolicVector3 partial_evaluate(std::initializer_list<std::pair<std::string, double>> pairs) const;
+    SymbolicVector3 partial_evaluate(std::initializer_list<std::pair<std::string, cas::Expression>> pairs) const;
     SymbolicVector3 rewrite(const cas::RewriterConfig& cfg = {})      const { return { REWRITE(x, cfg),       REWRITE(y, cfg),       REWRITE(z, cfg)       }; }
     SymbolicVector3 simplify()                                                             const { return { SIMPLIFY(x),           SIMPLIFY(y),           SIMPLIFY(z)           }; }
     SymbolicVector3 full_simplify(const cas::RewriterConfig& cfg = {}) const { return { FULL_SIMPLIFY(x, cfg), FULL_SIMPLIFY(y, cfg), FULL_SIMPLIFY(z, cfg) }; }
@@ -208,15 +176,9 @@ struct SymbolicVector4 {
     static SymbolicVector4 basis_z() { return { cas::Const(0.0), cas::Const(0.0), cas::Const(1.0), cas::Const(0.0) }; }
     static SymbolicVector4 basis_w() { return { cas::Const(0.0), cas::Const(0.0), cas::Const(0.0), cas::Const(1.0) }; }
 
-    cas::Expression& operator[](std::size_t i) {
-        switch (i) { case 0: return x; case 1: return y; case 2: return z; case 3: return w;
-                     default: throw std::out_of_range("SymbolicVector4: index " + std::to_string(i)); }
-    }
+    cas::Expression& operator[](std::size_t i);
 
-    const cas::Expression& operator[](std::size_t i) const {
-        switch (i) { case 0: return x; case 1: return y; case 2: return z; case 3: return w;
-                     default: throw std::out_of_range("SymbolicVector4: index " + std::to_string(i)); }
-    }
+    const cas::Expression& operator[](std::size_t i) const;
 
     static constexpr std::size_t dimension() noexcept { return 4; }
 
@@ -244,87 +206,33 @@ struct SymbolicVector4 {
     SymbolicVector4 normalized()  const { auto m = magnitude(); return { x / m, y / m, z / m, w / m }; }
     SymbolicVector4 unit_vector() const { return normalized(); }
 
-    bool symbolic_equals(const SymbolicVector4& o) const {
-        return x.symbolic_equals(o.x) && y.symbolic_equals(o.y) &&
-               z.symbolic_equals(o.z) && w.symbolic_equals(o.w);
-    }
+    bool symbolic_equals(const SymbolicVector4& o) const;
 
-    SymbolicVector4 differentiate(const std::string& var) const {
-        return { DIFFERENTIATE(x, var), DIFFERENTIATE(y, var),
-                 DIFFERENTIATE(z, var), DIFFERENTIATE(w, var) };
-    }
+    SymbolicVector4 differentiate(const std::string& var) const;
 
-    SymbolicVector4 differentiate_iterative(const std::string& var, unsigned n) const {
-        return { DIFFERENTIATE_ITERATIVE(x, var, n), DIFFERENTIATE_ITERATIVE(y, var, n),
-                 DIFFERENTIATE_ITERATIVE(z, var, n), DIFFERENTIATE_ITERATIVE(w, var, n) };
-    }
+    SymbolicVector4 differentiate_iterative(const std::string& var, unsigned n) const;
 
-    SymbolicVector4 differentiate_recursive(const std::string& var, unsigned n) const {
-        return { DIFFERENTIATE_RECURSIVE(x, var, n), DIFFERENTIATE_RECURSIVE(y, var, n),
-                 DIFFERENTIATE_RECURSIVE(z, var, n), DIFFERENTIATE_RECURSIVE(w, var, n) };
-    }
+    SymbolicVector4 differentiate_recursive(const std::string& var, unsigned n) const;
 
-    SymbolicVector4 substitute(const std::string& var, double val) const {
-        return { SUBSTITUTE(x, var, val), SUBSTITUTE(y, var, val),
-                 SUBSTITUTE(z, var, val), SUBSTITUTE(w, var, val) };
-    }
+    SymbolicVector4 substitute(const std::string& var, double val) const;
 
-    SymbolicVector4 substitute(const std::string& var, const cas::Expression& repl) const {
-        return { SUBSTITUTE(x, var, repl), SUBSTITUTE(y, var, repl),
-                 SUBSTITUTE(z, var, repl), SUBSTITUTE(w, var, repl) };
-    }
+    SymbolicVector4 substitute(const std::string& var, const cas::Expression& repl) const;
 
-    SymbolicVector4 substitute(std::initializer_list<std::pair<std::string, double>> pairs) const {
-        SymbolicVector4 r = *this;
+    SymbolicVector4 substitute(std::initializer_list<std::pair<std::string, double>> pairs) const;
 
-        for (auto& [n, v] : pairs) {
-            r.x = SUBSTITUTE(r.x, n, v); r.y = SUBSTITUTE(r.y, n, v);
-            r.z = SUBSTITUTE(r.z, n, v); r.w = SUBSTITUTE(r.w, n, v);
-        }
+    SymbolicVector4 substitute(std::initializer_list<std::pair<std::string, cas::Expression>> pairs) const;
 
-        return r;
-    }
+    SymbolicVector4 partial_evaluate(const std::string& var, double val) const;
 
-    SymbolicVector4 substitute(std::initializer_list<std::pair<std::string, cas::Expression>> pairs) const {
-        SymbolicVector4 r = *this;
+    SymbolicVector4 partial_evaluate(const std::string& var, const cas::Expression& repl) const;
 
-        for (auto& [n, v] : pairs) {
-            r.x = SUBSTITUTE(r.x, n, v); r.y = SUBSTITUTE(r.y, n, v);
-            r.z = SUBSTITUTE(r.z, n, v); r.w = SUBSTITUTE(r.w, n, v);
-        }
-
-        return r;
-    }
-
-    SymbolicVector4 partial_evaluate(const std::string& var, double val) const {
-        return { PARTIAL_EVALUATE(x, var, val), PARTIAL_EVALUATE(y, var, val),
-                 PARTIAL_EVALUATE(z, var, val), PARTIAL_EVALUATE(w, var, val) };
-    }
-
-    SymbolicVector4 partial_evaluate(const std::string& var, const cas::Expression& repl) const {
-        return { PARTIAL_EVALUATE(x, var, repl), PARTIAL_EVALUATE(y, var, repl),
-                 PARTIAL_EVALUATE(z, var, repl), PARTIAL_EVALUATE(w, var, repl) };
-    }
-
-    SymbolicVector4 partial_evaluate(std::initializer_list<std::pair<std::string, double>> pairs) const {
-        SymbolicVector4 r = *this;
-
-        for (auto& [n, v] : pairs) {
-            r.x = PARTIAL_EVALUATE(r.x, n, v); r.y = PARTIAL_EVALUATE(r.y, n, v);
-            r.z = PARTIAL_EVALUATE(r.z, n, v); r.w = PARTIAL_EVALUATE(r.w, n, v);
-        }
-
-        return r;
-    }
+    SymbolicVector4 partial_evaluate(std::initializer_list<std::pair<std::string, double>> pairs) const;
 
     SymbolicVector4 simplify() const {
         return { SIMPLIFY(x), SIMPLIFY(y), SIMPLIFY(z), SIMPLIFY(w) };
     }
 
-    SymbolicVector4 full_simplify(const cas::RewriterConfig& cfg = {}) const {
-        return { FULL_SIMPLIFY(x, cfg), FULL_SIMPLIFY(y, cfg),
-                 FULL_SIMPLIFY(z, cfg), FULL_SIMPLIFY(w, cfg) };
-    }
+    SymbolicVector4 full_simplify(const cas::RewriterConfig& cfg = {}) const;
 
     SymbolicVector4 rewrite(const cas::RewriterConfig& cfg = {}) const {
         return { REWRITE(x, cfg), REWRITE(y, cfg), REWRITE(z, cfg), REWRITE(w, cfg) };
@@ -365,11 +273,7 @@ public:
         data_.reserve(names.size());
         for (auto& n : names) data_.push_back(cas::VARIABLE(n));
     }
-    static SymbolicVectorN constant(const std::vector<double>& vals) {
-        SymbolicVectorN v(vals.size());
-        for (std::size_t i = 0; i < vals.size(); ++i) v.data_[i] = cas::Const(vals[i]);
-        return v;
-    }
+    static SymbolicVectorN constant(const std::vector<double>& vals);
     static SymbolicVectorN zero(std::size_t n) {
         SymbolicVectorN v(n);
         for (std::size_t i = 0; i < n; ++i) v.data_[i] = cas::Const(0.0);
@@ -387,64 +291,24 @@ public:
     const cas::Expression& at(std::size_t i) const { return data_.at(i); }
     const std::vector<cas::Expression>& components() const noexcept { return data_; }
     std::vector<cas::Expression>&       components()       noexcept { return data_; }
-    SymbolicVectorN operator+(const SymbolicVectorN& o) const {
-        assert_same_dim(o);
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = data_[i] + o.data_[i];
-        return r;
-    }
-    SymbolicVectorN operator-(const SymbolicVectorN& o) const {
-        assert_same_dim(o);
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = data_[i] - o.data_[i];
-        return r;
-    }
-    SymbolicVectorN operator-() const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = -data_[i];
-        return r;
-    }
-    SymbolicVectorN operator*(const cas::Expression& s) const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = data_[i] * s;
-        return r;
-    }
-    SymbolicVectorN operator*(double s) const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = data_[i] * s;
-        return r;
-    }
-    SymbolicVectorN operator/(const cas::Expression& s) const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = data_[i] / s;
-        return r;
-    }
-    SymbolicVectorN operator/(double s) const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = data_[i] / s;
-        return r;
-    }
+    SymbolicVectorN operator+(const SymbolicVectorN& o) const;
+    SymbolicVectorN operator-(const SymbolicVectorN& o) const;
+    SymbolicVectorN operator-() const;
+    SymbolicVectorN operator*(const cas::Expression& s) const;
+    SymbolicVectorN operator*(double s) const;
+    SymbolicVectorN operator/(const cas::Expression& s) const;
+    SymbolicVectorN operator/(double s) const;
     SymbolicVectorN& operator+=(const SymbolicVectorN& o) { return *this = *this + o; }
     SymbolicVectorN& operator-=(const SymbolicVectorN& o) { return *this = *this - o; }
     SymbolicVectorN& operator*=(const cas::Expression& s)      { return *this = *this * s; }
     SymbolicVectorN& operator*=(double s)                  { return *this = *this * s; }
     SymbolicVectorN& operator/=(const cas::Expression& s)      { return *this = *this / s; }
     SymbolicVectorN& operator/=(double s)                  { return *this = *this / s; }
-    cas::Expression dot(const SymbolicVectorN& o) const {
-        assert_same_dim(o);
-        cas::Expression s = data_[0] * o.data_[0];
-        for (std::size_t i = 1; i < dimension(); ++i) s = s + data_[i] * o.data_[i];
-        return s;
-    }
+    cas::Expression dot(const SymbolicVectorN& o) const;
     cas::Expression magnitude_squared() const { return dot(*this); }
     cas::Expression magnitude()         const { return SQRT(magnitude_squared()); }
     cas::Expression length()            const { return magnitude(); }
-    SymbolicVectorN hadamard(const SymbolicVectorN& o) const {
-        assert_same_dim(o);
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = data_[i] * o.data_[i];
-        return r;
-    }
+    SymbolicVectorN hadamard(const SymbolicVectorN& o) const;
     SymbolicVectorN& normalize()        { auto m = magnitude(); *this = *this / m; return *this; }
     SymbolicVectorN unit_vector() const { auto m = magnitude(); return *this / m; }
     SymbolicVectorN normalized()  const { return unit_vector(); }
@@ -460,101 +324,21 @@ public:
     SymbolicKVector  wedge(const SymbolicBivector& o) const;
     SymbolicKVector  wedge(const SymbolicTrivector& o) const;
     SymbolicKVector  wedge(const SymbolicKVector& o) const;
-    SymbolicVectorN cross(const SymbolicVectorN& o) const {
-        if (dimension() == 3 && o.dimension() == 3) {
-            return SymbolicVectorN({
-                data_[1] * o.data_[2] - data_[2] * o.data_[1],
-                data_[2] * o.data_[0] - data_[0] * o.data_[2],
-                data_[0] * o.data_[1] - data_[1] * o.data_[0]
-            });
-        }
-        if (dimension() == 7 && o.dimension() == 7) {
-            const auto& a = data_;
-            const auto& b = o.data_;
-            return SymbolicVectorN({
-                /* e0 */ a[1]*b[3] - a[3]*b[1] + a[2]*b[6] - a[6]*b[2] + a[4]*b[5] - a[5]*b[4],
-                /* e1 */ a[2]*b[4] - a[4]*b[2] + a[3]*b[0] - a[0]*b[3] + a[5]*b[6] - a[6]*b[5],
-                /* e2 */ a[3]*b[5] - a[5]*b[3] + a[4]*b[1] - a[1]*b[4] + a[6]*b[0] - a[0]*b[6],
-                /* e3 */ a[4]*b[6] - a[6]*b[4] + a[5]*b[2] - a[2]*b[5] + a[0]*b[1] - a[1]*b[0],
-                /* e4 */ a[5]*b[0] - a[0]*b[5] + a[6]*b[3] - a[3]*b[6] + a[1]*b[2] - a[2]*b[1],
-                /* e5 */ a[6]*b[1] - a[1]*b[6] + a[0]*b[4] - a[4]*b[0] + a[2]*b[3] - a[3]*b[2],
-                /* e6 */ a[0]*b[2] - a[2]*b[0] + a[1]*b[5] - a[5]*b[1] + a[3]*b[4] - a[4]*b[3]
-            });
-        }
-        throw std::domain_error("SymbolicVectorN::cross requires dimension 3 or 7");
-    }
-    SymbolicVectorN differentiate(const std::string& var) const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = DIFFERENTIATE(data_[i], var);
-        return r;
-    }
-    SymbolicVectorN differentiate_iterative(const std::string& var, unsigned n) const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = DIFFERENTIATE_ITERATIVE(data_[i], var, n);
-        return r;
-    }
-    SymbolicVectorN differentiate_recursive(const std::string& var, unsigned n) const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = DIFFERENTIATE_RECURSIVE(data_[i], var, n);
-        return r;
-    }
-    SymbolicVectorN substitute(const std::string& var, double val) const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = SUBSTITUTE(data_[i], var, val);
-        return r;
-    }
-    SymbolicVectorN substitute(const std::string& var, const cas::Expression& repl) const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = SUBSTITUTE(data_[i], var, repl);
-        return r;
-    }
-    SymbolicVectorN substitute(std::initializer_list<std::pair<std::string, double>> pairs) const {
-        SymbolicVectorN r(data_);
-        for (auto& [n, v] : pairs)
-            for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = SUBSTITUTE(r.data_[i], n, v);
-        return r;
-    }
-    SymbolicVectorN partial_evaluate(const std::string& var, double val) const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = PARTIAL_EVALUATE(data_[i], var, val);
-        return r;
-    }
-    SymbolicVectorN partial_evaluate(const std::string& var, const cas::Expression& repl) const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = PARTIAL_EVALUATE(data_[i], var, repl);
-        return r;
-    }
-    SymbolicVectorN partial_evaluate(std::initializer_list<std::pair<std::string, double>> pairs) const {
-        SymbolicVectorN r(data_);
-        for (auto& [n, v] : pairs)
-            for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = PARTIAL_EVALUATE(r.data_[i], n, v);
-        return r;
-    }
-    SymbolicVectorN simplify() const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = SIMPLIFY(data_[i]);
-        return r;
-    }
-    SymbolicVectorN full_simplify(const cas::RewriterConfig& cfg = {}) const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = FULL_SIMPLIFY(data_[i], cfg);
-        return r;
-    }
-    SymbolicVectorN rewrite(const cas::RewriterConfig& cfg = {}) const {
-        SymbolicVectorN r(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) r.data_[i] = REWRITE(data_[i], cfg);
-        return r;
-    }
-    std::vector<double> evaluate(const std::unordered_map<std::string, double>& vals) const {
-        std::vector<double> out(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) out[i] = data_[i].evaluate(vals);
-        return out;
-    }
-    std::vector<double> evaluate(std::initializer_list<std::pair<std::string, double>> vals) const {
-        std::vector<double> out(dimension());
-        for (std::size_t i = 0; i < dimension(); ++i) out[i] = data_[i].evaluate(vals);
-        return out;
-    }
+    SymbolicVectorN cross(const SymbolicVectorN& o) const;
+    SymbolicVectorN differentiate(const std::string& var) const;
+    SymbolicVectorN differentiate_iterative(const std::string& var, unsigned n) const;
+    SymbolicVectorN differentiate_recursive(const std::string& var, unsigned n) const;
+    SymbolicVectorN substitute(const std::string& var, double val) const;
+    SymbolicVectorN substitute(const std::string& var, const cas::Expression& repl) const;
+    SymbolicVectorN substitute(std::initializer_list<std::pair<std::string, double>> pairs) const;
+    SymbolicVectorN partial_evaluate(const std::string& var, double val) const;
+    SymbolicVectorN partial_evaluate(const std::string& var, const cas::Expression& repl) const;
+    SymbolicVectorN partial_evaluate(std::initializer_list<std::pair<std::string, double>> pairs) const;
+    SymbolicVectorN simplify() const;
+    SymbolicVectorN full_simplify(const cas::RewriterConfig& cfg = {}) const;
+    SymbolicVectorN rewrite(const cas::RewriterConfig& cfg = {}) const;
+    std::vector<double> evaluate(const std::unordered_map<std::string, double>& vals) const;
+    std::vector<double> evaluate(std::initializer_list<std::pair<std::string, double>> vals) const;
     static SymbolicVectorN from(const SymbolicVector2& v) { return SymbolicVectorN({ v.x, v.y }); }
     static SymbolicVectorN from(const SymbolicVector3& v) { return SymbolicVectorN({ v.x, v.y, v.z }); }
     SymbolicVector2 to_2d() const { assert(dimension() >= 2); return { data_[0], data_[1] }; }
@@ -574,9 +358,7 @@ public:
 private:
     std::vector<cas::Expression> data_;
 
-    void assert_same_dim(const SymbolicVectorN& o) const {
-        if (dimension() != o.dimension()) throw std::invalid_argument("SymbolicVectorN: dimension mismatch (" + std::to_string(dimension()) + " vs " + std::to_string(o.dimension()) + ")");
-    }
+    void assert_same_dim(const SymbolicVectorN& o) const;
 };
 
 inline SymbolicVectorN operator*(const cas::Expression& s, const SymbolicVectorN& v) { return v * s; }

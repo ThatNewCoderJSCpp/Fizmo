@@ -44,16 +44,7 @@ class PollSet {
 private:
     std::vector<native_pollfd> m_fds;
 
-    static int do_poll(native_pollfd* fds, poll_nfds_t count, int timeout_ms) noexcept {
-    #ifdef OS_WINDOWS
-        return ::WSAPoll(fds, count, timeout_ms);
-    #else
-        int result;
-        do { result = ::poll(fds, count, timeout_ms); }
-        while (result < 0 && errno == EINTR);
-        return result;
-    #endif
-    }
+    static int do_poll(native_pollfd* fds, poll_nfds_t count, int timeout_ms) noexcept;
 
 public:
     PollSet() = default;
@@ -69,24 +60,9 @@ public:
     std::size_t size() const noexcept { return m_fds.size(); }
     bool empty() const noexcept { return m_fds.empty(); }
 
-    bool add(native_handle_t handle, bool want_read, bool want_write) {
-        if (handle == kInvalidHandle) return false;
-        native_pollfd pfd;
-        std::memset(&pfd, 0, sizeof(pfd));
-        pfd.fd = handle;
-        poll_event_t requested = 0;
-        if (want_read)  requested = static_cast<poll_event_t>(requested | PollMask::Read);
-        if (want_write) requested = static_cast<poll_event_t>(requested | PollMask::Write);
-        pfd.events  = requested;
-        pfd.revents = 0;
-        m_fds.push_back(pfd);
-        return true;
-    }
+    bool add(native_handle_t handle, bool want_read, bool want_write);
 
-    int wait(int timeout_ms) noexcept {
-        if (m_fds.empty()) return 0;
-        return do_poll(m_fds.data(), static_cast<poll_nfds_t>(m_fds.size()), timeout_ms);
-    }
+    int wait(int timeout_ms) noexcept;
 
 public:
     poll_event_t revents(std::size_t index) const noexcept {
@@ -113,17 +89,7 @@ public:
     bool signalled(std::size_t index) const noexcept { return revents(index) != 0; }
 
 public:
-    static int duration_to_ms(std::chrono::steady_clock::duration d) noexcept {
-        if (d == std::chrono::steady_clock::duration::max()) return -1;
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(d).count();
-        if (ms < 0) return 0;
-        
-        if (ms > static_cast<decltype(ms)>(std::numeric_limits<int>::max())) {
-            return std::numeric_limits<int>::max();
-        }
-        
-        return static_cast<int>(ms);
-    }
+    static int duration_to_ms(std::chrono::steady_clock::duration d) noexcept;
 };
 
 } // namespace detail
