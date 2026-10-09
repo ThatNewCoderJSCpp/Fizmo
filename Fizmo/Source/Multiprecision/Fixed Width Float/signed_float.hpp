@@ -5,6 +5,7 @@
 #include <tuple>
 #include <utility>
 #include "float.hpp"
+#include "decimal_conversion.hpp"
 
 namespace fizmo {
 namespace multiprecision {
@@ -127,7 +128,7 @@ public:
 
     floatmp(const std::string& str) noexcept : m_is_negative(false), m_data() { if (!parse_string(str.c_str())) *this = undefined(); }
 
-    OPTIONAL_CPP14_CONSTEXPR floatmp(const char* str) noexcept : m_is_negative(false), m_data() { if (!parse_string(str)) *this = undefined(); }
+    floatmp(const char* str) noexcept : m_is_negative(false), m_data() { if (!parse_string(str)) *this = undefined(); }
 
     template <std::size_t TB2, std::size_t MB2, sign S2>
     OPTIONAL_CPP14_CONSTEXPR floatmp(const floatmp<TB2, MB2, S2>& other) noexcept : m_is_negative(false), m_data() {
@@ -469,100 +470,25 @@ public:
 
 public:
     std::string to_string(long long sig = 0) const {
-        if (sig <= 0) sig = static_cast<long long>(static_cast<double>(mantissa_index + 1) * 0.30102999566 + 1);
         if (is_nan()) return "nan";
         if (is_undefined()) return "undefined";
         if (is_infinite()) return m_is_negative ? "-\u221e" : "\u221e";
         if (is_zero()) return m_is_negative ? "-0" : "0";
-        const long long ev = sv(approximate_exponent_base10());
-        if (ev >= sig || ev < -4) return to_scientific_string(sig);
-        std::string out;
-        if (m_is_negative) out += '-';
-        const store_t ip = get_integer_part_as_int();
-        const std::string is = ip.to_string();
-        const long long isize = static_cast<long long>(is.size());
-
-        if (isize >= sig) {
-            out += is.substr(0, static_cast<std::size_t>(sig));
-            out.append(static_cast<std::size_t>(isize - sig), '0');
-            return out;
-        }
-
-        out += is;
-        const long long rem = ip.is_zero() ? sig : sig - isize;
-        if (rem == 0) return out;
-        out += '.';
-        floatmp frac = get_fractional_part(); if (frac.is_negative()) frac = -frac;
-        if (frac.is_zero()) { out.pop_back(); return out; }
-        const floatmp ten(10);
-        long long written = 0;
-        bool sigseen = !ip.is_zero();
-
-        for (long long i = 0; i < sig + 20 && written < rem; ++i) {
-            frac = frac * ten;
-            store_t d = frac.get_integer_part_as_int();
-            if (d > store_t(std::uint64_t(9))) d = store_t(std::uint64_t(9));
-            const char c = static_cast<char>('0' + static_cast<long long>(d.get_lowest_bits()));
-            out += c; if (c != '0') sigseen = true; if (sigseen) ++written;
-            frac = frac.get_fractional_part(); if (frac.is_negative()) frac = -frac;
-            if (frac.is_zero() && sigseen) break;
-        }
-
-        while (out.size() > 1 && out.back() == '0' && out[out.size() - 2] != '.') out.pop_back();
-        if (out.back() == '.') out.pop_back();
-        return out;
+        const long long limit = sig > 0 ? sig : default_significant_digits();
+        const fdetail::decimal::digits_result dr = decimal_digits(sig);
+        const long long e10 = dr.exponent10 - 1;
+        const std::string body = (e10 >= limit || e10 < -4) ? fdetail::decimal::format_scientific(dr.digits, dr.exponent10) : fdetail::decimal::format_fixed(dr.digits, dr.exponent10);
+        return m_is_negative ? "-" + body : body;
     }
 
     std::string to_scientific_string(long long sig = 0) const {
-        if (sig <= 0) sig = static_cast<long long>(static_cast<double>(mantissa_index + 1) * 0.30102999566 + 1);
         if (is_nan())       return "nan";
         if (is_undefined()) return "undefined";
         if (is_infinite())  return m_is_negative ? "-\u221e" : "\u221e";
         if (is_zero())      return m_is_negative ? "-0e+0" : "0e+0";
-        using G = guard_t;
-        static const G g_ten(10), g_one(1);
-        std::string out; if (m_is_negative) out += '-';
-        G val(*this); if (val.is_negative()) val = -val;
-        long long e10 = sv(approximate_exponent_base10());
-        G p; long long kp = 0;
-        gpow10(e10 < 0 ? -e10 : e10, p, kp);
-        const auto vf = val.frexp();                       
-        const G    mv = G::ldexp(vf.first, typename G::sstore_t(0));   
-        const long long kv = static_cast<long long>(vf.second.get_lowest_bits()) * (vf.second.is_negative() ? -1 : 1);
-        G         rm = (e10 >= 0) ? (mv / p) : (mv * p);
-        long long rk = (e10 >= 0) ? (kv - kp) : (kv + kp);
-        gnorm(rm, rk);
-        const auto rf = rm.frexp();
-        G r = G::ldexp(rf.first, rf.second + typename G::sstore_t(rk));
-        while (r >= g_ten) { r = r / g_ten; ++e10; }           
-        while (r <  g_one) { r = r * g_ten; --e10; }
-        std::string digits;
-
-        for (long long i = 0; i < sig; ++i) {
-            typename G::store_t d = r.get_integer_part_as_int();
-            if (d > typename G::store_t(std::uint64_t(9))) d = typename G::store_t(std::uint64_t(9));
-            digits += static_cast<char>('0' + static_cast<long long>(d.get_lowest_bits()));
-            r = r.get_fractional_part() * g_ten; if (r.is_negative()) r = -r;
-        }
-
-        const typename G::store_t nd = r.get_integer_part_as_int();
-
-        if (nd >= typename G::store_t(std::uint64_t(5))) {
-            long long i = static_cast<long long>(digits.size()) - 1;
-            while (i >= 0) { if (digits[static_cast<std::size_t>(i)] < '9') { ++digits[static_cast<std::size_t>(i)]; break; } digits[static_cast<std::size_t>(i)] = '0'; --i; }
-            if (i < 0) { digits = "1" + std::string(static_cast<std::size_t>(sig - 1), '0'); ++e10; }
-        }
-
-        out += digits[0];
-
-        if (digits.size() > 1) {
-            out += '.'; out += digits.substr(1);
-            while (out.size() > 1 && out.back() == '0') out.pop_back();
-            if (out.back() == '.') out.pop_back();
-        }
-
-        out += 'e'; if (e10 >= 0) out += '+'; out += std::to_string(e10);
-        return out;
+        const fdetail::decimal::digits_result dr = decimal_digits(sig);
+        const std::string body = fdetail::decimal::format_scientific(dr.digits, dr.exponent10);
+        return m_is_negative ? "-" + body : body;
     }
 
     friend std::ostream& operator<<(std::ostream& os, const floatmp& f) { return os << f.to_string(); }
@@ -707,135 +633,92 @@ private:
     }
 
 private:
+    void construct_from_significand(std::uint64_t sig, long long exp2) noexcept {
+        if (sig == 0) { *this = zero(m_is_negative); return; }
+        bool sticky = false;
+        long long bits = 0;
+        for (std::uint64_t t = sig; t; t >>= 1) ++bits;
+
+        while (bits > wide_index - 1) {
+            sticky = sticky || (sig & 1ull);
+            sig >>= 1;
+            ++exp2;
+            --bits;
+        }
+
+        *this = pack_wide(m_is_negative, wide_t(sig), sstore_t(exp2), sticky);
+    }
+
     void construct_from_double(double a) noexcept {
-        std::uint64_t bits; 
+        std::uint64_t bits;
         std::memcpy(&bits, &a, sizeof(bits));
         const std::uint64_t ie = (bits >> 52) & 0x7FF;
         const std::uint64_t im = bits & 0xFFFFFFFFFFFFFull;
-        sstore_t uexp;
-        store_t full;
-
-        if (ie == 0) {
-            if (im == 0) return;
-            bit_index lb = -1;
-            for (bit_index i = 51; i >= 0; --i) if (im & (1ull << i)) { lb = i; break; }
-            uexp = sstore_t(-1022) - sstore_t(52 - lb);
-            const bit_index sh = mantissa_index - lb;
-            full = (sh >= 0) ? (store_t(im) << static_cast<std::size_t>(sh)) : (store_t(im) >> static_cast<std::size_t>(-sh));
-        } else {
-            uexp = sstore_t(static_cast<bit_index>(ie)) - sstore_t(1023);
-            full = shift_mantissa<MantissaBits>(im);
-        }
-
-        *this = ldexp(
-            (full & mantissa_mask) | (one() << MantissaBits),
-            uexp,
-            m_is_negative
-        );
+        if (ie == 0) construct_from_significand(im, -1074);
+        else construct_from_significand(im | (1ull << 52), static_cast<long long>(ie) - 1075);
     }
 
     void construct_from_long_double(long double a) noexcept {
-        int e;                                      
-        long double m = std::frexp(a, &e); 
-        m *= 2.0L; 
-        e -= 1;
-        const sstore_t uexp(static_cast<bit_index>(e)); 
-        m -= 1.0L;
-        store_t full; 
-        long double scale = 1.0L;
-        
-        for (bit_index i = 0; i < mantissa_index && m > 0.0L; ++i) {
-            scale *= 2.0L; const long double bv = m * scale;
-            if (bv >= 1.0L) { full.set_bit(static_cast<std::size_t>(mantissa_index - 1 - i)); m = bv - 1.0L; m /= scale; scale = 1.0L; }
-        }
-        
-        *this = ldexp(full | (one() << static_cast<std::size_t>(MantissaBits)), uexp, m_is_negative);
+        int e = 0;
+        const long double m = std::frexp(a, &e);
+        const std::uint64_t sig = static_cast<std::uint64_t>(std::ldexp(m, 64));
+        construct_from_significand(sig, static_cast<long long>(e) - 64);
     }
 
 private:
-    static OPTIONAL_CPP14_CONSTEXPR bit_index hsb(const wide_t& v) noexcept { return top_bit_wide(v); }
-
-    static constexpr bool is_ws(char c)    noexcept { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; }
-    static constexpr bool is_digit(char c) noexcept { return c >= '0' && c <= '9'; }
-    static constexpr char lower(char c)    noexcept { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c; }
-
-    static OPTIONAL_CPP14_CONSTEXPR bool starts_with(const char* p, const char* pat) noexcept {
-        while (*pat) { if (lower(*p) != *pat) return false; ++p; ++pat; }
-        return true;
+    static long long default_significant_digits() noexcept {
+        return static_cast<long long>(static_cast<double>(mantissa_index + 1) * 0.30102999566 + 1);
     }
 
-    OPTIONAL_CPP14_CONSTEXPR bool parse_string(const char* s) noexcept {
-        if (!s) return false;
-        while (is_ws(*s)) ++s;
-        m_is_negative = false;
-        if (*s == '-') { m_is_negative = true; ++s; } else if (*s == '+') ++s;
-        if (starts_with(s, "nan")) { *this = nan(); return true; }
-        if (starts_with(s, "inf")) { *this = infinity(m_is_negative); return true; }
-        const char* istart = s; while (is_digit(*s)) ++s;
-        const long long ilen = static_cast<long long>(s - istart);
-        const char* fstart = nullptr; long long flen = 0;
-        if (*s == '.') { ++s; fstart = s; while (is_digit(*s)) ++s; flen = static_cast<long long>(s - fstart); }
-        if (ilen == 0 && flen == 0) return false;
-        long long dexp = 0;
+    static fdetail::decimal::bignum to_big(const store_t& v) {
+        fdetail::decimal::bignum b;
+        const bit_index top = top_bit(v);
+        for (bit_index i = 0; i <= top; ++i) if (v.get_bit(static_cast<std::size_t>(i))) b.set_bit(i);
+        return b;
+    }
 
-        if (*s=='e'||*s=='E') {
-            ++s;
-            bool en=false;
-            if(*s=='-'){en=true;++s;} else if(*s=='+')++s;
-            if(!is_digit(*s)) return false;
+    static wide_t wide_from_big(const fdetail::decimal::bignum& b) {
+        wide_t w;
+        const long long n = b.bit_length();
+        for (long long i = 0; i < n; ++i) if (b.get_bit(i)) w.set_bit(static_cast<std::size_t>(i));
+        return w;
+    }
 
-            while(is_digit(*s)){
-                dexp=dexp*10+(*s-'0');
-                ++s;
-                if(dexp>1000000) { *this = en?zero(m_is_negative):infinity(m_is_negative); return true; }
-            }
+    fdetail::decimal::digits_result decimal_digits(long long sig) const {
+        bool s = false;
+        sstore_t e2;
+        store_t m;
+        decompose(*this, s, e2, m);
+        const fdetail::decimal::bignum f = to_big(m);
+        const long long e = sv(e2);
+        if (sig > 0) return fdetail::decimal::fixed_digits(f, e, sig);
+        const bool lower_gap_half = is_normalized() && get_mantissa().is_zero() && get_biased_exponent() > one();
+        return fdetail::decimal::shortest(f, e, lower_gap_half, !m.get_bit(0));
+    }
 
-            if(en) dexp=-dexp;
-        }
-
-        while (*s) { if (!is_ws(*s)) return false; ++s; }
-        wide_t mant; long long parsed = 0;
-        const long long cap = wide_t::max_digits_base10() - 1;
-        for (long long i = 0; i < ilen && parsed < cap; ++i) { mant = mant * wide_t(std::uint64_t(10)) + wide_t(std::uint64_t(istart[i]-'0')); ++parsed; }
-        if (ilen > parsed) dexp += ilen - parsed;
-        long long fparsed = 0;      
-
-        if (fstart) for (long long i = 0; i < flen && parsed < cap; ++i) {
-            mant = mant * wide_t(std::uint64_t(10)) + wide_t(std::uint64_t(fstart[i]-'0'));
-            ++parsed; ++fparsed;                                                            
-        }
-
-        dexp -= fparsed;                                         
-        if (mant.is_zero()) { *this = zero(m_is_negative); return true; }
-        long long bexp = 0;
-
-        if (dexp >= 0) {
-            for (long long i = 0; i < dexp; ++i) {
-                if (mant > wide_t::max() / wide_t(std::uint64_t(5))) {
-                    const bit_index sh = hsb(mant) - wide_index + 64;
-                    if (sh > 0) { mant = mant >> static_cast<std::size_t>(sh); bexp += sh; }
-                }
-
-                mant = mant * wide_t(std::uint64_t(5));
-            }
-
-            bexp += dexp;
-        } else {
-            const long long ae = -dexp;
-            const bit_index target = mantissa_index + 10 + total_index;
-            const bit_index cur = hsb(mant) + 1;
-            bit_index shl = target - cur; if (shl < 0) shl = 0;
-            mant = mant << static_cast<std::size_t>(shl); bexp -= shl; bexp += dexp;
-
-            for (long long i = 0; i < ae; ++i) {
-                const bit_index msb = hsb(mant);
-                if (msb < target - 10) { const bit_index ex = target - msb; mant = mant << static_cast<std::size_t>(ex); bexp -= ex; }
-                mant = mant / wide_t(std::uint64_t(5));
-            }
-        }
-
-        if (mant.is_zero()) { *this = zero(m_is_negative); return true; }
-        *this = pack_wide(m_is_negative, mant, sstore_t(bexp), false);
+    bool parse_string(const char* text) noexcept {
+        namespace dd = fdetail::decimal;
+        const dd::parsed_decimal p = dd::parse(text);
+        if (!p.ok) return false;
+        m_is_negative = p.negative;
+        if (p.is_nan) { *this = nan(); return true; }
+        if (p.is_inf) { *this = infinity(p.negative); return true; }
+        if (p.digits.is_zero()) { *this = zero(p.negative); return true; }
+        const long long dexp = p.exponent10;
+        const double approx2 = (static_cast<double>(p.digit_count) + static_cast<double>(dexp)) * 3.3219280948873623;
+        const double top_e = static_cast<double>(sv(max_exponent));
+        const double low_e = static_cast<double>(sv(min_exponent)) - static_cast<double>(mantissa_index);
+        if (approx2 > top_e + 8.0) { *this = infinity(p.negative); return true; }
+        if (approx2 < low_e - 8.0) { *this = zero(p.negative); return true; }
+        dd::bignum num = p.digits, den(1);
+        if (dexp >= 0) num = dd::bignum::mul(num, dd::bignum::pow10(dexp));
+        else den = dd::bignum::pow10(-dexp);
+        const long long precision = mantissa_index + 3;
+        const long long shift = precision - (num.bit_length() - den.bit_length());
+        if (shift >= 0) num.shl(shift); else den.shl(-shift);
+        bool sticky = false;
+        const dd::bignum q = dd::bignum::div_bits(num, den, precision + 2, sticky);
+        *this = pack_wide(p.negative, wide_from_big(q), sstore_t(-shift), sticky);
         return true;
     }
 
@@ -862,35 +745,6 @@ private:
     static constexpr typename std::enable_if<(MB < 52), std::uint64_t>::type
     extract_top_bits(const store_t& nm) noexcept {
         return nm.get_lowest_bits() << (52 - MB);
-    }
-
-    template <std::size_t MB>
-    static constexpr typename std::enable_if<(MB >= 52), store_t>::type
-    shift_mantissa(std::uint64_t im) noexcept {
-        return store_t(im) << (MB - 52);
-    }
-
-    template <std::size_t MB>
-    static constexpr typename std::enable_if<(MB < 52), store_t>::type
-    shift_mantissa(std::uint64_t im) noexcept {
-        return store_t(im) >> (52 - MB);
-    }
-
-private:
-    static void gnorm(guard_t& m, long long& e) noexcept {
-        static const guard_t two(2), half(0.5);
-        while (m >= two) { m = m * half; ++e; }
-    }
-
-    static void gpow10(long long n, guard_t& p, long long& k) noexcept {
-        p = guard_t(1); k = 0;
-        guard_t b(10); long long kb = 0; gnorm(b, kb);
-
-        while (n > 0) {
-            if (n & 1) { p = p * b; k += kb; gnorm(p, k); }
-            n >>= 1;
-            if (n)     { b = b * b; kb += kb; gnorm(b, kb); }
-        }
     }
 };
 
