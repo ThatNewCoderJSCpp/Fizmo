@@ -266,12 +266,48 @@ struct Material3D {
     std::uint32_t  light       = LIGHT_FULL_SKY;
     View3D         view        = View3D::Everywhere;
     bool           fog         = true;
+    bool           pbr         = false;
+    float          metallic    = 0.0f;
+    float          roughness   = 0.5f;
+    float          occlusion   = 1.0f;
+    Color          emissive    = Color(0, 0, 0, 255);
+    float          emissive_strength = 0.0f;
 
     static Material3D opaque() noexcept { return {}; }
     static Material3D double_sided() noexcept { Material3D m; m.cull = Cull3D::None; return m; }
     static Material3D transparent() noexcept { Material3D m; m.blend = Blend3D::Alpha; m.depth_write = false; m.cull = Cull3D::None; m.shadow = Shadow3D::None; return m; }
     static Material3D unlit() noexcept { Material3D m; m.lit = false; m.shadow = Shadow3D::None; return m; }
     static Material3D shadow_caster() noexcept { Material3D m; m.shadow = Shadow3D::CastOnly; m.cull = Cull3D::None; return m; }
+
+    static Material3D physical(float metallic_value, float roughness_value) noexcept {
+        Material3D m;
+        m.pbr = true;
+        m.metallic = metallic_value < 0.0f ? 0.0f : (metallic_value > 1.0f ? 1.0f : metallic_value);
+        m.roughness = roughness_value < 0.0f ? 0.0f : (roughness_value > 1.0f ? 1.0f : roughness_value);
+        return m;
+    }
+
+    static Material3D metal(float roughness_value = 0.3f) noexcept { return physical(1.0f, roughness_value); }
+    static Material3D polished_metal() noexcept { return physical(1.0f, 0.08f); }
+    static Material3D brushed_metal() noexcept { return physical(1.0f, 0.45f); }
+    static Material3D plastic(float roughness_value = 0.4f) noexcept { return physical(0.0f, roughness_value); }
+    static Material3D glossy_plastic() noexcept { return physical(0.0f, 0.12f); }
+    static Material3D rubber() noexcept { return physical(0.0f, 0.9f); }
+    static Material3D wood() noexcept { return physical(0.0f, 0.7f); }
+    static Material3D stone() noexcept { return physical(0.0f, 0.85f); }
+    static Material3D ceramic() noexcept { return physical(0.0f, 0.2f); }
+    static Material3D fabric() noexcept { return physical(0.0f, 1.0f); }
+
+    static Material3D glowing(const Color& c, float strength = 1.0f) noexcept {
+        Material3D m = physical(0.0f, 0.5f);
+        m.emissive = c;
+        m.emissive_strength = strength;
+        return m;
+    }
+
+    Material3D& with_pbr(float metallic_value, float roughness_value) noexcept { pbr = true; metallic = metallic_value; roughness = roughness_value; return *this; }
+    Material3D& with_emissive(const Color& c, float strength = 1.0f) noexcept { pbr = true; emissive = c; emissive_strength = strength; return *this; }
+    Material3D& with_occlusion(float ao) noexcept { occlusion = ao < 0.0f ? 0.0f : (ao > 1.0f ? 1.0f : ao); return *this; }
 
     Material3D& with_light(BakedLight baked) noexcept { light = baked.packed(); return *this; }
     Material3D& with_shadow(Shadow3D mode) noexcept { shadow = mode; return *this; }

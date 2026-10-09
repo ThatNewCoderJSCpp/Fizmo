@@ -4,6 +4,7 @@
 #include "window.hpp"
 #include "renderer.hpp"
 #include "input_manager.hpp"
+#include "../Input/gamepad.hpp"
 #include <functional>
 #include <vector>
 #include <chrono>
@@ -26,6 +27,7 @@ private:
     Renderer        m_renderer;
     graphics::Color m_clear_color;
     InputManager    m_input;
+    input::GamepadManager m_gamepads;
 
     TimePoint   m_time_start;
     TimePoint   m_time_last;
@@ -71,6 +73,7 @@ public:
     Window&       window()   noexcept { return m_window; }
     Renderer&     renderer() noexcept { return m_renderer; }
     InputManager& input()    noexcept { return m_input; }
+    input::GamepadManager& gamepads() noexcept { return m_gamepads; }
 
     const Window&       window()   const noexcept { return m_window; }
     const Renderer&     renderer() const noexcept { return m_renderer; }
@@ -96,6 +99,10 @@ public:
         if (!m_renderer.bind()) return false;
         install_internal_events();
         m_input.connect(m_window.event_handler());
+        m_gamepads.attach(m_window.event_handler());
+#if defined(OS_WINDOWS)
+        m_gamepads.set_window(m_window.native_handle());
+#endif
         return true;
     }
 
@@ -128,6 +135,7 @@ public:
 
             ++m_frame_count;
             m_window.poll_events();
+            m_gamepads.update();
             double dt = m_delta;
             if (m_on_update) m_on_update(dt);
             m_renderer.begin_frame();
@@ -155,17 +163,11 @@ private:
     void install_internal_events() noexcept {
         m_window.add_event_listener(WindowEventType::WindowClose, [this](const WindowEvent&) { m_running = false; });
         auto forward = [this](const WindowEvent& e) { if (m_on_event) m_on_event(e); };
-        m_window.add_event_listener(WindowEventType::MouseMove,        forward);
-        m_window.add_event_listener(WindowEventType::MouseClick,       forward);
-        m_window.add_event_listener(WindowEventType::MouseRelease,     forward);
-        m_window.add_event_listener(WindowEventType::MouseScroll,      forward);
-        m_window.add_event_listener(WindowEventType::MouseDoubleClick, forward);
-        m_window.add_event_listener(WindowEventType::KeyPress,         forward);
-        m_window.add_event_listener(WindowEventType::KeyRelease,       forward);
-        m_window.add_event_listener(WindowEventType::WindowResize,     forward);
-        m_window.add_event_listener(WindowEventType::WindowClose,      forward);
-        m_window.add_event_listener(WindowEventType::WindowFocus,      forward);
-        m_window.add_event_listener(WindowEventType::WindowBlur,       forward);
+        for (int t = 0; t < static_cast<int>(WindowEventType::Count); ++t) {
+            const WindowEventType type = static_cast<WindowEventType>(t);
+            if (type == WindowEventType::WindowExpose || type == WindowEventType::WindowRenderRequest) continue;
+            m_window.add_event_listener(type, forward);
+        }
     }
 
     void limit_frame_rate() noexcept {

@@ -253,7 +253,7 @@ public:
         if (!m_back_dc) return;
         if (!p.has_fill() && !p.has_stroke()) return;
         int irx = static_cast<int>(rx), iry = static_cast<int>(ry);
-        bool full = p.is_full_sweep();
+        bool full = p.is_full_sweep() || std::abs(p.end_angle() - p.start_angle()) < 1e-9;
         HPEN pen = create_stroke_pen(p);
         HBRUSH brush = create_fill_brush(p);
         bool owns_pen = p.has_stroke();

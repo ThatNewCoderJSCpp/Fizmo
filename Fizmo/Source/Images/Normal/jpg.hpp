@@ -166,7 +166,7 @@ public:
     }
 };
 
-fizmo::images::BitmapImage create_jpeg_as_bmp(const std::string& jpeg_file) {
+inline fizmo::images::BitmapImage create_jpeg_as_bmp(const std::string& jpeg_file) {
     try {
         JPEGtoBMPConverter converter(jpeg_file);
         return converter.convert_to_bmp();
@@ -177,7 +177,7 @@ fizmo::images::BitmapImage create_jpeg_as_bmp(const std::string& jpeg_file) {
     }
 }
 
-bool convert_jpeg_to_bmp(const std::string& jpeg_file, const std::string& out_file) {
+inline bool convert_jpeg_to_bmp(const std::string& jpeg_file, const std::string& out_file) {
     try {
         JPEGtoBMPConverter converter(jpeg_file);
         auto bmp_image = converter.convert_to_bmp();
@@ -187,7 +187,7 @@ bool convert_jpeg_to_bmp(const std::string& jpeg_file, const std::string& out_fi
     }
 }
 
-bool convert_bitmap_to_jpeg(const std::string& input_path, const std::string& output_path, int quality = 90) {
+inline bool convert_bitmap_to_jpeg(const std::string& input_path, const std::string& output_path, int quality = 90) {
     try {
         fizmo::images::BitmapImage bmp_image(input_path);
         return bmp_image.save_to_jpeg(output_path, quality);
@@ -196,7 +196,7 @@ bool convert_bitmap_to_jpeg(const std::string& input_path, const std::string& ou
     }
 }
 
-bool BitmapImage::save_to_jpeg(const std::string& filename_input, int quality) {
+inline bool BitmapImage::save_to_jpeg(const std::string& filename_input, int quality) {
     std::string filename = filename_input;
     std::string jpg_ext = ".jpg";
     std::string jpeg_ext = ".jpeg";

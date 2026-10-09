@@ -315,6 +315,12 @@ private:
     const fizmo::images::BitmapImage& m_bmp_image;
     std::vector<unsigned char> m_raw_data;
     std::vector<unsigned char> m_compressed_data;
+    bool m_alpha = false;
+
+    bool has_transparency() const {
+        for (const auto& c : m_bmp_image.pixels()) if (c.alpha() != 255) return true;
+        return false;
+    }
 
     std::uint32_t swap_endian(uint32_t value) {
         return ((value & 0xFF000000) >> 24) |
@@ -335,7 +341,8 @@ private:
     void prepare_raw_data() {
         int width = m_bmp_image.width();
         int height = m_bmp_image.height();
-        std::size_t row_size = width * 3 + 1;
+        const std::size_t channels = m_alpha ? 4 : 3;
+        std::size_t row_size = width * channels + 1;
         m_raw_data.resize(row_size * height);
 
         for (int y = 0; y < height; ++y) {
@@ -343,10 +350,11 @@ private:
 
             for (int x = 0; x < width; ++x) {
                 auto color = m_bmp_image.get_pixel(x, y);
-                std::size_t pixel_offset = y * row_size + 1 + x * 3;
+                std::size_t pixel_offset = y * row_size + 1 + x * channels;
                 m_raw_data[pixel_offset] = color.red();
                 m_raw_data[pixel_offset + 1] = color.green();
                 m_raw_data[pixel_offset + 2] = color.blue();
+                if (m_alpha) m_raw_data[pixel_offset + 3] = color.alpha();
             }
         }
     }
@@ -355,7 +363,7 @@ private:
         z_stream strm;
         std::memset(&strm, 0, sizeof(strm));
         if (deflateInit(&strm, Z_DEFAULT_COMPRESSION) != Z_OK) { return false; }
-        m_compressed_data.resize(m_raw_data.size() * 2);  
+        m_compressed_data.resize(deflateBound(&strm, static_cast<uLong>(m_raw_data.size())));
         strm.next_in = m_raw_data.data();
         strm.avail_in = m_raw_data.size();
         strm.next_out = m_compressed_data.data();
@@ -386,6 +394,8 @@ public:
         if (!png_file) { throw std::runtime_error("Cannot create output file: " + output_path); }
         png_file.write(reinterpret_cast<const char*>(PNGHeader::SIGNATURE.data()), PNGHeader::SIGNATURE.size());
         IHDRChunk ihdr;
+        m_alpha = has_transparency();
+        if (m_alpha) ihdr.color_type = 6;
         ihdr.width = m_bmp_image.width();
         ihdr.height = m_bmp_image.height();
 
@@ -414,7 +424,7 @@ public:
     }
 };
 
-fizmo::images::BitmapImage create_png_as_bitmap(const std::string& png_file) {
+inline fizmo::images::BitmapImage create_png_as_bitmap(const std::string& png_file) {
     try {
         PNGtoBMPConverter converter(png_file);
         return converter.convert_to_bmp_no_save();
@@ -425,7 +435,7 @@ fizmo::images::BitmapImage create_png_as_bitmap(const std::string& png_file) {
     }
 }
 
-bool convert_png_to_bitmap(const std::string& png_file, const std::string& out_file) {
+inline bool convert_png_to_bitmap(const std::string& png_file, const std::string& out_file) {
     try {
         PNGtoBMPConverter converter(png_file);
         converter.convert_to_bmp(out_file);
@@ -435,7 +445,7 @@ bool convert_png_to_bitmap(const std::string& png_file, const std::string& out_f
     }
 }
 
-bool convert_bmp_to_png(const std::string& input_path, const std::string& output_path) {
+inline bool convert_bmp_to_png(const std::string& input_path, const std::string& output_path) {
     try {
         fizmo::images::BitmapImage bmp_image(input_path);
         return bmp_image.save_to_png(output_path);
@@ -444,7 +454,7 @@ bool convert_bmp_to_png(const std::string& input_path, const std::string& output
     }
 }
 
-bool BitmapImage::save_to_png(const std::string& filename_input) {
+inline bool BitmapImage::save_to_png(const std::string& filename_input) {
     std::string filename = filename_input;
     std::string png_ext = ".png";
     bool has_extension = false;

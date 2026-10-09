@@ -10,7 +10,7 @@
 namespace fizmo {
 namespace windows {
 namespace detail {
-namespace gpu {
+namespace gfx {
 
 struct Vec2 {
     float x = 0.0f;
@@ -287,7 +287,7 @@ inline void stroke_polyline(
     }
 }
 
-} // namespace gpu
+} // namespace gfx
 } // namespace detail
 } // namespace windows
 } // namespace fizmo

@@ -6,11 +6,12 @@
 
 #if defined(OS_WINDOWS) || defined(OS_LINUX)
 
-#include "../../Vulkan/include.hpp"
+#include "../../GPU/include.hpp"
 #include "gpu_geometry.hpp"
+#include "gpu_common.hpp"
 #include "gpu_text.hpp"
-#include "gpu_shaders.hpp"
-#include "gpu_shaders_3d.hpp"
+#include "gl_shaders.hpp"
+#include "gpu_shaders_extra.hpp"
 #include "../raster_3d.hpp"
 
 #include "../../Basic/constants.hpp"
@@ -35,80 +36,6 @@ namespace fizmo {
 namespace windows {
 namespace detail {
 
-namespace gpu {
-
-struct Vertex {
-    float         x, y;      
-    float         u, v;      
-    std::uint32_t color;     
-    std::uint32_t mode;      
-    float         grad[4];   
-};
-static_assert(sizeof(Vertex) == 40, "vertex layout must match the pipeline");
-
-inline std::uint32_t pack_rgba(std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a) noexcept {
-    return static_cast<std::uint32_t>(r) | (static_cast<std::uint32_t>(g) << 8)
-         | (static_cast<std::uint32_t>(b) << 16) | (static_cast<std::uint32_t>(a) << 24);
-}
-
-inline std::uint8_t mul8(unsigned int c, unsigned int a) noexcept {
-    return static_cast<std::uint8_t>((c * a + 127u) / 255u);
-}
-
-inline std::uint32_t pack_premul(std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a) noexcept {
-    return pack_rgba(mul8(r, a), mul8(g, a), mul8(b, a), a);
-}
-
-inline std::uint32_t pack_opacity(std::uint8_t a) noexcept {
-    return pack_rgba(a, a, a, a);
-}
-
-inline std::uint8_t scale_alpha(std::uint8_t a, float opacity) noexcept {
-    if (opacity >= 1.0f) return a;
-    if (opacity <= 0.0f) return 0;
-    return static_cast<std::uint8_t>(a * opacity + 0.5f);
-}
-
-inline std::uint64_t hash_bytes(const void* data, std::size_t n, std::uint64_t seed = 0x9E3779B97F4A7C15ull) noexcept {
-    const unsigned char* p = static_cast<const unsigned char*>(data);
-    std::uint64_t h = seed ^ (n * 0xff51afd7ed558ccdull);
-
-    while (n >= 8) {
-        std::uint64_t k;
-        std::memcpy(&k, p, 8);
-        k *= 0x87c37b91114253d5ull;
-        k ^= k >> 31;
-        h ^= k;
-        h = ((h << 27) | (h >> 37)) * 5 + 0x52dce729;
-        p += 8; n -= 8;
-    }
-
-    std::uint64_t tail = 0;
-    for (std::size_t i = 0; i < n; ++i) tail |= static_cast<std::uint64_t>(p[i]) << (8 * i);
-    h ^= tail * 0x4cf5ad432745937full;
-    h ^= h >> 33; h *= 0xff51afd7ed558ccdull; h ^= h >> 33;
-    return h;
-}
-
-struct LineVertex3D {
-    float         x, y, z;        
-    float         ox, oy, oz;     
-    std::uint32_t color;          
-    float         side;           
-    float         width;          
-};
-static_assert(sizeof(LineVertex3D) == 36, "line vertex layout must match the pipeline");
-
-inline Cap  to_cap(graphics::LineCap c) noexcept {
-    return c == graphics::LineCap::Round ? Cap::Round : c == graphics::LineCap::Square ? Cap::Square : Cap::Flat;
-}
-
-inline Join to_join(graphics::LineJoin j) noexcept {
-    return j == graphics::LineJoin::Round ? Join::Round : j == graphics::LineJoin::Bevel ? Join::Bevel : Join::Miter;
-}
-
-} // namespace gpu
-
 class RendererImplGPU : public RendererImplBase {
     static_assert(sizeof(graphics::Color) == 4, "graphics::Color must be 4 packed bytes (r, g, b, a)");
 
@@ -116,6 +43,10 @@ private:
     static constexpr std::uint32_t kFramesInFlight   = 2;
     static constexpr int           kAtlasSize        = 1024;
     static constexpr std::size_t   kMaxAtlasPages    = 8;
+    static constexpr int           kSpriteAtlasSize  = 2048;
+    static constexpr std::size_t   kSpriteAtlasPages = 4;
+    static constexpr unsigned int  kSpriteAtlasMax   = 512;
+    static constexpr std::uint64_t kSpriteResetFrames = 120;
     static constexpr std::uint32_t kRampRows         = 256;
     static constexpr std::uint64_t kEvictAfterFrames = 180;
     static constexpr std::uint64_t kTextureBudget    = 512ull * 1024 * 1024;  
@@ -133,37 +64,96 @@ private:
     };
 
     struct Batch {
-        std::uint32_t             first   = 0;
-        std::uint32_t             count   = 0;
-        const vulkan::ImageView*  view    = nullptr;
-        std::uint8_t              sampler = NearestClamp;
-        vulkan::Rect2D            scissor;
+        std::uint32_t       first   = 0;
+        std::uint32_t       count   = 0;
+        const gpu::Texture* view    = nullptr;
+        std::uint8_t        sampler = NearestClamp;
+        bool                sprites = false;
+        gpu::Rect2D         scissor;
+        std::uint64_t       target  = 0;
+        graphics::BlendMode blend   = graphics::BlendMode::Normal;
     };
 
+    struct TargetRes {
+        std::weak_ptr<graphics::detail::RenderTargetSlot> slot;
+        std::unique_ptr<gpu::Texture>                     color;
+        std::unique_ptr<gpu::Texture>                     msaa;
+        unsigned int                                      width       = 0;
+        unsigned int                                      height      = 0;
+        std::uint64_t                                     generation  = 0;
+        bool                                              fresh       = true;
+        bool                                              clear       = false;
+        gpu::ClearColor                                   clear_color{ 0.0f, 0.0f, 0.0f, 0.0f };
+    };
+
+    struct SavedTarget {
+        unsigned int  width       = 0;
+        unsigned int  height      = 0;
+        gpu::Rect2D   scissor;
+        bool          clip_active = false;
+        bool          clip_empty  = false;
+        std::uint64_t target      = 0;
+    };
+
+    struct UserPass {
+        std::uint64_t   id    = 0;
+        GpuPassStage    stage = GpuPassStage::AfterScene;
+        GpuPassCallback callback;
+    };
+
+    struct SpriteGpu {
+        float         x[4];
+        float         y[4];
+        float         uv[4];
+        std::uint32_t color;
+        std::uint32_t flags;
+        std::uint32_t rect_xy;
+        std::uint32_t rect_wh;
+    };
+    static_assert(sizeof(SpriteGpu) == 64, "sprite instance layout must match the pipeline");
+
     struct Upload {
-        vulkan::Image*   image  = nullptr;
-        std::size_t      offset = 0;
-        vulkan::Offset2D at;
-        vulkan::Extent2D size;
+        gpu::Texture* image  = nullptr;
+        std::size_t   offset = 0;
+        gpu::Offset2D at;
+        gpu::Extent2D size;
     };
 
     struct CachedTexture {
-        std::unique_ptr<vulkan::Image> image;
-        unsigned int                   width     = 0;
-        unsigned int                   height    = 0;
-        std::uint64_t                  stamp     = 0;      
-        std::uint64_t                  last_used = 0;
-        graphics::Texture              keep_alive;
+        std::unique_ptr<gpu::Texture> image;
+        unsigned int                  width     = 0;
+        unsigned int                  height    = 0;
+        std::uint64_t                 stamp     = 0;      
+        std::uint64_t                 last_used = 0;
+        graphics::Texture             keep_alive;
     };
 
     struct AtlasPage {
-        std::unique_ptr<vulkan::Image> image;
-        std::vector<std::uint8_t>      pixels;          
+        std::unique_ptr<gpu::Texture> image;
+        std::vector<std::uint8_t>     pixels;          
         int shelf_x  = 0;
         int shelf_y  = 0;
         int shelf_h  = 0;
         int dirty_y0 = INT_MAX;
         int dirty_y1 = 0;
+    };
+
+    struct SpriteAtlasPage {
+        std::unique_ptr<gpu::Texture> image;
+        int shelf_x = 0;
+        int shelf_y = 0;
+        int shelf_h = 0;
+    };
+
+    struct SpriteAtlasEntry {
+        std::uint16_t     page      = 0;
+        int               x         = 0;
+        int               y         = 0;
+        unsigned int      w         = 0;
+        unsigned int      h         = 0;
+        std::uint64_t     stamp     = 0;
+        std::uint64_t     last_used = 0;
+        graphics::Texture keep_alive;
     };
 
     struct Glyph {
@@ -182,39 +172,39 @@ private:
         text::RichText    text;
         float             box_w = 0.0f;
         float             box_h = 0.0f;
-        gpu::TextDrawList list;
+        gfx::TextDrawList list;
         std::uint64_t     last_used = 0;
     };
 
     struct PerFrame {
-        vulkan::Buffer         vertices;
-        vulkan::Buffer         staging;
-        vulkan::Image          ramp;
-        vulkan::DescriptorPool pool;
-        vulkan::Buffer         vertices3d;
-        vulkan::Buffer         lines3d;
-        vulkan::Buffer         batch_instances;
-        vulkan::Buffer         batch_commands;
-        vulkan::Buffer         instances3d;
-        vulkan::Buffer         scene_uniforms;
-        vulkan::TimestampPool  timestamps;
-        std::uint32_t          stamps_used = 0;
-        std::vector<std::pair<GpuPass, std::uint32_t>>               spans;
-        std::vector<std::pair<std::uint64_t, vulkan::DescriptorSet>> scene_sets;
+        gpu::Buffer                                           vertices;
+        gpu::Buffer                                           sprites;
+        gpu::Buffer                                           staging;
+        gpu::Texture                                          ramp;
+        gpu::Buffer                                           vertices3d;
+        gpu::Buffer                                           lines3d;
+        gpu::Buffer                                           batch_instances;
+        gpu::Buffer                                           batch_commands;
+        gpu::Buffer                                           instances3d;
+        gpu::Buffer                                           scene_uniforms;
+        gpu::QuerySet                                         timestamps;
+        std::uint32_t                                         stamps_used = 0;
+        std::vector<std::pair<GpuPass, std::uint32_t>>        spans;
+        std::vector<std::pair<std::uint64_t, gpu::BindGroup>> scene_sets;
     };
 
     struct GpuMesh {
-        std::unique_ptr<vulkan::Buffer> vertices;
-        std::unique_ptr<vulkan::Buffer> indices;
-        std::uint64_t                   stamp        = 0;
-        std::uint64_t                   last_used    = 0;
-        std::uint64_t                   bytes        = 0;
-        std::uint64_t                   generation   = 0;
-        std::uint32_t                   vertex_count = 0;
-        std::uint32_t                   index_count  = 0;
-        bool                            quads        = false;
-        graphics::Bounds3D              bounds;
-        graphics::FaceGroups            groups{};
+        std::unique_ptr<gpu::Buffer> vertices;
+        std::unique_ptr<gpu::Buffer> indices;
+        std::uint64_t                stamp        = 0;
+        std::uint64_t                last_used    = 0;
+        std::uint64_t                bytes        = 0;
+        std::uint64_t                generation   = 0;
+        std::uint32_t                vertex_count = 0;
+        std::uint32_t                index_count  = 0;
+        bool                         quads        = false;
+        graphics::Bounds3D           bounds;
+        graphics::FaceGroups         groups{};
     };
 
     struct ArenaRange {
@@ -224,10 +214,10 @@ private:
     };
 
     struct ArenaPage {
-        std::unique_ptr<vulkan::Buffer>         buffer;
-        std::uint32_t                           capacity = 0;
-        std::uint32_t                           used     = 0;
-        std::map<std::uint32_t, std::uint32_t>  free;
+        std::unique_ptr<gpu::Buffer>           buffer;
+        std::uint32_t                          capacity = 0;
+        std::uint32_t                          used     = 0;
+        std::map<std::uint32_t, std::uint32_t> free;
     };
 
     struct HandleMesh {
@@ -266,16 +256,16 @@ private:
     static_assert(sizeof(IndirectCommand) == 20, "indirect command layout must match VkDrawIndexedIndirectCommand");
 
     struct BufferUpload {
-        vulkan::Buffer* dst    = nullptr;
-        std::size_t     offset = 0;
-        std::uint64_t   bytes  = 0;
-        GpuMesh*        owner  = nullptr;
-        std::uint64_t   dst_offset = 0;
+        gpu::Buffer*  dst        = nullptr;
+        std::size_t   offset     = 0;
+        std::uint64_t bytes      = 0;
+        GpuMesh*      owner      = nullptr;
+        std::uint64_t dst_offset = 0;
     };
 
     struct RetiredBuffer {
-        std::uint64_t                   frame;
-        std::unique_ptr<vulkan::Buffer> buffer;
+        std::uint64_t                frame;
+        std::unique_ptr<gpu::Buffer> buffer;
     };
 
     enum class DrawKind3D : std::uint8_t { Mesh, Triangles, Lines, ArenaQuads, Batch, Instanced };
@@ -285,7 +275,7 @@ private:
         std::uint32_t            state          = 0;          
         GpuMesh*                 mesh           = nullptr;
         std::uint32_t            first          = 0, count = 0;
-        const vulkan::ImageView* view           = nullptr;
+        const gpu::Texture*      view           = nullptr;
         std::uint8_t             sampler        = NearestClamp;
         float                    push[32]       = {};
         bool                     quads          = false;
@@ -348,7 +338,7 @@ private:
     static constexpr std::uint64_t       kHashPrime               = 1099511628211ull;
     static constexpr int                 kHashShift               = 29;
     static constexpr double              kSignatureGrid           = 256.0;
-    static constexpr vulkan::ShaderStage kSceneStages             = vulkan::ShaderStage::Vertex | vulkan::ShaderStage::Fragment | vulkan::ShaderStage::Compute;
+    static constexpr gpu::ShaderStage    kSceneStages             = gpu::ShaderStage::All;
     static constexpr int                 kMaxPlanes               = static_cast<int>(graphics::PlanarReflections3D::MAX_PLANES);
     static constexpr int                 kMaxCapsules             = static_cast<int>(graphics::CapsuleShadows3D::MAX_CAPSULES);
     static constexpr double              kPlaneFacing             = 1e-3;
@@ -363,6 +353,7 @@ private:
     static constexpr std::uint32_t       kFlagLit                 = 1u;
     static constexpr std::uint32_t       kFlagLegacy              = 4u;
     static constexpr std::uint32_t       kFlagNoFog               = 64u;
+    static constexpr std::uint32_t       kFlagPbr                 = 2048u;
     static constexpr double              kPointNear               = 0.05;
     static constexpr double              kSunUpLimit              = 0.99;
     static constexpr double              kRadiansPerDegree        = constants::pi_180();
@@ -426,8 +417,8 @@ private:
     struct Caster {
         enum class Kind : std::uint8_t { Mesh = 0, Instanced, Quads };
         Kind                  kind           = Kind::Mesh;
-        const vulkan::Buffer* vertices       = nullptr;
-        const vulkan::Buffer* indices        = nullptr;
+        const gpu::Buffer*    vertices       = nullptr;
+        const gpu::Buffer*    indices        = nullptr;
         std::uint32_t         count          = 0;
         std::int32_t          vertex_base    = 0;
         std::uint32_t         instance_first = 0;
@@ -480,24 +471,20 @@ private:
     };
 
     struct ShadowMap {
-        std::unique_ptr<vulkan::Image>            image;
-        vulkan::ImageView                         sample_view;
-        std::array<vulkan::ImageView, kCubeFaces> face_views;
-        unsigned int                              size      = 0;
-        bool                                      cube      = false;
-        bool                                      cached    = false;
-        std::uint64_t                             signature = 0;
-        std::uint64_t                             light_id  = 0;
-        std::uint8_t                              mask      = 0;
-        double                                    world[3]  = { 0, 0, 0 };
-        float                                     radius    = 1.0f;
-
-        const vulkan::ImageView& attachment(int face) const noexcept { return cube ? face_views[static_cast<std::size_t>(face)] : image->view(); }
+        std::unique_ptr<gpu::Texture> image;
+        unsigned int                  size      = 0;
+        bool                          cube      = false;
+        bool                          cached    = false;
+        std::uint64_t                 signature = 0;
+        std::uint64_t                 light_id  = 0;
+        std::uint8_t                  mask      = 0;
+        double                        world[3]  = { 0, 0, 0 };
+        float                         radius    = 1.0f;
     };
 
     struct ReflectionTarget {
-        std::unique_ptr<vulkan::Image> color, msaa, depth;
-        unsigned int                   width = 0, height = 0;
+        std::unique_ptr<gpu::Texture> color, msaa, depth;
+        unsigned int                  width = 0, height = 0;
     };
 
     struct RetiredMap {
@@ -506,39 +493,42 @@ private:
     };
 
     struct Retired {
-        std::uint64_t                  frame;
-        std::unique_ptr<vulkan::Image> image;
+        std::uint64_t                 frame;
+        std::unique_ptr<gpu::Texture> image;
     };
 
-    vulkan::Instance                                             m_instance;
-    vulkan::Surface                                              m_surface;
-    vulkan::Device                                               m_device;
-    vulkan::Swapchain                                            m_swapchain;
-    vulkan::FrameRing                                            m_frames;
-    vulkan::DescriptorSetLayout                                  m_draw_set_layout;
-    vulkan::DescriptorSetLayout                                  m_present_set_layout;
-    vulkan::PipelineLayout                                       m_draw_layout;
-    vulkan::PipelineLayout                                       m_present_layout;
-    vulkan::ShaderModule                                         m_draw_vs;
-    vulkan::ShaderModule                                         m_draw_fs;
-    vulkan::ShaderModule                                         m_present_vs;
-    vulkan::ShaderModule                                         m_present_fs;
-    vulkan::Pipeline                                             m_draw_pipeline;
-    vulkan::Pipeline                                             m_present_pipeline;
-    vulkan::PipelineLayout                                       m_upscale_layout;
-    vulkan::ShaderModule                                         m_upscale_fs;
-    vulkan::Pipeline                                             m_upscale_pipeline;
-    std::array<vulkan::Sampler, kSamplerCount>                   m_samplers;
-    vulkan::Image                                                m_white;
-    vulkan::Image                                                m_target;
-    vulkan::Image                                                m_msaa_target;
+    gpu::Backend                                                 m_backend;
+    gpu::Device                                                  m_device;
+    gpu::FrameInfo                                               m_frame;
+    gpu::CommandList                                             m_cmd;
+    std::vector<gpu::BindGroup>                                  m_frame_groups;
+    std::vector<gpu::BindGroupEntry>                             m_scene_entries;
+    gpu::BindGroupLayout                                         m_draw_set_layout;
+    gpu::BindGroupLayout                                         m_present_set_layout;
+    gpu::PipelineLayout                                          m_draw_layout;
+    gpu::ShaderModule                                            m_draw_vs;
+    gpu::ShaderModule                                            m_draw_fs;
+    gpu::ShaderModule                                            m_present_vs;
+    gpu::RenderPipeline                                          m_draw_pipeline;
+    gpu::ShaderModule                                            m_sprite_vs;
+    gpu::ShaderModule                                            m_sprite_fs;
+    gpu::RenderPipeline                                          m_sprite_pipeline;
+    std::array<gpu::RenderPipeline, 4>                           m_draw_blend;
+    std::array<gpu::RenderPipeline, 4>                           m_sprite_blend;
+    gpu::PipelineLayout                                          m_upscale_layout;
+    gpu::ShaderModule                                            m_upscale_fs;
+    gpu::RenderPipeline                                          m_upscale_pipeline;
+    std::array<gpu::Sampler, kSamplerCount>                      m_samplers;
+    gpu::Texture                                                 m_white;
+    gpu::Texture                                                 m_target;
+    gpu::Texture                                                 m_msaa_target;
     std::array<PerFrame, kFramesInFlight>                        m_per_frame;
     std::unordered_map<const void*, CachedTexture>               m_textures;
     std::vector<AtlasPage>                                       m_atlas;
     std::unordered_map<std::uint64_t, Glyph>                     m_glyphs;             
     std::unordered_map<std::uint64_t, std::vector<CachedLayout>> m_layouts;
     std::vector<Retired>                                         m_retired;
-    gpu::TextEngine                                              m_text;
+    gfx::TextEngine                                              m_text;
 
     bool                 m_ready          = false;
     bool                 m_text_ok        = false;
@@ -548,50 +538,60 @@ private:
     bool                 m_clip_active    = false;
     bool                 m_clip_empty     = false;
     bool                 m_atlas_reset    = false;
-    vulkan::SampleCount  m_samples        = vulkan::SampleCount::X1;
-    vulkan::ClearColor   m_clear_color;
-    vulkan::Rect2D       m_scissor;
+    bool                 m_has_3d         = false;
+    bool                 m_unresolved     = false;
+    std::uint32_t        m_samples        = 1;
+    std::uint32_t        m_point_capacity = kPointShadowMaps;
+    std::uint32_t        m_plane_capacity = kMaxPlanes;
+    gpu::ClearColor      m_clear_color;
+    gpu::Rect2D          m_scissor;
     unsigned int         m_width          = 0;
     unsigned int         m_height         = 0;
     std::uint64_t        m_frame_serial   = 1;
     std::uint64_t        m_texture_bytes  = 0;
 
-    std::vector<gpu::Vertex>                         m_vertices;
+    std::vector<gfx::Vertex>                         m_vertices;
+    std::vector<SpriteGpu>                           m_sprites;
+    std::vector<SpriteAtlasPage>                     m_sprite_pages;
+    std::unordered_map<const void*, SpriteAtlasEntry> m_sprite_entries;
+    std::vector<graphics::Color>                     m_sprite_border;
+    bool                                             m_sprite_atlas       = true;
+    bool                                             m_sprite_atlas_reset = false;
+    std::uint64_t                                    m_sprite_reset_serial = 0;
     std::vector<Batch>                               m_batches;
     std::vector<Upload>                              m_uploads;
     std::vector<std::uint8_t>                        m_staging;
     std::vector<std::uint8_t>                        m_ramp_pixels;
     std::uint32_t                                    m_ramp_used = 0;
     std::unordered_map<std::uint64_t, std::uint32_t> m_ramp_rows;
-    std::vector<gpu::Vec2>                           m_tris;
-    std::vector<gpu::Vec2>                           m_points;
-    std::vector<gpu::Vec2>                           m_wave;
+    std::vector<gfx::Vec2>                           m_tris;
+    std::vector<gfx::Vec2>                           m_points;
+    std::vector<gfx::Vec2>                           m_wave;
 
-    vulkan::Image                                            m_depth;
-    vulkan::Image                                            m_scene_color;
-    vulkan::Image                                            m_upscale;
+    gpu::Texture                                             m_depth;
+    gpu::Texture                                             m_scene_color;
+    gpu::Texture                                             m_upscale;
     float                                                    m_render_scale = 1.0f;
     UpscaleFilter                                            m_upscale_filter = UpscaleFilter::Bilinear;
     float                                                    m_sharpness      = 0.0f;
-    vulkan::Image                                            m_scene_depth;
-    vulkan::ImageView                                        m_scene_depth_view;
-    vulkan::Format                                           m_depth_format = vulkan::Format::D32Float;
-    vulkan::PipelineLayout                                   m_mesh_layout;
-    vulkan::PipelineLayout                                   m_line_layout;
-    vulkan::ShaderModule                                     m_mesh_vs;
-    vulkan::ShaderModule                                     m_mesh_fs;
-    vulkan::ShaderModule                                     m_line_vs;
-    vulkan::ShaderModule                                     m_line_fs;
-    std::unordered_map<std::uint32_t, vulkan::Pipeline>      m_pipelines3d;
+    gpu::Texture                                             m_scene_depth;
+    gpu::Format                                              m_depth_format = gpu::Format::D32Float;
+    gpu::PipelineLayout                                      m_mesh_layout;
+    gpu::PipelineLayout                                      m_line_layout;
+    gpu::ShaderModule                                        m_mesh_vs;
+    gpu::ShaderModule                                        m_mesh_fs;
+    gpu::ShaderModule                                        m_line_vs;
+    gpu::ShaderModule                                        m_line_fs;
+    std::unordered_map<std::uint32_t, gpu::RenderPipeline>   m_pipelines3d;
     std::unordered_map<const void*, GpuMesh>                 m_meshes;
     std::uint64_t                                            m_mesh_bytes = 0;
-    vulkan::ShaderModule                                     m_quad_vs;
-    vulkan::ShaderModule                                     m_quad_fs;
-    std::unique_ptr<vulkan::Buffer>                          m_quad_indices;
+    gpu::ShaderModule                                        m_quad_vs;
+    gpu::ShaderModule                                        m_quad_fs;
+    std::unique_ptr<gpu::Buffer>                             m_quad_indices;
     std::uint64_t                                            m_quad_index_capacity = 0;
     bool                                                     m_quad_index_pending  = false;
-    vulkan::ShaderModule                                     m_batch_vs;
-    vulkan::ShaderModule                                     m_instanced_vs;
+    gpu::ShaderModule                                        m_batch_vs;
+    gpu::ShaderModule                                        m_instanced_vs;
     std::unordered_map<std::uint64_t, HandleMesh>            m_handle_meshes;
     std::vector<PendingHandle>                               m_handle_uploads;
     std::uint64_t                                            m_handle_bytes = 0;
@@ -608,34 +608,34 @@ private:
     std::vector<RetiredBuffer>                               m_retired_buffers;
     std::vector<BufferUpload>                                m_buffer_uploads;
     std::vector<graphics::Vertex3D>                          m_vertices3d;
-    std::vector<gpu::LineVertex3D>                           m_lines3d;
+    std::vector<gfx::LineVertex3D>                           m_lines3d;
     std::vector<Draw3D>                                      m_draws3d;
     std::vector<SceneRec>                                    m_scenes;
     std::vector<SceneLightRec>                               m_scene_lights;
     std::vector<Caster>                                      m_casters;
     std::vector<std::uint8_t>                                m_uniform_bytes;
     std::uint64_t                                            m_uniform_stride = sizeof(SceneUniforms);
-    vulkan::DescriptorSetLayout                              m_scene_set_layout;
-    vulkan::PipelineLayout                                   m_shadow_layout;
-    vulkan::ShaderModule                                     m_shadow_mesh_vs;
-    vulkan::ShaderModule                                     m_shadow_instanced_vs;
-    vulkan::ShaderModule                                     m_shadow_quad_vs;
-    vulkan::ShaderModule                                     m_shadow_point_fs;
-    vulkan::ShaderModule                                     m_sky_vs;
-    vulkan::ShaderModule                                     m_sky_fs;
-    vulkan::Pipeline                                         m_sky_pipeline;
-    vulkan::ShaderModule                                     m_rays_fs;
-    vulkan::Pipeline                                         m_rays_pipeline;
-    vulkan::ShaderModule                                     m_volume_cs;
-    vulkan::DescriptorSetLayout                              m_volume_set_layout;
-    vulkan::PipelineLayout                                   m_volume_layout;
-    vulkan::Pipeline                                         m_volume_pipeline;
-    std::unique_ptr<vulkan::Image>                           m_volume;
-    vulkan::Image                                            m_dummy_volume;
+    gpu::BindGroupLayout                                     m_scene_set_layout;
+    gpu::PipelineLayout                                      m_shadow_layout;
+    gpu::ShaderModule                                        m_shadow_mesh_vs;
+    gpu::ShaderModule                                        m_shadow_instanced_vs;
+    gpu::ShaderModule                                        m_shadow_quad_vs;
+    gpu::ShaderModule                                        m_shadow_point_fs;
+    gpu::ShaderModule                                        m_sky_vs;
+    gpu::ShaderModule                                        m_sky_fs;
+    gpu::RenderPipeline                                      m_sky_pipeline;
+    gpu::ShaderModule                                        m_rays_fs;
+    gpu::RenderPipeline                                      m_rays_pipeline;
+    gpu::ShaderModule                                        m_volume_cs;
+    gpu::BindGroupLayout                                     m_volume_set_layout;
+    gpu::PipelineLayout                                      m_volume_layout;
+    gpu::ComputePipeline                                     m_volume_pipeline;
+    std::unique_ptr<gpu::Texture>                            m_volume;
+    gpu::Texture                                             m_dummy_volume;
     std::uint8_t                                             m_volume_sampler = LinearClamp;
-    std::unordered_map<std::uint32_t, vulkan::Pipeline>      m_shadow_pipelines;
-    vulkan::Sampler                                          m_shadow_sampler;
-    vulkan::Format                                           m_shadow_format = vulkan::Format::D16Unorm;
+    std::unordered_map<std::uint32_t, gpu::RenderPipeline>   m_shadow_pipelines;
+    gpu::Sampler                                             m_shadow_sampler;
+    gpu::Format                                              m_shadow_format = gpu::Format::D16Unorm;
     std::unique_ptr<ShadowMap>                               m_sun_map;
     std::unique_ptr<ShadowMap>                               m_sun_map_b;
     std::array<ReflectionTarget, kMaxPlanes>                 m_reflections;
@@ -658,12 +658,22 @@ private:
     std::uint32_t                                            m_point_kept   = 0;
     std::uint32_t                                            m_moving_turn  = 0;
     bool                                                     m_uploads_committed = false;
+    std::unordered_map<std::uint64_t, TargetRes>             m_rts;
+    std::vector<SavedTarget>                                 m_target_stack;
+    std::vector<std::uint64_t>                               m_target_order;
+    std::uint64_t                                            m_active_target = 0;
+    std::vector<UserPass>                                    m_user_passes;
+    bool                                                     m_text_xform = false;
+    float                                                    m_text_m[6] = { 1, 0, 0, 0, 1, 0 };
+    float                                                    m_text_origin[2] = { 0, 0 };
+    float                                                    m_text_inv_scale = 1.0f;
+    std::uint64_t                                            m_next_pass_id = 1;
 
 public:
-    RendererImplGPU() noexcept = default;
+    explicit RendererImplGPU(gpu::Backend backend = gpu::Backend::Auto) noexcept : m_backend(backend) {}
     ~RendererImplGPU() noexcept override { shutdown(); }
 
-    const char* backend_name() const noexcept override { return "vulkan"; }
+    const char* backend_name() const noexcept override { return m_device.valid() ? m_device.backend_name() : gpu::backend_name(m_backend); }
     bool        is_gpu()       const noexcept override { return true; }
 
     void set_gpu_timing(bool enabled) noexcept override {
@@ -673,14 +683,16 @@ public:
 
     GpuTimings gpu_timings() const noexcept override { return m_timings; }
 
+    gpu::Caps device_caps() const override { return m_device.valid() ? m_device.caps() : gpu::Caps{}; }
+
     GpuMemory gpu_memory() const noexcept override {
-        const vulkan::MemoryReport r = m_device.memory_report();
+        const gpu::MemoryStats r = m_device.memory_stats();
         GpuMemory m;
-        m.valid        = m_device.valid();
+        m.valid        = r.valid;
         m.measured     = r.measured;
-        m.used         = r.device_used;
-        m.budget       = r.device_budget;
-        m.total        = r.device_total;
+        m.used         = r.used;
+        m.budget       = r.budget;
+        m.total        = r.total;
         m.shared_used  = r.shared_used;
         m.shared_total = r.shared_total;
         return m;
@@ -703,7 +715,11 @@ public:
 
     void shutdown() noexcept override {
         if (m_device.valid()) m_device.wait_idle();
+        while (!m_target_stack.empty()) end_target();
+        m_rts.clear();
+        m_target_order.clear();
         m_ready = false;
+        m_has_3d = false;
         m_layouts.clear();
         m_text.shutdown();
         m_retired.clear();
@@ -761,13 +777,14 @@ public:
         m_line_layout.destroy(); 
         m_mesh_layout.destroy();
         m_scene_set_layout.destroy();
-        m_scene_depth_view.destroy();
         m_scene_depth.destroy();
         m_scene_color.destroy();
         m_upscale.destroy();
         m_depth.destroy();
         m_glyphs.clear();
         m_atlas.clear();
+        m_sprite_pages.clear();
+        m_sprite_entries.clear();
         m_textures.clear();
         m_texture_bytes = 0;
 
@@ -775,46 +792,46 @@ public:
             pf.timestamps.destroy(); 
             pf.spans.clear(); 
             pf.stamps_used = 0;
+            pf.scene_sets.clear();
             pf.scene_uniforms.destroy(); 
             pf.instances3d.destroy(); 
             pf.batch_commands.destroy(); 
             pf.batch_instances.destroy(); 
             pf.lines3d.destroy(); 
             pf.vertices3d.destroy(); 
-            pf.pool.destroy(); 
             pf.ramp.destroy(); 
             pf.staging.destroy(); 
             pf.vertices.destroy(); 
+            pf.sprites.destroy();
         }
         
+        m_cmd.clear();
         m_msaa_target.destroy();
         m_target.destroy();
         m_white.destroy();
         for (auto& s : m_samplers) s.destroy();
-        m_present_pipeline.destroy(); 
         m_draw_pipeline.destroy();
+        m_sprite_pipeline.destroy();
+        for (auto& p : m_draw_blend) p.destroy();
+        for (auto& p : m_sprite_blend) p.destroy();
+        m_sprite_vs.destroy();
+        m_sprite_fs.destroy();
         m_upscale_pipeline.destroy();
         m_upscale_layout.destroy();
         m_upscale_fs.destroy();
-        m_present_fs.destroy(); 
         m_present_vs.destroy(); 
         m_draw_fs.destroy(); 
         m_draw_vs.destroy();
-        m_present_layout.destroy(); 
         m_draw_layout.destroy();
         m_present_set_layout.destroy(); 
         m_draw_set_layout.destroy();
-        m_frames.destroy();
-        m_swapchain.destroy();
         m_device.destroy();
-        m_surface.destroy();
-        m_instance.destroy();
         reset_recording();
     }
 
     void resize(unsigned int w, unsigned int h) noexcept override {
         if (!m_ready) return;
-        m_frames.resize(w, h);
+        m_device.resize(w, h);
         if (w == 0 || h == 0 || (w == m_width && h == m_height)) return;
         m_device.wait_idle();
         create_targets(w, h);
@@ -823,34 +840,40 @@ public:
     void set_vsync(bool enabled) noexcept override {
         if (enabled == m_vsync) return;
         m_vsync = enabled;
-        if (!m_ready) return;
-        m_device.wait_idle();
-        m_frames.destroy();
-        m_swapchain.destroy();
-
-        if (failed(m_swapchain.create(m_device, m_surface, swapchain_desc(m_width, m_height)))
-            || failed(m_frames.create(m_device, m_swapchain, kFramesInFlight))) {
-            m_ready = false;
-        }
+        if (m_ready) m_device.set_vsync(enabled);
     }
 
     void begin_frame() noexcept override {}
     void present() noexcept override { flush(); }
-    void paint(void* /*paint_dc*/) noexcept override { flush(); }
+    void paint(void*) noexcept override { flush(); }
 
     void clear(const graphics::Color& color) noexcept override {
         if (!m_ready) return;
+        if (m_active_target && !m_clip_active) {
+            auto it = m_rts.find(m_active_target);
+            if (it != m_rts.end()) clear_target(it->second, color);
+            return;
+        }
         if (m_clip_active) {
             Brush b;
-            b.color = gpu::pack_rgba(color.red(), color.green(), color.blue(), 255);
+            b.color = gfx::pack_rgba(color.red(), color.green(), color.blue(), 255);
             m_tris.clear();
-            gpu::fill_rect(m_tris, 0.0f, 0.0f, static_cast<float>(m_width), static_cast<float>(m_height));
+            gfx::fill_rect(m_tris, 0.0f, 0.0f, static_cast<float>(m_width), static_cast<float>(m_height));
             add_triangles(b);
             return;
         }
 
-        m_vertices.clear();
-        m_batches.clear();
+        bool has_targets = false;
+        for (const Batch& b : m_batches) if (b.target) { has_targets = true; break; }
+
+        if (has_targets) {
+            for (Batch& b : m_batches) if (!b.target) b.count = 0;
+        } else {
+            m_vertices.clear();
+            m_sprites.clear();
+            m_batches.clear();
+        }
+
         drop_3d_recording();
         m_clear_pending = true;
         m_clear_color = { color.red() / 255.0f, color.green() / 255.0f, color.blue() / 255.0f, 1.0f };
@@ -864,7 +887,7 @@ public:
         const int y1 = std::min(ry + static_cast<int>(h), static_cast<int>(m_height));
         m_clip_active = true;
         m_clip_empty  = x1 <= x0 || y1 <= y0;
-        m_scissor = m_clip_empty ? vulkan::Rect2D{} : vulkan::Rect2D{ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } };
+        m_scissor = m_clip_empty ? gpu::Rect2D{} : gpu::Rect2D{ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } };
     }
 
     void reset_clip_rect() noexcept override {
@@ -878,7 +901,7 @@ public:
         Brush b;
         if (!solid_brush(color, 1.0f, b)) return;
         m_tris.clear();
-        gpu::fill_rect(m_tris, static_cast<float>(x), static_cast<float>(y), 1.0f, 1.0f);
+        gfx::fill_rect(m_tris, static_cast<float>(x), static_cast<float>(y), 1.0f, 1.0f);
         add_triangles(b);
     }
 
@@ -886,9 +909,9 @@ public:
         if (!m_ready || !p.has_stroke()) return;
         Brush b;
         if (!paint_brush(p, true, b)) return;
-        const gpu::Vec2 pts[2] = { { x1 + 0.5f, y1 + 0.5f }, { x2 + 0.5f, y2 + 0.5f } };
+        const gfx::Vec2 pts[2] = { { x1 + 0.5f, y1 + 0.5f }, { x2 + 0.5f, y2 + 0.5f } };
         m_tris.clear();
-        gpu::stroke_polyline(m_tris, pts, 2, false, stroke_width(p), line_cap(p), gpu::to_join(p.line_join()));
+        gfx::stroke_polyline(m_tris, pts, 2, false, stroke_width(p), line_cap(p), gfx::to_join(p.line_join()));
         add_triangles(b);
     }
 
@@ -902,25 +925,25 @@ public:
 
         if (p.has_fill() && paint_brush(p, false, b)) {
             m_tris.clear();
-            gpu::fill_rect(m_tris, fx, fy, fw, fh);
+            gfx::fill_rect(m_tris, fx, fy, fw, fh);
             add_triangles(b);
         }
 
         if (p.has_stroke() && paint_brush(p, true, b)) {
-            const gpu::Vec2 pts[4] = {
+            const gfx::Vec2 pts[4] = {
                 { fx + 0.5f, fy + 0.5f }, { fx + fw - 0.5f, fy + 0.5f },
                 { fx + fw - 0.5f, fy + fh - 0.5f }, { fx + 0.5f, fy + fh - 0.5f }
             };
 
             m_tris.clear();
-            gpu::stroke_polyline(m_tris, pts, 4, true, stroke_width(p), gpu::Cap::Flat, gpu::to_join(p.line_join()));
+            gfx::stroke_polyline(m_tris, pts, 4, true, stroke_width(p), gfx::Cap::Flat, gfx::to_join(p.line_join()));
             add_triangles(b);
         }
     }
 
     void draw_ellipse(int cx, int cy, unsigned int rx, unsigned int ry, const graphics::Paint& p) noexcept override {
         if (!m_ready || (rx == 0 && ry == 0)) return;
-        const gpu::Vec2 c{ cx + 0.5f, cy + 0.5f };
+        const gfx::Vec2 c{ cx + 0.5f, cy + 0.5f };
         float a0, a1;
         const bool full = sweep_of(p, a0, a1);
         const bool stroked = p.has_stroke();
@@ -929,43 +952,43 @@ public:
         if (p.has_fill() && paint_brush(p, false, b)) {
             const float grow = stroked ? 0.0f : 0.5f;
             m_points.clear();
-            gpu::ellipse_points(m_points, c, rx + grow, ry + grow, a0, a1);
+            gfx::ellipse_points(m_points, c, rx + grow, ry + grow, a0, a1);
             if (full) m_points.pop_back();
             m_tris.clear();
-            gpu::fill_center_fan(m_tris, c, m_points.data(), m_points.size(), full);
+            gfx::fill_center_fan(m_tris, c, m_points.data(), m_points.size(), full);
             add_triangles(b);
         }
 
         if (stroked && paint_brush(p, true, b)) {
             m_points.clear();
             if (!full) m_points.push_back(c);
-            gpu::ellipse_points(m_points, c, static_cast<float>(rx), static_cast<float>(ry), a0, a1);
+            gfx::ellipse_points(m_points, c, static_cast<float>(rx), static_cast<float>(ry), a0, a1);
             if (full) m_points.pop_back();
             m_tris.clear();
-            gpu::stroke_polyline(m_tris, m_points.data(), m_points.size(), true, stroke_width(p), gpu::Cap::Flat, gpu::to_join(p.line_join()));
+            gfx::stroke_polyline(m_tris, m_points.data(), m_points.size(), true, stroke_width(p), gfx::Cap::Flat, gfx::to_join(p.line_join()));
             add_triangles(b);
         }
     }
 
     void draw_arc(int cx, int cy, unsigned int rx, unsigned int ry, const graphics::Paint& p) noexcept override {
         if (!m_ready || (rx == 0 && ry == 0)) return;
-        const gpu::Vec2 c{ cx + 0.5f, cy + 0.5f };
+        const gfx::Vec2 c{ cx + 0.5f, cy + 0.5f };
         float a0, a1;
         const bool full = sweep_of(p, a0, a1);
         m_points.clear();
-        gpu::ellipse_points(m_points, c, static_cast<float>(rx), static_cast<float>(ry), a0, a1);
+        gfx::ellipse_points(m_points, c, static_cast<float>(rx), static_cast<float>(ry), a0, a1);
         if (full) m_points.pop_back();
         Brush b;
 
         if (p.has_fill() && paint_brush(p, false, b)) {
             m_tris.clear();
-            gpu::fill_fan(m_tris, m_points.data(), m_points.size());
+            gfx::fill_fan(m_tris, m_points.data(), m_points.size());
             add_triangles(b);
         }
 
         if (p.has_stroke() && paint_brush(p, true, b)) {
             m_tris.clear();
-            gpu::stroke_polyline(m_tris, m_points.data(), m_points.size(), full, stroke_width(p), line_cap(p), gpu::to_join(p.line_join()));
+            gfx::stroke_polyline(m_tris, m_points.data(), m_points.size(), full, stroke_width(p), line_cap(p), gfx::to_join(p.line_join()));
             add_triangles(b);
         }
     }
@@ -977,7 +1000,7 @@ public:
         m_points.clear();
         for (std::size_t i = 0; i < count; ++i) m_points.push_back({ pts[i].x + 0.5f, pts[i].y + 0.5f });
         m_tris.clear();
-        gpu::stroke_polyline(m_tris, m_points.data(), m_points.size(), closed, stroke_width(p), line_cap(p), gpu::to_join(p.line_join()));
+        gfx::stroke_polyline(m_tris, m_points.data(), m_points.size(), closed, stroke_width(p), line_cap(p), gfx::to_join(p.line_join()));
         add_triangles(b);
     }
 
@@ -989,7 +1012,7 @@ public:
             m_points.clear();
             for (std::size_t i = 0; i < count; ++i) m_points.push_back({ pts[i].x, pts[i].y });
             m_tris.clear();
-            gpu::fill_polygon(m_tris, m_points.data(), m_points.size());
+            gfx::fill_polygon(m_tris, m_points.data(), m_points.size());
             add_triangles(b);
         }
 
@@ -1001,7 +1024,7 @@ public:
         unsigned int sx, unsigned int sy, unsigned int sw, unsigned int sh
     ) noexcept override {
         if (!m_ready || !img.is_valid_image() || dw == 0 || dh == 0 || sw == 0 || sh == 0) return;
-        const vulkan::ImageView* view = texture_for(&img, img.pixels().data(), img.width(), img.height(), img.version(), nullptr);
+        const gpu::Texture* view = texture_for(&img, img.pixels().data(), img.width(), img.height(), img.version(), nullptr);
         if (!view) return;
         const bool scaled = dw != sw || dh != sh;
 
@@ -1009,7 +1032,7 @@ public:
             static_cast<float>(dx), static_cast<float>(dy), static_cast<float>(dw), static_cast<float>(dh),
             static_cast<float>(sx) / img.width(), static_cast<float>(sy) / img.height(),
             static_cast<float>(sx + sw) / img.width(), static_cast<float>(sy + sh) / img.height(),
-            gpu::pack_opacity(255), view, scaled ? LinearClamp : NearestClamp
+            gfx::pack_opacity(255), view, scaled ? LinearClamp : NearestClamp
         );
     }
 
@@ -1018,16 +1041,16 @@ public:
         float opacity, const graphics::TextureRect& src
     ) noexcept override {
         if (!m_ready || !tex.valid() || dw == 0 || dh == 0 || src.is_empty()) return;
-        const std::uint8_t a = gpu::scale_alpha(255, opacity);
+        const std::uint8_t a = gfx::scale_alpha(255, opacity);
         if (a == 0) return;
-        const vulkan::ImageView* view = texture_view(tex);
+        const gpu::Texture* view = texture_view(tex);
         if (!view) return;
         const float tw = static_cast<float>(tex.width()), th = static_cast<float>(tex.height());
 
         add_textured_quad(
             static_cast<float>(dx), static_cast<float>(dy), static_cast<float>(dw), static_cast<float>(dh),
             src.x / tw, src.y / th, (src.x + static_cast<float>(src.w)) / tw, (src.y + static_cast<float>(src.h)) / th,
-            gpu::pack_opacity(a), view, sampler_for(tex)
+            gfx::pack_opacity(a), view, sampler_for(tex)
         );
     }
 
@@ -1036,17 +1059,135 @@ public:
         float opacity, const graphics::TextureRect& src
     ) noexcept override {
         if (!m_ready || !quad || !tex.valid() || src.is_empty()) return;
-        const std::uint8_t a = gpu::scale_alpha(255, opacity);
+        const std::uint8_t a = gfx::scale_alpha(255, opacity);
         if (a == 0) return;
-        const vulkan::ImageView* view = texture_view(tex);
+        const gpu::Texture* view = texture_view(tex);
         if (!view) return;
         const float tw = static_cast<float>(tex.width()), th = static_cast<float>(tex.height());
-        const gpu::Vec2 p[4] = { { quad[0].x, quad[0].y }, { quad[1].x, quad[1].y }, { quad[2].x, quad[2].y }, { quad[3].x, quad[3].y } };
+        const gfx::Vec2 p[4] = { { quad[0].x, quad[0].y }, { quad[1].x, quad[1].y }, { quad[2].x, quad[2].y }, { quad[3].x, quad[3].y } };
 
         add_textured_quad4(
             p, src.x / tw, src.y / th, (src.x + static_cast<float>(src.w)) / tw, (src.y + static_cast<float>(src.h)) / th,
-            gpu::pack_opacity(a), view, sampler_for(tex)
+            gfx::pack_opacity(a), view, sampler_for(tex)
         );
+    }
+
+    void draw_texture_quad_tinted(
+        const RenderPoint quad[4], const graphics::Texture& tex, const graphics::Color& tint,
+        float opacity, const graphics::TextureRect& src
+    ) noexcept override {
+        if (!m_ready || !quad || !tex.valid() || src.is_empty()) return;
+        const std::uint8_t a = gfx::scale_alpha(tint.alpha(), opacity);
+        if (a == 0) return;
+
+        try {
+            const gpu::Texture* view = texture_view(tex);
+            if (!view) return;
+            const float tw = static_cast<float>(tex.width()), th = static_cast<float>(tex.height());
+            const gfx::Vec2 p[4] = { { quad[0].x, quad[0].y }, { quad[1].x, quad[1].y }, { quad[2].x, quad[2].y }, { quad[3].x, quad[3].y } };
+            add_textured_quad4(
+                p, src.x / tw, src.y / th, (src.x + static_cast<float>(src.w)) / tw, (src.y + static_cast<float>(src.h)) / th,
+                gfx::pack_premul(tint.red(), tint.green(), tint.blue(), a), view, sampler_for(tex)
+            );
+        } catch (...) {}
+    }
+
+    void draw_vertices_2d(const graphics::Vertex2D* v, std::size_t count, const graphics::Texture* tex) noexcept override {
+        if (!m_ready || !v || count < 3 || m_clip_empty) return;
+
+        try {
+            const gpu::Texture* view = &m_white;
+            std::uint8_t sampler = NearestClamp;
+            if (tex && tex->valid()) {
+                view = texture_view(*tex);
+                if (!view) return;
+                sampler = sampler_for(*tex);
+            }
+            count -= count % 3;
+            Batch& batch = batch_for(view, sampler);
+            for (std::size_t i = 0; i < count; ++i) {
+                const graphics::Color& c = v[i].color;
+                m_vertices.push_back({ v[i].x, v[i].y, view == &m_white ? 0.5f : v[i].u, view == &m_white ? 0.5f : v[i].v, gfx::pack_premul(c.red(), c.green(), c.blue(), c.alpha()), 0, { 0, 0, 0, 0 } });
+            }
+            batch.count += static_cast<std::uint32_t>(count);
+        } catch (...) {}
+    }
+
+    void set_sprite_atlas(bool enabled) noexcept override {
+        m_sprite_atlas = enabled;
+        if (!enabled) m_sprite_atlas_reset = true;
+    }
+
+    bool sprite_atlas() const noexcept override { return m_sprite_atlas; }
+
+    void draw_sprite_instances(const SpriteInstance* sprites, std::size_t count) noexcept override {
+        if (!m_ready || !sprites || count == 0 || m_clip_empty) return;
+        if (!m_sprite_pipeline.valid()) { RendererImplBase::draw_sprite_instances(sprites, count); return; }
+
+        try {
+            m_sprites.reserve(m_sprites.size() + count);
+            const graphics::Texture* current = nullptr;
+            const gpu::Texture* view = nullptr;
+            std::uint8_t sampler = NearestClamp;
+            std::size_t batch = 0;
+            float base_u = 0.0f, base_v = 0.0f, scale_u = 1.0f, scale_v = 1.0f;
+            bool linear = false;
+            std::uint32_t rect_xy = 0, rect_wh = 0;
+            const graphics::BlendMode saved_blend = m_blend_mode;
+            struct RestoreBlend { graphics::BlendMode& mode; graphics::BlendMode value; ~RestoreBlend() { mode = value; } } restore{ m_blend_mode, saved_blend };
+            m_blend_mode = count ? sprites[0].blend : saved_blend;
+
+            for (std::size_t i = 0; i < count; ++i) {
+                const SpriteInstance& s = sprites[i];
+                if (s.a == 0 || !s.texture) continue;
+                if (s.blend != m_blend_mode) { m_blend_mode = s.blend; current = nullptr; }
+
+                if (s.texture != current) {
+                    current = s.texture;
+                    view = nullptr;
+                    if (!current->valid()) continue;
+                    const std::uint8_t full = sampler_for(*current);
+                    linear = (full & 1u) != 0;
+                    sampler = static_cast<std::uint8_t>(full & ~1u);
+                    const SpriteAtlasEntry* entry = sprite_atlas_entry(*current);
+
+                    if (entry) {
+                        view = m_sprite_pages[entry->page].image.get();
+                        const float inv = 1.0f / static_cast<float>(kSpriteAtlasSize);
+                        scale_u = static_cast<float>(entry->w) * inv;
+                        scale_v = static_cast<float>(entry->h) * inv;
+                        base_u = static_cast<float>(entry->x) * inv;
+                        base_v = static_cast<float>(entry->y) * inv;
+                        rect_xy = static_cast<std::uint32_t>(entry->x) | (static_cast<std::uint32_t>(entry->y) << 16);
+                        rect_wh = entry->w | (entry->h << 16);
+                    } else {
+                        view = texture_view(*current);
+                        scale_u = scale_v = 1.0f;
+                        base_u = base_v = 0.0f;
+                        rect_xy = rect_wh = 0;
+                    }
+
+                    if (!view) continue;
+                    batch_for(view, sampler, true);
+                    batch = m_batches.size() - 1;
+                }
+
+                if (!view) continue;
+                SpriteGpu g;
+                std::memcpy(g.x, s.x, sizeof(g.x));
+                std::memcpy(g.y, s.y, sizeof(g.y));
+                g.uv[0] = base_u + s.u0 * scale_u;
+                g.uv[1] = base_v + s.v0 * scale_v;
+                g.uv[2] = base_u + s.u1 * scale_u;
+                g.uv[3] = base_v + s.v1 * scale_v;
+                g.color = gfx::pack_premul(s.r, s.g, s.b, s.a);
+                g.flags = (linear ? 1u : 0u) | (rect_wh ? 2u : 0u);
+                g.rect_xy = rect_xy;
+                g.rect_wh = rect_wh;
+                m_sprites.push_back(g);
+                ++m_batches[batch].count;
+            }
+        } catch (...) {}
     }
 
     void draw_pixel_buffer(
@@ -1055,13 +1196,13 @@ public:
         unsigned int pw, unsigned int ph, bool smooth, std::uint64_t version
     ) noexcept override {
         if (!m_ready || !pixels || pw == 0 || ph == 0 || dw == 0 || dh == 0) return;
-        const vulkan::ImageView* view = texture_for(pixels, pixels, pw, ph, version, nullptr);
+        const gpu::Texture* view = texture_for(pixels, pixels, pw, ph, version, nullptr);
         if (!view) return;
 
         add_textured_quad(
             static_cast<float>(dx), static_cast<float>(dy), static_cast<float>(dw), static_cast<float>(dh),
             0.0f, 0.0f, 1.0f, 1.0f,
-            gpu::pack_opacity(255), view, smooth ? LinearClamp : NearestClamp
+            gfx::pack_opacity(255), view, smooth ? LinearClamp : NearestClamp
         );
     }
 
@@ -1079,7 +1220,7 @@ public:
         if (len < 0) len = static_cast<int>(std::wcslen(str));
 
         try {
-            draw_rich_text(x, y, 0, 0, text::RichText(gpu::wide_to_utf8(str, len), style));
+            draw_rich_text(x, y, 0, 0, text::RichText(gfx::wide_to_utf8(str, len), style));
         } catch (...) {}
     }
 
@@ -1099,7 +1240,7 @@ public:
         if (len < 0) len = static_cast<int>(std::wcslen(str));
 
         try {
-            return measure_rich_text(text::RichText(gpu::wide_to_utf8(str, len), style), 0);
+            return measure_rich_text(text::RichText(gfx::wide_to_utf8(str, len), style), 0);
         } catch (...) {
             return {};
         }
@@ -1109,16 +1250,41 @@ public:
         if (!m_ready || !m_text_ok || rt.empty() || m_clip_empty) return;
 
         try {
-            const gpu::TextDrawList* list = layout_for(rt, static_cast<float>(w), static_cast<float>(h));
+            const gfx::TextDrawList* list = layout_for(rt, static_cast<float>(w), static_cast<float>(h));
             if (list) emit_text(*list, static_cast<float>(x), static_cast<float>(y));
         } catch (...) {}
+    }
+
+    bool draw_rich_text_transformed(const float* m, float x, float y, unsigned int w, unsigned int h, const text::RichText& rt) noexcept override {
+        if (!m || !m_ready || !m_text_ok || rt.empty() || m_clip_empty) return m_ready && m_text_ok;
+        const double det = static_cast<double>(m[0]) * m[4] - static_cast<double>(m[1]) * m[3];
+        const double scale = std::sqrt(std::abs(det));
+        if (!(scale > 1e-6)) return true;
+        const double k = std::max(0.05, std::min(16.0, scale));
+
+        try {
+            const text::RichText scaled = scaled_rich_text(rt, k);
+            const gfx::TextDrawList* list = layout_for(scaled, static_cast<float>(w * k), static_cast<float>(h * k));
+            if (!list) return true;
+            std::copy(m, m + 6, m_text_m);
+            m_text_origin[0] = x;
+            m_text_origin[1] = y;
+            m_text_inv_scale = static_cast<float>(1.0 / k);
+            m_text_xform = true;
+            emit_text(*list, 0.0f, 0.0f);
+            m_text_xform = false;
+        } catch (...) {
+            m_text_xform = false;
+        }
+
+        return true;
     }
 
     text::TextMetrics measure_rich_text(const text::RichText& rt, unsigned int max_width) noexcept override {
         if (!m_ready || !m_text_ok || rt.empty()) return {};
 
         try {
-            const gpu::TextDrawList* list = layout_for(rt, static_cast<float>(max_width), 0.0f);
+            const gfx::TextDrawList* list = layout_for(rt, static_cast<float>(max_width), 0.0f);
             return list ? list->metrics() : text::TextMetrics{};
         } catch (...) {
             return {};
@@ -1142,19 +1308,10 @@ public:
 
         try {
             m_device.wait_idle();
-            const std::uint64_t bytes = static_cast<std::uint64_t>(m_width) * m_height * 4;
-            vulkan::Buffer readback;
-            if (failed(readback.create(m_device, { bytes, vulkan::BufferUsage::TransferDst, vulkan::MemoryUsage::GpuToCpu, "fizmo capture" }))) return false;
-
-            const vulkan::Result r = vulkan::submit_immediate(m_device, [&](vulkan::CommandBuffer& cmd) {
-                cmd.transition(m_target, vulkan::ImageLayout::TransferSrc);
-                cmd.copy_image_to_buffer(m_target, readback);
-                cmd.transition(m_target, vulkan::ImageLayout::ShaderReadOnly);
-            });
-
-            if (failed(r)) return false;
-            std::vector<std::uint8_t> rgba(static_cast<std::size_t>(bytes));
-            if (failed(readback.read(rgba.data(), bytes))) return false;
+            std::vector<std::uint8_t> rgba(static_cast<std::size_t>(m_width) * m_height * 4);
+            gpu::TextureRegion region;
+            region.extent = { m_width, m_height, 1 };
+            if (failed(m_device.read_texture(m_target, region, rgba.data()))) return false;
             images::BitmapImage img(m_width, m_height);
 
             for (unsigned int y = 0; y < m_height; ++y) {
@@ -1171,8 +1328,144 @@ public:
         }
     }
 
+    bool begin_target(const graphics::RenderTarget& rt, const graphics::Color* clear) noexcept override {
+        if (!m_ready || m_in_3d || !rt.valid() || target_busy(rt.id())) return false;
+
+        try {
+            TargetRes* r = target_res(rt);
+            if (!r) return false;
+            m_target_stack.push_back({ m_width, m_height, m_scissor, m_clip_active, m_clip_empty, m_active_target });
+            m_active_target = rt.id();
+            m_width         = r->width;
+            m_height        = r->height;
+            m_clip_active   = false;
+            m_clip_empty    = false;
+            m_scissor       = { { 0, 0 }, { m_width, m_height } };
+            m_force_new_batch = true;
+            if (clear) clear_target(*r, *clear);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    void end_target() noexcept override {
+        if (m_target_stack.empty()) return;
+        const SavedTarget t = m_target_stack.back();
+        m_target_stack.pop_back();
+        try { order_target(m_active_target); } catch (...) {}
+        m_width         = t.width;
+        m_height        = t.height;
+        m_scissor       = t.scissor;
+        m_clip_active   = t.clip_active;
+        m_clip_empty    = t.clip_empty;
+        m_active_target = t.target;
+        m_force_new_batch = true;
+    }
+
+    std::uint64_t active_target() const noexcept override { return m_active_target; }
+
+    void draw_target(int dx, int dy, unsigned int dw, unsigned int dh, const graphics::RenderTarget& rt, float opacity, const graphics::TextureRect& src) noexcept override {
+        if (!m_ready || !rt.valid() || dw == 0 || dh == 0 || src.is_empty() || target_busy(rt.id())) return;
+        const std::uint8_t a = gfx::scale_alpha(255, opacity);
+        if (a == 0) return;
+
+        try {
+            TargetRes* r = target_res(rt);
+            if (!r) return;
+            if (r->fresh) order_target(rt.id());
+            const float tw = static_cast<float>(r->width), th = static_cast<float>(r->height);
+
+            add_textured_quad(
+                static_cast<float>(dx), static_cast<float>(dy), static_cast<float>(dw), static_cast<float>(dh),
+                src.x / tw, src.y / th, (src.x + static_cast<float>(src.w)) / tw, (src.y + static_cast<float>(src.h)) / th,
+                gfx::pack_opacity(a), r->color.get(), sampler_of(rt.filter(), rt.wrap())
+            );
+        } catch (...) {}
+    }
+
+    void draw_target_quad(const RenderPoint* quad, const graphics::RenderTarget& rt, float opacity, const graphics::TextureRect& src) noexcept override {
+        if (!m_ready || !quad || !rt.valid() || src.is_empty() || target_busy(rt.id())) return;
+        const std::uint8_t a = gfx::scale_alpha(255, opacity);
+        if (a == 0) return;
+
+        try {
+            TargetRes* r = target_res(rt);
+            if (!r) return;
+            if (r->fresh) order_target(rt.id());
+            const float tw = static_cast<float>(r->width), th = static_cast<float>(r->height);
+            const gfx::Vec2 p[4] = { { quad[0].x, quad[0].y }, { quad[1].x, quad[1].y }, { quad[2].x, quad[2].y }, { quad[3].x, quad[3].y } };
+            add_textured_quad4(
+                p, src.x / tw, src.y / th, (src.x + static_cast<float>(src.w)) / tw, (src.y + static_cast<float>(src.h)) / th,
+                gfx::pack_opacity(a), r->color.get(), sampler_of(rt.filter(), rt.wrap())
+            );
+        } catch (...) {}
+    }
+
+    bool read_target(const graphics::RenderTarget& rt, images::BitmapImage& out) noexcept override {
+        if (!m_ready || !rt.valid()) return false;
+
+        try {
+            auto it = m_rts.find(rt.id());
+            if (it == m_rts.end() || !it->second.color || it->second.fresh) return false;
+            const TargetRes& r = it->second;
+            m_device.wait_idle();
+            std::vector<std::uint8_t> rgba(static_cast<std::size_t>(r.width) * r.height * 4);
+            gpu::TextureRegion region;
+            region.extent = { r.width, r.height, 1 };
+            if (failed(m_device.read_texture(*r.color, region, rgba.data()))) return false;
+            images::BitmapImage img(r.width, r.height);
+
+            for (unsigned int y = 0; y < r.height; ++y) {
+                for (unsigned int x = 0; x < r.width; ++x) {
+                    const std::uint8_t* p = &rgba[(static_cast<std::size_t>(y) * r.width + x) * 4];
+                    const unsigned int al = p[3];
+                    auto un = [al](unsigned int c) { return static_cast<std::uint8_t>(al == 0 ? 0 : std::min(255u, (c * 255u + al / 2) / al)); };
+                    img.set_pixel(x, y, graphics::Color(un(p[0]), un(p[1]), un(p[2]), static_cast<std::uint8_t>(al)));
+                }
+            }
+
+            out = std::move(img);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    gpu::Device* gpu_device() noexcept override { return m_ready ? &m_device : nullptr; }
+
+    const gpu::Texture* gpu_texture(const graphics::Texture& tex) noexcept override {
+        if (!m_ready || !tex.valid()) return nullptr;
+        try { return texture_view(tex); } catch (...) { return nullptr; }
+    }
+
+    const gpu::Texture* gpu_texture(const graphics::RenderTarget& rt) noexcept override {
+        try {
+            TargetRes* r = target_res(rt);
+            if (!r) return nullptr;
+            if (r->fresh) order_target(rt.id());
+            return r->color.get();
+        } catch (...) {
+            return nullptr;
+        }
+    }
+
+    const gpu::Texture* gpu_back_buffer() noexcept override { return m_ready ? &m_target : nullptr; }
+
+    std::uint64_t add_gpu_pass(GpuPassStage stage, GpuPassCallback callback) override {
+        const std::uint64_t id = m_next_pass_id++;
+        m_user_passes.push_back({ id, stage, std::move(callback) });
+        return id;
+    }
+
+    bool remove_gpu_pass(std::uint64_t id) noexcept override {
+        for (auto it = m_user_passes.begin(); it != m_user_passes.end(); ++it) if (it->id == id) { m_user_passes.erase(it); return true; }
+        return false;
+    }
+
     void begin_3d(const Scene3D& scene) noexcept override {
-        if (!m_ready) return;
+        if (!m_ready || m_active_target) return;
+        if (!m_has_3d) { RendererImplBase::begin_3d(scene); return; }
         if (m_in_3d) end_3d();
 
         try {
@@ -1199,6 +1492,7 @@ public:
     }
 
     void end_3d() noexcept override {
+        if (m_ready && !m_has_3d) { RendererImplBase::end_3d(); return; }
         if (!m_in_3d) return;
         m_in_3d = false;
         m_force_new_batch = true;
@@ -1218,61 +1512,50 @@ public:
     }
 
     void create_upscale() noexcept {
-        vulkan::ImageDesc ud;
+        gpu::TextureDesc ud;
         ud.extent = { m_width, m_height, 1 };
-        ud.format = vulkan::Format::RGBA8Unorm;
-        ud.usage  = vulkan::ImageUsage::Sampled | vulkan::ImageUsage::TransferDst;
+        ud.format = gpu::Format::RGBA8Unorm;
+        ud.usage  = gpu::TextureUsage::Sampled | gpu::TextureUsage::CopyDst;
         ud.name   = "fizmo scaled scene";
         if (failed(m_upscale.create(m_device, ud))) m_upscale.destroy();
     }
 
-    void record_upscale(const vulkan::CommandBuffer& cmd, PerFrame& pf, const SceneRec& sc) {
+    void record_upscale(gpu::CommandList& cmd, const SceneRec& sc) {
         if (!sc.scaled || !m_upscale.valid() || !m_upscale_pipeline.valid()) return;
         const int x0 = std::max(sc.scene.x, 0), y0 = std::max(sc.scene.y, 0);
         const int x1 = std::min(sc.scene.x + static_cast<int>(sc.scene.width), static_cast<int>(m_width));
         const int y1 = std::min(sc.scene.y + static_cast<int>(sc.scene.height), static_cast<int>(m_height));
         if (x1 <= x0 || y1 <= y0) return;
-        const vulkan::Rect2D r{ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } };
-        cmd.begin_label("fizmo render scale");
-        cmd.transition(m_target, vulkan::ImageLayout::TransferSrc);
-        cmd.transition(m_upscale, vulkan::ImageLayout::TransferDst);
-        cmd.blit(m_target.handle(), r, m_upscale.handle(), r, vulkan::Filter::Nearest);
-        cmd.transition(m_upscale, vulkan::ImageLayout::ShaderReadOnly);
-        cmd.transition(m_target, vulkan::ImageLayout::ColorAttachment);
-        vulkan::DescriptorSet set;
+        const gpu::Rect2D r{ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } };
+        cmd.push_label("fizmo render scale");
+        resolve_target(cmd);
+        cmd.blit_texture(m_target, r, m_upscale, r, gpu::Filter::Nearest);
+        const int fx0 = std::max(sc.full.x, 0), fy0 = std::max(sc.full.y, 0);
+        const int fx1 = std::min(sc.full.x + static_cast<int>(sc.full.width), static_cast<int>(m_width));
+        const int fy1 = std::min(sc.full.y + static_cast<int>(sc.full.height), static_cast<int>(m_height));
+        const gpu::BindGroup set = fx1 > fx0 && fy1 > fy0 ? frame_group(m_present_set_layout, { gpu::BindGroupEntry::sampled(0, m_upscale, m_samplers[LinearClamp]) }) : gpu::BindGroup{};
 
-        if (succeeded(pf.pool.allocate(m_present_set_layout, set))) {
-            const int fx0 = std::max(sc.full.x, 0), fy0 = std::max(sc.full.y, 0);
-            const int fx1 = std::min(sc.full.x + static_cast<int>(sc.full.width), static_cast<int>(m_width));
-            const int fy1 = std::min(sc.full.y + static_cast<int>(sc.full.height), static_cast<int>(m_height));
+        if (set.valid()) {
+            const gpu::Rect2D full{ { fx0, fy0 }, { static_cast<std::uint32_t>(fx1 - fx0), static_cast<std::uint32_t>(fy1 - fy0) } };
+            const float tw = static_cast<float>(m_width), th = static_cast<float>(m_height);
 
-            if (fx1 > fx0 && fy1 > fy0) {
-                vulkan::DescriptorWriter().image(0, m_upscale.view(), m_samplers[LinearClamp]).update(set);
-                const vulkan::Rect2D full{ { fx0, fy0 }, { static_cast<std::uint32_t>(fx1 - fx0), static_cast<std::uint32_t>(fy1 - fy0) } };
-                const float tw = static_cast<float>(m_width), th = static_cast<float>(m_height);
+            const float push[8] = {
+                static_cast<float>(x0) / tw, static_cast<float>(y0) / th, static_cast<float>(x1) / tw, static_cast<float>(y1) / th,
+                1.0f / tw, 1.0f / th, m_sharpness, static_cast<float>(m_upscale_filter)
+            };
 
-                const float push[8] = {
-                    static_cast<float>(x0) / tw, static_cast<float>(y0) / th, static_cast<float>(x1) / tw, static_cast<float>(y1) / th,
-                    1.0f / tw, 1.0f / th, m_sharpness, static_cast<float>(m_upscale_filter)
-                };
-
-                cmd.memory_barrier(
-                    vulkan::PipelineStage::ColorAttachmentOutput, vulkan::Access::ColorAttachmentWrite,
-                    vulkan::PipelineStage::ColorAttachmentOutput, vulkan::Access::ColorAttachmentRead | vulkan::Access::ColorAttachmentWrite
-                );
-
-                cmd.begin_rendering({ full, color_attachment(false) });
-                cmd.bind(m_upscale_pipeline);
-                cmd.set_viewport({ static_cast<float>(sc.full.x), static_cast<float>(sc.full.y), static_cast<float>(sc.full.width), static_cast<float>(sc.full.height), 0.0f, 1.0f });
-                cmd.set_scissor(full);
-                cmd.bind_descriptor_set(m_upscale_pipeline, 0, set);
-                cmd.push_constants(m_upscale_pipeline, vulkan::ShaderStage::Fragment, push, kUpscalePushBytes);
-                cmd.draw(kFullscreenVertices);
-                cmd.end_rendering();
-            }
+            const gpu::ColorTarget color = color_target(false);
+            cmd.begin_render_pass({ full, color });
+            cmd.set_pipeline(m_upscale_pipeline);
+            cmd.set_viewport({ static_cast<float>(sc.full.x), static_cast<float>(sc.full.y), static_cast<float>(sc.full.width), static_cast<float>(sc.full.height), 0.0f, 1.0f });
+            cmd.set_scissor(full);
+            cmd.set_bind_group(0, set);
+            cmd.push_constants(push, kUpscalePushBytes);
+            cmd.draw(kFullscreenVertices);
+            cmd.end_render_pass();
         }
 
-        cmd.end_label();
+        cmd.pop_label();
     }
 
     void set_light_3d(const graphics::Light3D& light) noexcept override {
@@ -1290,6 +1573,7 @@ public:
     }
 
     void draw_mesh_3d(const graphics::Mesh3D& mesh, const float* model, const graphics::Material3D& mat) noexcept override {
+        if (m_ready && !m_has_3d) { RendererImplBase::draw_mesh_3d(mesh, model, mat); return; }
         if (!m_ready || !m_in_3d || mesh.empty()) return;
 
         try {
@@ -1308,6 +1592,7 @@ public:
     }
 
     void draw_triangles_3d(const graphics::Vertex3D* v, std::size_t count, const float* model, const graphics::Material3D& mat) noexcept override {
+        if (m_ready && !m_has_3d) { RendererImplBase::draw_triangles_3d(v, count, model, mat); return; }
         if (!m_ready || !m_in_3d || !v || count < 3 || !mat.visible()) return;
 
         try {
@@ -1324,6 +1609,7 @@ public:
     }
 
     void draw_lines_3d(const vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test) noexcept override {
+        if (m_ready && !m_has_3d) { RendererImplBase::draw_lines_3d(pts, count, color, width, depth_test); return; }
         if (!m_ready || !m_in_3d || !pts || count < 2 || color.alpha() == 0) return;
 
         try {
@@ -1355,6 +1641,7 @@ public:
     }
 
     void draw_quads_3d(const graphics::QuadMesh3D& quads, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) noexcept override {
+        if (m_ready && !m_has_3d) { RendererImplBase::draw_quads_3d(quads, model, cell_origin, mat); return; }
         if (!m_ready || !m_in_3d || quads.empty()) return;
 
         try {
@@ -1374,7 +1661,7 @@ public:
     }
 
     void upload_handle_3d(const std::shared_ptr<graphics::detail::MeshSlot3D>& slot) noexcept override {
-        if (!m_ready) { RendererImplBase::upload_handle_3d(slot); return; }
+        if (!m_ready || !m_has_3d) { RendererImplBase::upload_handle_3d(slot); return; }
         if (!slot || slot->element_count == 0) return;
         if (resident_handle(*slot)) return;
         if (!slot->has_cpu_data()) { slot->lost = true; return; }
@@ -1383,7 +1670,7 @@ public:
     }
 
     void draw_handle_3d(const std::shared_ptr<graphics::detail::MeshSlot3D>& slot, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) noexcept override {
-        if (!m_ready) { RendererImplBase::draw_handle_3d(slot, model, cell_origin, mat); return; }
+        if (!m_ready || !m_has_3d) { RendererImplBase::draw_handle_3d(slot, model, cell_origin, mat); return; }
         if (!m_in_3d || !slot || slot->element_count == 0 || slot->lost) return;
 
         try {
@@ -1434,7 +1721,7 @@ public:
     }
 
     void draw_quad_batch_3d(const QuadBatchDraw* items, std::size_t count, const float* camera_frac, const graphics::Material3D& mat) noexcept override {
-        if (!m_ready) { RendererImplBase::draw_quad_batch_3d(items, count, camera_frac, mat); return; }
+        if (!m_ready || !m_has_3d) { RendererImplBase::draw_quad_batch_3d(items, count, camera_frac, mat); return; }
         if (!m_in_3d || !items || count == 0) return;
 
         try {
@@ -1521,7 +1808,7 @@ public:
 
     void draw_instances_3d(const graphics::Mesh3D& mesh, const float* model, const graphics::Instance3D* instances,
                            std::size_t count, const graphics::Material3D& mat) noexcept override {
-        if (!m_ready) { RendererImplBase::draw_instances_3d(mesh, model, instances, count, mat); return; }
+        if (!m_ready || !m_has_3d) { RendererImplBase::draw_instances_3d(mesh, model, instances, count, mat); return; }
         if (!m_in_3d || mesh.empty() || !instances || count == 0) return;
 
         try {
@@ -1588,6 +1875,11 @@ private:
     static void put_bits(float& slot, std::int32_t value) noexcept { std::memcpy(&slot, &value, sizeof(value)); }
 
     static std::uint32_t material_flags(const graphics::Material3D& m) noexcept { return (m.lit ? kFlagLit : 0u) | (m.fog ? 0u : kFlagNoFog); }
+
+    static std::uint32_t pack_pbr(const graphics::Material3D& m) noexcept {
+        auto unorm = [](float v) { return static_cast<std::uint32_t>(std::lround(std::max(0.0f, std::min(1.0f, v)) * 255.0f)); };
+        return unorm(m.metallic) | (unorm(m.roughness) << 8) | (unorm(m.emissive_strength / 16.0f) << 16) | (unorm(m.occlusion) << 24);
+    }
 
     void quad_push(Draw3D& d, const float* model, const std::int32_t* cell_origin, const graphics::Material3D& mat) const noexcept {
         mesh_push(d, model, mat);
@@ -2230,8 +2522,8 @@ private:
         if (quads <= m_quad_index_capacity && m_quad_indices) return true;
         const std::uint64_t capacity = std::max<std::uint64_t>({ quads, m_quad_index_capacity * 2, kMinQuadIndexCapacity });
         const std::uint64_t bytes = capacity * graphics::QuadMesh3D::INDICES_PER_QUAD * sizeof(std::uint32_t);
-        auto buffer = std::make_unique<vulkan::Buffer>();
-        if (failed(buffer->create(m_device, { bytes, vulkan::BufferUsage::Index, vulkan::MemoryUsage::GpuOnly, "fizmo quad indices" }))) return false;
+        auto buffer = std::make_unique<gpu::Buffer>();
+        if (failed(buffer->create(m_device, { bytes, gpu::BufferUsage::Index, gpu::MemoryAccess::GpuOnly, "fizmo quad indices" }))) return false;
         const std::size_t offset = staging_reserve(static_cast<std::size_t>(bytes));
         std::uint32_t* out = reinterpret_cast<std::uint32_t*>(m_staging.data() + offset);
         graphics::QuadMesh3D::for_each_quad_index(static_cast<std::size_t>(capacity), [&out](std::uint32_t i) { *out++ = i; });
@@ -2244,12 +2536,12 @@ private:
     }
 
     bool create_gpu_buffers(GpuMesh& g, const void* vdata, std::uint64_t vbytes, const void* idata, std::uint64_t ibytes, bool track_owner) {
-        g.vertices = std::make_unique<vulkan::Buffer>();
-        if (failed(g.vertices->create(m_device, { vbytes, vulkan::BufferUsage::Vertex, vulkan::MemoryUsage::GpuOnly, "fizmo mesh vertices" }))) return false;
+        g.vertices = std::make_unique<gpu::Buffer>();
+        if (failed(g.vertices->create(m_device, { vbytes, gpu::BufferUsage::Vertex, gpu::MemoryAccess::GpuOnly, "fizmo mesh vertices" }))) return false;
 
         if (ibytes) {
-            g.indices = std::make_unique<vulkan::Buffer>();
-            if (failed(g.indices->create(m_device, { ibytes, vulkan::BufferUsage::Index, vulkan::MemoryUsage::GpuOnly, "fizmo mesh indices" }))) return false;
+            g.indices = std::make_unique<gpu::Buffer>();
+            if (failed(g.indices->create(m_device, { ibytes, gpu::BufferUsage::Index, gpu::MemoryAccess::GpuOnly, "fizmo mesh indices" }))) return false;
         }
 
         g.bytes = vbytes + ibytes;
@@ -2298,8 +2590,8 @@ private:
 
         ArenaPage page;
         page.capacity = std::max(quads, kArenaPageQuads);
-        page.buffer = std::make_unique<vulkan::Buffer>();
-        if (failed(page.buffer->create(m_device, { page.capacity * kQuadBytes, vulkan::BufferUsage::Vertex, vulkan::MemoryUsage::GpuOnly, "fizmo quad arena" }))) return false;
+        page.buffer = std::make_unique<gpu::Buffer>();
+        if (failed(page.buffer->create(m_device, { page.capacity * kQuadBytes, gpu::BufferUsage::Vertex, gpu::MemoryAccess::GpuOnly, "fizmo quad arena" }))) return false;
         if (page.capacity > quads) page.free.emplace(quads, page.capacity - quads);
         page.used = quads;
         out = { static_cast<std::uint32_t>(m_arena.size()), 0, quads };
@@ -2452,7 +2744,7 @@ private:
             d.view    = texture_view(*m.texture);
             d.sampler = sampler_for(*m.texture);
         } else {
-            d.view    = &m_white.view();
+            d.view    = &m_white;
             d.sampler = NearestClamp;
         }
 
@@ -2467,9 +2759,9 @@ private:
         std::copy(mvp.begin(), mvp.end(), d.push);
         std::copy(m.begin(), m.begin() + 12, d.push + 16);
         put_bits(d.push[28], mat.light);
-        put_bits(d.push[29], material_flags(mat) | kFlagLegacy);
-        d.push[30] = 0.0f;
-        d.push[31] = 0.0f;
+        put_bits(d.push[29], material_flags(mat) | kFlagLegacy | (mat.pbr && mat.lit ? kFlagPbr : 0u));
+        put_bits(d.push[30], mat.pbr ? pack_pbr(mat) : 0u);
+        put_bits(d.push[31], mat.pbr ? gfx::pack_rgba(mat.emissive.red(), mat.emissive.green(), mat.emissive.blue(), 255) : 0u);
     }
 
     static bool clip_to_near(const Mat4f& vp, vector3d& a, vector3d& b) noexcept {
@@ -2490,12 +2782,12 @@ private:
         const std::uint64_t vbytes = verts.size() * sizeof(graphics::Vertex3D);
         const std::uint64_t ibytes = idx.size() * sizeof(std::uint32_t);
         GpuMesh fresh;
-        fresh.vertices = std::make_unique<vulkan::Buffer>();
-        if (failed(fresh.vertices->create(m_device, { vbytes, vulkan::BufferUsage::Vertex, vulkan::MemoryUsage::GpuOnly, "fizmo mesh vertices" }))) return nullptr;
+        fresh.vertices = std::make_unique<gpu::Buffer>();
+        if (failed(fresh.vertices->create(m_device, { vbytes, gpu::BufferUsage::Vertex, gpu::MemoryAccess::GpuOnly, "fizmo mesh vertices" }))) return nullptr;
 
         if (ibytes) {
-            fresh.indices = std::make_unique<vulkan::Buffer>();
-            if (failed(fresh.indices->create(m_device, { ibytes, vulkan::BufferUsage::Index, vulkan::MemoryUsage::GpuOnly, "fizmo mesh indices" }))) return nullptr;
+            fresh.indices = std::make_unique<gpu::Buffer>();
+            if (failed(fresh.indices->create(m_device, { ibytes, gpu::BufferUsage::Index, gpu::MemoryAccess::GpuOnly, "fizmo mesh indices" }))) return nullptr;
         }
 
         fresh.stamp        = stamp;
@@ -2523,174 +2815,162 @@ private:
         g.bytes = 0;
     }
 
-    vulkan::Pipeline* pipeline_3d(std::uint32_t key) {
+    gpu::RenderPipeline* pipeline_3d(std::uint32_t key) {
         auto it = m_pipelines3d.find(key);
         if (it != m_pipelines3d.end()) return &it->second;
         const bool lines     = (key & kLines) != 0;
         const bool batch     = (key & kBatch) != 0;
         const bool quads     = (key & kQuads) != 0 || batch;
         const bool instanced = (key & kInstanced) != 0;
-        vulkan::GraphicsPipelineDesc d;
-        d.vertex_shader   = lines ? &m_line_vs : batch ? &m_batch_vs : quads ? &m_quad_vs : instanced ? &m_instanced_vs : &m_mesh_vs;
-        d.fragment_shader = lines ? &m_line_fs : quads ? &m_quad_fs : &m_mesh_fs;
-        d.layout          = lines ? &m_line_layout : &m_mesh_layout;
+        gpu::RenderPipelineDesc d;
+        d.vertex   = lines ? &m_line_vs : batch ? &m_batch_vs : quads ? &m_quad_vs : instanced ? &m_instanced_vs : &m_mesh_vs;
+        d.fragment = lines ? &m_line_fs : quads ? &m_quad_fs : &m_mesh_fs;
+        d.layout   = lines ? &m_line_layout : &m_mesh_layout;
 
         if (lines) {
-            d.vertex_bindings   = { { 0, sizeof(gpu::LineVertex3D), vulkan::VertexRate::PerVertex } };
+            d.vertex_bindings   = { { 0, sizeof(gfx::LineVertex3D), gpu::VertexRate::PerVertex } };
             
             d.vertex_attributes = {
-                { 0, 0, vulkan::Format::RGB32Float, 0 },  { 1, 0, vulkan::Format::RGB32Float, 12 },
-                { 2, 0, vulkan::Format::RGBA8Unorm, 24 }, { 3, 0, vulkan::Format::R32Float, 28 },
-                { 4, 0, vulkan::Format::R32Float, 32 },
+                { 0, 0, gpu::Format::RGB32Float, 0 },  { 1, 0, gpu::Format::RGB32Float, 12 },
+                { 2, 0, gpu::Format::RGBA8Unorm, 24 }, { 3, 0, gpu::Format::R32Float, 28 },
+                { 4, 0, gpu::Format::R32Float, 32 },
             };
 
-            d.cull_mode = vulkan::CullMode::None;
+            d.cull_mode = gpu::CullMode::None;
         } else if (batch) {
             d.vertex_bindings   = {
-                { 0, sizeof(graphics::CompactVertex3D), vulkan::VertexRate::PerVertex },
-                { 1, sizeof(BatchInstance), vulkan::VertexRate::PerInstance },
+                { 0, sizeof(graphics::CompactVertex3D), gpu::VertexRate::PerVertex },
+                { 1, sizeof(BatchInstance), gpu::VertexRate::PerInstance },
             };
 
             d.vertex_attributes = {
-                { 0, 0, vulkan::Format::RGB32Float, 0 }, { 1, 0, vulkan::Format::RGBA8Unorm, 12 },
-                { 2, 0, vulkan::Format::R32Uint, 16 },   { 3, 0, vulkan::Format::RGBA8Unorm, 20 },
-                { 4, 1, vulkan::Format::RGB32Sint, 0 },  { 5, 1, vulkan::Format::RGB32Sint, 12 },
-                { 6, 1, vulkan::Format::RGB32Float, 24 },
+                { 0, 0, gpu::Format::RGB32Float, 0 }, { 1, 0, gpu::Format::RGBA8Unorm, 12 },
+                { 2, 0, gpu::Format::R32Uint, 16 },   { 3, 0, gpu::Format::RGBA8Unorm, 20 },
+                { 4, 1, gpu::Format::RGB32Sint, 0 },  { 5, 1, gpu::Format::RGB32Sint, 12 },
+                { 6, 1, gpu::Format::RGB32Float, 24 },
             };
 
             const std::uint32_t cull = key & 3u;
-            d.cull_mode = cull == 1u ? vulkan::CullMode::None : cull == 2u ? vulkan::CullMode::Front : vulkan::CullMode::Back;
+            d.cull_mode = cull == 1u ? gpu::CullMode::None : cull == 2u ? gpu::CullMode::Front : gpu::CullMode::Back;
         } else if (quads) {
-            d.vertex_bindings   = { { 0, sizeof(graphics::CompactVertex3D), vulkan::VertexRate::PerVertex } };
+            d.vertex_bindings   = { { 0, sizeof(graphics::CompactVertex3D), gpu::VertexRate::PerVertex } };
             
             d.vertex_attributes = {
-                { 0, 0, vulkan::Format::RGB32Float, 0 }, { 1, 0, vulkan::Format::RGBA8Unorm, 12 },
-                { 2, 0, vulkan::Format::R32Uint, 16 },   { 3, 0, vulkan::Format::RGBA8Unorm, 20 },
+                { 0, 0, gpu::Format::RGB32Float, 0 }, { 1, 0, gpu::Format::RGBA8Unorm, 12 },
+                { 2, 0, gpu::Format::R32Uint, 16 },   { 3, 0, gpu::Format::RGBA8Unorm, 20 },
             };
 
             const std::uint32_t cull = key & 3u;
-            d.cull_mode = cull == 1u ? vulkan::CullMode::None : cull == 2u ? vulkan::CullMode::Front : vulkan::CullMode::Back;
+            d.cull_mode = cull == 1u ? gpu::CullMode::None : cull == 2u ? gpu::CullMode::Front : gpu::CullMode::Back;
         } else {
-            d.vertex_bindings   = { { 0, sizeof(graphics::Vertex3D), vulkan::VertexRate::PerVertex } };
+            d.vertex_bindings   = { { 0, sizeof(graphics::Vertex3D), gpu::VertexRate::PerVertex } };
             
             d.vertex_attributes = {
-                { 0, 0, vulkan::Format::RGB32Float, 0 },  { 1, 0, vulkan::Format::RGB32Float, 12 },
-                { 2, 0, vulkan::Format::RG32Float, 24 },  { 3, 0, vulkan::Format::RGBA8Unorm, 32 },
+                { 0, 0, gpu::Format::RGB32Float, 0 },  { 1, 0, gpu::Format::RGB32Float, 12 },
+                { 2, 0, gpu::Format::RG32Float, 24 },  { 3, 0, gpu::Format::RGBA8Unorm, 32 },
             };
 
             if (instanced) {
-                d.vertex_bindings.push_back({ 1, sizeof(graphics::Instance3D), vulkan::VertexRate::PerInstance });
-                d.vertex_attributes.push_back({ 4, 1, vulkan::Format::RGBA32Float, 0 });
-                d.vertex_attributes.push_back({ 5, 1, vulkan::Format::RGBA8Unorm, 16 });
-                d.vertex_attributes.push_back({ 6, 1, vulkan::Format::RGBA8Unorm, 20 });
+                d.vertex_bindings.push_back({ 1, sizeof(graphics::Instance3D), gpu::VertexRate::PerInstance });
+                d.vertex_attributes.push_back({ 4, 1, gpu::Format::RGBA32Float, 0 });
+                d.vertex_attributes.push_back({ 5, 1, gpu::Format::RGBA8Unorm, 16 });
+                d.vertex_attributes.push_back({ 6, 1, gpu::Format::RGBA8Unorm, 20 });
             }
 
             const std::uint32_t cull = key & 3u;
-            d.cull_mode = cull == 1u ? vulkan::CullMode::None : cull == 2u ? vulkan::CullMode::Front : vulkan::CullMode::Back;
+            d.cull_mode = cull == 1u ? gpu::CullMode::None : cull == 2u ? gpu::CullMode::Front : gpu::CullMode::Back;
         }
 
-        d.front_face    = vulkan::FrontFace::CounterClockwise;
+        d.front_face    = gpu::FrontFace::CounterClockwise;
         d.samples       = m_samples;
-        d.color_formats = { vulkan::Format::RGBA8Unorm };
+        d.color_formats = { gpu::Format::RGBA8Unorm };
         d.depth_format  = m_depth_format;
         d.depth.test    = (key & kDepthTest) != 0;
         d.depth.write   = (key & kDepthWrite) != 0;
-        d.depth.compare = vulkan::CompareOp::LessEqual;
+        d.depth.compare = gpu::CompareOp::LessEqual;
         const std::uint32_t blend = (key >> 2) & 3u;
 
-        if (blend == 1u) {
-            d.blend = { vulkan::BlendState::premultiplied() };
-        } else if (blend == 2u) {
-            vulkan::BlendState b;
-            b.enable = true;
-            b.src_color = vulkan::BlendFactor::One; b.dst_color = vulkan::BlendFactor::One;
-            b.src_alpha = vulkan::BlendFactor::One; b.dst_alpha = vulkan::BlendFactor::One;
-            d.blend = { b };
-        } else {
-            d.blend = { vulkan::BlendState::opaque() };
-        }
+        if (blend == 1u)      d.blend = gpu::BlendState::premultiplied();
+        else if (blend == 2u) d.blend = gpu::BlendState::additive();
+        else                  d.blend = gpu::BlendState::opaque();
 
         d.name = lines ? "fizmo 3d lines" : batch ? "fizmo 3d quad batch" : quads ? "fizmo 3d quads" : instanced ? "fizmo 3d instanced" : "fizmo 3d mesh";
-        vulkan::Pipeline p;
+        gpu::RenderPipeline p;
         if (failed(p.create(m_device, d))) return nullptr;
         return &m_pipelines3d.emplace(key, std::move(p)).first->second;
     }
 
-    const vulkan::Pipeline* sky_pipeline() {
+    const gpu::RenderPipeline* sky_pipeline() {
         if (m_sky_pipeline.valid()) return &m_sky_pipeline;
-        vulkan::GraphicsPipelineDesc d;
-        d.vertex_shader   = &m_sky_vs;
-        d.fragment_shader = &m_sky_fs;
-        d.layout          = &m_mesh_layout;
-        d.cull_mode       = vulkan::CullMode::None;
-        d.samples         = m_samples;
-        d.color_formats   = { vulkan::Format::RGBA8Unorm };
-        d.depth_format    = m_depth_format;
-        d.depth.test      = true;
-        d.depth.write     = false;
-        d.depth.compare   = vulkan::CompareOp::LessEqual;
-        d.blend           = { vulkan::BlendState::opaque() };
-        d.name            = "fizmo sky";
+        gpu::RenderPipelineDesc d;
+        d.vertex        = &m_sky_vs;
+        d.fragment      = &m_sky_fs;
+        d.layout        = &m_mesh_layout;
+        d.cull_mode     = gpu::CullMode::None;
+        d.samples       = m_samples;
+        d.color_formats = { gpu::Format::RGBA8Unorm };
+        d.depth_format  = m_depth_format;
+        d.depth.test    = true;
+        d.depth.write   = false;
+        d.depth.compare = gpu::CompareOp::LessEqual;
+        d.blend         = gpu::BlendState::opaque();
+        d.name          = "fizmo sky";
         if (failed(m_sky_pipeline.create(m_device, d))) return nullptr;
         return &m_sky_pipeline;
     }
 
-    const vulkan::Pipeline* rays_pipeline() {
+    const gpu::RenderPipeline* rays_pipeline() {
         if (m_rays_pipeline.valid()) return &m_rays_pipeline;
-        vulkan::GraphicsPipelineDesc d;
-        d.vertex_shader   = &m_sky_vs;
-        d.fragment_shader = &m_rays_fs;
-        d.layout          = &m_mesh_layout;
-        d.cull_mode       = vulkan::CullMode::None;
-        d.samples         = m_samples;
-        d.color_formats   = { vulkan::Format::RGBA8Unorm };
-        d.depth_format    = m_depth_format;
-        d.depth.test      = false;
-        d.depth.write     = false;
-        vulkan::BlendState add;
-        add.enable    = true;
-        add.src_color = vulkan::BlendFactor::One; add.dst_color = vulkan::BlendFactor::One;
-        add.src_alpha = vulkan::BlendFactor::Zero; add.dst_alpha = vulkan::BlendFactor::One;
-        d.blend           = { add };
-        d.name            = "fizmo light shafts";
+        gpu::RenderPipelineDesc d;
+        d.vertex        = &m_sky_vs;
+        d.fragment      = &m_rays_fs;
+        d.layout        = &m_mesh_layout;
+        d.cull_mode     = gpu::CullMode::None;
+        d.samples       = m_samples;
+        d.color_formats = { gpu::Format::RGBA8Unorm };
+        d.depth_format  = m_depth_format;
+        d.depth.test    = false;
+        d.depth.write   = false;
+        d.blend         = gpu::BlendState::make(gpu::BlendFactor::One, gpu::BlendFactor::One, gpu::BlendFactor::Zero, gpu::BlendFactor::One);
+        d.name          = "fizmo light shafts";
         if (failed(m_rays_pipeline.create(m_device, d))) return nullptr;
         return &m_rays_pipeline;
     }
 
-    vulkan::Pipeline* shadow_pipeline(Caster::Kind kind, bool point) {
+    gpu::RenderPipeline* shadow_pipeline(Caster::Kind kind, bool point) {
         const std::uint32_t key = static_cast<std::uint32_t>(kind) | (point ? kShadowPointKey : 0u);
         auto it = m_shadow_pipelines.find(key);
         if (it != m_shadow_pipelines.end()) return &it->second;
-        vulkan::GraphicsPipelineDesc d;
-        d.layout          = &m_shadow_layout;
-        d.fragment_shader = point ? &m_shadow_point_fs : nullptr;
+        gpu::RenderPipelineDesc d;
+        d.layout   = &m_shadow_layout;
+        d.fragment = point ? &m_shadow_point_fs : nullptr;
 
         if (kind == Caster::Kind::Quads) {
-            d.vertex_shader     = &m_shadow_quad_vs;
-            d.vertex_bindings   = { { 0, sizeof(graphics::CompactVertex3D), vulkan::VertexRate::PerVertex } };
-            d.vertex_attributes = { { 0, 0, vulkan::Format::RGB32Float, 0 }, { 2, 0, vulkan::Format::R32Uint, 16 } };
+            d.vertex            = &m_shadow_quad_vs;
+            d.vertex_bindings   = { { 0, sizeof(graphics::CompactVertex3D), gpu::VertexRate::PerVertex } };
+            d.vertex_attributes = { { 0, 0, gpu::Format::RGB32Float, 0 }, { 2, 0, gpu::Format::R32Uint, 16 } };
         } else {
-            d.vertex_shader     = kind == Caster::Kind::Instanced ? &m_shadow_instanced_vs : &m_shadow_mesh_vs;
-            d.vertex_bindings   = { { 0, sizeof(graphics::Vertex3D), vulkan::VertexRate::PerVertex } };
-            d.vertex_attributes = { { 0, 0, vulkan::Format::RGB32Float, 0 }, { 1, 0, vulkan::Format::RGB32Float, 12 } };
+            d.vertex            = kind == Caster::Kind::Instanced ? &m_shadow_instanced_vs : &m_shadow_mesh_vs;
+            d.vertex_bindings   = { { 0, sizeof(graphics::Vertex3D), gpu::VertexRate::PerVertex } };
+            d.vertex_attributes = { { 0, 0, gpu::Format::RGB32Float, 0 }, { 1, 0, gpu::Format::RGB32Float, 12 } };
 
             if (kind == Caster::Kind::Instanced) {
-                d.vertex_bindings.push_back({ 1, sizeof(graphics::Instance3D), vulkan::VertexRate::PerInstance });
-                d.vertex_attributes.push_back({ 4, 1, vulkan::Format::RGBA32Float, 0 });
+                d.vertex_bindings.push_back({ 1, sizeof(graphics::Instance3D), gpu::VertexRate::PerInstance });
+                d.vertex_attributes.push_back({ 4, 1, gpu::Format::RGBA32Float, 0 });
             }
         }
 
-        d.cull_mode          = vulkan::CullMode::None;
+        d.cull_mode          = gpu::CullMode::None;
         d.depth_format       = m_shadow_format;
         d.depth.test         = true;
         d.depth.write        = true;
-        d.depth.compare      = vulkan::CompareOp::LessEqual;
+        d.depth.compare      = gpu::CompareOp::LessEqual;
         d.depth.clamp        = !point;
         d.depth.bias         = !point;
         d.depth.bias_constant = kShadowBiasConstant;
         d.depth.bias_slope    = kShadowBiasSlope;
         d.name = point ? "fizmo point shadow" : "fizmo sun shadow";
-        vulkan::Pipeline p;
+        gpu::RenderPipeline p;
         if (failed(p.create(m_device, d))) return nullptr;
         return &m_shadow_pipelines.emplace(key, std::move(p)).first->second;
     }
@@ -2721,229 +3001,222 @@ private:
         }
     }
 
-    vulkan::SwapchainDesc swapchain_desc(unsigned int w, unsigned int h) const noexcept {
-        vulkan::SwapchainDesc d;
-        d.size  = { std::max(w, 1u), std::max(h, 1u) };
-        d.vsync = m_vsync;
-        d.srgb  = false;
-        d.usage = vulkan::ImageUsage::ColorAttachment;
-        return d;
+    gpu::BindGroup frame_group(const gpu::BindGroupLayout& layout, gpu::Span<gpu::BindGroupEntry> entries) {
+        gpu::BindGroupDesc d;
+        d.layout   = &layout;
+        d.entries  = entries;
+        d.lifetime = gpu::BindGroupLifetime::Frame;
+        gpu::BindGroup g;
+        if (failed(g.create(m_device, d))) return {};
+        m_frame_groups.push_back(g);
+        return g;
     }
 
     bool create_device(void* native_handle, unsigned int w, unsigned int h) {
-        vulkan::InstanceDesc id;
-        id.app_name = "fizmo";
+        gpu::DeviceDesc dd;
+        dd.backend          = m_backend;
+        dd.window           = native_handle;
+        dd.size             = { std::max(w, 1u), std::max(h, 1u) };
+        dd.vsync            = m_vsync;
+        dd.frames_in_flight = kFramesInFlight;
     #ifdef FIZMO_VULKAN_VALIDATION
-        id.enable_validation = true;
+        dd.debug = true;
     #endif
-        if (failed(m_instance.create(id))) return false;
-        if (failed(m_surface.create(m_instance, native_handle))) return false;
-        vulkan::DeviceDesc dd;
-        dd.surface = &m_surface;
-        if (failed(m_device.create(m_instance, dd))) return false;
-        m_samples = pick_samples();
-        if (failed(m_swapchain.create(m_device, m_surface, swapchain_desc(w, h)))) return false;
-        if (failed(m_frames.create(m_device, m_swapchain, kFramesInFlight))) return false;
-        if (failed(m_draw_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kDraw2DVert, sizeof(gpu::kDraw2DVert) / 4), "fizmo draw2d.vert"))) return false;
-        if (failed(m_draw_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kDraw2DFrag, sizeof(gpu::kDraw2DFrag) / 4), "fizmo draw2d.frag"))) return false;
-        if (failed(m_present_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kPresentVert, sizeof(gpu::kPresentVert) / 4), "fizmo present.vert"))) return false;
-        if (failed(m_present_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kPresentFrag, sizeof(gpu::kPresentFrag) / 4), "fizmo present.frag"))) return false;
+        if (failed(m_device.create(dd))) return false;
+        const bool d32 = m_device.supports(gpu::Format::D32Float, gpu::TextureUsage::DepthStencil);
+        m_depth_format = d32 ? gpu::Format::D32Float : gpu::Format::D24UnormS8Uint;
+        m_samples = m_device.max_samples(gpu::Format::RGBA8Unorm, m_depth_format, FIZMO_GPU_MSAA);
+        if (failed(m_draw_vs.create(m_device, glsl::draw2d_vert()))) return false;
+        if (failed(m_draw_fs.create(m_device, glsl::draw2d_frag()))) return false;
+        if (failed(m_present_vs.create(m_device, glsl::present_vert()))) return false;
+        if (failed(m_upscale_fs.create(m_device, glsl::upscale_frag()))) return false;
 
-        if (
-            failed(
-                m_draw_set_layout.create(
-                    m_device, {
-                        vulkan::DescriptorBinding{ 0, vulkan::DescriptorType::CombinedImageSampler, vulkan::ShaderStage::Fragment },
-                        vulkan::DescriptorBinding{ 1, vulkan::DescriptorType::CombinedImageSampler, vulkan::ShaderStage::Fragment }
-                    }
-                )
-            )
-        ) return false;
+        const gpu::BindGroupLayoutEntry draw_entries[] = {
+            { 0, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+            { 1, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+        };
 
-        if (
-            failed(
-                m_present_set_layout.create(
-                    m_device, {
-                        vulkan::DescriptorBinding{ 0, vulkan::DescriptorType::CombinedImageSampler, vulkan::ShaderStage::Fragment }
-                    }
-                )
-            )
-        ) return false;
+        const gpu::BindGroupLayoutEntry present_entries[] = {
+            { 0, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+        };
 
-        vulkan::PipelineLayoutDesc dl;
-        dl.set_layouts    = { &m_draw_set_layout };
-        dl.push_constants = { { vulkan::ShaderStage::Vertex, 0, 8 } };
+        if (failed(m_draw_set_layout.create(m_device, { draw_entries, "fizmo draw set" }))) return false;
+        if (failed(m_present_set_layout.create(m_device, { present_entries, "fizmo present set" }))) return false;
+        gpu::PipelineLayoutDesc dl;
+        dl.groups               = { &m_draw_set_layout };
+        dl.push_constant_size   = 8;
+        dl.push_constant_stages = gpu::ShaderStage::Vertex;
         if (failed(m_draw_layout.create(m_device, dl))) return false;
-        vulkan::PipelineLayoutDesc pl;
-        pl.set_layouts = { &m_present_set_layout };
-        if (failed(m_present_layout.create(m_device, pl))) return false;
-        vulkan::GraphicsPipelineDesc draw;
-        draw.vertex_shader   = &m_draw_vs;
-        draw.fragment_shader = &m_draw_fs;
+        gpu::RenderPipelineDesc draw;
+        draw.vertex          = &m_draw_vs;
+        draw.fragment        = &m_draw_fs;
         draw.layout          = &m_draw_layout;
-        draw.vertex_bindings = { { 0, sizeof(gpu::Vertex), vulkan::VertexRate::PerVertex } };
+        draw.vertex_bindings = { { 0, sizeof(gfx::Vertex), gpu::VertexRate::PerVertex } };
 
         draw.vertex_attributes = {
-            { 0, 0, vulkan::Format::RG32Float,   0  },
-            { 1, 0, vulkan::Format::RG32Float,   8  },
-            { 2, 0, vulkan::Format::RGBA8Unorm,  16 },
-            { 3, 0, vulkan::Format::R32Uint,     20 },
-            { 4, 0, vulkan::Format::RGBA32Float, 24 },
+            { 0, 0, gpu::Format::RG32Float,   0  },
+            { 1, 0, gpu::Format::RG32Float,   8  },
+            { 2, 0, gpu::Format::RGBA8Unorm,  16 },
+            { 3, 0, gpu::Format::R32Uint,     20 },
+            { 4, 0, gpu::Format::RGBA32Float, 24 },
         };
 
         draw.samples       = m_samples;
-        draw.color_formats = { vulkan::Format::RGBA8Unorm };
-        draw.blend         = { vulkan::BlendState::premultiplied() };
+        draw.color_formats = { gpu::Format::RGBA8Unorm };
+        draw.blend         = gpu::BlendState::premultiplied();
         draw.name          = "fizmo 2d";
         if (failed(m_draw_pipeline.create(m_device, draw))) return false;
-        vulkan::GraphicsPipelineDesc present;
-        present.vertex_shader   = &m_present_vs;
-        present.fragment_shader = &m_present_fs;
-        present.layout          = &m_present_layout;
-        present.color_formats   = { m_swapchain.format() };
-        present.name            = "fizmo present";
-        if (failed(m_present_pipeline.create(m_device, present))) return false;
-        if (failed(m_upscale_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kUpscaleFrag, sizeof(gpu::kUpscaleFrag) / 4), "fizmo upscale.frag"))) return false;
-        vulkan::PipelineLayoutDesc ul;
-        ul.set_layouts    = { &m_present_set_layout };
-        ul.push_constants = { { vulkan::ShaderStage::Fragment, 0, kUpscalePushBytes } };
+        create_blend_variants(draw, m_draw_blend);
+        create_sprite_pipeline();
+        gpu::PipelineLayoutDesc ul;
+        ul.groups               = { &m_present_set_layout };
+        ul.push_constant_size   = kUpscalePushBytes;
+        ul.push_constant_stages = gpu::ShaderStage::Fragment;
         if (failed(m_upscale_layout.create(m_device, ul))) return false;
-        vulkan::GraphicsPipelineDesc upscale;
-        upscale.vertex_shader   = &m_present_vs;
-        upscale.fragment_shader = &m_upscale_fs;
-        upscale.layout          = &m_upscale_layout;
-        upscale.samples         = m_samples;
-        upscale.color_formats   = { vulkan::Format::RGBA8Unorm };
-        upscale.name            = "fizmo upscale";
+        gpu::RenderPipelineDesc upscale;
+        upscale.vertex        = &m_present_vs;
+        upscale.fragment      = &m_upscale_fs;
+        upscale.layout        = &m_upscale_layout;
+        upscale.samples       = m_samples;
+        upscale.color_formats = { gpu::Format::RGBA8Unorm };
+        upscale.name          = "fizmo upscale";
         if (failed(m_upscale_pipeline.create(m_device, upscale))) return false;
-        if (failed(m_mesh_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kMesh3DVert, sizeof(gpu::kMesh3DVert) / 4), "fizmo mesh3d.vert"))) return false;
-        if (failed(m_mesh_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kMesh3DFrag, sizeof(gpu::kMesh3DFrag) / 4), "fizmo mesh3d.frag"))) return false;
-        if (failed(m_line_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kLine3DVert, sizeof(gpu::kLine3DVert) / 4), "fizmo line3d.vert"))) return false;
-        if (failed(m_line_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kLine3DFrag, sizeof(gpu::kLine3DFrag) / 4), "fizmo line3d.frag"))) return false;
-        if (failed(m_quad_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kQuad3DVert, sizeof(gpu::kQuad3DVert) / 4), "fizmo quad3d.vert"))) return false;
-        if (failed(m_quad_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kQuad3DFrag, sizeof(gpu::kQuad3DFrag) / 4), "fizmo quad3d.frag"))) return false;
-        if (failed(m_batch_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kBatch3DVert, sizeof(gpu::kBatch3DVert) / 4), "fizmo batch3d.vert"))) return false;
-        if (failed(m_instanced_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kInstanced3DVert, sizeof(gpu::kInstanced3DVert) / 4), "fizmo instanced3d.vert"))) return false;
-        if (failed(m_shadow_mesh_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kShadowMesh3DVert, sizeof(gpu::kShadowMesh3DVert) / 4), "fizmo shadow_mesh.vert"))) return false;
-        if (failed(m_shadow_instanced_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kShadowInstanced3DVert, sizeof(gpu::kShadowInstanced3DVert) / 4), "fizmo shadow_instanced.vert"))) return false;
-        if (failed(m_shadow_quad_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kShadowQuad3DVert, sizeof(gpu::kShadowQuad3DVert) / 4), "fizmo shadow_quad.vert"))) return false;
-        if (failed(m_shadow_point_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kShadowPoint3DFrag, sizeof(gpu::kShadowPoint3DFrag) / 4), "fizmo shadow_point.frag"))) return false;
-        if (failed(m_sky_vs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kSky3DVert, sizeof(gpu::kSky3DVert) / 4), "fizmo sky.vert"))) return false;
-        if (failed(m_sky_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kSky3DFrag, sizeof(gpu::kSky3DFrag) / 4), "fizmo sky.frag"))) return false;
-        if (failed(m_rays_fs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kRays3DFrag, sizeof(gpu::kRays3DFrag) / 4), "fizmo rays.frag"))) return false;
-        if (failed(m_volume_cs.create(m_device, vulkan::Span<std::uint32_t>(gpu::kVolume3DComp, sizeof(gpu::kVolume3DComp) / 4), "fizmo volume.comp"))) return false;
-        m_multi_draw = m_device.features().multi_draw_indirect && m_device.features().draw_indirect_first_instance;
-
-        if (
-            failed(
-                m_scene_set_layout.create(
-                    m_device, {
-                        vulkan::DescriptorBinding{ 0, vulkan::DescriptorType::UniformBuffer, kSceneStages },
-                        vulkan::DescriptorBinding{ 1, vulkan::DescriptorType::CombinedImageSampler, kSceneStages },
-                        vulkan::DescriptorBinding{ 2, vulkan::DescriptorType::CombinedImageSampler, kSceneStages, static_cast<std::uint32_t>(kPointShadowMaps) },
-                        vulkan::DescriptorBinding{ 3, vulkan::DescriptorType::CombinedImageSampler, kSceneStages },
-                        vulkan::DescriptorBinding{ 4, vulkan::DescriptorType::CombinedImageSampler, kSceneStages },
-                        vulkan::DescriptorBinding{ 5, vulkan::DescriptorType::CombinedImageSampler, kSceneStages },
-                        vulkan::DescriptorBinding{ 6, vulkan::DescriptorType::CombinedImageSampler, kSceneStages },
-                        vulkan::DescriptorBinding{ 7, vulkan::DescriptorType::CombinedImageSampler, kSceneStages },
-                        vulkan::DescriptorBinding{ 8, vulkan::DescriptorType::CombinedImageSampler, kSceneStages, static_cast<std::uint32_t>(kMaxPlanes) },
-                        vulkan::DescriptorBinding{ 9, vulkan::DescriptorType::CombinedImageSampler, kSceneStages }
-                    }
-                )
-            )
-        ) return false;
-
-        if (failed(m_volume_set_layout.create(m_device, { vulkan::DescriptorBinding{ 0, vulkan::DescriptorType::StorageImage, vulkan::ShaderStage::Compute } }))) return false;
-        vulkan::PipelineLayoutDesc vl;
-        vl.set_layouts = { &m_volume_set_layout, &m_scene_set_layout };
-        if (failed(m_volume_layout.create(m_device, vl))) return false;
-        vulkan::ComputePipelineDesc vd;
-        vd.shader = &m_volume_cs;
-        vd.layout = &m_volume_layout;
-        vd.name   = "fizmo volume light";
-        if (failed(m_volume_pipeline.create(m_device, vd))) return false;
-        if (!create_dummy_volume()) return false;
-        vulkan::PipelineLayoutDesc ml;
-        ml.set_layouts    = { &m_draw_set_layout, &m_scene_set_layout };
-        ml.push_constants = { { vulkan::ShaderStage::Vertex, 0, 128 } };
-        if (failed(m_mesh_layout.create(m_device, ml))) return false;
-        vulkan::PipelineLayoutDesc sl;
-        sl.push_constants = { { vulkan::ShaderStage::Vertex | vulkan::ShaderStage::Fragment, 0, 128 } };
-        if (failed(m_shadow_layout.create(m_device, sl))) return false;
-        const std::uint64_t align = std::max<std::uint64_t>(1, m_device.limits().minUniformBufferOffsetAlignment);
-        m_uniform_stride = (sizeof(SceneUniforms) + align - 1) / align * align;
-        if (!create_shadow_resources()) return false;
-        vulkan::PipelineLayoutDesc ll;
-        ll.push_constants = { { vulkan::ShaderStage::Vertex, 0, 80 } };
-        if (failed(m_line_layout.create(m_device, ll))) return false;
-
-        m_depth_format = m_device.physical_device().supports_format(vulkan::Format::D32Float, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
-                       ? vulkan::Format::D32Float : vulkan::Format::D24UnormS8Uint;
-
-        const vulkan::AddressMode modes[3] = { vulkan::AddressMode::ClampToEdge, vulkan::AddressMode::Repeat, vulkan::AddressMode::MirroredRepeat };
+        const gpu::AddressMode modes[3] = { gpu::AddressMode::ClampToEdge, gpu::AddressMode::Repeat, gpu::AddressMode::MirroredRepeat };
 
         for (int i = 0; i < kSamplerCount; ++i) {
-            vulkan::SamplerDesc s;
-            s.mag_filter = s.min_filter = (i % 2) ? vulkan::Filter::Linear : vulkan::Filter::Nearest;
-            s.mipmap = vulkan::MipmapMode::Nearest;
+            gpu::SamplerDesc s;
+            s.mag_filter = s.min_filter = (i % 2) ? gpu::Filter::Linear : gpu::Filter::Nearest;
+            s.mip_filter = gpu::Filter::Nearest;
             s.address_u = s.address_v = s.address_w = modes[i / 2];
             s.max_lod = 0.0f;
             if (failed(m_samplers[static_cast<std::size_t>(i)].create(m_device, s))) return false;
         }
 
-        vulkan::ImageDesc wd;
+        gpu::TextureDesc wd;
         wd.extent = { 1, 1, 1 };
-        wd.format = vulkan::Format::RGBA8Unorm;
-        wd.usage  = vulkan::ImageUsage::Sampled | vulkan::ImageUsage::TransferDst;
+        wd.format = gpu::Format::RGBA8Unorm;
+        wd.usage  = gpu::TextureUsage::Sampled | gpu::TextureUsage::CopyDst;
         wd.name   = "fizmo white";
         if (failed(m_white.create(m_device, wd))) return false;
         const std::uint8_t white[4] = { 255, 255, 255, 255 };
-        if (failed(upload(m_device, m_white, white, 4, vulkan::ImageLayout::ShaderReadOnly, false))) return false;
+        if (failed(m_device.write_texture(m_white, white))) return false;
 
         for (auto& pf : m_per_frame) {
-            vulkan::ImageDesc rd;
+            gpu::TextureDesc rd;
             rd.extent = { 256, kRampRows, 1 };
-            rd.format = vulkan::Format::RGBA8Unorm;
-            rd.usage  = vulkan::ImageUsage::Sampled | vulkan::ImageUsage::TransferDst;
+            rd.format = gpu::Format::RGBA8Unorm;
+            rd.usage  = gpu::TextureUsage::Sampled | gpu::TextureUsage::CopyDst;
             rd.name   = "fizmo gradient ramps";
             if (failed(pf.ramp.create(m_device, rd))) return false;
-            if (failed(submit_immediate(m_device, [&](vulkan::CommandBuffer& cmd) { cmd.transition(pf.ramp, vulkan::ImageLayout::ShaderReadOnly); })))
-                return false;
-
-            vulkan::DescriptorPoolDesc pd;
-            pd.max_sets = 1024;
-            pd.sizes = { { vulkan::DescriptorType::CombinedImageSampler, 4096 }, { vulkan::DescriptorType::UniformBuffer, 256 }, { vulkan::DescriptorType::StorageImage, kMaxStorageSets } };
-            if (failed(pf.pool.create(m_device, pd))) return false;
         }
 
         m_ramp_pixels.assign(static_cast<std::size_t>(256) * kRampRows * 4, 0);
+        m_has_3d = create_3d();
         create_targets(w, h);
         return m_target.valid();
     }
 
+    bool create_3d() {
+        if (failed(m_mesh_vs.create(m_device, glsl::mesh3d_vert()))) return false;
+        if (failed(m_mesh_fs.create(m_device, glsl::mesh3d_frag()))) return false;
+        if (failed(m_line_vs.create(m_device, glsl::line3d_vert()))) return false;
+        if (failed(m_line_fs.create(m_device, glsl::line3d_frag()))) return false;
+        if (failed(m_quad_vs.create(m_device, glsl::quad3d_vert()))) return false;
+        if (failed(m_quad_fs.create(m_device, glsl::quad3d_frag()))) return false;
+        if (failed(m_batch_vs.create(m_device, glsl::batch3d_vert()))) return false;
+        if (failed(m_instanced_vs.create(m_device, glsl::instanced3d_vert()))) return false;
+        if (failed(m_shadow_mesh_vs.create(m_device, glsl::shadow_mesh_vert()))) return false;
+        if (failed(m_shadow_instanced_vs.create(m_device, glsl::shadow_instanced_vert()))) return false;
+        if (failed(m_shadow_quad_vs.create(m_device, glsl::shadow_quad_vert()))) return false;
+        if (failed(m_shadow_point_fs.create(m_device, glsl::shadow_point_frag()))) return false;
+        if (failed(m_sky_vs.create(m_device, glsl::sky_vert()))) return false;
+        if (failed(m_sky_fs.create(m_device, glsl::sky_frag()))) return false;
+        if (failed(m_rays_fs.create(m_device, glsl::rays_frag()))) return false;
+        if (m_device.caps().compute && failed(m_volume_cs.create(m_device, glsl::volume_comp()))) m_volume_cs.destroy();
+        m_multi_draw = m_device.caps().multi_draw_indirect;
+
+        const gpu::BindGroupLayoutEntry scene_entries[] = {
+            { 0, gpu::BindingType::UniformBuffer,  kSceneStages },
+            { 1, gpu::BindingType::SampledTexture, kSceneStages },
+            { 2, gpu::BindingType::SampledTexture, kSceneStages, static_cast<std::uint32_t>(kPointShadowMaps) },
+            { 3, gpu::BindingType::SampledTexture, kSceneStages },
+            { 4, gpu::BindingType::SampledTexture, kSceneStages },
+            { 5, gpu::BindingType::SampledTexture, kSceneStages },
+            { 6, gpu::BindingType::SampledTexture, kSceneStages },
+            { 7, gpu::BindingType::SampledTexture, kSceneStages },
+            { 8, gpu::BindingType::SampledTexture, kSceneStages, static_cast<std::uint32_t>(kMaxPlanes) },
+            { 9, gpu::BindingType::SampledTexture, kSceneStages },
+        };
+
+        if (failed(m_scene_set_layout.create(m_device, { scene_entries, "fizmo scene set" }))) return false;
+        gpu::PipelineLayoutDesc ml;
+        ml.groups               = { &m_draw_set_layout, &m_scene_set_layout };
+        ml.push_constant_size   = 128;
+        ml.push_constant_stages = gpu::ShaderStage::Vertex;
+        if (failed(m_mesh_layout.create(m_device, ml))) return false;
+        gpu::PipelineLayoutDesc sl;
+        sl.push_constant_size   = 128;
+        sl.push_constant_stages = gpu::ShaderStage::Vertex | gpu::ShaderStage::Fragment;
+        if (failed(m_shadow_layout.create(m_device, sl))) return false;
+        gpu::PipelineLayoutDesc ll;
+        ll.push_constant_size   = 80;
+        ll.push_constant_stages = gpu::ShaderStage::Vertex;
+        if (failed(m_line_layout.create(m_device, ll))) return false;
+
+        if (m_volume_cs.valid()) {
+            const gpu::BindGroupLayoutEntry volume_entries[] = {
+                { 0, gpu::BindingType::StorageTexture, gpu::ShaderStage::Compute, 1, gpu::Format::R32Float, gpu::StorageAccess::WriteOnly },
+            };
+
+            gpu::PipelineLayoutDesc vl;
+            vl.groups = { &m_volume_set_layout, &m_scene_set_layout };
+
+            if (failed(m_volume_set_layout.create(m_device, { volume_entries, "fizmo volume set" }))
+                || failed(m_volume_layout.create(m_device, vl))
+                || failed(m_volume_pipeline.create(m_device, { &m_volume_cs, &m_volume_layout, "fizmo volume light" }))) {
+                m_volume_pipeline.destroy();
+            }
+        }
+
+        m_point_capacity = std::max(1u, std::min<std::uint32_t>(kPointShadowMaps, m_mesh_layout.array_capacity(1, 2)));
+        m_plane_capacity = std::max(1u, std::min<std::uint32_t>(kMaxPlanes, m_mesh_layout.array_capacity(1, 8)));
+        const std::uint64_t align = std::max<std::uint64_t>(1, m_device.caps().uniform_alignment);
+        m_uniform_stride = (sizeof(SceneUniforms) + align - 1) / align * align;
+        if (!create_shadow_resources() || !create_dummy_volume()) return false;
+        const std::uint32_t warm[] = { 0u, kInstanced, kQuads, kBatch, kLines | (1u << kBlendShift) | kDepthTest };
+        for (std::uint32_t key : warm) if (!pipeline_3d(key)) return false;
+        if (!sky_pipeline() || !rays_pipeline()) return false;
+
+        for (Caster::Kind kind : { Caster::Kind::Mesh, Caster::Kind::Instanced, Caster::Kind::Quads }) {
+            if (!shadow_pipeline(kind, false) || !shadow_pipeline(kind, true)) return false;
+        }
+
+        return true;
+    }
+
     bool create_dummy_volume() {
-        const bool linear = m_device.physical_device().supports_format(vulkan::Format::R32Float, VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
-        m_volume_sampler = linear ? LinearClamp : NearestClamp;
-        vulkan::ImageDesc d;
-        d.extent = { 1, 1, 1 };
-        d.type   = vulkan::ImageType::Image3D;
-        d.format = vulkan::Format::R32Float;
-        d.usage  = vulkan::ImageUsage::Sampled | vulkan::ImageUsage::Storage;
-        d.name   = "fizmo empty volume";
+        m_volume_sampler = m_device.supports_linear_filter(gpu::Format::R32Float) ? LinearClamp : NearestClamp;
+        gpu::TextureDesc d;
+        d.dimension = gpu::TextureDimension::D3;
+        d.extent    = { 1, 1, 1 };
+        d.format    = gpu::Format::R32Float;
+        d.usage     = gpu::TextureUsage::Sampled | gpu::TextureUsage::CopyDst;
+        d.name      = "fizmo empty volume";
         if (failed(m_dummy_volume.create(m_device, d))) return false;
-        return succeeded(submit_immediate(m_device, [&](vulkan::CommandBuffer& cmd) { cmd.transition(m_dummy_volume, vulkan::ImageLayout::ShaderReadOnly); }));
+        const float zero = 0.0f;
+        return succeeded(m_device.write_texture(m_dummy_volume, &zero));
     }
 
     bool ensure_volume(const std::uint32_t* size) {
-        if (m_volume && m_volume->extent().width == size[0] && m_volume->extent().height == size[1] && m_volume->extent().depth == size[2]) return true;
+        if (m_volume && m_volume->width() == size[0] && m_volume->height() == size[1] && m_volume->depth() == size[2]) return true;
         if (m_volume) m_retired.push_back({ m_frame_serial, std::move(m_volume) });
-        vulkan::ImageDesc d;
-        d.extent = { size[0], size[1], size[2] };
-        d.type   = vulkan::ImageType::Image3D;
-        d.format = vulkan::Format::R32Float;
-        d.usage  = vulkan::ImageUsage::Sampled | vulkan::ImageUsage::Storage;
-        d.name   = "fizmo volume light";
-        m_volume = std::make_unique<vulkan::Image>();
+        gpu::TextureDesc d;
+        d.dimension = gpu::TextureDimension::D3;
+        d.extent    = { size[0], size[1], size[2] };
+        d.format    = gpu::Format::R32Float;
+        d.usage     = gpu::TextureUsage::Sampled | gpu::TextureUsage::Storage;
+        d.name      = "fizmo volume light";
+        m_volume = std::make_unique<gpu::Texture>();
         if (succeeded(m_volume->create(m_device, d))) return true;
         m_volume.reset();
         return false;
@@ -2951,101 +3224,74 @@ private:
 
     void prepare_volumes() {
         for (SceneLightRec& sl : m_scene_lights) {
-            if (!sl.volume || ensure_volume(sl.volume_size)) continue;
+            if (!sl.volume || (m_volume_pipeline.valid() && ensure_volume(sl.volume_size))) continue;
             sl.volume = false;
             sl.uniforms.counts[1] &= ~kVolumeGrid;
         }
     }
 
-    void record_volume_pass(const vulkan::CommandBuffer& cmd, PerFrame& pf, std::size_t scene) {
+    void record_volume_pass(gpu::CommandList& cmd, PerFrame& pf, std::size_t scene) {
         const SceneLightRec& sl = m_scene_lights[scene];
-        if (!sl.volume || !m_volume) return;
-        vulkan::DescriptorSet target;
-        if (failed(pf.pool.allocate(m_volume_set_layout, target))) return;
-        const vulkan::DescriptorSet lighting = scene_descriptor(pf, scene, false, -1, false);
+        if (!sl.volume || !m_volume || !m_volume_pipeline.valid()) return;
+        const gpu::BindGroup target = frame_group(m_volume_set_layout, { gpu::BindGroupEntry::storage_texture(0, *m_volume) });
+        if (!target.valid()) return;
+        const gpu::BindGroup lighting = scene_descriptor(pf, scene, false, -1, false);
         if (!lighting.valid()) return;
-        vulkan::DescriptorWriter().storage_image(0, m_volume->view()).update(target);
-        cmd.begin_label("fizmo volume light");
-        cmd.transition(*m_volume, vulkan::ImageLayout::General);
-        cmd.bind(m_volume_pipeline);
-        cmd.bind_descriptor_set(m_volume_pipeline, 0, target);
-        cmd.bind_descriptor_set(m_volume_pipeline, 1, lighting);
+        cmd.push_label("fizmo volume light");
+        cmd.set_pipeline(m_volume_pipeline);
+        cmd.set_bind_group(0, target);
+        cmd.set_bind_group(1, lighting);
         cmd.dispatch((sl.volume_size[0] + kVolumeGroup - 1) / kVolumeGroup, (sl.volume_size[1] + kVolumeGroup - 1) / kVolumeGroup);
-        cmd.transition(*m_volume, vulkan::ImageLayout::ShaderReadOnly);
-        cmd.end_label();
+        cmd.pop_label();
     }
 
     bool create_shadow_resources() {
-        constexpr VkFormatFeatureFlags need = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
-        const auto& phys = m_device.physical_device();
-        m_shadow_format = phys.supports_format(vulkan::Format::D32Float, need) ? vulkan::Format::D32Float : vulkan::Format::D16Unorm;
-        const bool linear = phys.supports_format(m_shadow_format, VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
-        vulkan::SamplerDesc s;
-        s.mag_filter = s.min_filter = linear ? vulkan::Filter::Linear : vulkan::Filter::Nearest;
-        s.mipmap = vulkan::MipmapMode::Nearest;
-        s.address_u = s.address_v = s.address_w = vulkan::AddressMode::ClampToEdge;
-        s.max_lod = 0.0f;
-        s.compare_enable = true;
-        s.compare_op = vulkan::CompareOp::LessEqual;
+        const bool d32 = m_device.supports(gpu::Format::D32Float, gpu::TextureUsage::DepthStencil | gpu::TextureUsage::Sampled);
+        m_shadow_format = d32 ? gpu::Format::D32Float : gpu::Format::D16Unorm;
+        const bool linear = m_device.supports_linear_filter(m_shadow_format);
+        gpu::SamplerDesc s;
+        s.mag_filter = s.min_filter = linear ? gpu::Filter::Linear : gpu::Filter::Nearest;
+        s.mip_filter = gpu::Filter::Nearest;
+        s.address_u = s.address_v = s.address_w = gpu::AddressMode::ClampToEdge;
+        s.max_lod    = 0.0f;
+        s.compare    = true;
+        s.compare_op = gpu::CompareOp::LessEqual;
         if (failed(m_shadow_sampler.create(m_device, s))) return false;
         m_dummy_sun  = make_shadow_map(1, false);
         m_dummy_cube = make_shadow_map(1, true);
         if (!m_dummy_sun || !m_dummy_cube) return false;
-
-        return succeeded(submit_immediate(m_device, [&](vulkan::CommandBuffer& cmd) {
-            clear_shadow_map(cmd, *m_dummy_sun);
-            clear_shadow_map(cmd, *m_dummy_cube);
-        }));
+        gpu::CommandList cmd;
+        clear_shadow_map(cmd, *m_dummy_sun);
+        clear_shadow_map(cmd, *m_dummy_cube);
+        return succeeded(m_device.submit(cmd));
     }
 
     std::unique_ptr<ShadowMap> make_shadow_map(unsigned int size, bool cube) {
         auto map = std::make_unique<ShadowMap>();
         map->size = size;
         map->cube = cube;
-        map->image = std::make_unique<vulkan::Image>();
-        vulkan::ImageDesc d;
-        d.extent = { size, size, 1 };
-        d.format = m_shadow_format;
-        d.usage  = vulkan::ImageUsage::DepthAttachment | vulkan::ImageUsage::Sampled;
-        d.type   = cube ? vulkan::ImageType::Cube : vulkan::ImageType::Image2D;
-        d.name   = cube ? "fizmo point shadow map" : "fizmo sun shadow map";
+        map->image = std::make_unique<gpu::Texture>();
+        gpu::TextureDesc d;
+        d.dimension = cube ? gpu::TextureDimension::Cube : gpu::TextureDimension::D2;
+        d.extent    = { size, size, 1 };
+        d.format    = m_shadow_format;
+        d.usage     = gpu::TextureUsage::DepthStencil | gpu::TextureUsage::Sampled;
+        d.name      = cube ? "fizmo point shadow map" : "fizmo sun shadow map";
         if (failed(map->image->create(m_device, d))) return nullptr;
-
-        if (cube) {
-            vulkan::ImageViewDesc all;
-            all.as_cube = true;
-            if (failed(map->sample_view.create(m_device, *map->image, all))) return nullptr;
-
-            for (int f = 0; f < kCubeFaces; ++f) {
-                vulkan::ImageViewDesc face;
-                face.base_layer  = static_cast<std::uint32_t>(f);
-                face.layer_count = 1;
-                if (failed(map->face_views[static_cast<std::size_t>(f)].create(m_device, *map->image, face))) return nullptr;
-            }
-        }
-
         return map;
     }
 
-    const vulkan::ImageView& sample_view(const ShadowMap& map) const noexcept { return map.cube ? map.sample_view : map.image->view(); }
-
-    void clear_shadow_map(const vulkan::CommandBuffer& cmd, ShadowMap& map) const noexcept {
-        cmd.transition(*map.image, vulkan::ImageLayout::DepthAttachment);
-
+    static void clear_shadow_map(gpu::CommandList& cmd, ShadowMap& map) {
         for (int f = 0; f < (map.cube ? kCubeFaces : 1); ++f) {
-            vulkan::DepthAttachment depth;
-            depth.view  = &map.attachment(f);
-            depth.load  = vulkan::LoadOp::Clear;
-            depth.store = vulkan::StoreOp::Store;
-            depth.clear = vulkan::ClearDepth{ 1.0f, 0 };
-            vulkan::RenderingDesc rd;
-            rd.area  = { { 0, 0 }, { map.size, map.size } };
-            rd.depth = &depth;
-            cmd.begin_rendering(rd);
-            cmd.end_rendering();
+            gpu::DepthTarget depth;
+            depth.texture     = map.image.get();
+            depth.layer       = static_cast<std::uint32_t>(f);
+            depth.load        = gpu::LoadOp::Clear;
+            depth.store       = gpu::StoreOp::Store;
+            depth.clear_depth = 1.0f;
+            cmd.begin_render_pass({ { { 0, 0 }, { map.size, map.size } }, {}, &depth });
+            cmd.end_render_pass();
         }
-
-        cmd.transition(*map.image, vulkan::ImageLayout::ShaderReadOnly);
     }
 
     ShadowMap* ensure_shadow_map(std::unique_ptr<ShadowMap>& slot, unsigned int size, bool cube) {
@@ -3055,76 +3301,31 @@ private:
         return slot.get();
     }
 
-    vulkan::SampleCount pick_samples() const noexcept {
-        const VkSampleCountFlags supported = m_device.limits().framebufferColorSampleCounts;
-        for (std::uint32_t s = FIZMO_GPU_MSAA; s > 1; s >>= 1)
-            if (supported & s) return static_cast<vulkan::SampleCount>(s);
-        return vulkan::SampleCount::X1;
-    }
-
     void create_scene_copies() noexcept {
-        m_scene_depth_view.destroy();
-        vulkan::ImageDesc cd;
+        gpu::TextureDesc cd;
         cd.extent = { m_width, m_height, 1 };
-        cd.format = vulkan::Format::RGBA8Unorm;
-        cd.usage  = vulkan::ImageUsage::Sampled | vulkan::ImageUsage::TransferDst;
+        cd.format = gpu::Format::RGBA8Unorm;
+        cd.usage  = gpu::TextureUsage::Sampled | gpu::TextureUsage::CopyDst;
         cd.name   = "fizmo scene color copy";
         if (failed(m_scene_color.create(m_device, cd))) { m_scene_color.destroy(); return; }
-        vulkan::ImageDesc dd;
+        gpu::TextureDesc dd;
         dd.extent = { m_width, m_height, 1 };
         dd.format = m_depth_format;
-        dd.usage  = vulkan::ImageUsage::Sampled | vulkan::ImageUsage::TransferDst | vulkan::ImageUsage::DepthAttachment;
+        dd.usage  = gpu::TextureUsage::Sampled | gpu::TextureUsage::CopyDst | gpu::TextureUsage::DepthStencil;
         dd.name   = "fizmo scene depth copy";
-        if (failed(m_scene_depth.create(m_device, dd))) { m_scene_depth.destroy(); return; }
-        vulkan::ImageViewDesc vd;
-        vd.aspect = vulkan::ImageAspect::Depth;
-        if (failed(m_scene_depth_view.create(m_device, m_scene_depth, vd))) m_scene_depth_view.destroy();
+        if (failed(m_scene_depth.create(m_device, dd))) m_scene_depth.destroy();
     }
 
-    void copy_scene(const vulkan::CommandBuffer& cmd, vulkan::Rect2D area) {
-        cmd.memory_barrier(
-            vulkan::PipelineStage::ColorAttachmentOutput | vulkan::PipelineStage::LateFragmentTests,
-            vulkan::Access::ColorAttachmentWrite | vulkan::Access::DepthAttachmentWrite,
-            vulkan::PipelineStage::Transfer | vulkan::PipelineStage::FragmentShader | vulkan::PipelineStage::EarlyFragmentTests | vulkan::PipelineStage::ColorAttachmentOutput,
-            vulkan::Access::TransferRead | vulkan::Access::ShaderRead | vulkan::Access::DepthAttachmentRead | vulkan::Access::DepthAttachmentWrite |
-            vulkan::Access::ColorAttachmentRead | vulkan::Access::ColorAttachmentWrite
-        );
-        
-        cmd.transition(m_target, vulkan::ImageLayout::TransferSrc);
-        cmd.transition(m_scene_color, vulkan::ImageLayout::TransferDst);
-        cmd.copy_image(m_target, m_scene_color, area);
-
-        if (!m_msaa_target.valid()) {
-            cmd.transition(m_depth, vulkan::ImageLayout::TransferSrc);
-            cmd.transition(m_scene_depth, vulkan::ImageLayout::TransferDst);
-            cmd.copy_image(m_depth, m_scene_depth, area);
-            cmd.transition(m_depth, vulkan::ImageLayout::DepthAttachment);
-        }
-
-        cmd.transition(m_target, vulkan::ImageLayout::ColorAttachment);
-        cmd.transition(m_scene_color, vulkan::ImageLayout::ShaderReadOnly);
-        cmd.transition(m_scene_depth, vulkan::ImageLayout::ShaderReadOnly);
-    }
-
-    void prepare_depth_resolve(const vulkan::CommandBuffer& cmd) {
-        vulkan::ImageBarrier b;
-        b.image      = m_scene_depth.handle();
-        b.old_layout = m_scene_depth.layout();
-        b.new_layout = vulkan::ImageLayout::DepthAttachment;
-        b.aspect     = m_scene_depth.aspect();
-        b.src_stage  = vulkan::PipelineStage::FragmentShader | vulkan::PipelineStage::Transfer;
-        b.src_access = vulkan::Access::None;
-        b.dst_stage  = vulkan::PipelineStage::ColorAttachmentOutput;
-        b.dst_access = vulkan::Access::ColorAttachmentWrite | vulkan::Access::ColorAttachmentRead;
-        cmd.barrier(b);
-        m_scene_depth.set_layout(vulkan::ImageLayout::DepthAttachment);
+    void copy_scene(gpu::CommandList& cmd, gpu::Rect2D area) {
+        cmd.copy_texture(m_target, m_scene_color, area);
+        if (!m_msaa_target.valid()) cmd.copy_texture(m_depth, m_scene_depth, area);
     }
 
     static bool blended(const Draw3D& d) noexcept { return d.kind != DrawKind3D::Lines && ((d.state >> kBlendShift) & kBlendMask) != 0u; }
 
     void prepare_reflections() {
         for (SceneLightRec& sl : m_scene_lights) {
-            if (sl.plane_count == 0) continue;
+            sl.plane_count = std::min(sl.plane_count, m_plane_capacity);
 
             for (std::uint32_t k = 0; k < sl.plane_count; ++k) {
                 const unsigned int w = std::max(1u, static_cast<unsigned int>(std::lround(m_width * sl.plane_scales[k])));
@@ -3154,7 +3355,7 @@ private:
     }
 
     void plan_scene_copies() {
-        const bool possible = m_scene_color.valid() && m_scene_depth_view.valid();
+        const bool possible = m_scene_color.valid() && m_scene_depth.valid();
 
         for (std::size_t si = 0; si < m_scenes.size() && si < m_scene_lights.size(); ++si) {
             SceneLightRec& sl = m_scene_lights[si];
@@ -3201,30 +3402,37 @@ private:
     void create_targets(unsigned int w, unsigned int h) noexcept {
         m_width  = std::max(w, 1u);
         m_height = std::max(h, 1u);
-        vulkan::ImageDesc td;
+        gpu::TextureDesc td;
         td.extent = { m_width, m_height, 1 };
-        td.format = vulkan::Format::RGBA8Unorm;
-        td.usage  = vulkan::ImageUsage::ColorAttachment | vulkan::ImageUsage::Sampled | vulkan::ImageUsage::TransferSrc | vulkan::ImageUsage::TransferDst;
+        td.format = gpu::Format::RGBA8Unorm;
+        td.usage  = gpu::TextureUsage::RenderTarget | gpu::TextureUsage::Sampled | gpu::TextureUsage::CopySrc | gpu::TextureUsage::CopyDst;
         td.name   = "fizmo back buffer";
-        m_target.create(m_device, td);
+        if (failed(m_target.create(m_device, td))) m_target.destroy();
         m_msaa_target.destroy();
 
-        if (m_samples != vulkan::SampleCount::X1) {
-            vulkan::ImageDesc md = td;
-            md.usage   = vulkan::ImageUsage::ColorAttachment;
+        if (m_samples > 1) {
+            gpu::TextureDesc md = td;
+            md.usage   = gpu::TextureUsage::RenderTarget;
             md.samples = m_samples;
             md.name    = "fizmo back buffer (msaa)";
-            m_msaa_target.create(m_device, md);
+            if (failed(m_msaa_target.create(m_device, md))) m_msaa_target.destroy();
         }
 
-        vulkan::ImageDesc dd;
-        dd.extent  = { m_width, m_height, 1 };
-        dd.format  = m_depth_format;
-        dd.usage   = m_samples == vulkan::SampleCount::X1 ? vulkan::ImageUsage::DepthAttachment | vulkan::ImageUsage::TransferSrc : vulkan::ImageUsage::DepthAttachment;
-        dd.samples = m_samples;
-        dd.name    = "fizmo depth buffer";
-        m_depth.create(m_device, dd);
-        create_scene_copies();
+        m_depth.destroy();
+        m_scene_color.destroy();
+        m_scene_depth.destroy();
+
+        if (m_has_3d) {
+            gpu::TextureDesc dd;
+            dd.extent  = { m_width, m_height, 1 };
+            dd.format  = m_depth_format;
+            dd.usage   = m_samples > 1 ? gpu::TextureUsage::DepthStencil : gpu::TextureUsage::DepthStencil | gpu::TextureUsage::CopySrc;
+            dd.samples = m_samples;
+            dd.name    = "fizmo depth buffer";
+            if (failed(m_depth.create(m_device, dd))) m_depth.destroy();
+            create_scene_copies();
+        }
+
         m_upscale.destroy();
         if (m_render_scale < kFullRenderScale) create_upscale();
         m_target_fresh = true;
@@ -3259,21 +3467,29 @@ private:
         m_in_3d = false;
         m_force_new_batch = false;
         m_vertices.clear();
+        m_sprites.clear();
         m_batches.clear();
         m_uploads.clear();
         m_staging.clear();
         m_ramp_rows.clear();
         m_ramp_used = 0;
         m_clear_pending = false;
+        m_frame_groups.clear();
+        m_cmd.clear();
+        while (!m_target_stack.empty()) end_target();
+        m_target_order.clear();
     }
 
-    Batch& batch_for(const vulkan::ImageView* view, std::uint8_t sampler) {
+    Batch& batch_for(const gpu::Texture* view, std::uint8_t sampler, bool sprites = false) {
         if (!m_batches.empty() && !m_force_new_batch) {
             Batch& b = m_batches.back();
 
             if (
                 b.view == view &&
                 b.sampler == sampler &&
+                b.sprites == sprites &&
+                b.target == m_active_target &&
+                b.blend == m_blend_mode &&
                 b.scissor.offset.x == m_scissor.offset.x &&
                 b.scissor.offset.y == m_scissor.offset.y &&
                 b.scissor.extent.width == m_scissor.extent.width &&
@@ -3283,18 +3499,21 @@ private:
 
         m_force_new_batch = false;
         Batch b;
-        b.first   = static_cast<std::uint32_t>(m_vertices.size());
+        b.first   = static_cast<std::uint32_t>(sprites ? m_sprites.size() : m_vertices.size());
         b.view    = view;
         b.sampler = sampler;
+        b.sprites = sprites;
         b.scissor = m_scissor;
+        b.target  = m_active_target;
+        b.blend   = m_blend_mode;
         m_batches.push_back(b);
         return m_batches.back();
     }
 
     void add_triangles(const Brush& brush) {
         if (m_tris.empty() || m_clip_empty) return;
-        Batch& batch = batch_for(&m_white.view(), NearestClamp);
-        for (const gpu::Vec2& p : m_tris) {
+        Batch& batch = batch_for(&m_white, NearestClamp);
+        for (const gfx::Vec2& p : m_tris) {
             m_vertices.push_back({ p.x, p.y, 0.5f, 0.5f, brush.color, brush.mode,
                                    { brush.grad[0], brush.grad[1], brush.grad[2], brush.grad[3] } });
         }
@@ -3302,15 +3521,15 @@ private:
     }
 
     void add_textured_quad4(
-        const gpu::Vec2 p[4], float u0, float v0, float u1, float v1,
-        std::uint32_t color, const vulkan::ImageView* view, std::uint8_t sampler
+        const gfx::Vec2 p[4], float u0, float v0, float u1, float v1,
+        std::uint32_t color, const gpu::Texture* view, std::uint8_t sampler
     ) {
         if (m_clip_empty || (color >> 24) == 0) return;
         Batch& batch = batch_for(view, sampler);
-        const gpu::Vertex a{ p[0].x, p[0].y, u0, v0, color, 0, { 0, 0, 0, 0 } };
-        const gpu::Vertex b{ p[1].x, p[1].y, u1, v0, color, 0, { 0, 0, 0, 0 } };
-        const gpu::Vertex c{ p[2].x, p[2].y, u1, v1, color, 0, { 0, 0, 0, 0 } };
-        const gpu::Vertex d{ p[3].x, p[3].y, u0, v1, color, 0, { 0, 0, 0, 0 } };
+        const gfx::Vertex a{ p[0].x, p[0].y, u0, v0, color, 0, { 0, 0, 0, 0 } };
+        const gfx::Vertex b{ p[1].x, p[1].y, u1, v0, color, 0, { 0, 0, 0, 0 } };
+        const gfx::Vertex c{ p[2].x, p[2].y, u1, v1, color, 0, { 0, 0, 0, 0 } };
+        const gfx::Vertex d{ p[3].x, p[3].y, u0, v1, color, 0, { 0, 0, 0, 0 } };
         m_vertices.push_back(a); m_vertices.push_back(b); m_vertices.push_back(c);
         m_vertices.push_back(a); m_vertices.push_back(c); m_vertices.push_back(d);
         batch.count += 6;
@@ -3318,9 +3537,9 @@ private:
 
     void add_textured_quad(
         float x, float y, float w, float h, float u0, float v0, float u1, float v1,
-        std::uint32_t color, const vulkan::ImageView* view, std::uint8_t sampler
+        std::uint32_t color, const gpu::Texture* view, std::uint8_t sampler
     ) {
-        const gpu::Vec2 p[4] = { { x, y }, { x + w, y }, { x + w, y + h }, { x, y + h } };
+        const gfx::Vec2 p[4] = { { x, y }, { x + w, y }, { x + w, y + h }, { x, y + h } };
         add_textured_quad4(p, u0, v0, u1, v1, color, view, sampler);
     }
 
@@ -3331,7 +3550,7 @@ private:
         return sampler;
     }
 
-    const vulkan::ImageView* texture_view(const graphics::Texture& tex) {
+    const gpu::Texture* texture_view(const graphics::Texture& tex) {
         const images::BitmapImage* img = tex.image();
         return texture_for(img, img->pixels().data(), img->width(), img->height(), img->version(), &tex);
     }
@@ -3340,14 +3559,14 @@ private:
         return static_cast<float>(std::max(1u, p.stroke_width()));
     }
 
-    static gpu::Cap line_cap(const graphics::Paint& p) noexcept {
-        if (p.line_cap() == graphics::LineCap::Flat && p.stroke_width() <= 1) return gpu::Cap::Square;
-        return gpu::to_cap(p.line_cap());
+    static gfx::Cap line_cap(const graphics::Paint& p) noexcept {
+        if (p.line_cap() == graphics::LineCap::Flat && p.stroke_width() <= 1) return gfx::Cap::Square;
+        return gfx::to_cap(p.line_cap());
     }
 
     static bool sweep_of(const graphics::Paint& p, float& a0, float& a1) noexcept {
         const double sweep = p.end_angle() - p.start_angle();
-        if (p.is_full_sweep() || std::abs(sweep) < 1e-9) { a0 = 0.0f; a1 = gpu::kTwoPi; return true; }
+        if (p.is_full_sweep() || std::abs(sweep) < 1e-9) { a0 = 0.0f; a1 = gfx::kTwoPi; return true; }
         constexpr double deg = constants::pi_180();
         a0 = static_cast<float>(p.start_angle() * deg);
         a1 = static_cast<float>(p.end_angle() * deg);
@@ -3355,10 +3574,10 @@ private:
     }
 
     static bool solid_brush(const graphics::Color& c, float opacity, Brush& out) noexcept {
-        const std::uint8_t a = gpu::scale_alpha(c.alpha(), opacity);
+        const std::uint8_t a = gfx::scale_alpha(c.alpha(), opacity);
         if (a == 0) return false;
         out = Brush{};
-        out.color = gpu::pack_premul(c.red(), c.green(), c.blue(), a);
+        out.color = gfx::pack_premul(c.red(), c.green(), c.blue(), a);
         return true;
     }
 
@@ -3367,9 +3586,9 @@ private:
         const float opacity = std::max(0.0f, std::min(1.0f, p.opacity()));
         if (!g || g->stops().empty()) return solid_brush(stroke ? p.stroke_color() : p.fill_color(), opacity, out);
         out = Brush{};
-        const std::uint8_t a = gpu::scale_alpha(255, opacity);
+        const std::uint8_t a = gfx::scale_alpha(255, opacity);
         if (a == 0) return false;
-        out.color = gpu::pack_opacity(a);                     
+        out.color = gfx::pack_opacity(a);                     
         const std::uint32_t kind = g->type() == graphics::GradientType::Radial ? 2u : 1u;
         out.mode = kind | (static_cast<std::uint32_t>(g->spread()) << 2) | (ramp_row(*g) << 16);
 
@@ -3388,9 +3607,9 @@ private:
         std::uint64_t key = 0x51ED270B27FCD1ull;
 
         for (const auto& s : g.stops()) {
-            const std::uint32_t c = gpu::pack_rgba(s.color.red(), s.color.green(), s.color.blue(), s.color.alpha());
-            key = gpu::hash_bytes(&s.position, sizeof(double), key);
-            key = gpu::hash_bytes(&c, sizeof(c), key);
+            const std::uint32_t c = gfx::pack_rgba(s.color.red(), s.color.green(), s.color.blue(), s.color.alpha());
+            key = gfx::hash_bytes(&s.position, sizeof(double), key);
+            key = gfx::hash_bytes(&c, sizeof(c), key);
         }
 
         auto it = m_ramp_rows.find(key);
@@ -3402,9 +3621,9 @@ private:
         for (int i = 0; i < 256; ++i) {
             const graphics::Color c = g.color_at(i / 255.0);
             const unsigned int a = c.alpha();
-            dst[i * 4 + 0] = gpu::mul8(c.red(), a);
-            dst[i * 4 + 1] = gpu::mul8(c.green(), a);
-            dst[i * 4 + 2] = gpu::mul8(c.blue(), a);
+            dst[i * 4 + 0] = gfx::mul8(c.red(), a);
+            dst[i * 4 + 1] = gfx::mul8(c.green(), a);
+            dst[i * 4 + 2] = gfx::mul8(c.blue(), a);
             dst[i * 4 + 3] = static_cast<std::uint8_t>(a);
         }
 
@@ -3437,7 +3656,7 @@ private:
             } else if (a == 0) {
                 dst[0] = dst[1] = dst[2] = dst[3] = 0;
             } else {
-                dst[0] = gpu::mul8(c.red(), a); dst[1] = gpu::mul8(c.green(), a); dst[2] = gpu::mul8(c.blue(), a);
+                dst[0] = gfx::mul8(c.red(), a); dst[1] = gfx::mul8(c.green(), a); dst[2] = gfx::mul8(c.blue(), a);
                 dst[3] = static_cast<std::uint8_t>(a);
             }
         }
@@ -3445,35 +3664,35 @@ private:
         return offset;
     }
 
-    std::unique_ptr<vulkan::Image> make_texture_image(unsigned int w, unsigned int h, const char* name) {
-        auto img = std::make_unique<vulkan::Image>();
-        vulkan::ImageDesc d;
+    std::unique_ptr<gpu::Texture> make_texture_image(unsigned int w, unsigned int h, const char* name) {
+        auto img = std::make_unique<gpu::Texture>();
+        gpu::TextureDesc d;
         d.extent = { w, h, 1 };
-        d.format = vulkan::Format::RGBA8Unorm;
-        d.usage  = vulkan::ImageUsage::Sampled | vulkan::ImageUsage::TransferDst;
+        d.format = gpu::Format::RGBA8Unorm;
+        d.usage  = gpu::TextureUsage::Sampled | gpu::TextureUsage::CopyDst;
         d.name   = name;
         if (failed(img->create(m_device, d))) return nullptr;
         return img;
     }
 
-    const vulkan::ImageView* texture_for(
+    const gpu::Texture* texture_for(
         const void* key, const graphics::Color* pixels, unsigned int w, unsigned int h,
         std::uint64_t version, const graphics::Texture* owner
     ) {
         const std::size_t count = static_cast<std::size_t>(w) * h;
         const std::size_t bytes = count * 4;
-        const std::uint64_t stamp = version != 0 ? version : gpu::hash_bytes(pixels, bytes);
+        const std::uint64_t stamp = version != 0 ? version : gfx::hash_bytes(pixels, bytes);
         auto it = m_textures.find(key);
 
         if (it != m_textures.end() && it->second.width == w && it->second.height == h) {
             CachedTexture& e = it->second;
-            if (e.stamp == stamp) { e.last_used = m_frame_serial; return &e.image->view(); }
+            if (e.stamp == stamp) { e.last_used = m_frame_serial; return e.image.get(); }
 
             if (e.last_used == m_frame_serial) {
                 auto tmp = make_texture_image(w, h, "fizmo transient texture");
                 if (!tmp) return nullptr;
                 m_uploads.push_back({ tmp.get(), push_staging_premul(pixels, count), { 0, 0 }, { w, h } });
-                const vulkan::ImageView* view = &tmp->view();
+                const gpu::Texture* view = tmp.get();
                 m_retired.push_back({ m_frame_serial, std::move(tmp) });
                 return view;
             }
@@ -3482,7 +3701,7 @@ private:
             e.last_used = m_frame_serial;
             if (owner) e.keep_alive = *owner;
             m_uploads.push_back({ e.image.get(), push_staging_premul(pixels, count), { 0, 0 }, { w, h } });
-            return &e.image->view();
+            return e.image.get();
         }
 
         if (it != m_textures.end()) {
@@ -3498,9 +3717,104 @@ private:
         if (owner) e.keep_alive = *owner;
         m_uploads.push_back({ e.image.get(), push_staging_premul(pixels, count), { 0, 0 }, { w, h } });
         m_texture_bytes += bytes;
-        const vulkan::ImageView* view = &e.image->view();
+        const gpu::Texture* view = e.image.get();
         m_textures.emplace(key, std::move(e));
         return view;
+    }
+
+    bool sprite_atlas_alloc(unsigned int w, unsigned int h, std::uint16_t& page, int& x, int& y) {
+        const int bw = static_cast<int>(w) + 2, bh = static_cast<int>(h) + 2;
+        if (bw > kSpriteAtlasSize || bh > kSpriteAtlasSize) return false;
+
+        for (std::size_t p = 0; p <= m_sprite_pages.size() && p < kSpriteAtlasPages; ++p) {
+            if (p == m_sprite_pages.size()) {
+                SpriteAtlasPage pg;
+                pg.image = make_texture_image(kSpriteAtlasSize, kSpriteAtlasSize, "fizmo sprite atlas");
+                if (!pg.image) return false;
+                m_sprite_pages.push_back(std::move(pg));
+            }
+
+            SpriteAtlasPage& pg = m_sprite_pages[p];
+            int sx = pg.shelf_x, sy = pg.shelf_y, sh = pg.shelf_h;
+            if (sx + bw > kSpriteAtlasSize) { sy += sh; sx = 0; sh = 0; }
+            if (sy + bh > kSpriteAtlasSize) continue;
+            pg.shelf_x = sx + bw;
+            pg.shelf_y = sy;
+            pg.shelf_h = std::max(sh, bh);
+            page = static_cast<std::uint16_t>(p);
+            x = sx + 1;
+            y = sy + 1;
+            return true;
+        }
+
+        return false;
+    }
+
+    void upload_sprite_entry(const SpriteAtlasEntry& e, const images::BitmapImage& img) {
+        const unsigned int w = e.w, h = e.h, bw = w + 2, bh = h + 2;
+        const graphics::Color* src = img.pixels().data();
+        m_sprite_border.resize(static_cast<std::size_t>(bw) * bh);
+
+        for (unsigned int by = 0; by < bh; ++by) {
+            const unsigned int sy = by == 0 ? 0 : (by > h ? h - 1 : by - 1);
+            const graphics::Color* row = src + static_cast<std::size_t>(sy) * w;
+            graphics::Color* dst = &m_sprite_border[static_cast<std::size_t>(by) * bw];
+            dst[0] = row[0];
+            std::copy(row, row + w, dst + 1);
+            dst[bw - 1] = row[w - 1];
+        }
+
+        m_uploads.push_back({
+            m_sprite_pages[e.page].image.get(),
+            push_staging_premul(m_sprite_border.data(), m_sprite_border.size()),
+            { e.x - 1, e.y - 1 }, { bw, bh }
+        });
+    }
+
+    const SpriteAtlasEntry* sprite_atlas_entry(const graphics::Texture& tex) {
+        if (!m_sprite_atlas || tex.wrap() != graphics::WrapMode::Clamp) return nullptr;
+        const images::BitmapImage* img = tex.image();
+        const unsigned int w = img->width(), h = img->height();
+        if (w == 0 || h == 0 || w > kSpriteAtlasMax || h > kSpriteAtlasMax) return nullptr;
+        const std::uint64_t stamp = img->version() != 0 ? img->version() : gfx::hash_bytes(img->pixels().data(), static_cast<std::size_t>(w) * h * 4);
+        auto it = m_sprite_entries.find(img);
+
+        if (it != m_sprite_entries.end()) {
+            SpriteAtlasEntry& e = it->second;
+
+            if (e.w == w && e.h == h) {
+                if (e.stamp != stamp) {
+                    if (e.last_used == m_frame_serial) return nullptr;
+                    e.stamp = stamp;
+                    upload_sprite_entry(e, *img);
+                }
+
+                e.last_used = m_frame_serial;
+                return &e;
+            }
+
+            m_sprite_entries.erase(it);
+        }
+
+        SpriteAtlasEntry e;
+        if (!sprite_atlas_alloc(w, h, e.page, e.x, e.y)) {
+            if (m_frame_serial >= m_sprite_reset_serial + kSpriteResetFrames) m_sprite_atlas_reset = true;
+            return nullptr;
+        }
+        e.w = w;
+        e.h = h;
+        e.stamp = stamp;
+        e.last_used = m_frame_serial;
+        e.keep_alive = tex;
+        upload_sprite_entry(e, *img);
+        return &m_sprite_entries.emplace(img, std::move(e)).first->second;
+    }
+
+    void reset_sprite_atlas() {
+        m_sprite_entries.clear();
+        for (SpriteAtlasPage& pg : m_sprite_pages) pg.shelf_x = pg.shelf_y = pg.shelf_h = 0;
+        m_sprite_atlas_reset = false;
+        m_sprite_reset_serial = m_frame_serial;
     }
 
     bool atlas_alloc(int w, int h, std::uint16_t& page, std::uint16_t& x, std::uint16_t& y) {
@@ -3542,7 +3856,7 @@ private:
         auto it = m_glyphs.find(key);
         if (it != m_glyphs.end()) return it->second;
         Glyph g;
-        gpu::GlyphImage img;
+        gfx::GlyphImage img;
 
         if (m_text.rasterize(face, index, img) && img.width > 0 && img.height > 0) {
             if (atlas_alloc(img.width, img.height, g.page, g.x, g.y)) {
@@ -3577,19 +3891,19 @@ private:
     }
 
     static std::uint64_t layout_hash(const text::RichText& rt, float w, float h) noexcept {
-        std::uint64_t k = gpu::hash_bytes(&w, sizeof(w));
-        k = gpu::hash_bytes(&h, sizeof(h), k);
+        std::uint64_t k = gfx::hash_bytes(&w, sizeof(w));
+        k = gfx::hash_bytes(&h, sizeof(h), k);
 
         for (const auto& sp : rt.spans()) {
-            k = gpu::hash_bytes(sp.text.data(), sp.text.size(), k);
-            k = gpu::hash_bytes(sp.family.data(), sp.family.size(), k ^ 0x5bd1e995u);
+            k = gfx::hash_bytes(sp.text.data(), sp.text.size(), k);
+            k = gfx::hash_bytes(sp.family.data(), sp.family.size(), k ^ 0x5bd1e995u);
         }
 
         const double size = rt.base().size();
-        return gpu::hash_bytes(&size, sizeof(size), k);
+        return gfx::hash_bytes(&size, sizeof(size), k);
     }
 
-    const gpu::TextDrawList* layout_for(const text::RichText& rt, float w, float h) {
+    const gfx::TextDrawList* layout_for(const text::RichText& rt, float w, float h) {
         const std::uint64_t key = layout_hash(rt, w, h);
         auto& bucket = m_layouts[key];
 
@@ -3602,61 +3916,84 @@ private:
         c.box_w = w;
         c.box_h = h;
         c.last_used = m_frame_serial;
-        if (!gpu::build_text_draw_list(m_text, rt, w, h, c.list)) return nullptr;
+        if (!gfx::build_text_draw_list(m_text, rt, w, h, c.list)) return nullptr;
         bucket.push_back(std::move(c));
         return &bucket.back().list;
     }
 
-    void emit_text(const gpu::TextDrawList& list, float ox, float oy) {
-        const vulkan::Rect2D saved_scissor = m_scissor;
+    bool xform_text(float& x, float& y) const noexcept {
+        if (!m_text_xform) return false;
+        const float lx = m_text_origin[0] + x * m_text_inv_scale, ly = m_text_origin[1] + y * m_text_inv_scale;
+        x = m_text_m[0] * lx + m_text_m[1] * ly + m_text_m[2];
+        y = m_text_m[3] * lx + m_text_m[4] * ly + m_text_m[5];
+        return true;
+    }
+
+    void xform_tris() noexcept {
+        if (!m_text_xform) return;
+        for (gfx::Vec2& p : m_tris) xform_text(p.x, p.y);
+    }
+
+    void emit_text(const gfx::TextDrawList& list, float ox, float oy) {
+        const gpu::Rect2D saved_scissor = m_scissor;
         const bool saved_active = m_clip_active, saved_empty = m_clip_empty;
 
-        if (list.clip) {                                        
+        if (list.clip && !m_text_xform) {                                        
             const int x0 = std::max(m_scissor.offset.x, static_cast<int>(std::floor(ox)));
             const int y0 = std::max(m_scissor.offset.y, static_cast<int>(std::floor(oy)));
             const int x1 = std::min(m_scissor.offset.x + static_cast<int>(m_scissor.extent.width),  static_cast<int>(std::ceil(ox + list.clip_w)));
             const int y1 = std::min(m_scissor.offset.y + static_cast<int>(m_scissor.extent.height), static_cast<int>(std::ceil(oy + list.clip_h)));
             m_clip_active = true;
             m_clip_empty  = x1 <= x0 || y1 <= y0;
-            m_scissor = m_clip_empty ? vulkan::Rect2D{} : vulkan::Rect2D{ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } };
+            m_scissor = m_clip_empty ? gpu::Rect2D{} : gpu::Rect2D{ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } };
         }
 
         constexpr float inv = 1.0f / kAtlasSize;
         Brush b;
 
-        for (const gpu::TextCmd& c : list.cmds) {
+        for (const gfx::TextCmd& c : list.cmds) {
             switch (c.kind) {
-                case gpu::TextCmd::Kind::Rect:
+                case gfx::TextCmd::Kind::Rect:
                     if (!solid_brush(c.color, 1.0f, b)) break;
                     m_tris.clear();
-                    gpu::fill_rect(m_tris, ox + c.x, oy + c.y, c.w, c.h);
+                    gfx::fill_rect(m_tris, ox + c.x, oy + c.y, c.w, c.h);
+                    xform_tris();
                     add_triangles(b);
                     break;
 
-                case gpu::TextCmd::Kind::Wave: {
+                case gfx::TextCmd::Kind::Wave: {
                     if (!solid_brush(c.color, 1.0f, b)) break;
                     const auto& pts = list.waves[c.wave];
                     m_wave.clear();
-                    for (const gpu::TextPoint& p : pts) m_wave.push_back({ ox + p.x, oy + p.y });
+                    for (const gfx::TextPoint& p : pts) m_wave.push_back({ ox + p.x, oy + p.y });
                     m_tris.clear();
-                    gpu::stroke_polyline(m_tris, m_wave.data(), m_wave.size(), false, c.w, gpu::Cap::Round, gpu::Join::Round);
+                    gfx::stroke_polyline(m_tris, m_wave.data(), m_wave.size(), false, c.w, gfx::Cap::Round, gfx::Join::Round);
+                    xform_tris();
                     add_triangles(b);
                     break;
                 }
 
-                case gpu::TextCmd::Kind::Glyph: {
+                case gfx::TextCmd::Kind::Glyph: {
                     if (c.color.alpha() == 0) break;
                     const Glyph& g = glyph_for(c.face, c.glyph);
                     if (!g.placed) break;
                     const float gx = std::round(ox + c.x) + static_cast<float>(g.left);
                     const float gy = std::round(oy + c.y) - static_cast<float>(g.top);
-                    const std::uint32_t color = g.color ? gpu::pack_opacity(c.color.alpha())
-                                                        : gpu::pack_premul(c.color.red(), c.color.green(), c.color.blue(), c.color.alpha());
+                    const std::uint32_t color = g.color ? gfx::pack_opacity(c.color.alpha())
+                                                        : gfx::pack_premul(c.color.red(), c.color.green(), c.color.blue(), c.color.alpha());
+
+                    if (m_text_xform) {
+                        const float fx = ox + c.x + static_cast<float>(g.left), fy = oy + c.y - static_cast<float>(g.top);
+                        gfx::Vec2 q[4] = { { fx, fy }, { fx + g.w, fy }, { fx + g.w, fy + g.h }, { fx, fy + g.h } };
+                        for (gfx::Vec2& p : q) xform_text(p.x, p.y);
+                        add_textured_quad4(q, g.x * inv, g.y * inv, (g.x + g.w) * inv, (g.y + g.h) * inv, color, m_atlas[g.page].image.get(), LinearClamp);
+                        break;
+                    }
 
                     add_textured_quad(
                         gx, gy, g.w, g.h,
                         g.x * inv, g.y * inv, (g.x + g.w) * inv, (g.y + g.h) * inv,
-                        color, &m_atlas[g.page].image->view(), NearestClamp
+                        color, m_atlas[g.page].image.get(), NearestClamp
                     );
                     break;
                 }
@@ -3712,6 +4049,13 @@ private:
 
         m_release_queue->drain([this](std::uint64_t key) { release_handle(key); });
 
+        for (auto it = m_rts.begin(); it != m_rts.end();) {
+            if (!it->second.slot.expired()) { ++it; continue; }
+            if (it->second.color) m_retired.push_back({ now, std::move(it->second.color) });
+            if (it->second.msaa) m_retired.push_back({ now, std::move(it->second.msaa) });
+            it = m_rts.erase(it);
+        }
+
         m_retired_ranges.erase(
             std::remove_if(m_retired_ranges.begin(), m_retired_ranges.end(), [&](const RetiredRange& r) {
                 if (!safe(r.frame)) return false;
@@ -3763,86 +4107,267 @@ private:
         }
     }
 
-    static bool ensure_buffer(
-        vulkan::Device& device, vulkan::Buffer& buf, std::uint64_t bytes,
-        vulkan::BufferUsage usage, const char* name
-    ) {
-        if (buf.valid() && buf.size() >= bytes) return true;
-        const std::uint64_t size = std::max<std::uint64_t>({ bytes, buf.size() * 2, 64 * 1024 });
-        return succeeded(buf.create(device, { size, usage, vulkan::MemoryUsage::CpuToGpu, name }));
+    bool stream(gpu::Buffer& buf, const void* data, std::uint64_t bytes, gpu::BufferUsage usage, const char* name) {
+        if (!buf.valid() || buf.size() < bytes) {
+            const std::uint64_t size = std::max<std::uint64_t>({ bytes, buf.size() * 2, 64 * 1024 });
+            if (failed(buf.create(m_device, { size, usage, gpu::MemoryAccess::Upload, name }))) return false;
+        } else {
+            buf.discard();
+        }
+
+        return succeeded(buf.write(data, bytes));
     }
 
     void flush() noexcept {
         if (!m_ready) return;
 
         try {
-            vulkan::Frame f;
-            vulkan::Result r = m_frames.begin_frame(f);
-            if (r == vulkan::Result::OutOfDate) r = m_frames.begin_frame(f);
+            gpu::Result r = m_device.begin_frame(m_frame);
+            if (r == gpu::Result::NotReady) r = m_device.begin_frame(m_frame);
 
-            if (r != vulkan::Result::Success) {
-                reset_recording();
-                return;
+            if (r == gpu::Result::Success) {
+                PerFrame& pf = m_per_frame[m_frame.index % kFramesInFlight];
+                const bool recorded = record_frame(pf);
+                if (recorded) m_device.submit(m_cmd);
+                m_cmd.clear();
+                const bool same_size = m_frame.extent.width == m_width && m_frame.extent.height == m_height;
+
+                if (recorded) {
+                    timed(m_cmd, pf, GpuPass::Present, [&]() {
+                        m_device.submit(m_cmd);
+                        m_cmd.clear();
+                        m_device.present(m_target, same_size ? gpu::Filter::Nearest : gpu::Filter::Linear);
+                    });
+
+                    m_device.submit(m_cmd);
+                }
+
+                m_device.end_frame();
             }
-
-            record_frame(f);
-            m_frames.end_frame();
         } catch (...) {
-            // drop the frame
+            if (m_device.in_frame()) m_device.end_frame();
         }
 
         reset_recording();
         if (m_atlas_reset) reset_atlas();
+        if (m_sprite_atlas_reset) reset_sprite_atlas();
         ++m_frame_serial;
     }
 
-    using DescriptorCache = std::vector<std::pair<std::uint64_t, vulkan::DescriptorSet>>;
+    using DescriptorCache = std::vector<std::pair<std::uint64_t, gpu::BindGroup>>;
 
-    vulkan::DescriptorSet descriptor_for(PerFrame& pf, const vulkan::ImageView* view, std::uint8_t sampler, DescriptorCache& cache) {
-        const std::uint64_t key = reinterpret_cast<std::uintptr_t>(view) * 8 + sampler;
+    gpu::BindGroup descriptor_for(PerFrame& pf, const gpu::Texture* view, std::uint8_t sampler, DescriptorCache& cache, bool sprites = false) {
+        const std::uint64_t key = (reinterpret_cast<std::uintptr_t>(view) * 8 + sampler) * 2 + (sprites ? 1u : 0u);
         for (const auto& s : cache) if (s.first == key) return s.second;
-        vulkan::DescriptorSet set;
-        if (failed(pf.pool.allocate(m_draw_set_layout, set))) return set;
-        vulkan::DescriptorWriter().image(0, *view, m_samplers[sampler]).image(1, pf.ramp.view(), m_samplers[LinearClamp]).update(set);
-        cache.emplace_back(key, set);
+
+        const gpu::BindGroupEntry entries[] = {
+            gpu::BindGroupEntry::sampled(0, *view, m_samplers[sampler]),
+            sprites ? gpu::BindGroupEntry::sampled(1, *view, m_samplers[sampler | 1u]) : gpu::BindGroupEntry::sampled(1, pf.ramp, m_samplers[LinearClamp]),
+        };
+
+        const gpu::BindGroup set = frame_group(m_draw_set_layout, entries);
+        if (set.valid()) cache.emplace_back(key, set);
         return set;
     }
 
-    vulkan::ColorAttachment color_attachment(bool clear) const noexcept {
+    gpu::ColorTarget color_target(bool clear, bool resolve = false) noexcept {
         const bool msaa = m_msaa_target.valid();
-        vulkan::ColorAttachment color;
-        color.view    = msaa ? &m_msaa_target.view() : &m_target.view();
-        color.resolve = msaa ? &m_target.view() : nullptr;
-        color.load    = clear ? vulkan::LoadOp::Clear : vulkan::LoadOp::Load;
-        color.store   = vulkan::StoreOp::Store;
-        color.clear   = m_clear_pending ? m_clear_color : vulkan::ClearColor{ 0, 0, 0, 1 };
+        m_unresolved = msaa && !resolve;
+        gpu::ColorTarget color;
+        color.texture = msaa ? &m_msaa_target : &m_target;
+        color.resolve = msaa && resolve ? &m_target : nullptr;
+        color.load    = clear ? gpu::LoadOp::Clear : gpu::LoadOp::Load;
+        color.store   = gpu::StoreOp::Store;
+        color.clear   = m_clear_pending ? m_clear_color : gpu::ClearColor{ 0, 0, 0, 1 };
         return color;
     }
 
-    void record_2d_pass(const vulkan::CommandBuffer& cmd, PerFrame& pf, std::size_t from, std::size_t to, bool clear, DescriptorCache& sets) {
-        const vulkan::ColorAttachment color = color_attachment(clear);
-        const vulkan::Extent2D size{ m_width, m_height };
-        cmd.begin_rendering({ { { 0, 0 }, size }, color });
+    void resolve_target(gpu::CommandList& cmd) {
+        if (!m_msaa_target.valid() || !m_unresolved) return;
+        cmd.begin_render_pass({ { { 0, 0 }, { m_width, m_height } }, color_target(false, true) });
+        cmd.end_render_pass();
+    }
 
-        if (from < to) {
-            cmd.bind(m_draw_pipeline);
-            cmd.set_viewport({ 0.0f, 0.0f, static_cast<float>(m_width), static_cast<float>(m_height), 0.0f, 1.0f });
-            const float push[2] = { 2.0f / m_width, 2.0f / m_height };
-            cmd.push_constants(m_draw_pipeline, vulkan::ShaderStage::Vertex, push, sizeof(push));
-            cmd.bind_vertex_buffer(0, pf.vertices);
+    void draw_batches(gpu::CommandList& cmd, PerFrame& pf, std::size_t from, std::size_t to, std::uint64_t target, unsigned int w, unsigned int h, DescriptorCache& sets) {
+        if (from >= to) return;
+        cmd.set_viewport({ 0.0f, 0.0f, static_cast<float>(w), static_cast<float>(h), 0.0f, 1.0f });
+        const float push[2] = { 2.0f / w, 2.0f / h };
+        int bound = -1;
 
-            for (std::size_t i = from; i < to; ++i) {
-                const Batch& b = m_batches[i];
-                if (b.count == 0 || b.scissor.extent.width == 0 || b.scissor.extent.height == 0) continue;
-                const vulkan::DescriptorSet set = descriptor_for(pf, b.view, b.sampler, sets);
-                if (!set.valid()) continue;
-                cmd.set_scissor(b.scissor);
-                cmd.bind_descriptor_set(m_draw_pipeline, 0, set);
-                cmd.draw(b.count, 1, b.first);
+        for (std::size_t i = from; i < to; ++i) {
+            const Batch& b = m_batches[i];
+            if (b.target != target || b.count == 0 || b.scissor.extent.width == 0 || b.scissor.extent.height == 0) continue;
+            const gpu::RenderPipeline& pipe = pipeline_for(b.sprites, b.blend);
+            if (!pipe.valid()) continue;
+            const gpu::BindGroup set = descriptor_for(pf, b.view, b.sampler, sets, b.sprites);
+            if (!set.valid()) continue;
+            const int kind = (b.sprites ? 1 : 0) | (static_cast<int>(b.blend) << 1);
+
+            if (kind != bound) {
+                bound = kind;
+                cmd.set_pipeline(pipe);
+                cmd.push_constants(push, sizeof(push));
+                cmd.set_vertex_buffer(0, b.sprites ? pf.sprites : pf.vertices);
             }
+
+            cmd.set_scissor(b.scissor);
+            cmd.set_bind_group(0, set);
+            if (b.sprites) cmd.draw(6, b.count, 0, b.first);
+            else cmd.draw(b.count, 1, b.first);
+        }
+    }
+
+    const gpu::RenderPipeline& pipeline_for(bool sprites, graphics::BlendMode blend) const noexcept {
+        const std::size_t i = static_cast<std::size_t>(blend);
+        if (i == 0 || i >= 4) return sprites ? m_sprite_pipeline : m_draw_pipeline;
+        return sprites ? m_sprite_blend[i] : m_draw_blend[i];
+    }
+
+    static gpu::BlendState blend_state(graphics::BlendMode mode) noexcept {
+        using F = gpu::BlendFactor;
+        switch (mode) {
+            case graphics::BlendMode::Add:      return gpu::BlendState::make(F::One, F::One, F::One, F::OneMinusSrcAlpha);
+            case graphics::BlendMode::Multiply: return gpu::BlendState::make(F::DstColor, F::OneMinusSrcAlpha, F::One, F::OneMinusSrcAlpha);
+            case graphics::BlendMode::Screen:   return gpu::BlendState::make(F::One, F::OneMinusSrcColor, F::One, F::OneMinusSrcAlpha);
+            default:                            return gpu::BlendState::premultiplied();
+        }
+    }
+
+    void create_blend_variants(const gpu::RenderPipelineDesc& base, std::array<gpu::RenderPipeline, 4>& out) {
+        for (std::size_t i = 1; i < 4; ++i) {
+            gpu::RenderPipelineDesc d = base;
+            d.blend = blend_state(static_cast<graphics::BlendMode>(i));
+            if (failed(out[i].create(m_device, d))) out[i].destroy();
+        }
+    }
+
+    void record_2d_pass(gpu::CommandList& cmd, PerFrame& pf, std::size_t from, std::size_t to, bool clear, DescriptorCache& sets) {
+        const gpu::ColorTarget color = color_target(clear);
+        const gpu::Extent2D size{ m_width, m_height };
+        cmd.begin_render_pass({ { { 0, 0 }, size }, color });
+        draw_batches(cmd, pf, from, to, 0, m_width, m_height, sets);
+        cmd.end_render_pass();
+    }
+
+    void record_target_pass(gpu::CommandList& cmd, PerFrame& pf, std::uint64_t id, DescriptorCache& sets) {
+        auto it = m_rts.find(id);
+        if (it == m_rts.end() || !it->second.color) return;
+        TargetRes& r = it->second;
+        const bool clear = r.clear || r.fresh;
+        gpu::ColorTarget color;
+        color.texture = r.msaa ? r.msaa.get() : r.color.get();
+        color.resolve = r.msaa ? r.color.get() : nullptr;
+        color.load    = clear ? gpu::LoadOp::Clear : gpu::LoadOp::Load;
+        color.store   = gpu::StoreOp::Store;
+        color.clear   = r.clear ? r.clear_color : gpu::ClearColor{ 0.0f, 0.0f, 0.0f, 0.0f };
+        cmd.begin_render_pass({ { { 0, 0 }, { r.width, r.height } }, color });
+        draw_batches(cmd, pf, 0, m_batches.size(), id, r.width, r.height, sets);
+        cmd.end_render_pass();
+        r.fresh = false;
+        r.clear = false;
+    }
+
+    void run_user_passes(gpu::CommandList& cmd, GpuPassStage stage) {
+        if (m_user_passes.empty()) return;
+        GpuPassContext ctx;
+        ctx.device      = &m_device;
+        ctx.commands    = &cmd;
+        ctx.back_buffer = &m_target;
+        ctx.width       = m_width;
+        ctx.height      = m_height;
+        ctx.frame_index = m_frame.index;
+        ctx.frame       = m_frame_serial;
+        const std::vector<UserPass> passes = m_user_passes;
+
+        for (const UserPass& p : passes) {
+            if (p.stage != stage || !p.callback) continue;
+            try { p.callback(ctx); } catch (...) {}
+            if (cmd.in_pass()) cmd.end_render_pass();
+        }
+    }
+
+    TargetRes* target_res(const graphics::RenderTarget& rt) {
+        if (!m_ready || !rt.valid()) return nullptr;
+        TargetRes& r = m_rts[rt.id()];
+        r.slot = rt.slot();
+        if (r.color && r.width == rt.width() && r.height == rt.height() && r.generation == rt.generation()) return &r;
+        if (r.color) m_retired.push_back({ m_frame_serial, std::move(r.color) });
+        if (r.msaa) m_retired.push_back({ m_frame_serial, std::move(r.msaa) });
+        gpu::TextureDesc td;
+        td.extent = { rt.width(), rt.height(), 1 };
+        td.format = gpu::Format::RGBA8Unorm;
+        td.usage  = gpu::TextureUsage::RenderTarget | gpu::TextureUsage::Sampled | gpu::TextureUsage::CopySrc | gpu::TextureUsage::CopyDst;
+        td.name   = "fizmo render target";
+        auto color = std::make_unique<gpu::Texture>();
+        if (failed(color->create(m_device, td))) { m_rts.erase(rt.id()); return nullptr; }
+        std::unique_ptr<gpu::Texture> msaa;
+
+        if (m_samples > 1) {
+            gpu::TextureDesc md = td;
+            md.usage   = gpu::TextureUsage::RenderTarget;
+            md.samples = m_samples;
+            md.name    = "fizmo render target (msaa)";
+            msaa = std::make_unique<gpu::Texture>();
+            if (failed(msaa->create(m_device, md))) { m_rts.erase(rt.id()); return nullptr; }
         }
 
-        cmd.end_rendering();
+        r.color      = std::move(color);
+        r.msaa       = std::move(msaa);
+        r.width      = rt.width();
+        r.height     = rt.height();
+        r.generation = rt.generation();
+        r.fresh      = true;
+        r.clear      = false;
+        return &r;
+    }
+
+    bool target_busy(std::uint64_t id) const noexcept {
+        if (id == m_active_target) return true;
+        for (const SavedTarget& t : m_target_stack) if (t.target == id) return true;
+        return false;
+    }
+
+    void order_target(std::uint64_t id) {
+        if (std::find(m_target_order.begin(), m_target_order.end(), id) == m_target_order.end()) m_target_order.push_back(id);
+    }
+
+    void clear_target(TargetRes& r, const graphics::Color& c) {
+        for (Batch& b : m_batches) if (b.target == m_active_target) b.count = 0;
+        const float a = c.alpha() / 255.0f;
+        r.clear = true;
+        r.clear_color = { c.red() / 255.0f * a, c.green() / 255.0f * a, c.blue() / 255.0f * a, a };
+    }
+
+    static std::uint8_t sampler_of(graphics::SampleFilter filter, graphics::WrapMode wrap) noexcept {
+        std::uint8_t sampler = filter == graphics::SampleFilter::Bilinear ? LinearClamp : NearestClamp;
+        if (wrap == graphics::WrapMode::Repeat)       sampler += 2;
+        if (wrap == graphics::WrapMode::MirrorRepeat) sampler += 4;
+        return sampler;
+    }
+
+    void create_sprite_pipeline() {
+        if (failed(m_sprite_vs.create(m_device, extra_glsl::sprite2d_vert()))) { m_sprite_vs.destroy(); return; }
+        if (failed(m_sprite_fs.create(m_device, extra_glsl::sprite2d_frag()))) { m_sprite_vs.destroy(); m_sprite_fs.destroy(); return; }
+        gpu::RenderPipelineDesc d;
+        d.vertex          = &m_sprite_vs;
+        d.fragment        = &m_sprite_fs;
+        d.layout          = &m_draw_layout;
+        d.vertex_bindings = { { 0, sizeof(SpriteGpu), gpu::VertexRate::PerInstance } };
+        d.vertex_attributes = {
+            { 0, 0, gpu::Format::RGBA32Float, 0  },
+            { 1, 0, gpu::Format::RGBA32Float, 16 },
+            { 2, 0, gpu::Format::RGBA32Float, 32 },
+            { 3, 0, gpu::Format::RGBA8Unorm,  48 },
+            { 4, 0, gpu::Format::R32Uint,     52 },
+            { 5, 0, gpu::Format::R32Uint,     56 },
+            { 6, 0, gpu::Format::R32Uint,     60 },
+        };
+        d.samples       = m_samples;
+        d.color_formats = { gpu::Format::RGBA8Unorm };
+        d.blend         = gpu::BlendState::premultiplied();
+        d.name          = "fizmo sprites";
+        if (failed(m_sprite_pipeline.create(m_device, d))) { m_sprite_pipeline.destroy(); m_sprite_vs.destroy(); m_sprite_fs.destroy(); return; }
+        create_blend_variants(d, m_sprite_blend);
     }
 
     void plan_point_shadows(SceneLightRec& sl, std::size_t scene) {
@@ -3917,6 +4442,8 @@ private:
                 sl.uniforms.sun_mix[1] = 0.0f;
             }
 
+            sl.point_count = std::min(sl.point_count, m_point_capacity);
+
             for (std::uint32_t k = 0; k < sl.point_count; ++k) {
                 if (ensure_shadow_map(m_point_maps[k], sl.point_size, true)) continue;
                 sl.point_count = k;
@@ -3935,43 +4462,41 @@ private:
         return m_scene_lights.size() + scene * static_cast<std::size_t>(kMaxPlanes) + static_cast<std::size_t>(plane);
     }
 
-    vulkan::DescriptorSet scene_descriptor(PerFrame& pf, std::size_t scene, bool copies = false, int reflection_plane = -1, bool volume = true) {
+    gpu::BindGroup scene_descriptor(PerFrame& pf, std::size_t scene, bool copies = false, int reflection_plane = -1, bool volume = true) {
         const std::uint64_t key = (static_cast<std::uint64_t>(scene) << kSceneSetShift) | (static_cast<std::uint64_t>(reflection_plane + 1) << 2) | (copies ? 2u : 0u) | (volume ? 1u : 0u);
         for (const auto& cached : pf.scene_sets) if (cached.first == key) return cached.second;
-        vulkan::DescriptorSet set;
-        if (failed(pf.pool.allocate(m_scene_set_layout, set))) return set;
-        pf.scene_sets.emplace_back(key, set);
         const SceneLightRec& sl = m_scene_lights[scene];
         const ShadowMap& sun = sl.sun_shadow && m_sun_map ? *m_sun_map : *m_dummy_sun;
-        vulkan::DescriptorWriter w;
+        const ShadowMap& sun_b = sl.sun_blend && m_sun_map_b ? *m_sun_map_b : sun;
         const std::size_t slot = reflection_plane >= 0 ? reflection_slot(scene, reflection_plane) : scene;
-        w.buffer(0, pf.scene_uniforms, vulkan::DescriptorType::UniformBuffer, slot * m_uniform_stride, sizeof(SceneUniforms));
+        const bool have = copies && m_scene_color.valid() && m_scene_depth.valid();
+        const bool grid = volume && sl.volume && m_volume;
+        std::vector<gpu::BindGroupEntry>& e = m_scene_entries;
+        e.clear();
+        e.push_back(gpu::BindGroupEntry::uniform(0, pf.scene_uniforms, slot * m_uniform_stride, sizeof(SceneUniforms)));
 
         for (int k = 0; k < kMaxPlanes; ++k) {
             const ReflectionTarget& t = m_reflections[static_cast<std::size_t>(k)];
             const bool used = reflection_plane < 0 && static_cast<std::uint32_t>(k) < sl.plane_count && t.color;
-            w.image(8, used ? t.color->view() : m_white.view(), m_samplers[LinearClamp], vulkan::ImageLayout::ShaderReadOnly,
-                    vulkan::DescriptorType::CombinedImageSampler, static_cast<std::uint32_t>(k));
+            e.push_back(gpu::BindGroupEntry::sampled(8, used ? *t.color : m_white, m_samplers[LinearClamp], static_cast<std::uint32_t>(k)));
         }
 
-        w.image(1, sample_view(sun), m_shadow_sampler);
-        const bool have = copies && m_scene_color.valid() && m_scene_depth_view.valid();
-        w.image(3, have ? m_scene_color.view() : m_white.view(), m_samplers[LinearClamp]);
-        w.image(4, have ? m_scene_depth_view : m_white.view(), m_samplers[NearestClamp]);
-        w.image(5, sample_view(sun), m_samplers[NearestClamp]);
-        const ShadowMap& sun_b = sl.sun_blend && m_sun_map_b ? *m_sun_map_b : sun;
-        w.image(6, sample_view(sun_b), m_shadow_sampler);
-        w.image(7, sample_view(sun_b), m_samplers[NearestClamp]);
-        const bool grid = volume && sl.volume && m_volume;
-        w.image(9, grid ? m_volume->view() : m_dummy_volume.view(), m_samplers[m_volume_sampler]);
+        e.push_back(gpu::BindGroupEntry::sampled(1, *sun.image, m_shadow_sampler));
+        e.push_back(gpu::BindGroupEntry::sampled(3, have ? m_scene_color : m_white, m_samplers[LinearClamp]));
+        e.push_back(gpu::BindGroupEntry::sampled(4, have ? m_scene_depth : m_white, m_samplers[NearestClamp]));
+        e.push_back(gpu::BindGroupEntry::sampled(5, *sun.image, m_samplers[NearestClamp]));
+        e.push_back(gpu::BindGroupEntry::sampled(6, *sun_b.image, m_shadow_sampler));
+        e.push_back(gpu::BindGroupEntry::sampled(7, *sun_b.image, m_samplers[NearestClamp]));
+        e.push_back(gpu::BindGroupEntry::sampled(9, grid ? *m_volume : m_dummy_volume, m_samplers[m_volume_sampler]));
 
         for (int k = 0; k < kPointShadowMaps; ++k) {
             const bool used = static_cast<std::uint32_t>(k) < sl.point_count && m_point_maps[static_cast<std::size_t>(k)];
             const ShadowMap& map = used ? *m_point_maps[static_cast<std::size_t>(k)] : *m_dummy_cube;
-            w.image(2, sample_view(map), m_shadow_sampler, vulkan::ImageLayout::ShaderReadOnly, vulkan::DescriptorType::CombinedImageSampler, static_cast<std::uint32_t>(k));
+            e.push_back(gpu::BindGroupEntry::sampled(2, *map.image, m_shadow_sampler, static_cast<std::uint32_t>(k)));
         }
 
-        w.update(set);
+        const gpu::BindGroup set = frame_group(m_scene_set_layout, e);
+        if (set.valid()) pf.scene_sets.emplace_back(key, set);
         return set;
     }
 
@@ -3979,8 +4504,7 @@ private:
         return map && map->cached && map->signature == signature;
     }
 
-    void render_shadow_map(const vulkan::CommandBuffer& cmd, PerFrame& pf, ShadowMap& map, std::uint64_t signature, const Mat4f* faces, const float* light, bool point, std::size_t first, std::size_t last, std::uint8_t mask = kAllCubeFaces) {
-        cmd.transition(*map.image, vulkan::ImageLayout::DepthAttachment);
+    void render_shadow_map(gpu::CommandList& cmd, PerFrame& pf, ShadowMap& map, std::uint64_t signature, const Mat4f* faces, const float* light, bool point, std::size_t first, std::size_t last, std::uint8_t mask = kAllCubeFaces) {
         const int views = point ? kCubeFaces : 1;
 
         for (int f = 0; f < views; ++f) {
@@ -3988,16 +4512,15 @@ private:
             record_shadow_view(cmd, pf, map, f, faces[static_cast<std::size_t>(f)].data(), light, point, first, last);
         }
 
-        cmd.transition(*map.image, vulkan::ImageLayout::ShaderReadOnly);
         map.signature = signature;
         map.cached    = true;
     }
 
-    void record_shadow_passes(const vulkan::CommandBuffer& cmd, PerFrame& pf, std::size_t scene, std::size_t first, std::size_t last) {
+    void record_shadow_passes(gpu::CommandList& cmd, PerFrame& pf, std::size_t scene, std::size_t first, std::size_t last) {
         const SceneLightRec& sl = m_scene_lights[scene];
         if (!sl.sun_shadow && sl.point_count == 0) return;
         const double* origin = m_scenes[scene].scene.origin;
-        cmd.begin_label("fizmo shadows");
+        cmd.push_label("fizmo shadows");
 
         if (sl.sun_shadow && m_sun_map) {
             Mat4f ma, mb;
@@ -4025,7 +4548,7 @@ private:
             std::copy(ps.world, ps.world + 3, map.world);
         }
 
-        cmd.end_label();
+        cmd.pop_label();
     }
 
     static bool outside_sphere(const Caster& c, const float* light) noexcept {
@@ -4118,7 +4641,7 @@ private:
     }
 
     void record_shadow_view(
-        const vulkan::CommandBuffer& cmd, 
+        gpu::CommandList& cmd, 
         PerFrame& pf, 
         ShadowMap& map, 
         int face, 
@@ -4128,19 +4651,20 @@ private:
         std::size_t first, 
         std::size_t last
     ) {
-        vulkan::DepthAttachment depth;
-        depth.view  = &map.attachment(face);
-        depth.load  = vulkan::LoadOp::Clear;
-        depth.store = vulkan::StoreOp::Store;
-        depth.clear = vulkan::ClearDepth{ 1.0f, 0 };
-        vulkan::RenderingDesc rd;
+        gpu::DepthTarget depth;
+        depth.texture     = map.image.get();
+        depth.layer       = map.cube ? static_cast<std::uint32_t>(face) : 0u;
+        depth.load        = gpu::LoadOp::Clear;
+        depth.store       = gpu::StoreOp::Store;
+        depth.clear_depth = 1.0f;
+        gpu::RenderPassDesc rd;
         rd.area  = { { 0, 0 }, { map.size, map.size } };
         rd.depth = &depth;
-        cmd.begin_rendering(rd);
+        cmd.begin_render_pass(rd);
         cmd.set_viewport({ 0.0f, 0.0f, static_cast<float>(map.size), static_cast<float>(map.size), 0.0f, 1.0f });
         cmd.set_scissor({ { 0, 0 }, { map.size, map.size } });
         const graphics::FaceMask toward_sun = point ? graphics::ALL_FACE_GROUPS : sun_faces(light);
-        const vulkan::Pipeline* bound = nullptr;
+        const gpu::RenderPipeline* bound = nullptr;
         float push[32] = {};
         std::copy(light_vp, light_vp + 16, push);
         std::copy(light, light + 4, push + 28);
@@ -4161,16 +4685,16 @@ private:
                 if (faces == 0) continue;
             }
 
-            const vulkan::Pipeline* p = shadow_pipeline(c.kind, point);
+            const gpu::RenderPipeline* p = shadow_pipeline(c.kind, point);
             if (!p) continue;
-            if (p != bound) { cmd.bind(*p); bound = p; }
+            if (p != bound) { cmd.set_pipeline(*p); bound = p; }
             std::copy(c.model, c.model + 12, push + 16);
-            cmd.push_constants(*p, vulkan::ShaderStage::Vertex | vulkan::ShaderStage::Fragment, push, sizeof(push));
-            cmd.bind_vertex_buffer(0, *c.vertices);
+            cmd.push_constants(push, sizeof(push));
+            cmd.set_vertex_buffer(0, *c.vertices);
 
             if (c.kind == Caster::Kind::Quads) {
                 if (!m_quad_indices) continue;
-                cmd.bind_index_buffer(*m_quad_indices, vulkan::IndexType::UInt32);
+                cmd.set_index_buffer(*m_quad_indices, gpu::IndexType::UInt32);
                 std::uint32_t run_first = 0, run_count = 0;
 
                 auto flush = [&]() {
@@ -4194,31 +4718,31 @@ private:
             }
 
             const std::uint32_t instances = c.kind == Caster::Kind::Instanced ? c.instance_count : 1u;
-            if (c.kind == Caster::Kind::Instanced) cmd.bind_vertex_buffer(1, pf.instances3d, static_cast<std::uint64_t>(c.instance_first) * sizeof(graphics::Instance3D));
+            if (c.kind == Caster::Kind::Instanced) cmd.set_vertex_buffer(1, pf.instances3d, static_cast<std::uint64_t>(c.instance_first) * sizeof(graphics::Instance3D));
 
             if (c.indices) {
-                cmd.bind_index_buffer(*c.indices, vulkan::IndexType::UInt32);
+                cmd.set_index_buffer(*c.indices, gpu::IndexType::UInt32);
                 cmd.draw_indexed(c.count, instances);
             } else {
                 cmd.draw(c.count, instances);
             }
         }
 
-        cmd.end_rendering();
+        cmd.end_render_pass();
     }
 
-    void issue_draw(const vulkan::CommandBuffer& cmd, PerFrame& pf, const Draw3D& d) {
+    void issue_draw(gpu::CommandList& cmd, PerFrame& pf, const Draw3D& d) {
         if (d.kind == DrawKind3D::Batch || d.kind == DrawKind3D::ArenaQuads) {
             if (d.page >= m_arena.size() || !m_quad_indices) return;
-            cmd.bind_vertex_buffer(0, *m_arena[d.page].buffer);
-            cmd.bind_index_buffer(*m_quad_indices, vulkan::IndexType::UInt32);
+            cmd.set_vertex_buffer(0, *m_arena[d.page].buffer);
+            cmd.set_index_buffer(*m_quad_indices, gpu::IndexType::UInt32);
 
             if (d.kind == DrawKind3D::ArenaQuads) {
                 cmd.draw_indexed(d.count, 1, 0, d.vertex_offset, 0);
                 return;
             }
 
-            cmd.bind_vertex_buffer(1, pf.batch_instances);
+            cmd.set_vertex_buffer(1, pf.batch_instances);
 
             if (m_multi_draw) {
                 cmd.draw_indexed_indirect(pf.batch_commands, static_cast<std::uint64_t>(d.first) * sizeof(IndirectCommand), d.count, sizeof(IndirectCommand));
@@ -4234,27 +4758,27 @@ private:
 
         if (d.kind == DrawKind3D::Instanced) {
             if (!d.mesh || !d.mesh->vertices) return;
-            cmd.bind_vertex_buffer(0, *d.mesh->vertices);
-            cmd.bind_vertex_buffer(1, pf.instances3d, static_cast<std::uint64_t>(d.instance_first) * sizeof(graphics::Instance3D));
-            if (d.mesh->indices) { cmd.bind_index_buffer(*d.mesh->indices, vulkan::IndexType::UInt32); cmd.draw_indexed(d.count, d.instance_count); }
+            cmd.set_vertex_buffer(0, *d.mesh->vertices);
+            cmd.set_vertex_buffer(1, pf.instances3d, static_cast<std::uint64_t>(d.instance_first) * sizeof(graphics::Instance3D));
+            if (d.mesh->indices) { cmd.set_index_buffer(*d.mesh->indices, gpu::IndexType::UInt32); cmd.draw_indexed(d.count, d.instance_count); }
             else cmd.draw(d.count, d.instance_count);
             return;
         }
 
         if (d.kind == DrawKind3D::Mesh) {
             if (!d.mesh || !d.mesh->vertices) return;
-            cmd.bind_vertex_buffer(0, *d.mesh->vertices);
+            cmd.set_vertex_buffer(0, *d.mesh->vertices);
             if (d.quads) {
                 if (!m_quad_indices) return;
-                cmd.bind_index_buffer(*m_quad_indices, vulkan::IndexType::UInt32);
+                cmd.set_index_buffer(*m_quad_indices, gpu::IndexType::UInt32);
                 cmd.draw_indexed(d.count);
             }
-            else if (d.mesh->indices) { cmd.bind_index_buffer(*d.mesh->indices, vulkan::IndexType::UInt32); cmd.draw_indexed(d.count); }
+            else if (d.mesh->indices) { cmd.set_index_buffer(*d.mesh->indices, gpu::IndexType::UInt32); cmd.draw_indexed(d.count); }
             else cmd.draw(d.count);
             return;
         }
 
-        cmd.bind_vertex_buffer(0, pf.vertices3d);
+        cmd.set_vertex_buffer(0, pf.vertices3d);
         cmd.draw(d.count, 1, d.first);
     }
 
@@ -4301,36 +4825,36 @@ private:
         if (t.depth) m_retired.push_back({ m_frame_serial, std::move(t.depth) });
         t.width = w;
         t.height = h;
-        vulkan::ImageDesc cd;
+        gpu::TextureDesc cd;
         cd.extent = { w, h, 1 };
-        cd.format = vulkan::Format::RGBA8Unorm;
-        cd.usage  = vulkan::ImageUsage::ColorAttachment | vulkan::ImageUsage::Sampled;
+        cd.format = gpu::Format::RGBA8Unorm;
+        cd.usage  = gpu::TextureUsage::RenderTarget | gpu::TextureUsage::Sampled;
         cd.name   = "fizmo reflection";
-        t.color = std::make_unique<vulkan::Image>();
+        t.color = std::make_unique<gpu::Texture>();
         if (failed(t.color->create(m_device, cd))) { t.color.reset(); return nullptr; }
 
-        if (m_samples != vulkan::SampleCount::X1) {
-            vulkan::ImageDesc md = cd;
-            md.usage   = vulkan::ImageUsage::ColorAttachment;
+        if (m_samples > 1) {
+            gpu::TextureDesc md = cd;
+            md.usage   = gpu::TextureUsage::RenderTarget;
             md.samples = m_samples;
             md.name    = "fizmo reflection (msaa)";
-            t.msaa = std::make_unique<vulkan::Image>();
+            t.msaa = std::make_unique<gpu::Texture>();
             if (failed(t.msaa->create(m_device, md))) { t.color.reset(); t.msaa.reset(); return nullptr; }
         }
 
-        vulkan::ImageDesc dd;
+        gpu::TextureDesc dd;
         dd.extent  = { w, h, 1 };
         dd.format  = m_depth_format;
-        dd.usage   = vulkan::ImageUsage::DepthAttachment;
+        dd.usage   = gpu::TextureUsage::DepthStencil;
         dd.samples = m_samples;
         dd.name    = "fizmo reflection depth";
-        t.depth = std::make_unique<vulkan::Image>();
+        t.depth = std::make_unique<gpu::Texture>();
         if (failed(t.depth->create(m_device, dd))) { t.color.reset(); t.msaa.reset(); t.depth.reset(); return nullptr; }
         return &t;
     }
 
     void record_reflection_pass(
-        const vulkan::CommandBuffer& cmd, 
+        gpu::CommandList& cmd, 
         PerFrame& pf, 
         const SceneRec& sc, 
         std::size_t scene, 
@@ -4355,40 +4879,36 @@ private:
         const int x1 = std::min(static_cast<int>(std::ceil(area[2] * scale)), ax1);
         const int y1 = std::min(static_cast<int>(std::ceil(area[3] * scale)), ay1);
         if (x1 <= x0 || y1 <= y0) return;
-        cmd.begin_label("fizmo planar reflection");
-        if (t.msaa) cmd.transition(*t.msaa, vulkan::ImageLayout::ColorAttachment);
-        cmd.transition(*t.color, vulkan::ImageLayout::ColorAttachment);
-        cmd.transition(*t.depth, vulkan::ImageLayout::DepthAttachment);
-        vulkan::ColorAttachment color;
-        color.view    = t.msaa ? &t.msaa->view() : &t.color->view();
-        color.resolve = t.msaa ? &t.color->view() : nullptr;
-        color.load    = vulkan::LoadOp::Clear;
-        color.store   = vulkan::StoreOp::Store;
+        cmd.push_label("fizmo planar reflection");
+        gpu::ColorTarget color;
+        color.texture = t.msaa ? t.msaa.get() : t.color.get();
+        color.resolve = t.msaa ? t.color.get() : nullptr;
+        color.load    = gpu::LoadOp::Clear;
+        color.store   = gpu::StoreOp::Store;
         color.clear   = m_clear_color;
-        vulkan::DepthAttachment depth;
-        depth.view        = &t.depth->view();
-        depth.load        = vulkan::LoadOp::Clear;
-        depth.store       = vulkan::StoreOp::DontCare;
-        depth.clear       = vulkan::ClearDepth{ 1.0f, 0 };
-        depth.has_stencil = vulkan::has_stencil(m_depth_format);
-        vulkan::RenderingDesc rd;
+        gpu::DepthTarget depth;
+        depth.texture     = t.depth.get();
+        depth.load        = gpu::LoadOp::Clear;
+        depth.store       = gpu::StoreOp::DontCare;
+        depth.clear_depth = 1.0f;
+        gpu::RenderPassDesc rd;
         rd.area   = { { ax0, ay0 }, { static_cast<std::uint32_t>(ax1 - ax0), static_cast<std::uint32_t>(ay1 - ay0) } };
         rd.colors = color;
         rd.depth  = &depth;
-        cmd.begin_rendering(rd);
+        cmd.begin_render_pass(rd);
         cmd.set_viewport({ sx, sy, sw, sh, 0.0f, 1.0f });
         cmd.set_scissor({ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } });
-        const vulkan::DescriptorSet lighting = scene_descriptor(pf, scene, false, static_cast<int>(plane));
+        const gpu::BindGroup lighting = scene_descriptor(pf, scene, false, static_cast<int>(plane));
 
         if (lighting.valid()) {
             const Mat4f vpr = oblique_clip(reflected_view_proj(scene, plane), sl.planes[plane]);
-            const vulkan::Pipeline* bound = nullptr;
+            const gpu::RenderPipeline* bound = nullptr;
 
             if (sl.sky) {
-                if (const vulkan::Pipeline* sky = sky_pipeline()) {
-                    cmd.bind(*sky);
+                if (const gpu::RenderPipeline* sky = sky_pipeline()) {
+                    cmd.set_pipeline(*sky);
                     bound = sky;
-                    cmd.bind_descriptor_set(*sky, 1, lighting);
+                    cmd.set_bind_group(1, lighting);
                     cmd.draw(kSkyVertices);
                 }
             }
@@ -4399,13 +4919,13 @@ private:
             for (std::size_t i = from; i < to; ++i) {
                 const Draw3D& d = m_draws3d[i];
                 if (d.count == 0 || !d.in_reflections || d.kind == DrawKind3D::Lines) continue;
-                const vulkan::Pipeline* p = pipeline_3d(mirrored_state(d.state));
+                const gpu::RenderPipeline* p = pipeline_3d(mirrored_state(d.state));
                 if (!p) continue;
-                const vulkan::DescriptorSet set = descriptor_for(pf, d.view, d.sampler, sets);
+                const gpu::BindGroup set = descriptor_for(pf, d.view, d.sampler, sets);
                 if (!set.valid()) continue;
-                if (p != bound) { cmd.bind(*p); bound = p; }
-                if (!lighting_bound) { cmd.bind_descriptor_set(*p, 1, lighting); lighting_bound = true; }
-                cmd.bind_descriptor_set(*p, 0, set);
+                if (p != bound) { cmd.set_pipeline(*p); bound = p; }
+                if (!lighting_bound) { cmd.set_bind_group(1, lighting); lighting_bound = true; }
+                cmd.set_bind_group(0, set);
                 std::copy(d.push, d.push + 32, push);
 
                 if (d.kind == DrawKind3D::Batch) {
@@ -4417,42 +4937,38 @@ private:
                     std::copy(mvp.begin(), mvp.end(), push);
                 }
 
-                cmd.push_constants(*p, vulkan::ShaderStage::Vertex, push, 128);
+                cmd.push_constants(push, 128);
                 issue_draw(cmd, pf, d);
             }
         }
 
-        cmd.end_rendering();
-        cmd.transition(*t.color, vulkan::ImageLayout::ShaderReadOnly);
-        cmd.end_label();
+        cmd.end_render_pass();
+        cmd.pop_label();
     }
 
-    void record_3d_pass(const vulkan::CommandBuffer& cmd, PerFrame& pf, const SceneRec& sc, std::size_t scene, std::size_t from, std::size_t to, bool clear, DescriptorCache& sets) {
+    void record_3d_pass(gpu::CommandList& cmd, PerFrame& pf, const SceneRec& sc, std::size_t scene, std::size_t from, std::size_t to, bool clear, DescriptorCache& sets) {
         const int x0 = std::max(sc.scene.x, 0), y0 = std::max(sc.scene.y, 0);
         const int x1 = std::min(sc.scene.x + static_cast<int>(sc.scene.width),  static_cast<int>(m_width));
         const int y1 = std::min(sc.scene.y + static_cast<int>(sc.scene.height), static_cast<int>(m_height));
         if ((x1 <= x0 || y1 <= y0 || from >= to) && !clear && !m_scene_lights[scene].sky) return;
         const SceneLightRec& sl = m_scene_lights[scene];
         const bool splits = sl.copy && sl.copy_at >= from && sl.copy_at <= to && x1 > x0 && y1 > y0;
-        const vulkan::Rect2D whole{ { 0, 0 }, { m_width, m_height } };
-        const vulkan::Rect2D drawn = x1 > x0 && y1 > y0 ? vulkan::Rect2D{ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } } : whole;
-        cmd.transition(m_depth, vulkan::ImageLayout::DepthAttachment);
-        if (splits && m_msaa_target.valid()) prepare_depth_resolve(cmd);
+        const gpu::Rect2D whole{ { 0, 0 }, { m_width, m_height } };
+        const gpu::Rect2D drawn = x1 > x0 && y1 > y0 ? gpu::Rect2D{ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } } : whole;
 
         auto open = [&](bool first) {
-            const vulkan::ColorAttachment color = color_attachment(first && clear);
-            vulkan::DepthAttachment depth;
-            depth.view        = &m_depth.view();
-            depth.load        = first ? vulkan::LoadOp::Clear : vulkan::LoadOp::Load;
-            depth.store       = first && splits ? vulkan::StoreOp::Store : vulkan::StoreOp::DontCare;
-            depth.clear       = vulkan::ClearDepth{ 1.0f, 0 };
-            depth.has_stencil = vulkan::has_stencil(m_depth_format);
-            depth.resolve     = first && splits && m_msaa_target.valid() ? &m_scene_depth.view() : nullptr;
-            vulkan::RenderingDesc rd;
+            const gpu::ColorTarget color = color_target(first && clear, first && splits);
+            gpu::DepthTarget depth;
+            depth.texture     = &m_depth;
+            depth.load        = first ? gpu::LoadOp::Clear : gpu::LoadOp::Load;
+            depth.store       = first && splits ? gpu::StoreOp::Store : gpu::StoreOp::DontCare;
+            depth.clear_depth = 1.0f;
+            depth.resolve     = first && splits && m_msaa_target.valid() ? &m_scene_depth : nullptr;
+            gpu::RenderPassDesc rd;
             rd.area   = first && clear ? whole : drawn;
             rd.colors = color;
             rd.depth  = &depth;
-            cmd.begin_rendering(rd);
+            cmd.begin_render_pass(rd);
             if (x1 <= x0 || y1 <= y0) return;
             cmd.set_viewport({ static_cast<float>(sc.scene.x), static_cast<float>(sc.scene.y),
                                static_cast<float>(sc.scene.width), static_cast<float>(sc.scene.height), 0.0f, 1.0f });
@@ -4462,18 +4978,18 @@ private:
         open(true);
 
         if (x1 > x0 && y1 > y0) {
-            const vulkan::Pipeline* bound = nullptr;
-            vulkan::DescriptorSet lighting;
+            const gpu::RenderPipeline* bound = nullptr;
+            gpu::BindGroup lighting;
             bool lighting_bound = false;
 
             if (m_scene_lights[scene].sky) {
-                const vulkan::Pipeline* sky = sky_pipeline();
+                const gpu::RenderPipeline* sky = sky_pipeline();
                 if (sky) lighting = scene_descriptor(pf, scene);
 
                 if (sky && lighting.valid()) {
-                    cmd.bind(*sky);
+                    cmd.set_pipeline(*sky);
                     bound = sky;
-                    cmd.bind_descriptor_set(*sky, 1, lighting);
+                    cmd.set_bind_group(1, lighting);
                     lighting_bound = true;
                     cmd.draw(kSkyVertices);
                 }
@@ -4483,7 +4999,7 @@ private:
                 const Draw3D& d = m_draws3d[i];
 
                 if (splits && i == sl.copy_at) {
-                    cmd.end_rendering();
+                    cmd.end_render_pass();
                     copy_scene(cmd, drawn);
                     open(false);
                     bound = nullptr;
@@ -4492,18 +5008,18 @@ private:
                 }
 
                 if (d.count == 0 || !d.on_camera) continue;
-                const vulkan::Pipeline* p = pipeline_3d(d.state);
+                const gpu::RenderPipeline* p = pipeline_3d(d.state);
                 if (!p) continue;
-                if (p != bound) { cmd.bind(*p); bound = p; }
+                if (p != bound) { cmd.set_pipeline(*p); bound = p; }
 
                 if (d.kind == DrawKind3D::Lines) {
-                    cmd.push_constants(*p, vulkan::ShaderStage::Vertex, d.push, 80);
-                    cmd.bind_vertex_buffer(0, pf.lines3d);
+                    cmd.push_constants(d.push, 80);
+                    cmd.set_vertex_buffer(0, pf.lines3d);
                     cmd.draw(d.count, 1, d.first);
                     continue;
                 }
 
-                const vulkan::DescriptorSet set = descriptor_for(pf, d.view, d.sampler, sets);
+                const gpu::BindGroup set = descriptor_for(pf, d.view, d.sampler, sets);
                 if (!set.valid()) continue;
 
                 if (!lighting.valid()) {
@@ -4513,73 +5029,43 @@ private:
                 }
 
                 if (!lighting_bound) {
-                    cmd.bind_descriptor_set(*p, 1, lighting);
+                    cmd.set_bind_group(1, lighting);
                     lighting_bound = true;
                 }
 
-                cmd.bind_descriptor_set(*p, 0, set);
-                cmd.push_constants(*p, vulkan::ShaderStage::Vertex, d.push, 128);
+                cmd.set_bind_group(0, set);
+                cmd.push_constants(d.push, 128);
                 issue_draw(cmd, pf, d);
             }
 
             if (splits && sl.copy_at == to) {
-                cmd.end_rendering();
+                cmd.end_render_pass();
                 copy_scene(cmd, drawn);
                 open(false);
                 lighting = scene_descriptor(pf, scene, true);
             }
 
-            const vulkan::Pipeline* rays = splits && sl.wants_rays ? rays_pipeline() : nullptr;
+            const gpu::RenderPipeline* rays = splits && sl.wants_rays ? rays_pipeline() : nullptr;
 
             if (rays && lighting.valid()) {
-                cmd.bind(*rays);
-                cmd.bind_descriptor_set(*rays, 1, lighting);
+                cmd.set_pipeline(*rays);
+                cmd.set_bind_group(1, lighting);
                 cmd.draw(kSkyVertices);
             }
         }
 
-        cmd.end_rendering();
+        cmd.end_render_pass();
     }
 
-    void record_present(
-        const vulkan::CommandBuffer& cmd, 
-        const vulkan::Frame& f, 
-        const vulkan::DescriptorSet& present_set
-    ) {
-        const bool same_size = f.extent.width == m_width && f.extent.height == m_height;
-        vulkan::DescriptorWriter().image(0, m_target.view(), m_samplers[same_size ? NearestClamp : LinearClamp]).update(present_set);
-        vulkan::ColorAttachment out;
-        out.view = f.target_view;
-        out.load = vulkan::LoadOp::DontCare;
-        cmd.begin_rendering({ { { 0, 0 }, f.extent }, out });
-        cmd.bind(m_present_pipeline);
-        cmd.set_viewport_and_scissor(f.extent);
-        cmd.bind_descriptor_set(m_present_pipeline, 0, present_set);
-        cmd.draw(3);
-        cmd.end_rendering();
-    }
-
-    void record_uploads(const vulkan::CommandBuffer& cmd, PerFrame& pf) {
+    void record_uploads(gpu::CommandList& cmd, PerFrame& pf) {
         for (const Upload& u : m_uploads) {
-            cmd.transition(*u.image, vulkan::ImageLayout::TransferDst);
-            cmd.copy_buffer_to_image_region(pf.staging, *u.image, u.offset, u.at, u.size);
+            gpu::TextureRegion region;
+            region.origin = { u.at.x, u.at.y, 0 };
+            region.extent = { u.size.width, u.size.height, 1 };
+            cmd.copy_buffer_to_texture(pf.staging, u.offset, 0, *u.image, region);
         }
 
-        for (const Upload& u : m_uploads) cmd.transition(*u.image, vulkan::ImageLayout::ShaderReadOnly);
-        
-        if (!m_buffer_uploads.empty()) {
-            cmd.memory_barrier(
-                vulkan::PipelineStage::VertexInput, vulkan::Access::VertexRead | vulkan::Access::IndexRead,
-                vulkan::PipelineStage::Transfer, vulkan::Access::TransferWrite
-            );
-        }
-
-        for (const BufferUpload& u : m_buffer_uploads) cmd.copy_buffer(pf.staging, *u.dst, u.bytes, u.offset, u.dst_offset);
-
-        if (!m_buffer_uploads.empty()) {
-            cmd.memory_barrier(vulkan::PipelineStage::Transfer, vulkan::Access::TransferWrite,
-                               vulkan::PipelineStage::VertexInput, vulkan::Access::VertexRead | vulkan::Access::IndexRead);
-        }
+        for (const BufferUpload& u : m_buffer_uploads) cmd.copy_buffer(pf.staging, u.offset, *u.dst, u.dst_offset, u.bytes);
     }
 
     void collect_timings(PerFrame& pf) {
@@ -4587,29 +5073,30 @@ private:
         pf.stamps_used = 0;
         if (used == 0 || !pf.timestamps.valid()) return;
         m_stamp_values.resize(used);
-        if (!pf.timestamps.read(0, used, m_stamp_values.data())) return;
+        if (!m_device.read_timestamps(pf.timestamps, 0, used, m_stamp_values.data())) return;
         GpuTimings t;
         t.valid = true;
+        constexpr double kNanosecondsPerMs = 1e6;
 
         for (const auto& span : pf.spans) {
             const std::uint64_t a = m_stamp_values[span.second], b = m_stamp_values[span.second + 1];
-            if (b > a) t.pass_ms[static_cast<std::size_t>(span.first)] += pf.timestamps.ticks_to_ms(b - a);
+            if (b > a) t.pass_ms[static_cast<std::size_t>(span.first)] += static_cast<double>(b - a) / kNanosecondsPerMs;
         }
 
-        if (m_stamp_values[used - 1] > m_stamp_values[0]) t.total_ms = pf.timestamps.ticks_to_ms(m_stamp_values[used - 1] - m_stamp_values[0]);
+        if (m_stamp_values[used - 1] > m_stamp_values[0]) t.total_ms = static_cast<double>(m_stamp_values[used - 1] - m_stamp_values[0]) / kNanosecondsPerMs;
         m_timings = t;
     }
 
-    void start_timings(const vulkan::CommandBuffer& cmd, PerFrame& pf) {
+    void start_timings(gpu::CommandList& cmd, PerFrame& pf) {
         pf.spans.clear();
         pf.stamps_used = 0;
         if (!m_gpu_timing) return;
         if (!pf.timestamps.valid() && failed(pf.timestamps.create(m_device, kMaxTimestamps, "fizmo gpu timings"))) return;
-        cmd.reset_timestamps(pf.timestamps, 0, kMaxTimestamps);
+        cmd.reset_queries(pf.timestamps, 0, kMaxTimestamps);
     }
 
     template <typename Body>
-    void timed(const vulkan::CommandBuffer& cmd, PerFrame& pf, GpuPass pass, Body&& body) {
+    void timed(gpu::CommandList& cmd, PerFrame& pf, GpuPass pass, Body&& body) {
         if (!m_gpu_timing || !pf.timestamps.valid() || pf.stamps_used + 2 > kMaxTimestamps) { body(); return; }
         const std::uint32_t first = pf.stamps_used;
         pf.stamps_used += 2;
@@ -4619,13 +5106,12 @@ private:
         pf.spans.emplace_back(pass, first);
     }
 
-    void record_frame(vulkan::Frame& f) {
+    bool record_frame(PerFrame& pf) {
         collect_garbage();
-        PerFrame& pf = m_per_frame[f.frame_index];
-        pf.pool.reset();
         pf.scene_sets.clear();
         collect_timings(pf);
-        const vulkan::CommandBuffer& cmd = f.cmd;
+        gpu::CommandList& cmd = m_cmd;
+        cmd.clear();
         start_timings(cmd, pf);
 
         for (AtlasPage& pg : m_atlas) {
@@ -4656,46 +5142,14 @@ private:
             m_uploads.push_back({ &pf.ramp, off, { 0, 0 }, { 256, m_ramp_used } });
         }
 
-        if (!m_staging.empty()) {
-            if (!ensure_buffer(m_device, pf.staging, m_staging.size(), vulkan::BufferUsage::TransferSrc, "fizmo staging")) return;
-            pf.staging.write(m_staging.data(), m_staging.size());
-        }
-
-        if (!m_vertices.empty()) {
-            const std::uint64_t bytes = m_vertices.size() * sizeof(gpu::Vertex);
-            if (!ensure_buffer(m_device, pf.vertices, bytes, vulkan::BufferUsage::Vertex, "fizmo vertices")) return;
-            pf.vertices.write(m_vertices.data(), bytes);
-        }
-
-        if (!m_vertices3d.empty()) {
-            const std::uint64_t bytes = m_vertices3d.size() * sizeof(graphics::Vertex3D);
-            if (!ensure_buffer(m_device, pf.vertices3d, bytes, vulkan::BufferUsage::Vertex, "fizmo 3d vertices")) return;
-            pf.vertices3d.write(m_vertices3d.data(), bytes);
-        }
-
-        if (!m_batch_instances.empty()) {
-            const std::uint64_t bytes = m_batch_instances.size() * sizeof(BatchInstance);
-            if (!ensure_buffer(m_device, pf.batch_instances, bytes, vulkan::BufferUsage::Vertex, "fizmo batch instances")) return;
-            pf.batch_instances.write(m_batch_instances.data(), bytes);
-        }
-
-        if (!m_batch_commands.empty() && m_multi_draw) {
-            const std::uint64_t bytes = m_batch_commands.size() * sizeof(IndirectCommand);
-            if (!ensure_buffer(m_device, pf.batch_commands, bytes, vulkan::BufferUsage::Indirect, "fizmo batch commands")) return;
-            pf.batch_commands.write(m_batch_commands.data(), bytes);
-        }
-
-        if (!m_instances3d.empty()) {
-            const std::uint64_t bytes = m_instances3d.size() * sizeof(graphics::Instance3D);
-            if (!ensure_buffer(m_device, pf.instances3d, bytes, vulkan::BufferUsage::Vertex, "fizmo 3d instances")) return;
-            pf.instances3d.write(m_instances3d.data(), bytes);
-        }
-
-        if (!m_lines3d.empty()) {
-            const std::uint64_t bytes = m_lines3d.size() * sizeof(gpu::LineVertex3D);
-            if (!ensure_buffer(m_device, pf.lines3d, bytes, vulkan::BufferUsage::Vertex, "fizmo 3d lines")) return;
-            pf.lines3d.write(m_lines3d.data(), bytes);
-        }
+        if (!m_staging.empty() && !stream(pf.staging, m_staging.data(), m_staging.size(), gpu::BufferUsage::CopySrc, "fizmo staging")) return false;
+        if (!m_vertices.empty() && !stream(pf.vertices, m_vertices.data(), m_vertices.size() * sizeof(gfx::Vertex), gpu::BufferUsage::Vertex, "fizmo vertices")) return false;
+        if (!m_sprites.empty() && !stream(pf.sprites, m_sprites.data(), m_sprites.size() * sizeof(SpriteGpu), gpu::BufferUsage::Vertex, "fizmo sprites")) return false;
+        if (!m_vertices3d.empty() && !stream(pf.vertices3d, m_vertices3d.data(), m_vertices3d.size() * sizeof(graphics::Vertex3D), gpu::BufferUsage::Vertex, "fizmo 3d vertices")) return false;
+        if (!m_batch_instances.empty() && !stream(pf.batch_instances, m_batch_instances.data(), m_batch_instances.size() * sizeof(BatchInstance), gpu::BufferUsage::Vertex, "fizmo batch instances")) return false;
+        if (!m_batch_commands.empty() && m_multi_draw && !stream(pf.batch_commands, m_batch_commands.data(), m_batch_commands.size() * sizeof(IndirectCommand), gpu::BufferUsage::Indirect, "fizmo batch commands")) return false;
+        if (!m_instances3d.empty() && !stream(pf.instances3d, m_instances3d.data(), m_instances3d.size() * sizeof(graphics::Instance3D), gpu::BufferUsage::Vertex, "fizmo 3d instances")) return false;
+        if (!m_lines3d.empty() && !stream(pf.lines3d, m_lines3d.data(), m_lines3d.size() * sizeof(gfx::LineVertex3D), gpu::BufferUsage::Vertex, "fizmo 3d lines")) return false;
 
         if (!m_scene_lights.empty()) {
             prepare_shadow_maps();
@@ -4714,46 +5168,37 @@ private:
                 }
             }
 
-            if (!ensure_buffer(m_device, pf.scene_uniforms, m_uniform_bytes.size(), vulkan::BufferUsage::Uniform, "fizmo scene lighting")) return;
-            pf.scene_uniforms.write(m_uniform_bytes.data(), m_uniform_bytes.size());
+            if (!stream(pf.scene_uniforms, m_uniform_bytes.data(), m_uniform_bytes.size(), gpu::BufferUsage::Uniform, "fizmo scene lighting")) return false;
         }
 
-        cmd.begin_label("fizmo uploads");
+        cmd.push_label("fizmo uploads");
         timed(cmd, pf, GpuPass::Uploads, [&]() { record_uploads(cmd, pf); });
         m_uploads_committed = true;
         commit_handle_uploads();
-        cmd.end_label();
+        cmd.pop_label();
         const bool must_clear = m_clear_pending || m_target_fresh;
+        DescriptorCache target_sets;
+        run_user_passes(cmd, GpuPassStage::BeforeTargets);
+
+        if (!m_target_order.empty()) {
+            cmd.push_label("fizmo render targets");
+            timed(cmd, pf, GpuPass::Overlay, [&]() { for (std::uint64_t id : m_target_order) record_target_pass(cmd, pf, id, target_sets); });
+            cmd.pop_label();
+        }
+
+        run_user_passes(cmd, GpuPassStage::AfterTargets);
 
         if (must_clear || !m_batches.empty() || !m_scenes.empty()) {
-            cmd.begin_label("fizmo draw");
-            cmd.transition(m_target, vulkan::ImageLayout::ColorAttachment);
-            if (m_msaa_target.valid()) cmd.transition(m_msaa_target, vulkan::ImageLayout::ColorAttachment);
+            cmd.push_label("fizmo draw");
             DescriptorCache sets;
             bool clear_next = must_clear;
-            bool had_pass = false;
             std::size_t next_batch = 0;
-
-            auto between_passes = [&]() {
-                if (had_pass) {
-                    cmd.memory_barrier(
-                        vulkan::PipelineStage::ColorAttachmentOutput | vulkan::PipelineStage::LateFragmentTests,
-                        vulkan::Access::ColorAttachmentWrite | vulkan::Access::DepthAttachmentWrite,
-                        vulkan::PipelineStage::ColorAttachmentOutput | vulkan::PipelineStage::EarlyFragmentTests,
-                        vulkan::Access::ColorAttachmentRead | vulkan::Access::ColorAttachmentWrite |
-                        vulkan::Access::DepthAttachmentRead | vulkan::Access::DepthAttachmentWrite
-                    );
-                }
-
-                had_pass = true;
-            };
 
             for (std::size_t si = 0; si <= m_scenes.size(); ++si) {
                 const bool last = si == m_scenes.size();
                 const std::size_t upto = last ? m_batches.size() : std::min(m_scenes[si].batch_index, m_batches.size());
 
                 if (upto > next_batch || (last && clear_next)) {
-                    between_passes();
                     timed(cmd, pf, GpuPass::Overlay, [&]() { record_2d_pass(cmd, pf, next_batch, upto, clear_next, sets); });
                     clear_next = false;
                 }
@@ -4769,28 +5214,18 @@ private:
                     for (std::uint32_t k = 0; k < m_scene_lights[si].plane_count; ++k) record_reflection_pass(cmd, pf, m_scenes[si], si, k, m_scenes[si].first_draw, draw_end, sets);
                 });
 
-                between_passes();
                 timed(cmd, pf, GpuPass::Scene, [&]() { record_3d_pass(cmd, pf, m_scenes[si], si, m_scenes[si].first_draw, draw_end, clear_next, sets); });
-                timed(cmd, pf, GpuPass::Upscale, [&]() { record_upscale(cmd, pf, m_scenes[si]); });
+                timed(cmd, pf, GpuPass::Upscale, [&]() { record_upscale(cmd, m_scenes[si]); });
                 clear_next = false;
             }
 
-            cmd.end_label();
+            resolve_target(cmd);
+            cmd.pop_label();
             m_target_fresh = false;
         }
 
-        cmd.transition(m_target, vulkan::ImageLayout::ShaderReadOnly);
-        cmd.begin_label("fizmo present");
-        vulkan::DescriptorSet present_set;
-
-        if (
-            succeeded(pf.pool.allocate(m_present_set_layout, present_set))
-        ) timed(
-            cmd, pf, GpuPass::Present, 
-            [&]() { record_present(cmd, f, present_set); }
-        );
-        
-        cmd.end_label();
+        run_user_passes(cmd, GpuPassStage::AfterScene);
+        return true;
     }
 };
 

@@ -1,7 +1,6 @@
 #ifndef FIZMO_CAMERA2D_HPP
 #define FIZMO_CAMERA2D_HPP
 
-#include "canvas.hpp"
 #include "../Matrices/square_matrices.hpp"
 #include <cmath>
 #include <utility>
@@ -82,14 +81,6 @@ public:
         };
     }
 
-    void begin(Canvas& canvas) const noexcept {
-        canvas.save();
-        canvas.set_transform(view_matrix());
-    }
-
-    void end(Canvas& canvas) const noexcept { canvas.restore(); }
-    void apply(Canvas& canvas) const noexcept { canvas.set_transform(view_matrix()); }
-
     struct AABB {
         double min_x, min_y, max_x, max_y;
         double width()  const noexcept { return max_x - min_x; }
@@ -99,8 +90,6 @@ public:
 
     AABB visible_bounds() const noexcept {
         rebuild_if_dirty();
-        double hw = m_vp_w * 0.5;
-        double hh = m_vp_h * 0.5;
         auto [x0, y0] = screen_to_world(0.0,    0.0);
         auto [x1, y1] = screen_to_world(m_vp_w, 0.0);
         auto [x2, y2] = screen_to_world(m_vp_w, m_vp_h);

@@ -291,7 +291,7 @@ private:
     std::uint8_t m_alpha;
 };
 
-Color random_color(unsigned int num_draws = 1, std::uint8_t alpha = 255) noexcept {
+inline Color random_color(unsigned int num_draws = 1, std::uint8_t alpha = 255) noexcept {
     if (num_draws == 0) { num_draws = random_int_nothrow<unsigned int>(1u); }
     std::uint8_t r = 0;
     std::uint8_t g = 0;

@@ -6,7 +6,7 @@
 namespace fizmo {
 namespace images {
 
-BitmapImage invert(const BitmapImage& source) noexcept {
+inline BitmapImage invert(const BitmapImage& source) noexcept {
     BitmapImage result(source.width(), source.height());
     
     for (unsigned int y = 0; y < source.height(); y++) {
@@ -26,11 +26,11 @@ BitmapImage invert(const BitmapImage& source) noexcept {
     return result;
 }
 
-void invert_original(BitmapImage& source) noexcept {
+inline void invert_original(BitmapImage& source) noexcept {
     source = invert(source);
 }
 
-BitmapImage invert(
+inline BitmapImage invert(
     const BitmapImage& source, 
     unsigned int x1, unsigned int y1, 
     unsigned int x2, unsigned int y2
@@ -61,7 +61,7 @@ BitmapImage invert(
     return result;
 }
 
-void invert_original(
+inline void invert_original(
     BitmapImage& source, 
     const unsigned int x1, const unsigned int y1, 
     const unsigned int x2, const unsigned int y2
@@ -69,7 +69,7 @@ void invert_original(
     source = invert(source, x1, y1, x2, y2);
 }
 
-BitmapImage invert_partial(const BitmapImage& source, const double percentage) noexcept {
+inline BitmapImage invert_partial(const BitmapImage& source, const double percentage) noexcept {
     double factor = percentage;
     fizmo::clamp_value(factor, 0.0, 100.0);
     factor /= 100.0;
@@ -91,11 +91,11 @@ BitmapImage invert_partial(const BitmapImage& source, const double percentage) n
     return result;
 }
 
-void invert_partial_original(BitmapImage& source, const double percentage) noexcept {
+inline void invert_partial_original(BitmapImage& source, const double percentage) noexcept {
     source = invert_partial(source, percentage);
 }
 
-BitmapImage invert_partial(
+inline BitmapImage invert_partial(
     const BitmapImage& source, 
     unsigned int x1, unsigned int y1, 
     unsigned int x2, unsigned int y2,
@@ -128,7 +128,7 @@ BitmapImage invert_partial(
     return result;
 }
 
-void invert_partial_original(
+inline void invert_partial_original(
     BitmapImage& source, 
     const unsigned int x1, const unsigned int y1, 
     const unsigned int x2, const unsigned int y2, 
@@ -137,7 +137,7 @@ void invert_partial_original(
     source = invert_partial(source, x1, y1, x2, y2, percentage);
 }
 
-BitmapImage invert_channels(const BitmapImage& source, const bool invert_red, const bool invert_green, const bool invert_blue) noexcept {
+inline BitmapImage invert_channels(const BitmapImage& source, const bool invert_red, const bool invert_green, const bool invert_blue) noexcept {
     BitmapImage result(source.width(), source.height());
     
     for (unsigned int y = 0; y < source.height(); y++) {
@@ -153,11 +153,11 @@ BitmapImage invert_channels(const BitmapImage& source, const bool invert_red, co
     return result;
 }
 
-void invert_channels_original(BitmapImage& source, const bool invert_red, const bool invert_green, const bool invert_blue) noexcept {
+inline void invert_channels_original(BitmapImage& source, const bool invert_red, const bool invert_green, const bool invert_blue) noexcept {
     source = invert_channels(source, invert_red, invert_green, invert_blue);
 }
 
-BitmapImage invert_channels(
+inline BitmapImage invert_channels(
     const BitmapImage& source, 
     unsigned int x1, unsigned int y1, 
     unsigned int x2, unsigned int y2,
@@ -184,7 +184,7 @@ BitmapImage invert_channels(
     return result;
 }
 
-void invert_channels_original(
+inline void invert_channels_original(
     BitmapImage& source, 
     const unsigned int x1, const unsigned int y1, 
     const unsigned int x2, const unsigned int y2, 
@@ -193,7 +193,7 @@ void invert_channels_original(
     source = invert_channels(source, x1, y1, x2, y2, invert_red, invert_green, invert_blue);
 }
 
-BitmapImage invert_channels_partial(
+inline BitmapImage invert_channels_partial(
     const BitmapImage& source,
     const double red_percentage,
     const double green_percentage,
@@ -220,7 +220,7 @@ BitmapImage invert_channels_partial(
     return result;
 }
 
-void invert_channels_partial_original(
+inline void invert_channels_partial_original(
     BitmapImage& source,
     const double red_percentage,
     const double green_percentage,
@@ -229,7 +229,7 @@ void invert_channels_partial_original(
     source = invert_channels_partial(source, red_percentage, green_percentage, blue_percentage);
 }
 
-BitmapImage invert_channels_partial(
+inline BitmapImage invert_channels_partial(
     const BitmapImage& source,
     unsigned int x1, unsigned int y1,
     unsigned int x2, unsigned int y2,
@@ -264,7 +264,7 @@ BitmapImage invert_channels_partial(
     return result;
 }
 
-void invert_channels_partial_original(
+inline void invert_channels_partial_original(
     BitmapImage& source,
     const unsigned int x1, const unsigned int y1,
     const unsigned int x2, const unsigned int y2,

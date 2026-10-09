@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.1.34
+    VERSION 0.1.35
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -21,6 +21,24 @@ target_compile_features(fizmo INTERFACE cxx_std_17)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoDependencies.cmake)
 target_link_libraries(fizmo INTERFACE ${FIZMO_DEPENDENCY_TARGETS})
+
+option(FIZMO_BUILD_TOOLS "Build the fizmo command line tools" OFF)
+if(FIZMO_BUILD_TOOLS)
+    add_subdirectory(tools/mathtext)
+endif()
+
+option(FIZMO_BUILD_TEST "Build test.cpp as fizmo-test" OFF)
+if(FIZMO_BUILD_TEST)
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/test.cpp)
+        add_executable(fizmo-test tests/test.cpp)
+    else()
+        add_executable(fizmo-test test.cpp)
+    endif()
+    target_link_libraries(fizmo-test PRIVATE fizmo::fizmo)
+    target_compile_definitions(fizmo-test PRIVATE
+        FIZMO_MATH_EXAMPLE="${CMAKE_CURRENT_SOURCE_DIR}/examples/example.math"
+        FIZMO_OUTPUT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/output")
+endif()
 
 if(PROJECT_IS_TOP_LEVEL OR CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     include(GNUInstallDirs)

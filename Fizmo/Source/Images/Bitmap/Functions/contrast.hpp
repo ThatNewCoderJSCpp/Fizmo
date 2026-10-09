@@ -8,7 +8,7 @@
 namespace fizmo {
 namespace images {
 
-BitmapImage adjust_contrast(const BitmapImage& source, double factor) noexcept {
+inline BitmapImage adjust_contrast(const BitmapImage& source, double factor) noexcept {
     BitmapImage result(source.width(), source.height());
     fizmo::clamp_value(factor, 0.0, 1.0);
     const int midpoint = 128;
@@ -26,11 +26,11 @@ BitmapImage adjust_contrast(const BitmapImage& source, double factor) noexcept {
     return result;
 }
 
-void adjust_contrast_original(BitmapImage& source, const double factor) {
+inline void adjust_contrast_original(BitmapImage& source, const double factor) {
     source = adjust_contrast(source, factor);
 }
 
-BitmapImage adjust_contrast(
+inline BitmapImage adjust_contrast(
     const BitmapImage& source, 
     unsigned int x1, unsigned int y1, 
     unsigned int x2, unsigned int y2,
@@ -62,7 +62,7 @@ BitmapImage adjust_contrast(
     return result;
 }
 
-void adjust_contrast_original(
+inline void adjust_contrast_original(
     BitmapImage& source, 
     const unsigned int x1, const unsigned int y1, 
     const unsigned int x2, const unsigned int y2, 

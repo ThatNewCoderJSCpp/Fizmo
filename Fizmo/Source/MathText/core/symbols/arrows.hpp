@@ -1,0 +1,82 @@
+#ifndef FIZMO_MATHTEXT_SYMBOLS_ARROWS_HPP
+#define FIZMO_MATHTEXT_SYMBOLS_ARROWS_HPP
+
+#include "symbol_types.hpp"
+
+namespace fizmo {
+namespace mathtext {
+
+inline constexpr SymbolInfo kArrowSymbols[] = {
+    { { "leftarrow", "gets", "left_arrow", "larr" }, "\xE2\x86\x90", 0x2190, SymbolClass::Arrow },
+    { { "rightarrow", "to", "right_arrow", "rarr" }, "\xE2\x86\x92", 0x2192, SymbolClass::Arrow },
+    { { "uparrow", "up_arrow" }, "\xE2\x86\x91", 0x2191, SymbolClass::Arrow },
+    { { "downarrow", "down_arrow" }, "\xE2\x86\x93", 0x2193, SymbolClass::Arrow },
+    { { "leftrightarrow", "left_right_arrow", "harr" }, "\xE2\x86\x94", 0x2194, SymbolClass::Arrow },
+    { { "updownarrow" }, "\xE2\x86\x95", 0x2195, SymbolClass::Arrow },
+    { { "Leftarrow", "double_left_arrow", "lArr" }, "\xE2\x87\x90", 0x21D0, SymbolClass::Arrow },
+    { { "Rightarrow", "double_right_arrow", "rArr" }, "\xE2\x87\x92", 0x21D2, SymbolClass::Arrow },
+    { { "Uparrow" }, "\xE2\x87\x91", 0x21D1, SymbolClass::Arrow },
+    { { "Downarrow" }, "\xE2\x87\x93", 0x21D3, SymbolClass::Arrow },
+    { { "Leftrightarrow", "double_left_right_arrow", "hArr" }, "\xE2\x87\x94", 0x21D4, SymbolClass::Arrow },
+    { { "Updownarrow" }, "\xE2\x87\x95", 0x21D5, SymbolClass::Arrow },
+    { { "longleftarrow", "long_left_arrow" }, "\xE2\x9F\xB5", 0x27F5, SymbolClass::Arrow },
+    { { "longrightarrow", "long_right_arrow" }, "\xE2\x9F\xB6", 0x27F6, SymbolClass::Arrow },
+    { { "longleftrightarrow" }, "\xE2\x9F\xB7", 0x27F7, SymbolClass::Arrow },
+    { { "Longleftarrow", "impliedby" }, "\xE2\x9F\xB8", 0x27F8, SymbolClass::Arrow },
+    { { "Longrightarrow", "implies" }, "\xE2\x9F\xB9", 0x27F9, SymbolClass::Arrow },
+    { { "Longleftrightarrow", "iff" }, "\xE2\x9F\xBA", 0x27FA, SymbolClass::Arrow },
+    { { "mapsto", "maps_to" }, "\xE2\x86\xA6", 0x21A6, SymbolClass::Arrow },
+    { { "longmapsto", "long_maps_to" }, "\xE2\x9F\xBC", 0x27FC, SymbolClass::Arrow },
+    { { "hookleftarrow" }, "\xE2\x86\xA9", 0x21A9, SymbolClass::Arrow },
+    { { "hookrightarrow", "hook_right_arrow", "injection" }, "\xE2\x86\xAA", 0x21AA, SymbolClass::Arrow },
+    { { "nearrow" }, "\xE2\x86\x97", 0x2197, SymbolClass::Arrow },
+    { { "searrow" }, "\xE2\x86\x98", 0x2198, SymbolClass::Arrow },
+    { { "swarrow" }, "\xE2\x86\x99", 0x2199, SymbolClass::Arrow },
+    { { "nwarrow" }, "\xE2\x86\x96", 0x2196, SymbolClass::Arrow },
+    { { "leftharpoonup" }, "\xE2\x86\xBC", 0x21BC, SymbolClass::Arrow },
+    { { "leftharpoondown" }, "\xE2\x86\xBD", 0x21BD, SymbolClass::Arrow },
+    { { "rightharpoonup" }, "\xE2\x87\x80", 0x21C0, SymbolClass::Arrow },
+    { { "rightharpoondown" }, "\xE2\x87\x81", 0x21C1, SymbolClass::Arrow },
+    { { "upharpoonleft" }, "\xE2\x86\xBF", 0x21BF, SymbolClass::Arrow },
+    { { "upharpoonright" }, "\xE2\x86\xBE", 0x21BE, SymbolClass::Arrow },
+    { { "downharpoonleft" }, "\xE2\x87\x83", 0x21C3, SymbolClass::Arrow },
+    { { "downharpoonright" }, "\xE2\x87\x82", 0x21C2, SymbolClass::Arrow },
+    { { "rightleftharpoons", "equilibrium" }, "\xE2\x87\x8C", 0x21CC, SymbolClass::Arrow },
+    { { "leftrightharpoons" }, "\xE2\x87\x8B", 0x21CB, SymbolClass::Arrow },
+    { { "leftleftarrows" }, "\xE2\x87\x87", 0x21C7, SymbolClass::Arrow },
+    { { "rightrightarrows" }, "\xE2\x87\x89", 0x21C9, SymbolClass::Arrow },
+    { { "leftrightarrows" }, "\xE2\x87\x86", 0x21C6, SymbolClass::Arrow },
+    { { "rightleftarrows" }, "\xE2\x87\x84", 0x21C4, SymbolClass::Arrow },
+    { { "upuparrows" }, "\xE2\x87\x88", 0x21C8, SymbolClass::Arrow },
+    { { "downdownarrows" }, "\xE2\x87\x8A", 0x21CA, SymbolClass::Arrow },
+    { { "Lleftarrow" }, "\xE2\x87\x9A", 0x21DA, SymbolClass::Arrow },
+    { { "Rrightarrow" }, "\xE2\x87\x9B", 0x21DB, SymbolClass::Arrow },
+    { { "twoheadleftarrow" }, "\xE2\x86\x9E", 0x219E, SymbolClass::Arrow },
+    { { "twoheadrightarrow", "two_head_right_arrow", "surjection" }, "\xE2\x86\xA0", 0x21A0, SymbolClass::Arrow },
+    { { "leftarrowtail" }, "\xE2\x86\xA2", 0x21A2, SymbolClass::Arrow },
+    { { "rightarrowtail" }, "\xE2\x86\xA3", 0x21A3, SymbolClass::Arrow },
+    { { "looparrowleft" }, "\xE2\x86\xAB", 0x21AB, SymbolClass::Arrow },
+    { { "looparrowright" }, "\xE2\x86\xAC", 0x21AC, SymbolClass::Arrow },
+    { { "curvearrowleft" }, "\xE2\x86\xB6", 0x21B6, SymbolClass::Arrow },
+    { { "curvearrowright" }, "\xE2\x86\xB7", 0x21B7, SymbolClass::Arrow },
+    { { "circlearrowleft" }, "\xE2\x86\xBA", 0x21BA, SymbolClass::Arrow },
+    { { "circlearrowright" }, "\xE2\x86\xBB", 0x21BB, SymbolClass::Arrow },
+    { { "Lsh" }, "\xE2\x86\xB0", 0x21B0, SymbolClass::Arrow },
+    { { "Rsh" }, "\xE2\x86\xB1", 0x21B1, SymbolClass::Arrow },
+    { { "leftsquigarrow" }, "\xE2\x87\x9C", 0x21DC, SymbolClass::Arrow },
+    { { "rightsquigarrow", "leadsto" }, "\xE2\x87\x9D", 0x21DD, SymbolClass::Arrow },
+    { { "multimap" }, "\xE2\x8A\xB8", 0x22B8, SymbolClass::Arrow },
+    { { "dashleftarrow" }, "\xE2\x87\xA0", 0x21E0, SymbolClass::Arrow },
+    { { "dashrightarrow" }, "\xE2\x87\xA2", 0x21E2, SymbolClass::Arrow },
+    { { "nleftarrow" }, "\xE2\x86\x9A", 0x219A, SymbolClass::Arrow },
+    { { "nrightarrow" }, "\xE2\x86\x9B", 0x219B, SymbolClass::Arrow },
+    { { "nLeftarrow" }, "\xE2\x87\x8D", 0x21CD, SymbolClass::Arrow },
+    { { "nRightarrow" }, "\xE2\x87\x8F", 0x21CF, SymbolClass::Arrow },
+    { { "nleftrightarrow" }, "\xE2\x86\xAE", 0x21AE, SymbolClass::Arrow },
+    { { "nLeftrightarrow" }, "\xE2\x87\x8E", 0x21CE, SymbolClass::Arrow },
+};
+
+} // namespace mathtext
+} // namespace fizmo
+
+#endif // FIZMO_MATHTEXT_SYMBOLS_ARROWS_HPP

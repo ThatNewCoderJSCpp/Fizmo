@@ -35,7 +35,7 @@ enum class CriticalPointType {
     Inconclusive
 };
 
-std::ostream& operator<<(std::ostream& os, CriticalPointType type) {
+inline std::ostream& operator<<(std::ostream& os, CriticalPointType type) {
     switch (type) {
         case CriticalPointType::Min: os << "min"; break;
         case CriticalPointType::Max: os << "max"; break;

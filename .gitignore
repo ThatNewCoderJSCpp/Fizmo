@@ -1,2 +1,6 @@
 **/*.exe
-/build
+**/build
+**/tests
+**/output
+**/todo.txt
+**/examples

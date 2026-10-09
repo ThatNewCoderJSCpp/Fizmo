@@ -191,7 +191,7 @@ struct SymbolicVector3 {
 inline SymbolicVector3 operator*(const cas::Expression& s, const SymbolicVector3& v) { return v * s; }
 inline SymbolicVector3 operator*(double s,                 const SymbolicVector3& v) { return v * s; }
 
-SymbolicVector3 SymbolicVector2::cross(const SymbolicVector2& v) const { return SymbolicVector3(cas::Const(0), cas::Const(0), x * v.y - y * v.x); }
+inline SymbolicVector3 SymbolicVector2::cross(const SymbolicVector2& v) const { return SymbolicVector3(cas::Const(0), cas::Const(0), x * v.y - y * v.x); }
 
 struct SymbolicVector4 {
     cas::Expression x, y, z, w;

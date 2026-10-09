@@ -87,6 +87,38 @@ struct SunShadow3D {
     float        max_softness  = 12.0f;
     unsigned int filter_taps   = 4;
     double       recenter      = 0.125;
+
+    static SunShadow3D off() noexcept { return {}; }
+
+    static SunShadow3D low() noexcept {
+        SunShadow3D s;
+        s.enabled = true; s.resolution = 1024; s.distance = 40.0; s.filter_taps = 2; s.crossfade = false;
+        return s;
+    }
+
+    static SunShadow3D medium() noexcept {
+        SunShadow3D s;
+        s.enabled = true; s.resolution = 2048; s.distance = 64.0;
+        return s;
+    }
+
+    static SunShadow3D high() noexcept {
+        SunShadow3D s;
+        s.enabled = true; s.resolution = 4096; s.distance = 96.0; s.soft = true; s.light_size = 1.5f; s.filter_taps = 5;
+        return s;
+    }
+
+    static SunShadow3D ultra() noexcept {
+        SunShadow3D s;
+        s.enabled = true; s.resolution = 8192; s.distance = 128.0; s.depth_range = 256.0; s.soft = true; s.light_size = 2.0f; s.filter_taps = 6; s.max_softness = 16.0f;
+        return s;
+    }
+
+    static SunShadow3D crisp() noexcept {
+        SunShadow3D s = high();
+        s.soft = false; s.softness = 0.5f;
+        return s;
+    }
 };
 
 struct PointShadows3D {
@@ -102,6 +134,26 @@ struct PointShadows3D {
     float        softness      = 1.0f;
     float        strength      = 1.0f;
     unsigned int moving_faces  = 12;
+
+    static PointShadows3D off() noexcept { return {}; }
+
+    static PointShadows3D low() noexcept {
+        PointShadows3D p;
+        p.enabled = true; p.max_lights = 2; p.resolution = 256; p.moving_faces = 6;
+        return p;
+    }
+
+    static PointShadows3D medium() noexcept {
+        PointShadows3D p;
+        p.enabled = true;
+        return p;
+    }
+
+    static PointShadows3D high() noexcept {
+        PointShadows3D p;
+        p.enabled = true; p.max_lights = MAX_LIGHTS; p.resolution = 1024; p.moving_faces = 24;
+        return p;
+    }
 };
 
 struct CapsuleOccluder3D {
@@ -275,6 +327,95 @@ struct SceneLighting3D {
     std::vector<PointLight3D> point_lights;
 
     static SceneLighting3D off() { return {}; }
+
+    static SceneLighting3D daylight(const SunShadow3D& shadows = SunShadow3D::medium()) {
+        SceneLighting3D l;
+        l.enabled = true;
+        l.sun_direction = { 0.35, 0.2, -1.0 };
+        l.sun_color = Color(255, 244, 222);
+        l.sun_intensity = 0.75f;
+        l.sky_color = Color(200, 215, 240);
+        l.sky_intensity = 0.55f;
+        l.ambient = 0.05f;
+        l.sun_shadow = shadows;
+        l.atmosphere.enabled = true;
+        l.atmosphere.sun_position = { -0.35, -0.2, 1.0 };
+        l.tone_map.enabled = true;
+        return l;
+    }
+
+    static SceneLighting3D golden_hour(const SunShadow3D& shadows = SunShadow3D::high()) {
+        SceneLighting3D l = daylight(shadows);
+        l.sun_direction = { 0.9, 0.25, -0.22 };
+        l.sun_color = Color(255, 190, 120);
+        l.sun_intensity = 0.85f;
+        l.sky_color = Color(255, 200, 170);
+        l.sky_intensity = 0.4f;
+        l.atmosphere.sun_position = { -0.9, -0.25, 0.22 };
+        l.atmosphere.zenith = Color(80, 110, 190);
+        l.atmosphere.horizon = Color(250, 170, 120);
+        l.atmosphere.glow = Color(255, 160, 90);
+        l.atmosphere.glow_strength = 1.0f;
+        return l;
+    }
+
+    static SceneLighting3D overcast() {
+        SceneLighting3D l = daylight(SunShadow3D::off());
+        l.sun_intensity = 0.0f;
+        l.sky_color = Color(225, 228, 232);
+        l.sky_intensity = 0.85f;
+        l.ambient = 0.1f;
+        l.atmosphere.zenith = Color(150, 158, 170);
+        l.atmosphere.horizon = Color(200, 204, 210);
+        l.atmosphere.glow_strength = 0.0f;
+        l.atmosphere.fog_density = 0.01f;
+        return l;
+    }
+
+    static SceneLighting3D night() {
+        SceneLighting3D l = daylight(SunShadow3D::off());
+        l.sun_direction = { -0.3, 0.4, -0.8 };
+        l.sun_color = Color(150, 170, 230);
+        l.sun_intensity = 0.12f;
+        l.sky_color = Color(60, 70, 110);
+        l.sky_intensity = 0.25f;
+        l.min_light = 0.03f;
+        l.atmosphere.sun_position = { 0.3, -0.4, -0.8 };
+        l.atmosphere.moon_position = { 0.3, -0.4, 0.8 };
+        l.atmosphere.zenith = Color(8, 12, 30);
+        l.atmosphere.horizon = Color(25, 32, 60);
+        l.atmosphere.glow_strength = 0.0f;
+        l.atmosphere.stars = 1.0f;
+        l.point_shadows = PointShadows3D::medium();
+        return l;
+    }
+
+    static SceneLighting3D indoor() {
+        SceneLighting3D l;
+        l.enabled = true;
+        l.sun_intensity = 0.0f;
+        l.sky_color = Color(255, 240, 220);
+        l.sky_intensity = 0.25f;
+        l.ambient = 0.08f;
+        l.min_light = 0.05f;
+        l.point_shadows = PointShadows3D::medium();
+        l.tone_map.enabled = true;
+        return l;
+    }
+
+    static SceneLighting3D studio() {
+        SceneLighting3D l;
+        l.enabled = true;
+        l.sun_direction = { -0.4, 0.5, -0.75 };
+        l.sun_color = Color(255, 255, 255);
+        l.sun_intensity = 0.7f;
+        l.sky_color = Color(235, 240, 250);
+        l.sky_intensity = 0.45f;
+        l.ambient = 0.06f;
+        l.sun_shadow = SunShadow3D::high();
+        l.tone_map.enabled = true;
+        return l;
+    }
 };
 
 namespace detail {

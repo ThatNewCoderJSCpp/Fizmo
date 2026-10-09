@@ -235,7 +235,7 @@ constexpr Color::RGBInitializer Color::init_rgb(HSLColor&& hsl) noexcept {
 
 constexpr Color::Color(const HSLColor& hsl, std::uint8_t a) noexcept : m_red(init_rgb(hsl).r), m_green(init_rgb(hsl).g), m_blue(init_rgb(hsl).b), m_alpha(a) {}
 
-OPTIONAL_CPP14_CONSTEXPR Color& Color::operator=(const HSLColor& hsl) noexcept {
+inline OPTIONAL_CPP14_CONSTEXPR Color& Color::operator=(const HSLColor& hsl) noexcept {
     const RGBInitializer init = init_rgb(hsl);
     m_red = init.r;
     m_green = init.g;

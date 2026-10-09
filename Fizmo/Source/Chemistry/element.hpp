@@ -250,7 +250,7 @@ public:
     }
 };
 
-std::ostream& operator<<(std::ostream& os, const Element& element) {
+inline std::ostream& operator<<(std::ostream& os, const Element& element) {
     os << element.name << "-" << element.common_isotope().mass_number();
     return os;
 }

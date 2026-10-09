@@ -7,7 +7,7 @@
 namespace fizmo {
 namespace images {
 
-BitmapImage apply_sepia(const BitmapImage& source, const double intensity_percent = 100.0) noexcept {
+inline BitmapImage apply_sepia(const BitmapImage& source, const double intensity_percent = 100.0) noexcept {
     const double intensity = fizmo::clamp(intensity_percent, 0.0, 100.0) / 100.0;
     BitmapImage result(source.width(), source.height());
     
@@ -43,11 +43,11 @@ BitmapImage apply_sepia(const BitmapImage& source, const double intensity_percen
     return result;
 }
 
-void apply_sepia_original(BitmapImage& source, const double intensity_percent = 100.0) noexcept {
+inline void apply_sepia_original(BitmapImage& source, const double intensity_percent = 100.0) noexcept {
     source = apply_sepia(source, intensity_percent);
 }
 
-BitmapImage apply_sepia(
+inline BitmapImage apply_sepia(
     const BitmapImage& source, 
     unsigned int x1, unsigned int y1, 
     unsigned int x2, unsigned int y2,
@@ -94,7 +94,7 @@ BitmapImage apply_sepia(
     return result;
 }
 
-void apply_sepia_original(
+inline void apply_sepia_original(
     BitmapImage& source, 
     const unsigned int x1, const unsigned int y1, 
     const unsigned int x2, const unsigned int y2, 
@@ -103,7 +103,7 @@ void apply_sepia_original(
     source = apply_sepia(source, x1, y1, x2, y2, intensity_percent);
 }
 
-BitmapImage apply_custom_sepia(
+inline BitmapImage apply_custom_sepia(
     const BitmapImage& source,
     const fizmo::graphics::Color& light_tone = fizmo::graphics::Color(255, 240, 192),  // Highlight tone
     const fizmo::graphics::Color& dark_tone = fizmo::graphics::Color(112, 66, 20),     // Shadow tone
@@ -135,7 +135,7 @@ BitmapImage apply_custom_sepia(
     return result;
 }
 
-void apply_custom_sepia_original(
+inline void apply_custom_sepia_original(
     BitmapImage& source,
     const fizmo::graphics::Color& light_tone = fizmo::graphics::Color(255, 240, 192),
     const fizmo::graphics::Color& dark_tone = fizmo::graphics::Color(112, 66, 20),
@@ -144,7 +144,7 @@ void apply_custom_sepia_original(
     source = apply_custom_sepia(source, light_tone, dark_tone, intensity_percent);
 }
 
-BitmapImage apply_custom_sepia(
+inline BitmapImage apply_custom_sepia(
     const BitmapImage& source,
     unsigned int x1, unsigned int y1, 
     unsigned int x2, unsigned int y2,
@@ -184,7 +184,7 @@ BitmapImage apply_custom_sepia(
     return result;
 }
 
-void apply_custom_sepia_original(
+inline void apply_custom_sepia_original(
     BitmapImage& source,
     const unsigned int x1, const unsigned int y1, 
     const unsigned int x2, const unsigned int y2,

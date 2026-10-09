@@ -8,7 +8,7 @@
 namespace fizmo {
 namespace images {
 
-BitmapImage adjust_saturation(const BitmapImage& source, const double saturation_percentage) noexcept {
+inline BitmapImage adjust_saturation(const BitmapImage& source, const double saturation_percentage) noexcept {
     const double factor = fizmo::clamp(saturation_percentage, 0.0, 100.0) / 100.0;
     BitmapImage result(source.width(), source.height());
     
@@ -25,11 +25,11 @@ BitmapImage adjust_saturation(const BitmapImage& source, const double saturation
     return result;
 }
 
-void adjust_saturation_original(BitmapImage& source, const double saturation_percentage) noexcept {
+inline void adjust_saturation_original(BitmapImage& source, const double saturation_percentage) noexcept {
     source = adjust_saturation(source, saturation_percentage);
 }
 
-BitmapImage adjust_saturation(
+inline BitmapImage adjust_saturation(
     const BitmapImage& source, 
     unsigned int x1, unsigned int y1, 
     unsigned int x2, unsigned int y2,
@@ -57,7 +57,7 @@ BitmapImage adjust_saturation(
     return result;
 }
 
-void adjust_saturation_original(
+inline void adjust_saturation_original(
     BitmapImage& source, 
     const unsigned int x1, const unsigned int y1, 
     const unsigned int x2, const unsigned int y2, 

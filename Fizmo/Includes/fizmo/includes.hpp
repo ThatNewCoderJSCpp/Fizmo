@@ -58,6 +58,10 @@
             #define FIZMO_MATRICES
         #endif
 
+        #ifndef FIZMO_MATHTEXT
+            #define FIZMO_MATHTEXT
+        #endif
+
         #ifndef FIZMO_CONSTANTS
             #define FIZMO_CONSTANTS
         #endif
@@ -112,6 +116,10 @@
 
         #ifdef FIZMO_MATRICES
             #include "../matrices.hpp"
+        #endif
+
+        #ifdef FIZMO_MATHTEXT
+            #include "../mathtext.hpp"
         #endif
     #endif // FIZMO
 #endif //ALL_FIZMO_INCLUDES_FILE_HPP

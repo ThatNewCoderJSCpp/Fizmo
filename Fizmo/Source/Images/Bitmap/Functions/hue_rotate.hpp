@@ -8,7 +8,7 @@
 namespace fizmo {
 namespace images {
 
-BitmapImage rotate_hue(const BitmapImage& source, const double degrees) noexcept {
+inline BitmapImage rotate_hue(const BitmapImage& source, const double degrees) noexcept {
     double adjusted_degrees = std::fmod(degrees, 360.0);
     if (adjusted_degrees < 0) { adjusted_degrees += 360.0; }
     BitmapImage result(source.width(), source.height());
@@ -27,11 +27,11 @@ BitmapImage rotate_hue(const BitmapImage& source, const double degrees) noexcept
     return result;
 }
 
-void rotate_hue_original(BitmapImage& source, const double degrees) noexcept {
+inline void rotate_hue_original(BitmapImage& source, const double degrees) noexcept {
     source = rotate_hue(source, degrees);
 }
 
-BitmapImage rotate_hue(
+inline BitmapImage rotate_hue(
     const BitmapImage& source, 
     unsigned int x1, unsigned int y1, 
     unsigned int x2, unsigned int y2,
@@ -61,7 +61,7 @@ BitmapImage rotate_hue(
     return result;
 }
 
-void rotate_hue_original(
+inline void rotate_hue_original(
     BitmapImage& source, 
     const unsigned int x1, const unsigned int y1, 
     const unsigned int x2, const unsigned int y2, 
@@ -70,7 +70,7 @@ void rotate_hue_original(
     source = rotate_hue(source, x1, y1, x2, y2, degrees);
 }
 
-BitmapImage create_hue_wheel(const unsigned int size) noexcept {
+inline BitmapImage create_hue_wheel(const unsigned int size) noexcept {
     BitmapImage wheel(size, size);
     const unsigned int center = size / 2;
     const unsigned int radius = center > 0 ? center - 1 : 0;

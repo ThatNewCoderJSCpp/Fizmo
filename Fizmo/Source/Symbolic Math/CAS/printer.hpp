@@ -26,7 +26,7 @@ inline int node_prec(NodeType t) noexcept {
     }
 }
 
-std::string fmt_double(double v) {
+inline std::string fmt_double(double v) {
     std::ostringstream oss;
     oss << v;
     std::string s = oss.str();

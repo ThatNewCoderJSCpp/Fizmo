@@ -91,7 +91,7 @@ public:
         if (!file.good()) { throw std::runtime_error("Error occurred while reading BMP file"); }
     }
 
-    void set_pixel(const unsigned int x, const unsigned int y, const fizmo::graphics::Color& color) { if (is_valid_range(x, y)) { m_pixels[y * m_width + x] = color; } }
+    void set_pixel(const unsigned int x, const unsigned int y, const fizmo::graphics::Color& color) { if (is_valid_range(x, y)) { m_pixels[y * m_width + x] = color; m_version.touch(); } }
     
     fizmo::graphics::Color get_pixel(const unsigned int x, const unsigned int y) const { 
         if (is_valid_range(x, y)) { return m_pixels[y * m_width + x]; } 
@@ -108,6 +108,7 @@ public:
 
 public:
     void fill_area(const unsigned int x1, const unsigned int y1, const unsigned int x2, const unsigned int y2, const fizmo::graphics::Color& color) {
+        m_version.touch();
         if (is_valid_range(x1, y1) && is_valid_range(x2, y2)) {
             for (unsigned int y = y1; y <= y2; ++y) {
                 for (unsigned int x = x1; x <= x2; ++x) { m_pixels[y * m_width + x] = color; }
@@ -116,6 +117,7 @@ public:
     }
 
     void change_background(const fizmo::graphics::Color& color) {
+        m_version.touch();
         for (unsigned int i = 0; i < m_width; ++i) {
             for (unsigned int j = 0; j < m_height; ++j) { m_pixels[j * m_width + i] = color; }
         }

@@ -7,6 +7,8 @@
 #include "window_events.hpp"
 #include "../Input/keybord.hpp"
 #include "Windows Impl/window_base.hpp"
+#include "window_types.hpp"
+#include "../Input/gestures.hpp"
 
 #if defined(OS_WINDOWS)
     #include "Windows Impl/window_windows_impl.hpp"
@@ -24,7 +26,35 @@ private:
     std::string m_title;
     fizmo::graphics::Color m_color;
     WindowEventHandler m_event_handler;
+    input::GestureRecognizer m_gestures;
+    bool m_gestures_enabled = true;
     std::unique_ptr<detail::ImplBase> m_impl;
+
+    void emit_gesture(const input::GestureData& g) noexcept {
+        WindowEvent e;
+        e.type = WindowEventType::Gesture;
+        e.gesture = g;
+        e.fx = g.x;
+        e.fy = g.y;
+        e.x = g.x < 0.0f ? 0u : static_cast<unsigned int>(g.x);
+        e.y = g.y < 0.0f ? 0u : static_cast<unsigned int>(g.y);
+        e.pointer = input::PointerType::Touch;
+        m_event_handler.dispatch_event(e);
+    }
+
+    void feed_gestures(const WindowEvent& e) noexcept {
+        if (!m_gestures_enabled || e.pointer != input::PointerType::Touch) return;
+        auto emit = [this](const input::GestureData& g) { emit_gesture(g); };
+        try {
+            switch (e.type) {
+                case WindowEventType::TouchDown:   m_gestures.touch_down(e.pointer_id, e.fx, e.fy, emit); break;
+                case WindowEventType::TouchMove:   m_gestures.touch_move(e.pointer_id, e.fx, e.fy, emit); break;
+                case WindowEventType::TouchUp:     m_gestures.touch_up(e.pointer_id, e.fx, e.fy, emit); break;
+                case WindowEventType::TouchCancel: m_gestures.touch_cancel(e.pointer_id, emit); break;
+                default: break;
+            }
+        } catch (...) {}
+    }
 
 public:
     Window(unsigned int w, unsigned int h, const std::string& t, const graphics::Color& background_color = graphics::Color()) noexcept : m_width(w), m_height(h), m_title(t), m_color(background_color) {
@@ -35,7 +65,10 @@ public:
 
     ~Window() = default;
 
-    void dispatch_event(const WindowEvent& event) noexcept override { m_event_handler.dispatch_event(event); }
+    void dispatch_event(const WindowEvent& event) noexcept override {
+        m_event_handler.dispatch_event(event);
+        feed_gestures(event);
+    }
 
     void update_size(unsigned int width, unsigned int height) noexcept override {
         m_width = width;
@@ -48,7 +81,10 @@ public:
     const fizmo::graphics::Color& background_color() const noexcept { return m_color; }
     WindowEventHandler& event_handler() noexcept { return m_event_handler; }
 
-    void set_title(const std::string& title) noexcept { m_title = title; }
+    void set_title(const std::string& title) noexcept {
+        m_title = title;
+        m_impl->set_title(title);
+    }
 
     void set_background_color(const fizmo::graphics::Color& color) noexcept {
         m_color = color;
@@ -62,7 +98,12 @@ public:
     void remove_event_listeners(WindowEventType type) noexcept { m_event_handler.remove_event_listeners(type); }
 
     bool create() noexcept { return m_impl->create(m_width, m_height, m_title); }
-    void poll_events() noexcept { m_impl->poll_events(); }
+    void poll_events() noexcept {
+        m_impl->poll_events();
+        if (m_gestures_enabled && m_gestures.active_touches() > 0) {
+            try { m_gestures.update([this](const input::GestureData& g) { emit_gesture(g); }); } catch (...) {}
+        }
+    }
     bool is_open() const noexcept { return m_impl->is_open(); }
     void invalidate() noexcept { m_impl->invalidate(); }
     void* native_handle() const noexcept { return m_impl->native_handle(); }
@@ -73,7 +114,58 @@ public:
     bool cursor_locked() const noexcept { return m_impl->cursor_locked(); }
     void set_cursor_visible(bool visible) noexcept { m_impl->set_cursor_visible(visible); }
     bool cursor_visible() const noexcept { return m_impl->cursor_visible(); }
+
+    bool set_relative_mouse(bool enabled) noexcept { return set_cursor_locked(enabled); }
+    bool relative_mouse() const noexcept { return cursor_locked(); }
+
+    bool position(int& x, int& y) const noexcept { return m_impl->position(x, y); }
+    bool set_position(int x, int y) noexcept { return m_impl->set_position(x, y); }
+    bool set_size(unsigned int w, unsigned int h) noexcept { return m_impl->set_size(w, h); }
+    void set_resizable(bool resizable) noexcept { m_impl->set_resizable(resizable); }
+    void set_min_size(unsigned int w, unsigned int h) noexcept { m_impl->set_min_size(w, h); }
+    void minimize() noexcept { m_impl->minimize(); }
+    void maximize() noexcept { m_impl->maximize(); }
+    void restore() noexcept { m_impl->restore(); }
+    void focus() noexcept { m_impl->focus(); }
+
+    bool set_mode(WindowMode mode, int monitor = -1) noexcept { return m_impl->set_mode(mode, monitor); }
+    WindowMode mode() const noexcept { return m_impl->mode(); }
+    bool set_fullscreen(bool enabled, int monitor = -1) noexcept { return set_mode(enabled ? WindowMode::Fullscreen : WindowMode::Windowed, monitor); }
+    bool fullscreen() const noexcept { return mode() == WindowMode::Fullscreen; }
+    bool set_borderless(bool enabled, int monitor = -1) noexcept { return set_mode(enabled ? WindowMode::Borderless : WindowMode::Windowed, monitor); }
+    float dpi_scale() const noexcept { return m_impl->dpi_scale(); }
+    int monitor_index() const noexcept { return m_impl->monitor_index(); }
+
+    bool set_cursor(SystemCursor cursor) noexcept { return m_impl->set_system_cursor(cursor); }
+    bool set_cursor(const images::BitmapImage& image, int hot_x = 0, int hot_y = 0) noexcept { return m_impl->set_cursor_image(image, hot_x, hot_y); }
+
+    std::string clipboard_text() noexcept { return m_impl->clipboard_text(); }
+    bool set_clipboard_text(const std::string& text) noexcept { return m_impl->set_clipboard_text(text); }
+    void set_drop_enabled(bool enabled) noexcept { m_impl->set_drop_enabled(enabled); }
+
+    void start_text_input() noexcept { m_impl->start_text_input(); }
+    void stop_text_input() noexcept { m_impl->stop_text_input(); }
+    bool text_input_active() const noexcept { return m_impl->text_input_active(); }
+    void set_text_input_rect(int x, int y, unsigned int w, unsigned int h) noexcept { m_impl->set_text_input_rect(x, y, w, h); }
+
+    input::GestureRecognizer& gestures() noexcept { return m_gestures; }
+    void set_gestures_enabled(bool enabled) noexcept { m_gestures_enabled = enabled; if (!enabled) m_gestures.reset(); }
+    bool gestures_enabled() const noexcept { return m_gestures_enabled; }
 };
+
+inline std::vector<MonitorInfo> monitors() {
+#if defined(OS_WINDOWS) || defined(OS_LINUX)
+    try { return detail::platform_monitors(); } catch (...) { return {}; }
+#else
+    return {};
+#endif
+}
+
+inline MonitorInfo primary_monitor() {
+    const std::vector<MonitorInfo> list = monitors();
+    for (const MonitorInfo& m : list) if (m.primary) return m;
+    return list.empty() ? MonitorInfo{} : list.front();
+}
 
 class CursorLock {
 private:

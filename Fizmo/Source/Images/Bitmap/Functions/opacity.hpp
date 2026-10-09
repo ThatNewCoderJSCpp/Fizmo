@@ -7,7 +7,7 @@
 namespace fizmo {
 namespace images {
 
-BitmapImage adjust_opacity(const BitmapImage& source, const double opacity_percent) noexcept {
+inline BitmapImage adjust_opacity(const BitmapImage& source, const double opacity_percent) noexcept {
     const double opacity = fizmo::clamp(opacity_percent, 0.0, 100.0) / 100.0;
     BitmapImage result(source.width(), source.height());
     const fizmo::graphics::Color background(255, 255, 255);
@@ -27,11 +27,11 @@ BitmapImage adjust_opacity(const BitmapImage& source, const double opacity_perce
     return result;
 }
 
-void adjust_opacity_original(BitmapImage& source, const double opacity_percent) noexcept {
+inline void adjust_opacity_original(BitmapImage& source, const double opacity_percent) noexcept {
     source = adjust_opacity(source, opacity_percent);
 }
 
-BitmapImage adjust_opacity(
+inline BitmapImage adjust_opacity(
     const BitmapImage& source,
     unsigned int x1, unsigned int y1,
     unsigned int x2, unsigned int y2,
@@ -60,7 +60,7 @@ BitmapImage adjust_opacity(
     return result;
 }
 
-void adjust_opacity_original(
+inline void adjust_opacity_original(
     BitmapImage& source,
     const unsigned int x1, const unsigned int y1,
     const unsigned int x2, const unsigned int y2,
@@ -69,7 +69,7 @@ void adjust_opacity_original(
     source = adjust_opacity(source, x1, y1, x2, y2, opacity_percent);
 }
 
-BitmapImage adjust_opacity(
+inline BitmapImage adjust_opacity(
     const BitmapImage& source,
     const double opacity_percent,
     const fizmo::graphics::Color& background_color
@@ -90,7 +90,7 @@ BitmapImage adjust_opacity(
     return result;
 }
 
-void adjust_opacity_original(
+inline void adjust_opacity_original(
     BitmapImage& source,
     const double opacity_percent,
     const fizmo::graphics::Color& background_color
@@ -98,7 +98,7 @@ void adjust_opacity_original(
     source = adjust_opacity(source, opacity_percent, background_color);
 }
 
-BitmapImage adjust_opacity(
+inline BitmapImage adjust_opacity(
     const BitmapImage& source,
     unsigned int x1, unsigned int y1,
     unsigned int x2, unsigned int y2,
@@ -127,7 +127,7 @@ BitmapImage adjust_opacity(
     return result;
 }
 
-void adjust_opacity_original(
+inline void adjust_opacity_original(
     BitmapImage& source,
     const unsigned int x1, const unsigned int y1,
     const unsigned int x2, const unsigned int y2,

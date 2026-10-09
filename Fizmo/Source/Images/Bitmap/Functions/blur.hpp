@@ -6,7 +6,7 @@
 namespace fizmo {
 namespace images {
 
-BitmapImage blur(const BitmapImage& source, const unsigned int radius) noexcept {
+inline BitmapImage blur(const BitmapImage& source, const unsigned int radius) noexcept {
     BitmapImage result(source.width(), source.height());
     
     for (unsigned int y = 0; y < source.height(); y++) {
@@ -40,11 +40,11 @@ BitmapImage blur(const BitmapImage& source, const unsigned int radius) noexcept 
     return result;
 }
 
-void blur_original(BitmapImage& source, const int radius) noexcept {
+inline void blur_original(BitmapImage& source, const int radius) noexcept {
     source = blur(source, radius);
 }
 
-BitmapImage blur(
+inline BitmapImage blur(
     const BitmapImage& source, 
     unsigned int x1, unsigned int y1, 
     unsigned int x2, unsigned int y2,
@@ -90,7 +90,7 @@ BitmapImage blur(
     return result;
 }
 
-void blur_original(
+inline void blur_original(
     BitmapImage& source, 
     const unsigned int x1, const unsigned int y1, 
     const unsigned int x2, const unsigned int y2, 

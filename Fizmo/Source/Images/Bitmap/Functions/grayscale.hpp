@@ -7,7 +7,7 @@
 namespace fizmo {
 namespace images {
 
-BitmapImage adjust_grayscale(const BitmapImage& source, double percentage) noexcept {
+inline BitmapImage adjust_grayscale(const BitmapImage& source, double percentage) noexcept {
     fizmo::clamp_value(percentage, 0.0, 100.0);
     double factor = percentage / 100.0;
     
@@ -34,19 +34,19 @@ BitmapImage adjust_grayscale(const BitmapImage& source, double percentage) noexc
     return result;
 }
 
-BitmapImage adjust_greyscale(const BitmapImage& source, const double percentage) noexcept { 
+inline BitmapImage adjust_greyscale(const BitmapImage& source, const double percentage) noexcept { 
     return adjust_grayscale(source, percentage); 
 }
 
-void adjust_grayscale_original(BitmapImage& source, const double percentage) noexcept { 
+inline void adjust_grayscale_original(BitmapImage& source, const double percentage) noexcept { 
     source = adjust_grayscale(source, percentage); 
 }
 
-void adjust_greyscale_original(BitmapImage& source, const double percentage) noexcept { 
+inline void adjust_greyscale_original(BitmapImage& source, const double percentage) noexcept { 
     source = adjust_grayscale(source, percentage); 
 }
 
-BitmapImage adjust_grayscale(
+inline BitmapImage adjust_grayscale(
     const BitmapImage& source, 
     unsigned int x1, unsigned int y1, 
     unsigned int x2, unsigned int y2,
@@ -83,7 +83,7 @@ BitmapImage adjust_grayscale(
     return result;
 }
 
-BitmapImage adjust_greyscale(
+inline BitmapImage adjust_greyscale(
     const BitmapImage& source, 
     unsigned int x1, unsigned int y1, 
     unsigned int x2, unsigned int y2,
@@ -92,7 +92,7 @@ BitmapImage adjust_greyscale(
     return adjust_grayscale(source, x1, y1, x2, y2, percentage);
 }
 
-void adjust_grayscale_original(
+inline void adjust_grayscale_original(
     BitmapImage& source, 
     const unsigned int x1, const unsigned int y1, 
     const unsigned int x2, const unsigned int y2, 
@@ -101,7 +101,7 @@ void adjust_grayscale_original(
     source = adjust_grayscale(source, x1, y1, x2, y2, percentage);
 }
 
-void adjust_greyscale_original(
+inline void adjust_greyscale_original(
     BitmapImage& source, 
     const unsigned int x1, const unsigned int y1, 
     const unsigned int x2, const unsigned int y2, 

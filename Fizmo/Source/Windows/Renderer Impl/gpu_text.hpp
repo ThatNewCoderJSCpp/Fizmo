@@ -29,7 +29,7 @@
 namespace fizmo {
 namespace windows {
 namespace detail {
-namespace gpu {
+namespace gfx {
 
 struct FaceMetrics {
     float ascent              = 0.0f;
@@ -1518,7 +1518,7 @@ inline bool build_text_draw_list(TextEngine& engine, const text::RichText& rt, f
     return true;
 }
 
-} // namespace gpu
+} // namespace gfx
 } // namespace detail
 } // namespace windows
 } // namespace fizmo

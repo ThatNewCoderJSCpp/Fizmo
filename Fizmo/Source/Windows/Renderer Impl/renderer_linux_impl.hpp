@@ -222,7 +222,7 @@ public:
         const int bx = cx - static_cast<int>(rx);
         const int by = cy - static_cast<int>(ry);
         const unsigned int bw = rx * 2u, bh = ry * 2u;
-        const bool full = p.is_full_sweep();
+        const bool full = p.is_full_sweep() || std::abs(p.end_angle() - p.start_angle()) < 1e-9;
         int start64, ext64;
         angles_to_x11(p, full, start64, ext64);
 

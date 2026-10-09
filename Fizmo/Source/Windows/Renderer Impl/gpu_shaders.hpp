@@ -9,7 +9,7 @@
 namespace fizmo {
 namespace windows {
 namespace detail {
-namespace gpu {
+namespace gfx {
 
 /* ---- draw2d.vert ----
 #version 450
@@ -672,7 +672,7 @@ inline constexpr std::uint32_t kUpscaleFrag[] = {
     0x0000011f, 0x00000114, 0x0000011e, 0x000200fe, 0x0000011f, 0x00010038,
 };
 
-} // namespace gpu
+} // namespace gfx
 } // namespace detail
 } // namespace windows
 } // namespace fizmo

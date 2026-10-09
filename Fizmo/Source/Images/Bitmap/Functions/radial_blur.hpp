@@ -9,7 +9,7 @@
 namespace fizmo {
 namespace images {
 
-BitmapImage radial_blur(const BitmapImage& source, const unsigned int centerX, const unsigned int centerY, const double maxBlurRadius) noexcept {
+inline BitmapImage radial_blur(const BitmapImage& source, const unsigned int centerX, const unsigned int centerY, const double maxBlurRadius) noexcept {
     BitmapImage result(source.width(), source.height());
     const unsigned int numSamples = 20;  
     const double maxDistance = std::sqrt(source.width() * source.width() + source.height() * source.height()) / 2;
@@ -49,7 +49,7 @@ BitmapImage radial_blur(const BitmapImage& source, const unsigned int centerX, c
     return result;
 }
 
-BitmapImage radial_blur(const BitmapImage& source, const double maxBlurRadius) noexcept {
+inline BitmapImage radial_blur(const BitmapImage& source, const double maxBlurRadius) noexcept {
     return radial_blur(
         source,
         source.width() / 2,
@@ -58,11 +58,11 @@ BitmapImage radial_blur(const BitmapImage& source, const double maxBlurRadius) n
     );
 }
 
-void radial_blur_original(BitmapImage& source, const unsigned int centerX, const unsigned int centerY, const double maxBlurRadius) noexcept {
+inline void radial_blur_original(BitmapImage& source, const unsigned int centerX, const unsigned int centerY, const double maxBlurRadius) noexcept {
     source = radial_blur(source, centerX, centerY, maxBlurRadius);
 }
 
-void radial_blur_original(BitmapImage& source, const double maxBlurRadius) noexcept {
+inline void radial_blur_original(BitmapImage& source, const double maxBlurRadius) noexcept {
     source = radial_blur(source, maxBlurRadius);
 }
 

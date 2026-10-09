@@ -4,9 +4,12 @@
 #include "../../Graphics/color.hpp"
 #include "../../Graphics/paint.hpp"
 #include "../../Graphics/texture.hpp"
+#include "../../Graphics/render_target.hpp"
+#include "../../Graphics/draw_types_2d.hpp"
 #include "../../Text/text_style.hpp"
 #include "../../Text/rich_text.hpp"
 #include "../raster_3d.hpp"
+#include "../../GPU/types.hpp"
 #include <cctype>
 #include <algorithm>
 #include <cmath>
@@ -21,7 +24,27 @@
 #include <array>
 
 namespace fizmo {
+namespace gpu {
+class Device;
+class CommandList;
+class Texture;
+} // namespace gpu
+
 namespace windows {
+
+enum class GpuPassStage : std::uint8_t { BeforeTargets = 0, AfterTargets, AfterScene };
+
+struct GpuPassContext {
+    gpu::Device*        device      = nullptr;
+    gpu::CommandList*   commands    = nullptr;
+    const gpu::Texture* back_buffer = nullptr;
+    unsigned int        width       = 0;
+    unsigned int        height      = 0;
+    std::uint32_t       frame_index = 0;
+    std::uint64_t       frame       = 0;
+};
+
+using GpuPassCallback = std::function<void(GpuPassContext&)>;
 
 struct RenderPoint {
     float x = 0.0f;
@@ -72,6 +95,22 @@ struct GpuMemory {
 };
 
 namespace detail {
+
+struct SpriteInstance {
+    float                     x[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    float                     y[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    float                     u0 = 0.0f;
+    float                     v0 = 0.0f;
+    float                     u1 = 1.0f;
+    float                     v1 = 1.0f;
+    std::uint8_t              r  = 255;
+    std::uint8_t              g  = 255;
+    std::uint8_t              b  = 255;
+    std::uint8_t              a  = 255;
+    const graphics::Texture*  texture = nullptr;
+    graphics::TextureRect     source;
+    graphics::BlendMode       blend = graphics::BlendMode::Normal;
+};
 
 struct QuadBatchDraw {
     graphics::detail::MeshSlot3D* slot = nullptr;
@@ -133,6 +172,7 @@ public:
     virtual void set_upscale(UpscaleFilter, float) noexcept {}
     virtual GpuTimings gpu_timings() const noexcept { return {}; }
     virtual GpuMemory gpu_memory() const noexcept { return {}; }
+    virtual gpu::Caps device_caps() const { return {}; }
 
     virtual void draw_pixel_buffer(
         int dx, int dy, unsigned int dw, unsigned int dh,
@@ -152,11 +192,74 @@ public:
         } catch (...) {}
     }
 
+    virtual void set_sprite_atlas(bool) noexcept {}
+    virtual bool sprite_atlas() const noexcept { return false; }
+
+    virtual void draw_sprite_instances(const SpriteInstance* sprites, std::size_t count) noexcept {
+        if (!sprites) return;
+
+        for (std::size_t i = 0; i < count; ++i) {
+            const SpriteInstance& s = sprites[i];
+            if (!s.texture || s.a == 0) continue;
+            const RenderPoint quad[4] = { { s.x[0], s.y[0] }, { s.x[1], s.y[1] }, { s.x[2], s.y[2] }, { s.x[3], s.y[3] } };
+            const graphics::BlendMode saved = blend_mode();
+            if (s.blend != saved) set_blend_mode(s.blend);
+            if (s.r == 255 && s.g == 255 && s.b == 255) draw_texture_quad(quad, *s.texture, s.a / 255.0f, s.source);
+            else draw_texture_quad_tinted(quad, *s.texture, graphics::Color(s.r, s.g, s.b, 255), s.a / 255.0f, s.source);
+            if (s.blend != saved) set_blend_mode(saved);
+        }
+    }
+
+    virtual void set_blend_mode(graphics::BlendMode mode) noexcept { m_blend_mode = mode; }
+    virtual graphics::BlendMode blend_mode() const noexcept { return m_blend_mode; }
+
+    virtual void draw_vertices_2d(const graphics::Vertex2D* v, std::size_t count, const graphics::Texture* tex) noexcept {
+        (void)tex;
+        if (!v) return;
+
+        for (std::size_t i = 0; i + 2 < count; i += 3) {
+            unsigned int r = 0, g = 0, b = 0, a = 0;
+            for (int k = 0; k < 3; ++k) { r += v[i + k].color.red(); g += v[i + k].color.green(); b += v[i + k].color.blue(); a += v[i + k].color.alpha(); }
+            if (a == 0) continue;
+            const RenderPoint tri[3] = { { v[i].x, v[i].y }, { v[i + 1].x, v[i + 1].y }, { v[i + 2].x, v[i + 2].y } };
+            const graphics::Color c(static_cast<std::uint8_t>(r / 3), static_cast<std::uint8_t>(g / 3), static_cast<std::uint8_t>(b / 3), static_cast<std::uint8_t>(a / 3));
+            draw_polygon(tri, 3, graphics::Paint::fill(c));
+        }
+    }
+
+    virtual bool draw_rich_text_transformed(const float*, float, float, unsigned int, unsigned int, const text::RichText&) noexcept { return false; }
+
+    static void scale_style(text::TextStyle& st, double k, bool base) noexcept {
+        if (st.has_size()) st.set_size(st.size() * k);
+        else if (base) st.set_size(16.0 * k);
+        if (st.has_letter_spacing()) st.set_letter_spacing(st.letter_spacing() * k);
+        if (st.has_word_spacing()) st.set_word_spacing(st.word_spacing() * k);
+        if (st.has_outline_width()) st.set_outline_width(st.outline_width() * k);
+        if (st.has_indent()) st.set_indent(st.indent() * k);
+        if (st.has_shadow()) { auto sh = st.shadow(); sh.offset_x *= k; sh.offset_y *= k; sh.blur *= k; st.set_shadow(sh); }
+    }
+
+    static text::RichText scaled_rich_text(const text::RichText& rt, double k) {
+        text::RichText out = rt;
+        scale_style(out.base(), k, true);
+        for (text::TextSpan& sp : out.spans()) scale_style(sp.style, k, false);
+        return out;
+    }
+
     virtual void draw_texture_quad(
         const RenderPoint quad[4], const graphics::Texture& tex,
         float opacity, const graphics::TextureRect& src
     ) noexcept {
+        draw_texture_quad_tinted(quad, tex, graphics::Color(255, 255, 255, 255), opacity, src);
+    }
+
+    virtual void draw_texture_quad_tinted(
+        const RenderPoint quad[4], const graphics::Texture& tex, const graphics::Color& tint,
+        float opacity, const graphics::TextureRect& src
+    ) noexcept {
         if (!quad || !tex.valid() || src.is_empty() || opacity <= 0.0f) return;
+        opacity = std::min(opacity, 1.0f) * (tint.alpha() / 255.0f);
+        const bool tinted = tint.red() != 255 || tint.green() != 255 || tint.blue() != 255;
         opacity = std::min(opacity, 1.0f);
         float minx = quad[0].x, maxx = quad[0].x, miny = quad[0].y, maxy = quad[0].y;
 
@@ -190,6 +293,7 @@ public:
                     if (s < 0.0 || s >= 1.0 || t < 0.0 || t >= 1.0) { img.set_pixel(col, row, clear); continue; }
 
                     graphics::Color c = tex.sample(src.x + s * src.w, src.y + t * src.h);
+                    if (tinted) c = graphics::Color(static_cast<std::uint8_t>((c.red() * tint.red() + 127) / 255), static_cast<std::uint8_t>((c.green() * tint.green() + 127) / 255), static_cast<std::uint8_t>((c.blue() * tint.blue() + 127) / 255), c.alpha());
                     if (opacity < 1.0f) c.set_alpha(static_cast<std::uint8_t>(c.alpha() * opacity + 0.5f));
                     img.set_pixel(col, row, c);
                 }
@@ -239,6 +343,19 @@ public:
     }
 
     virtual bool capture(images::BitmapImage& /*out*/) noexcept { return false; }
+
+    virtual bool begin_target(const graphics::RenderTarget&, const graphics::Color*) noexcept { return false; }
+    virtual void end_target() noexcept {}
+    virtual std::uint64_t active_target() const noexcept { return 0; }
+    virtual void draw_target(int, int, unsigned int, unsigned int, const graphics::RenderTarget&, float, const graphics::TextureRect&) noexcept {}
+    virtual void draw_target_quad(const RenderPoint*, const graphics::RenderTarget&, float, const graphics::TextureRect&) noexcept {}
+    virtual bool read_target(const graphics::RenderTarget&, images::BitmapImage&) noexcept { return false; }
+    virtual gpu::Device* gpu_device() noexcept { return nullptr; }
+    virtual const gpu::Texture* gpu_texture(const graphics::Texture&) noexcept { return nullptr; }
+    virtual const gpu::Texture* gpu_texture(const graphics::RenderTarget&) noexcept { return nullptr; }
+    virtual const gpu::Texture* gpu_back_buffer() noexcept { return nullptr; }
+    virtual std::uint64_t add_gpu_pass(GpuPassStage, GpuPassCallback) { return 0; }
+    virtual bool remove_gpu_pass(std::uint64_t) noexcept { return false; }
 
     virtual void draw_rich_text(int x, int y, unsigned int w, unsigned int h, const text::RichText& rt) noexcept {
         try { fallback_rich_text(x, y, w, h, rt, true); } catch (...) {}
@@ -400,6 +517,7 @@ protected:
     const std::uint64_t                   m_epoch = next_content_version();
     std::vector<graphics::Vertex3D>       m_instance_scratch;
     std::vector<std::uint32_t>            m_instance_lights;
+    graphics::BlendMode                   m_blend_mode = graphics::BlendMode::Normal;
 
 public:
 

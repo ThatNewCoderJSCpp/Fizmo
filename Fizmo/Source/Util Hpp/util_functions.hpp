@@ -9,7 +9,7 @@
 
 namespace fizmo {
 
-std::string to_string_with_precision(const double value, const unsigned int precision) {
+inline std::string to_string_with_precision(const double value, const unsigned int precision) {
     if (precision == 0) { return std::to_string(std::round(value)); }
 
     std::stringstream stream;
@@ -29,7 +29,7 @@ constexpr T clamp(const T value, const T min, const T max) noexcept {
 template <typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value>::type>
 constexpr void clamp_value(T& value, const T min, const T max) noexcept { value = clamp(value, min, max); }
 
-std::uint64_t string_compare(const std::string& a, const std::string& b) noexcept { 
+inline std::uint64_t string_compare(const std::string& a, const std::string& b) noexcept { 
     const std::size_t min_len = (a.size() < b.size()) ? a.size() : b.size(); 
     for (std::size_t i = 0; i < min_len; ++i) { if (a[i] != b[i]) { return static_cast<std::uint64_t>(i + 1); }} 
     if (a.size() != b.size()) { return 0; } 

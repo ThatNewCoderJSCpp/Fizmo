@@ -1,0 +1,214 @@
+#ifndef FIZMO_SYSTEM_RAM_TRACKING_HPP
+#define FIZMO_SYSTEM_RAM_TRACKING_HPP
+
+#include "tracker.hpp"
+#include "smbios.hpp"
+#include "platform_linux.hpp"
+#include "platform_windows.hpp"
+
+namespace fizmo {
+namespace system {
+
+struct RAMInfo {
+    std::uint64_t             total     = 0;
+    std::uint64_t             page_size = 0;
+    std::vector<MemoryModule> modules;
+};
+
+struct RAMSample {
+    double        time       = 0.0;
+    double        collect_ms = 0.0;
+
+    std::uint64_t total         = 0;
+    std::uint64_t available     = 0;
+    std::uint64_t used          = 0;
+    std::uint64_t free          = 0;
+    double        usage_percent = 0.0;
+    std::optional<std::uint64_t> cached;
+    std::uint64_t commit_used   = 0;
+    std::uint64_t commit_limit  = 0;
+    std::uint64_t swap_total    = 0;
+    std::uint64_t swap_used     = 0;
+
+    std::uint64_t process_resident      = 0;
+    std::uint64_t process_peak_resident = 0;
+    std::uint64_t process_private       = 0;
+    std::uint64_t process_virtual       = 0;
+    std::optional<std::uint64_t> process_swap;
+    double        process_percent       = 0.0;
+    double        process_page_faults_per_sec = 0.0;
+
+    std::optional<double> temperature_c;
+    std::vector<double>   module_temperatures_c;
+};
+
+class RAMTracking : public detail::Tracker<RAMTracking, RAMSample> {
+private:
+    friend class detail::Tracker<RAMTracking, RAMSample>;
+
+    RAMInfo                   m_info;
+    std::uint64_t             m_prev_faults = 0;
+    detail::Clock::time_point m_prev_time   = detail::Clock::now();
+
+#if defined(OS_LINUX)
+    std::vector<std::string> m_dimm_sensors;
+
+    std::uint64_t read_faults() const {
+        std::string text;
+        if (!detail::lnx::read_text("/proc/self/stat", text)) return 0;
+        const std::size_t close = text.rfind(')');
+        if (close == std::string::npos) return 0;
+        const std::vector<std::string> f = detail::split_ws(text.substr(close + 1));
+        if (f.size() < 10) return 0;
+        return detail::parse_u64(f[7]).value_or(0) + detail::parse_u64(f[9]).value_or(0);
+    }
+
+    void discover() {
+        const long page = ::sysconf(_SC_PAGESIZE);
+        m_info.page_size = page > 0 ? static_cast<std::uint64_t>(page) : 4096u;
+        const auto mem = detail::lnx::key_values("/proc/meminfo");
+        m_info.total = detail::lnx::value_of(mem, "MemTotal").value_or(0);
+        m_info.modules = detail::read_memory_modules();
+        for (const auto& h : detail::lnx::hwmon_by_name()) if (h.first == "spd5118" || h.first == "jc42" || h.first == "ee1004") m_dimm_sensors.push_back(h.second);
+        m_prev_faults = read_faults();
+    }
+
+    RAMSample collect() {
+        RAMSample s;
+        const auto mem = detail::lnx::key_values("/proc/meminfo");
+        using detail::lnx::value_of;
+        s.total     = value_of(mem, "MemTotal").value_or(0);
+        s.free      = value_of(mem, "MemFree").value_or(0);
+        const auto buffers = value_of(mem, "Buffers").value_or(0);
+        const auto cached  = value_of(mem, "Cached").value_or(0);
+        const auto reclaim = value_of(mem, "SReclaimable").value_or(0);
+        s.available = value_of(mem, "MemAvailable").value_or(s.free + buffers + cached);
+        s.used      = s.total > s.available ? s.total - s.available : 0;
+        s.cached    = cached + buffers + reclaim;
+        s.usage_percent = s.total ? 100.0 * static_cast<double>(s.used) / static_cast<double>(s.total) : 0.0;
+        s.swap_total   = value_of(mem, "SwapTotal").value_or(0);
+        const auto swap_free = value_of(mem, "SwapFree").value_or(0);
+        s.swap_used    = s.swap_total > swap_free ? s.swap_total - swap_free : 0;
+        s.commit_used  = value_of(mem, "Committed_AS").value_or(0);
+        s.commit_limit = value_of(mem, "CommitLimit").value_or(0);
+
+        const auto st = detail::lnx::key_values("/proc/self/status");
+        s.process_resident      = value_of(st, "VmRSS").value_or(0);
+        s.process_peak_resident = value_of(st, "VmHWM").value_or(0);
+        s.process_virtual       = value_of(st, "VmSize").value_or(0);
+        s.process_private       = value_of(st, "RssAnon").value_or(s.process_resident);
+        s.process_swap          = value_of(st, "VmSwap");
+        s.process_percent       = s.total ? 100.0 * static_cast<double>(s.process_resident) / static_cast<double>(s.total) : 0.0;
+
+        const std::uint64_t faults = read_faults();
+        const detail::Clock::time_point now = detail::Clock::now();
+        s.process_page_faults_per_sec = detail::per_second(faults, m_prev_faults, detail::seconds_between(m_prev_time, now));
+        m_prev_faults = faults;
+        m_prev_time = now;
+
+        for (const std::string& dir : m_dimm_sensors)
+            for (const auto& t : detail::lnx::hwmon_temps(dir)) s.module_temperatures_c.push_back(t.celsius);
+        if (!s.module_temperatures_c.empty()) s.temperature_c = *std::max_element(s.module_temperatures_c.begin(), s.module_temperatures_c.end());
+        return s;
+    }
+
+#elif defined(OS_WINDOWS)
+    using ProcessMemoryFn = BOOL (WINAPI*)(HANDLE, PPROCESS_MEMORY_COUNTERS, DWORD);
+    using PerformanceFn   = BOOL (WINAPI*)(PPERFORMANCE_INFORMATION, DWORD);
+
+    detail::win::Library m_kernel{ L"kernel32.dll" };
+    ProcessMemoryFn      m_process_memory = nullptr;
+    PerformanceFn        m_performance    = nullptr;
+
+    void discover() {
+        SYSTEM_INFO si{};
+        GetSystemInfo(&si);
+        m_info.page_size = si.dwPageSize;
+        MEMORYSTATUSEX ms{};
+        ms.dwLength = sizeof(ms);
+        if (GlobalMemoryStatusEx(&ms)) m_info.total = ms.ullTotalPhys;
+        m_info.modules = detail::read_memory_modules();
+        m_process_memory = m_kernel.get<ProcessMemoryFn>("K32GetProcessMemoryInfo");
+        m_performance    = m_kernel.get<PerformanceFn>("K32GetPerformanceInfo");
+        PROCESS_MEMORY_COUNTERS_EX pm{};
+        if (m_process_memory && m_process_memory(GetCurrentProcess(), reinterpret_cast<PPROCESS_MEMORY_COUNTERS>(&pm), sizeof(pm))) m_prev_faults = pm.PageFaultCount;
+    }
+
+    RAMSample collect() {
+        RAMSample s;
+        MEMORYSTATUSEX ms{};
+        ms.dwLength = sizeof(ms);
+
+        if (GlobalMemoryStatusEx(&ms)) {
+            s.total        = ms.ullTotalPhys;
+            s.available    = ms.ullAvailPhys;
+            s.free         = ms.ullAvailPhys;
+            s.used         = s.total > s.available ? s.total - s.available : 0;
+            s.commit_limit = ms.ullTotalPageFile;
+            s.commit_used  = ms.ullTotalPageFile > ms.ullAvailPageFile ? ms.ullTotalPageFile - ms.ullAvailPageFile : 0;
+            s.process_virtual = ms.ullTotalVirtual > ms.ullAvailVirtual ? ms.ullTotalVirtual - ms.ullAvailVirtual : 0;
+            s.usage_percent = s.total ? 100.0 * static_cast<double>(s.used) / static_cast<double>(s.total) : 0.0;
+            s.swap_total = s.commit_limit > s.total ? s.commit_limit - s.total : 0;
+            s.swap_used  = s.commit_used > s.used ? std::min(s.commit_used - s.used, s.swap_total) : 0;
+        }
+
+        PERFORMANCE_INFORMATION pi{};
+        pi.cb = sizeof(pi);
+        if (m_performance && m_performance(&pi, sizeof(pi))) s.cached = static_cast<std::uint64_t>(pi.SystemCache) * pi.PageSize;
+
+        PROCESS_MEMORY_COUNTERS_EX pm{};
+        pm.cb = sizeof(pm);
+
+        if (m_process_memory && m_process_memory(GetCurrentProcess(), reinterpret_cast<PPROCESS_MEMORY_COUNTERS>(&pm), sizeof(pm))) {
+            s.process_resident      = pm.WorkingSetSize;
+            s.process_peak_resident = pm.PeakWorkingSetSize;
+            s.process_private       = pm.PrivateUsage;
+            const detail::Clock::time_point now = detail::Clock::now();
+            s.process_page_faults_per_sec = detail::per_second(pm.PageFaultCount, m_prev_faults, detail::seconds_between(m_prev_time, now));
+            m_prev_faults = pm.PageFaultCount;
+            m_prev_time = now;
+        }
+
+        s.process_percent = s.total ? 100.0 * static_cast<double>(s.process_resident) / static_cast<double>(s.total) : 0.0;
+        return s;
+    }
+
+#else
+    void discover() {}
+    RAMSample collect() { return {}; }
+#endif
+
+public:
+    explicit RAMTracking(std::chrono::milliseconds interval = std::chrono::milliseconds(1000), std::size_t history = 240)
+        : Tracker(interval, history) {
+        discover();
+    }
+
+    ~RAMTracking() { shutdown(); }
+
+    const RAMInfo& info() const noexcept { return m_info; }
+
+    std::string report() const {
+        const RAMSample s = latest();
+        std::string r = "RAM  " + format_bytes(m_info.total);
+        if (!m_info.modules.empty()) {
+            const MemoryModule& m = m_info.modules.front();
+            r += "  (" + std::to_string(m_info.modules.size()) + " x " + format_bytes(m.size_bytes);
+            if (!m.type.empty()) r += " " + m.type;
+            if (m.configured_speed_mts || m.speed_mts) r += "-" + std::to_string(m.configured_speed_mts ? m.configured_speed_mts : m.speed_mts);
+            r += ")";
+        }
+        r += "\n";
+        r += "  used     " + format_bytes(s.used) + " / " + format_bytes(s.total) + "  (" + detail::fixed(s.usage_percent, 1) + "%), available " + format_bytes(s.available) + "\n";
+        if (s.cached) r += "  cached   " + format_bytes(*s.cached) + "\n";
+        r += "  commit   " + format_bytes(s.commit_used) + " / " + format_bytes(s.commit_limit) + ", swap " + format_bytes(s.swap_used) + " / " + format_bytes(s.swap_total) + "\n";
+        r += "  process  " + format_bytes(s.process_resident) + " resident (peak " + format_bytes(s.process_peak_resident) + "), " + format_bytes(s.process_private) + " private, " + detail::fixed(s.process_page_faults_per_sec, 0) + " faults/s\n";
+        if (s.temperature_c) r += "  temp     " + format_optional(s.temperature_c, 1, " C") + "\n";
+        return r;
+    }
+};
+
+} // namespace system
+} // namespace fizmo
+
+#endif // FIZMO_SYSTEM_RAM_TRACKING_HPP

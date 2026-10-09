@@ -565,7 +565,7 @@ private:
     std::vector<std::string>  param_names_;
 };
 
-ExpressionLambda Expression::to_lambda() const {
+inline ExpressionLambda Expression::to_lambda() const {
     assert(*this);
     return ExpressionLambda(*this, variable_names());
 }

@@ -2,79 +2,66 @@
 #define FIZMO_GAME_LOOP_HPP
 
 #include "application.hpp"
-#include "../Graphics/canvas.hpp"
+#include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace fizmo {
 namespace windows {
 
-enum class CanvasAnchor {
+enum class ViewAnchor {
     top_left = 0, top_center, top_right,
     center_left, center, center_right,
     bottom_left, bottom_center, bottom_right
 };
 
-struct CanvasLayout {
-    enum class Mode { fill, fixed, fit };
-    Mode mode = Mode::fill;
+struct ViewLayout {
+    enum class Mode { fill, fixed, fit, stretch };
+    Mode         mode    = Mode::fill;
     unsigned int fixed_w = 0;
     unsigned int fixed_h = 0;
-    CanvasAnchor anchor = CanvasAnchor::center;
-    bool smooth_scaling = false;   
+    ViewAnchor   anchor  = ViewAnchor::center;
+    bool         integer_scale = false; 
 };
 
-struct CanvasRect {
+struct ViewRect {
     int x = 0, y = 0;
     unsigned int w = 0, h = 0;
 };
 
 namespace detail {
 
-inline CanvasRect resolve_layout(const CanvasLayout& layout, unsigned int win_w, unsigned int win_h) noexcept {
-    CanvasRect r;
+inline ViewRect resolve_layout(const ViewLayout& layout, unsigned int win_w, unsigned int win_h) noexcept {
+    ViewRect r;
+    const bool has_fixed = layout.fixed_w > 0 && layout.fixed_h > 0;
+
+    if (layout.mode == ViewLayout::Mode::fill || !has_fixed || win_w == 0 || win_h == 0) {
+        r.w = win_w; r.h = win_h;
+        return r;
+    }
 
     switch (layout.mode) {
-        case CanvasLayout::Mode::fill:
-            r.w = win_w; r.h = win_h;
-            return r;
-        case CanvasLayout::Mode::fixed:
+        case ViewLayout::Mode::fixed:
             r.w = layout.fixed_w; r.h = layout.fixed_h;
             break;
-        case CanvasLayout::Mode::fit: {
-            double aspect = static_cast<double>(layout.fixed_w) / layout.fixed_h;
-            double win_aspect = static_cast<double>(win_w) / win_h;
-
-            if (win_aspect < aspect) {
-                r.h = win_h;
-                r.w = static_cast<unsigned int>(std::round(win_h * aspect));
-            } else {
-                r.w = win_w;
-                r.h = static_cast<unsigned int>(std::round(win_w / aspect));
-            }
-
-            if (r.w == 0) r.w = 1;
-            if (r.h == 0) r.h = 1;
+        case ViewLayout::Mode::stretch:
+            r.w = win_w; r.h = win_h;
+            return r;
+        case ViewLayout::Mode::fit:
+        default: {
+            double s = std::min(static_cast<double>(win_w) / layout.fixed_w, static_cast<double>(win_h) / layout.fixed_h);
+            if (layout.integer_scale && s >= 1.0) s = std::floor(s);
+            r.w = std::max(1u, static_cast<unsigned int>(std::lround(layout.fixed_w * s)));
+            r.h = std::max(1u, static_cast<unsigned int>(std::lround(layout.fixed_h * s)));
             break;
         }
     }
 
-    if (layout.mode != CanvasLayout::Mode::fill) {
-        int iw = static_cast<int>(win_w), ih = static_cast<int>(win_h);
-        int cw = static_cast<int>(r.w),   ch = static_cast<int>(r.h);
-
-        switch (layout.anchor) {
-            case CanvasAnchor::top_left:      r.x = 0;              r.y = 0;               break;
-            case CanvasAnchor::top_center:    r.x = (iw - cw) / 2;  r.y = 0;               break;
-            case CanvasAnchor::top_right:     r.x = iw - cw;        r.y = 0;               break;
-            case CanvasAnchor::center_left:   r.x = 0;              r.y = (ih - ch) / 2;   break;
-            case CanvasAnchor::center:        r.x = (iw - cw) / 2;  r.y = (ih - ch) / 2;   break;
-            case CanvasAnchor::center_right:  r.x = iw - cw;        r.y = (ih - ch) / 2;   break;
-            case CanvasAnchor::bottom_left:   r.x = 0;              r.y = ih - ch;         break;
-            case CanvasAnchor::bottom_center: r.x = (iw - cw) / 2;  r.y = ih - ch;         break;
-            case CanvasAnchor::bottom_right:  r.x = iw - cw;        r.y = ih - ch;         break;
-        }
-    }
-
+    const int iw = static_cast<int>(win_w), ih = static_cast<int>(win_h);
+    const int cw = static_cast<int>(r.w),   ch = static_cast<int>(r.h);
+    const int col = static_cast<int>(layout.anchor) % 3, row = static_cast<int>(layout.anchor) / 3;
+    r.x = col == 0 ? 0 : (col == 1 ? (iw - cw) / 2 : iw - cw);
+    r.y = row == 0 ? 0 : (row == 1 ? (ih - ch) / 2 : ih - ch);
     return r;
 }
 
@@ -82,33 +69,41 @@ inline CanvasRect resolve_layout(const CanvasLayout& layout, unsigned int win_w,
 
 class GameLoop {
 private:
-    Application           m_app;
-    graphics::Framebuffer m_fb;
-    graphics::Canvas      m_canvas;
-    CanvasLayout          m_layout;
-    CanvasRect            m_rect;
-    graphics::Color       m_letterbox;
-    graphics::Color       m_canvas_clear;
+    Application     m_app;
+    ViewLayout      m_layout;
+    ViewRect        m_rect;
+    graphics::Color m_letterbox;
+    graphics::Color m_clear;
 
     std::function<void(double dt)>          m_on_update;
-    std::function<void(graphics::Canvas&)>  m_on_render;
+    std::function<void(Renderer&)>          m_on_render;
     std::function<void(const WindowEvent&)> m_on_event;
     std::function<void(GameLoop&)>          m_on_startup;
     std::function<void()>                   m_on_shutdown;
 
     bool m_auto_clear = true;
 
-    void rebuild_canvas() noexcept {
-        m_rect = detail::resolve_layout(m_layout, m_app.width(), m_app.height());
-        unsigned int fb_w = m_rect.w, fb_h = m_rect.h;
-        if (m_layout.mode == CanvasLayout::Mode::fixed) { fb_w = m_layout.fixed_w; fb_h = m_layout.fixed_h; }
-        if (fb_w != m_fb.width() || fb_h != m_fb.height()) { m_fb.resize(fb_w, fb_h, m_canvas_clear); }
-    }
+    void rebuild_view() noexcept { m_rect = detail::resolve_layout(m_layout, m_app.width(), m_app.height()); }
 
-    void blit_canvas_to_window() noexcept {
-        Renderer& r = m_app.renderer();
-        if (m_layout.mode != CanvasLayout::Mode::fill) { r.clear(m_letterbox); }
-        r.draw_framebuffer(m_fb, m_rect.x, m_rect.y, m_rect.w, m_rect.h, m_layout.smooth_scaling);
+    bool uses_logical_size() const noexcept { return m_layout.mode != ViewLayout::Mode::fill && m_layout.fixed_w > 0 && m_layout.fixed_h > 0; }
+
+    void render_frame(Renderer& r) {
+        if (!uses_logical_size()) {
+            if (m_auto_clear) r.clear(m_clear);
+            if (m_on_render) m_on_render(r);
+            return;
+        }
+
+        r.clear(m_letterbox);
+        r.push_transform();
+        r.reset_transform();
+        r.set_clip_rect(m_rect.x, m_rect.y, m_rect.w, m_rect.h);
+        r.translate(m_rect.x, m_rect.y);
+        r.scale(static_cast<double>(m_rect.w) / view_width(), static_cast<double>(m_rect.h) / view_height());
+        if (m_auto_clear) r.draw_rect(0, 0, view_width(), view_height(), graphics::Paint::fill(m_clear));
+        if (m_on_render) m_on_render(r);
+        r.pop_transform();
+        r.reset_clip_rect();
     }
 
 public:
@@ -118,49 +113,52 @@ public:
         const graphics::Color& background = graphics::Color()
     ) noexcept
         : m_app(width, height, title, background)
-        , m_fb(width, height, background)
-        , m_canvas(m_fb)
         , m_letterbox(background)
-        , m_canvas_clear(background)
+        , m_clear(background)
     {}
 
     ~GameLoop() = default;
     GameLoop(const GameLoop&) = delete;
     GameLoop& operator=(const GameLoop&) = delete;
 
-    void set_canvas_layout(const CanvasLayout& layout) noexcept {
+    void set_view_layout(const ViewLayout& layout) noexcept {
         m_layout = layout;
-        if (m_app.window().is_open()) rebuild_canvas();
+        if (m_app.window().is_open()) rebuild_view();
     }
 
-    const CanvasLayout& canvas_layout() const noexcept { return m_layout; }
-    const CanvasRect&   canvas_rect()   const noexcept { return m_rect; }
+    void set_logical_size(unsigned int w, unsigned int h, bool integer_scale = false) noexcept {
+        ViewLayout l = m_layout;
+        l.mode = ViewLayout::Mode::fit;
+        l.fixed_w = w; l.fixed_h = h;
+        l.integer_scale = integer_scale;
+        set_view_layout(l);
+    }
 
-    void set_canvas_clear_color(const graphics::Color& c) noexcept { m_canvas_clear = c; }
-    void set_letterbox_color(const graphics::Color& c)    noexcept { m_letterbox = c; }
+    const ViewLayout& view_layout() const noexcept { return m_layout; }
+    const ViewRect&   view_rect()   const noexcept { return m_rect; }
+
+    void set_clear_color(const graphics::Color& c)     noexcept { m_clear = c; }
+    void set_letterbox_color(const graphics::Color& c) noexcept { m_letterbox = c; }
     void set_auto_clear(bool v) noexcept { m_auto_clear = v; }
 
     void on_update(std::function<void(double dt)> fn)         noexcept { m_on_update   = std::move(fn); }
-    void on_render(std::function<void(graphics::Canvas&)> fn) noexcept { m_on_render   = std::move(fn); }
+    void on_render(std::function<void(Renderer&)> fn)         noexcept { m_on_render   = std::move(fn); }
     void on_event(std::function<void(const WindowEvent&)> fn) noexcept { m_on_event    = std::move(fn); }
     void on_startup(std::function<void(GameLoop&)> fn)        noexcept { m_on_startup  = std::move(fn); }
-    void on_shutdown(std::function<void()> fn)                 noexcept { m_on_shutdown = std::move(fn); }
+    void on_shutdown(std::function<void()> fn)                noexcept { m_on_shutdown = std::move(fn); }
 
-    Application&                 app()               noexcept { return m_app; }
-    Window&                      window()            noexcept { return m_app.window(); }
-    Renderer&                    renderer()          noexcept { return m_app.renderer(); }
-    graphics::Canvas&            canvas()            noexcept { return m_canvas; }
-    graphics::Framebuffer&       framebuffer()       noexcept { return m_fb; }
-    InputManager&                input()             noexcept { return m_app.input(); }
-    const Application&           app()         const noexcept { return m_app; }
-    const Window&                window()      const noexcept { return m_app.window(); }
-    const Renderer&              renderer()    const noexcept { return m_app.renderer(); }
-    const graphics::Canvas&      canvas()      const noexcept { return m_canvas; }
-    const graphics::Framebuffer& framebuffer() const noexcept { return m_fb; }
-    const InputManager&          input()       const noexcept { return m_app.input(); }
+    Application&        app()            noexcept { return m_app; }
+    Window&             window()         noexcept { return m_app.window(); }
+    Renderer&           renderer()       noexcept { return m_app.renderer(); }
+    InputManager&       input()          noexcept { return m_app.input(); }
+    input::GamepadManager& gamepads()    noexcept { return m_app.gamepads(); }
+    const Application&  app()      const noexcept { return m_app; }
+    const Window&       window()   const noexcept { return m_app.window(); }
+    const Renderer&     renderer() const noexcept { return m_app.renderer(); }
+    const InputManager& input()    const noexcept { return m_app.input(); }
 
-    unsigned int canvas_width()  const noexcept { return m_fb.width(); }
-    unsigned int canvas_height() const noexcept { return m_fb.height(); }
+    unsigned int view_width()  const noexcept { return uses_logical_size() ? m_layout.fixed_w : m_app.width(); }
+    unsigned int view_height() const noexcept { return uses_logical_size() ? m_layout.fixed_h : m_app.height(); }
 
     double      delta_seconds() const noexcept { return m_app.delta_seconds(); }
     double      fps()           const noexcept { return m_app.fps(); }
@@ -169,15 +167,23 @@ public:
 
     void quit() noexcept { m_app.quit(); }
 
-    std::pair<int, int> window_to_canvas(int wx, int wy) const noexcept {
-        double sx = static_cast<double>(m_fb.width())  / m_rect.w;
-        double sy = static_cast<double>(m_fb.height()) / m_rect.h;
-        int cx = static_cast<int>(std::round((wx - m_rect.x) * sx));
-        int cy = static_cast<int>(std::round((wy - m_rect.y) * sy));
-        return { cx, cy };
+    vector2d window_to_view(double wx, double wy) const noexcept {
+        if (m_rect.w == 0 || m_rect.h == 0) return { wx, wy };
+        return {
+            (wx - m_rect.x) * static_cast<double>(view_width())  / m_rect.w,
+            (wy - m_rect.y) * static_cast<double>(view_height()) / m_rect.h
+        };
     }
 
-    bool is_inside_canvas(int wx, int wy) const noexcept {
+    vector2d view_to_window(double vx, double vy) const noexcept {
+        if (view_width() == 0 || view_height() == 0) return { vx, vy };
+        return {
+            m_rect.x + vx * static_cast<double>(m_rect.w) / view_width(),
+            m_rect.y + vy * static_cast<double>(m_rect.h) / view_height()
+        };
+    }
+
+    bool is_inside_view(int wx, int wy) const noexcept {
         return wx >= m_rect.x && wx < m_rect.x + static_cast<int>(m_rect.w) && wy >= m_rect.y && wy < m_rect.y + static_cast<int>(m_rect.h);
     }
 
@@ -185,23 +191,17 @@ public:
         m_app.set_auto_clear(false);
 
         m_app.on_startup([this](Application&) {
-            rebuild_canvas();
+            rebuild_view();
             if (m_on_startup) m_on_startup(*this);
         });
 
         m_app.on_event([this](const WindowEvent& e) {
-            if (e.type == WindowEventType::WindowResize) { rebuild_canvas(); }
+            if (e.type == WindowEventType::WindowResize) rebuild_view();
             if (m_on_event) m_on_event(e);
         });
 
         m_app.on_update([this](double dt) { if (m_on_update) m_on_update(dt); });
-
-        m_app.on_render([this](Renderer&) {
-            if (m_auto_clear) m_canvas.clear(m_canvas_clear);
-            if (m_on_render) m_on_render(m_canvas);
-            blit_canvas_to_window();
-        });
-
+        m_app.on_render([this](Renderer& r) { try { render_frame(r); } catch (...) {} });
         m_app.on_shutdown([this]() { if (m_on_shutdown) m_on_shutdown(); });
         return m_app.run();
     }

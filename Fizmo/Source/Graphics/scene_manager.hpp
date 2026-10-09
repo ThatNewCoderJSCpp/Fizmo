@@ -1,9 +1,9 @@
 #ifndef FIZMO_SCENE_HPP
 #define FIZMO_SCENE_HPP
 
-#include "canvas.hpp"
 #include "camera_2d.hpp"
 #include "sprite.hpp"
+#include "../Windows/renderer.hpp"
 #include <vector>
 #include <algorithm>
 #include <string>
@@ -14,10 +14,12 @@
 namespace fizmo {
 namespace graphics {
 
+using windows::Renderer;
+
 class IDrawable {
 public:
     virtual ~IDrawable() noexcept = default;
-    virtual void draw(Canvas& canvas) const noexcept = 0;
+    virtual void draw(Renderer& renderer) const noexcept = 0;
     virtual int  z_order()            const noexcept = 0;
     virtual bool visible()            const noexcept = 0;
 };
@@ -29,7 +31,7 @@ private:
 public:
     explicit SpriteDrawable(Sprite& s) noexcept : m_sprite(&s) {}
 
-    void draw(Canvas& canvas) const noexcept override { m_sprite->draw(canvas); }
+    void draw(Renderer& renderer) const noexcept override { renderer.draw_sprite(*m_sprite); }
     int  z_order()            const noexcept override { return m_sprite->z_order(); }
     bool visible()            const noexcept override { return m_sprite->visible(); }
 
@@ -61,13 +63,18 @@ public:
     void remove(IDrawable* d) noexcept {
         auto it = std::find(m_drawables.begin(), m_drawables.end(), d);
         if (it != m_drawables.end()) { m_drawables.erase(it); }
+        m_owned.erase(std::remove_if(m_owned.begin(), m_owned.end(), [d](const std::unique_ptr<SpriteDrawable>& o) { return o.get() == d; }), m_owned.end());
+    }
+
+    void remove_sprite(const Sprite& s) noexcept {
+        for (auto& o : m_owned) if (&o->sprite() == &s) { remove(o.get()); return; }
     }
 
     bool contains(const IDrawable* d) const noexcept {
         return std::find(m_drawables.begin(), m_drawables.end(), d) != m_drawables.end();
     }
 
-    void clear() noexcept { m_drawables.clear(); }
+    void clear() noexcept { m_drawables.clear(); m_owned.clear(); }
     std::size_t size() const noexcept { return m_drawables.size(); }
 
     SpriteDrawable& add_sprite(Sprite& s) {
@@ -91,12 +98,12 @@ public:
         m_dirty = false;
     }
 
-    void render(Canvas& canvas) noexcept {
+    void render(Renderer& renderer) noexcept {
         if (!m_visible) return;
-        if (m_dirty) sort();
-        if (m_use_camera) m_camera.begin(canvas);
-        for (const auto* d : m_drawables) { if (d->visible()) d->draw(canvas); }
-        if (m_use_camera) m_camera.end(canvas);
+        if (m_dirty || !std::is_sorted(m_drawables.begin(), m_drawables.end(), [](const IDrawable* a, const IDrawable* b) { return a->z_order() < b->z_order(); })) sort();
+        if (m_use_camera) renderer.begin_2d(m_camera);
+        for (const auto* d : m_drawables) { if (d->visible()) d->draw(renderer); }
+        if (m_use_camera) renderer.end_2d();
     }
 
     void on_update(std::function<void(Layer&, double dt)> fn) noexcept { m_on_update = std::move(fn); }
@@ -156,16 +163,18 @@ public:
         auto it = std::find_if(m_layers.begin(), m_layers.end(), [&](const std::unique_ptr<Layer>& l) { return l->name() == name; });
         if (it == m_layers.end()) return false;
         m_layers.erase(it);
+        m_sorted = false; 
         return true;
     }
 
-    void clear() noexcept { m_layers.clear(); }
+    void clear() noexcept { m_layers.clear(); m_order.clear(); m_sorted = true; }
+    void mark_layers_dirty() noexcept { m_sorted = false; }
     std::size_t layer_count() const noexcept { return m_layers.size(); }
     void update(double dt) { for (auto& l : m_layers) l->update(dt); }
 
-    void render(Canvas& canvas) noexcept {
+    void render(Renderer& renderer) noexcept {
         if (!m_sorted) sort_layers();
-        for (auto* l : m_order) l->render(canvas);
+        for (auto* l : m_order) l->render(renderer);
     }
 
     void set_all_viewports(unsigned int w, unsigned int h) noexcept {

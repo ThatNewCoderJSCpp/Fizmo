@@ -501,11 +501,11 @@ private:
     }
 };
 
-logic::Predicate analyze_domain(const Expression& e) {
+inline logic::Predicate analyze_domain(const Expression& e) {
     return DomainAnalysis::analyze(e);
 }
 
-logic::Predicate analyze(symbols::MathExpression e, symbols::MathExpressionManager& mgr) {
+inline logic::Predicate analyze(symbols::MathExpression e, symbols::MathExpressionManager& mgr) {
     return DomainAnalysis::analyze(e, mgr);
 }
 

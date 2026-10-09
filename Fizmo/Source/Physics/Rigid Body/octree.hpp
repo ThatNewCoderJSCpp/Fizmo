@@ -206,6 +206,8 @@ public:
     std::size_t pooled_nodes() const noexcept { return m_nodes.size(); }
     const AABB3D& bounds()       const noexcept { return m_nodes[ROOT].bounds; }
     const AABB3D& loose_bounds() const noexcept { return m_nodes[ROOT].loose; }
+    std::size_t max_per_node()   const noexcept { return m_max_entries; }
+    std::size_t max_depth()      const noexcept { return m_max_depth; }
     double looseness()           const noexcept { return m_looseness; }
     bool   is_loose()            const noexcept { return m_looseness > TIGHT; }
 
@@ -254,10 +256,11 @@ private:
             return loosen(octant_bounds(node.bounds, q)).contains(item_aabb) ? q : -1;
         }
 
+        if (!node.bounds.contains(item_aabb)) return -1;
         int q = 0;
-        if (item_aabb.min.x >= mid.x) q |= 1; else if (item_aabb.max.x > mid.x) return -1;
-        if (item_aabb.min.y >= mid.y) q |= 2; else if (item_aabb.max.y > mid.y) return -1;
-        if (item_aabb.min.z >= mid.z) q |= 4; else if (item_aabb.max.z > mid.z) return -1;
+        if (item_aabb.min.x > mid.x) q |= 1; else if (!(item_aabb.max.x < mid.x)) return -1;
+        if (item_aabb.min.y > mid.y) q |= 2; else if (!(item_aabb.max.y < mid.y)) return -1;
+        if (item_aabb.min.z > mid.z) q |= 4; else if (!(item_aabb.max.z < mid.z)) return -1;
         return q;
     }
 
@@ -299,7 +302,7 @@ private:
 
     void query_node(std::uint32_t n, const AABB3D& region, std::vector<T*>& out) const {
         const Node& node = m_nodes[n];
-        if (!node.loose.overlaps(region)) return;
+        if (n != ROOT && !node.loose.overlaps(region)) return;
         for (const Entry& e : node.entries) if (e.aabb.overlaps(region)) out.push_back(e.item);
         if (node.first_child == NO_CHILD) return;
         for (int q = 0; q < CHILDREN; ++q) query_node(node.first_child + static_cast<std::uint32_t>(q), region, out);
@@ -316,7 +319,7 @@ private:
     template <typename Fn>
     void pair_with(std::uint32_t n, const Entry& e, Fn& on_pair) const {
         const Node& node = m_nodes[n];
-        if (!node.loose.overlaps(e.aabb)) return;
+        if (n != ROOT && !node.loose.overlaps(e.aabb)) return; 
         const std::less<const Entry*> before;
 
         for (const Entry& other : node.entries)
