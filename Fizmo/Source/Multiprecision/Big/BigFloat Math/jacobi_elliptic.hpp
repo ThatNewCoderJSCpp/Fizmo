@@ -30,7 +30,7 @@ static const double jc_ninf = -std::numeric_limits<double>::infinity();
 
 enum class jc_fn : int { am, sn, cn, dn, ns, nc, nd, sc, sd, cs, cd, ds, dc };
 
- double jc_lsum(double a, double b);
+double jc_lsum(double a, double b);
 
 inline bool jc_is_one(const BF& x) { return BF::compare(x, BF::one()) == BF::ordering::equal; }
 
@@ -42,19 +42,19 @@ struct jc_trip {
     double ld   = jc_ninf;
 };
 
- bool jc_newton(const BF& ua, const BF& m, std::size_t want, BF& phi, double& lphi);
+bool jc_newton(const BF& ua, const BF& m, std::size_t want, BF& phi, double& lphi);
 
- void jc_derive(jc_trip& t, const BF& m, std::size_t want);
+void jc_derive(jc_trip& t, const BF& m, std::size_t want);
 
- bool jc_triple(const BF& u, const BF& m, std::size_t want, jc_trip& t);
+bool jc_triple(const BF& u, const BF& m, std::size_t want, jc_trip& t);
 
- void jc_parts(jc_fn f, int& p, int& q);
+void jc_parts(jc_fn f, int& p, int& q);
 
- cs_val jc_raw(jc_fn f, const BF& u, const BF& m, std::size_t want);
+cs_val jc_raw(jc_fn f, const BF& u, const BF& m, std::size_t want);
 
 inline BF jc_signed_inf(bool neg) { return BF::infinity(neg); }
 
- BF jc_public(jc_fn f, const BF& u, const BF& m, const BFC& ctx);
+BF jc_public(jc_fn f, const BF& u, const BF& m, const BFC& ctx);
 
 } // namespace jcdetail
 

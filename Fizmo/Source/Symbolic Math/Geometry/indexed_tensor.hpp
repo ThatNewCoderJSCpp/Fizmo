@@ -233,7 +233,7 @@ inline IndexedTensor RAISE(const IndexedTensor& t, const std::string& idx, const
 inline IndexedTensor LOWER(const IndexedTensor& t, const std::string& idx, const SymbolicSquareTensor& g) { return t.lower(idx, g); }
 inline IndexedTensor TRACE(const IndexedTensor& t, const std::string& name) { return t.contract_on(name); }
 
- cas::Expression FULL_TRACE(const IndexedTensor& t);
+cas::Expression FULL_TRACE(const IndexedTensor& t);
 
 class ChristoffelSymbolsFirst {
 public:

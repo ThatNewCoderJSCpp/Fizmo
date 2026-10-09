@@ -1,6 +1,18 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 #include "random_std_int.hpp"
+
+#if defined(OS_WINDOWS)
+    #include <bcrypt.h>         
+#elif defined(OS_LINUX)
+    #include <errno.h>
+    #include <fcntl.h>
+    #include <sys/random.h>
+    #include <unistd.h>
+#endif
+
+#if defined(_MSC_VER)
+    #include <intrin.h>
+#endif
 
 namespace fizmo {
 namespace detail {
@@ -59,39 +71,39 @@ void os_random_bytes(void* buffer, std::size_t length) {
 #endif
 }
 
-auto RNG::rdtsc() noexcept -> std::uint64_t {
-    #if defined(_MSC_VER)
-        return __rdtsc();
-    #elif defined(__x86_64__)
-        std::uint32_t hi, lo;
-        __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
-        return (static_cast<std::uint64_t>(hi) << 32) | lo;
-    #elif defined(__i386__)
-        std::uint64_t x;
-        __asm__ volatile ("rdtsc" : "=A"(x));
-        return x;
-    #else
-        return static_cast<std::uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
-    #endif
+std::uint64_t RNG::rdtsc() noexcept {
+#if defined(_MSC_VER)
+    return __rdtsc();
+#elif defined(__x86_64__)
+    std::uint32_t hi, lo;
+    __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
+    return (static_cast<std::uint64_t>(hi) << 32) | lo;
+#elif defined(__i386__)
+    std::uint64_t x;
+    __asm__ volatile ("rdtsc" : "=A"(x));
+    return x;
+#else
+    return static_cast<std::uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());
+#endif
+}
+
+std::uint64_t RNG::make_seed() noexcept {
+    std::uint64_t seed = 0;
+    std::uint64_t os_value = 0;
+
+    try {
+        os_random_bytes(&os_value, sizeof(os_value));
+    } catch (...) {
+        os_value = 0;
     }
 
-auto RNG::make_seed() noexcept -> std::uint64_t {
-        std::uint64_t seed = 0;
-        std::uint64_t os_value = 0;
-
-        try {
-            os_random_bytes(&os_value, sizeof(os_value));
-        } catch (...) {
-            os_value = 0;
-        }
-
-        seed = mix(seed, os_value);
-        seed = mix(seed, static_cast<std::uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
-        seed = mix(seed, rdtsc());
-        seed = mix(seed, std::hash<std::thread::id>{}(std::this_thread::get_id()));
-        seed = mix(seed, reinterpret_cast<std::uintptr_t>(&seed));  
-        return seed;
-    }
+    seed = mix(seed, os_value);
+    seed = mix(seed, static_cast<std::uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
+    seed = mix(seed, rdtsc());
+    seed = mix(seed, std::hash<std::thread::id>{}(std::this_thread::get_id()));
+    seed = mix(seed, reinterpret_cast<std::uintptr_t>(&seed));  
+    return seed;
+}
 
 } // namespace detail
 } // namespace fizmo

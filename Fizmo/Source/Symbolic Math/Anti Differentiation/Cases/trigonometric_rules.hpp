@@ -11,7 +11,7 @@ namespace integration {
 
 namespace detail_trig {
 
- bool is_trig_squared(MathExpressionNode* n, NodeType fn, std::uint64_t vid, double& a_out, double& b_out, MathExpressionNode*& inner_out);
+bool is_trig_squared(MathExpressionNode* n, NodeType fn, std::uint64_t vid, double& a_out, double& b_out, MathExpressionNode*& inner_out);
 
 inline bool linear_or_var(MathExpressionNode* inner, std::uint64_t vid, double& a, double& b) {
     if (is_var(inner, vid)) { a = 1.0; b = 0.0; return true; }
@@ -20,7 +20,7 @@ inline bool linear_or_var(MathExpressionNode* inner, std::uint64_t vid, double& 
 
 } // namespace detail_trig
 
- MathExpression try_trigonometric(
+MathExpression try_trigonometric(
     MathExpressionManager& mgr,
     MathExpressionSimplifier& /*simp*/,
     MathExpressionDifferentiator& /*diff*/,

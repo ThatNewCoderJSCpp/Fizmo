@@ -18,7 +18,7 @@ struct DateNames {
     static DateNames& get() { static DateNames names; return names; }
 };
 
- bool local_time(std::time_t t, std::tm& out) noexcept;
+bool local_time(std::time_t t, std::tm& out) noexcept;
 
 struct Date {
     int year = 1970, month = 1, day = 1;

@@ -30,9 +30,9 @@ inline vector3d max(const vector3d& a, const vector3d& b) noexcept { return { st
 
 inline double component(const vector3d& v, int axis) noexcept { return axis == 0 ? v.x : (axis == 1 ? v.y : v.z); }
 
- vector3d mul(const math::Matrix3d& m, const vector3d& v) noexcept;
+vector3d mul(const math::Matrix3d& m, const vector3d& v) noexcept;
 
- vector3d mul_transpose(const math::Matrix3d& m, const vector3d& v) noexcept;
+vector3d mul_transpose(const math::Matrix3d& m, const vector3d& v) noexcept;
 
 inline math::Matrix3d outer(const vector3d& a, const vector3d& b) noexcept {
     return { a.x * b.x, a.x * b.y, a.x * b.z,
@@ -40,9 +40,9 @@ inline math::Matrix3d outer(const vector3d& a, const vector3d& b) noexcept {
              a.z * b.x, a.z * b.y, a.z * b.z };
 }
 
- void orthonormal_basis(const vector3d& n, vector3d& t1, vector3d& t2) noexcept;
+void orthonormal_basis(const vector3d& n, vector3d& t1, vector3d& t2) noexcept;
 
- QuatD integrate_rotation(const QuatD& q, const vector3d& w, double dt) noexcept;
+QuatD integrate_rotation(const QuatD& q, const vector3d& w, double dt) noexcept;
 
 } // namespace vec3
 
@@ -213,13 +213,13 @@ namespace detail {
 
 inline double sphere_volume(const SphereShape& s) { return 4.0 / 3.0 * static_cast<double>(constants::pi()) * s.radius * s.radius * s.radius; }
 
- double capsule_volume(const CapsuleShape3D& c);
+double capsule_volume(const CapsuleShape3D& c);
 
- MassData3D compute_sphere_mass(const SphereShape& s, double density);
+MassData3D compute_sphere_mass(const SphereShape& s, double density);
 
- MassData3D compute_capsule_mass(const CapsuleShape3D& c, double density);
+MassData3D compute_capsule_mass(const CapsuleShape3D& c, double density);
 
- MassData3D compute_hull_mass(const HullShape& h, double density);
+MassData3D compute_hull_mass(const HullShape& h, double density);
 
 template <class FromU, class ToU>
 inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, vector3d>::type
@@ -253,9 +253,9 @@ convert_position_vec(const vector3d& v, FromU from, ToU to) {
 
 } // namespace detail
 
- double compute_shape_volume(const Shape3D& shape);
+double compute_shape_volume(const Shape3D& shape);
 
- MassData3D compute_mass(const Shape3D& shape, double density);
+MassData3D compute_mass(const Shape3D& shape, double density);
 
 struct MassSpec3D {
 public:

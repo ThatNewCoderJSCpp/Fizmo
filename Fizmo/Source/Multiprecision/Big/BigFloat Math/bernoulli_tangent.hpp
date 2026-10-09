@@ -13,7 +13,7 @@ namespace constants {
 
 namespace detail {
 
- BigUInt bn_gcd(BigUInt a, BigUInt b);
+BigUInt bn_gcd(BigUInt a, BigUInt b);
 
 static const std::size_t bn_index_cap = 1u << 18;
 
@@ -22,13 +22,13 @@ inline std::vector<BigUInt>& tangent_cache() {
     return cache;
 }
 
- void tangent_build(std::vector<BigUInt>& cache, std::size_t n);
+void tangent_build(std::vector<BigUInt>& cache, std::size_t n);
 
- const std::vector<BigUInt>& tangent_table(std::size_t n);
+const std::vector<BigUInt>& tangent_table(std::size_t n);
 
- void tangent_reserve(std::size_t n);
+void tangent_reserve(std::size_t n);
 
- void zigzag_build(std::vector<BigUInt>& A, std::size_t m);
+void zigzag_build(std::vector<BigUInt>& A, std::size_t m);
 
 static const std::size_t sn_index_cap = 1u << 17;   
 
@@ -37,11 +37,11 @@ inline std::vector<BigUInt>& secant_cache() {
     return cache;
 }
 
- void secant_build(std::vector<BigUInt>& cache, std::size_t n);
+void secant_build(std::vector<BigUInt>& cache, std::size_t n);
 
- const std::vector<BigUInt>& secant_table(std::size_t n);
+const std::vector<BigUInt>& secant_table(std::size_t n);
 
- void secant_reserve(std::size_t n);
+void secant_reserve(std::size_t n);
 
 static const std::size_t en_index_cap = 1u << 14;
 static const std::size_t en_tri_cap   = 256;  
@@ -52,9 +52,9 @@ inline const BigUInt& en_at(const std::vector<BigUInt>& h, std::size_t n, std::s
     return (k < h.size()) ? h[k] : h[n - 1 - k];
 }
 
- std::vector<BigUInt> en_step(const std::vector<BigUInt>& prev, std::size_t n);
+std::vector<BigUInt> en_step(const std::vector<BigUInt>& prev, std::size_t n);
 
- std::vector<std::vector<BigUInt>>& eulerian_tri();
+std::vector<std::vector<BigUInt>>& eulerian_tri();
 
 struct en_row_cache {
     std::size_t          n = 0;
@@ -66,22 +66,22 @@ inline en_row_cache& eulerian_last() {
     return c;
 }
 
- const std::vector<BigUInt>& eulerian_half_row(std::size_t n);
+const std::vector<BigUInt>& eulerian_half_row(std::size_t n);
 
 } // namespace detail
 
- BigUInt tangent_number(std::size_t n);
+BigUInt tangent_number(std::size_t n);
 
 inline BigUInt secant_number(std::size_t k) {
     if (k > detail::sn_index_cap) return BigUInt::undefined();
     return detail::secant_table(k)[k];
 }
 
- BigInt euler_number(std::size_t n);
+BigInt euler_number(std::size_t n);
 
- BigUInt eulerian_number(std::size_t n, std::size_t k);
+BigUInt eulerian_number(std::size_t n, std::size_t k);
 
- std::vector<BigUInt> eulerian_row(std::size_t n);
+std::vector<BigUInt> eulerian_row(std::size_t n);
 
 // B_1 = -1/2 
 class BigBernoulliNumber {
@@ -124,7 +124,7 @@ inline BigFloat bernoulli(std::size_t k, const BigFloatContext& ctx) {
 
 inline BigFloat bernoulli(std::size_t k) { return bernoulli(k, BigFloatContext::current()); }
 
- BigFloat bernoulli_float(std::size_t k, const BigFloatContext& ctx);
+BigFloat bernoulli_float(std::size_t k, const BigFloatContext& ctx);
 
 inline BigFloat bernoulli_float(std::size_t k) { return bernoulli_float(k, BigFloatContext::current()); }
 

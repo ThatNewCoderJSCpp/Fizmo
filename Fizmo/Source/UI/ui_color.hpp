@@ -12,15 +12,15 @@ struct Hsv {
     double h = 0.0, s = 0.0, v = 0.0, a = 1.0;
 };
 
- Color hsv_to_color(const Hsv& c) noexcept;
+Color hsv_to_color(const Hsv& c) noexcept;
 
- Hsv color_to_hsv(const Color& c, double keep_hue = 0.0) noexcept;
+Hsv color_to_hsv(const Color& c, double keep_hue = 0.0) noexcept;
 
- std::string color_to_hex(const Color& c, bool alpha);
+std::string color_to_hex(const Color& c, bool alpha);
 
- std::optional<Color> color_from_hex(std::string s);
+std::optional<Color> color_from_hex(std::string s);
 
- const graphics::Texture& color_wheel_texture();
+const graphics::Texture& color_wheel_texture();
 
 class ColorPicker : public Widget {
 protected:

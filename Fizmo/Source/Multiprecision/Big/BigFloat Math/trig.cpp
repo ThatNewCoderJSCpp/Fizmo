@@ -1,5 +1,4 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 
 namespace fizmo {
 namespace multiprecision {
@@ -180,39 +179,39 @@ namespace math {
 namespace detail {
 
 void tg_fold_half(const BigFloat& x, BigFloat& f, bool& flip) {
-        const BigInt k = x.get_integer_part();
-        f    = x.get_fractional_part();
-        flip = k.is_odd();
-        const BigFloat half(BigUInt::one(), false, -1);
-        if (BigFloat::compare(f.abs(), half) != BigFloat::ordering::greater) return;
-        const std::size_t     eb = BigFloatContext::clamp_precision(f.significand_bits() + 8);
-        const BigFloatContext ec(eb, RoundingMode::nearest_even);   
-        f    = f.signbit() ? BigFloat::add(f, BigFloat::one(), ec) : BigFloat::sub(f, BigFloat::one(), ec);
-        flip = !flip;
-    }
+    const BigInt k = x.get_integer_part();
+    f    = x.get_fractional_part();
+    flip = k.is_odd();
+    const BigFloat half(BigUInt::one(), false, -1);
+    if (BigFloat::compare(f.abs(), half) != BigFloat::ordering::greater) return;
+    const std::size_t     eb = BigFloatContext::clamp_precision(f.significand_bits() + 8);
+    const BigFloatContext ec(eb, RoundingMode::nearest_even);   
+    f    = f.signbit() ? BigFloat::add(f, BigFloat::one(), ec) : BigFloat::sub(f, BigFloat::one(), ec);
+    flip = !flip;
+}
 
 BigFloat normalized_sinc_finite(const BigFloat& x, const BigFloatContext& ctx) {
-        if (x.is_integer()) return BigFloat::zero();             
-        if (tg_negligible(x, ctx.precision)) return tg_just_under_one(ctx);
-        BigFloat f;
-        bool     flip = false;
-        tg_fold_half(x, f, flip);
-        std::size_t guard = 32;
+    if (x.is_integer()) return BigFloat::zero();             
+    if (tg_negligible(x, ctx.precision)) return tg_just_under_one(ctx);
+    BigFloat f;
+    bool     flip = false;
+    tg_fold_half(x, f, flip);
+    std::size_t guard = 32;
 
-        for (;;) {
-            const std::size_t     want = ctx.precision + guard;
-            const BigFloatContext wc(want, RoundingMode::nearest_even);
-            const BigFloat p   = constants::pi(wc);
-            const BigFloat num = math::sin(BigFloat::mul(f, p, wc), wc);      
-            const BigFloat den = BigFloat::mul(x, p, wc);
-            BigFloat       v   = BigFloat::div(num, den, wc);
-            if (flip) v.negate_mutable();
-            if (!v.is_finite() || v.is_zero()) return v;
-            if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, tg_err_of(v, want) + 4)) return v.rounded(ctx);
-            if (tg_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
-            guard *= 2;
-        }
+    for (;;) {
+        const std::size_t     want = ctx.precision + guard;
+        const BigFloatContext wc(want, RoundingMode::nearest_even);
+        const BigFloat p   = constants::pi(wc);
+        const BigFloat num = math::sin(BigFloat::mul(f, p, wc), wc);      
+        const BigFloat den = BigFloat::mul(x, p, wc);
+        BigFloat       v   = BigFloat::div(num, den, wc);
+        if (flip) v.negate_mutable();
+        if (!v.is_finite() || v.is_zero()) return v;
+        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, tg_err_of(v, want) + 4)) return v.rounded(ctx);
+        if (tg_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
+        guard *= 2;
     }
+}
 
 } // namespace detail
 } // namespace math

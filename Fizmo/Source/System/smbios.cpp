@@ -1,6 +1,6 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 #include "smbios.hpp"
+#include "platform_windows.hpp"
 
 namespace fizmo {
 namespace system {

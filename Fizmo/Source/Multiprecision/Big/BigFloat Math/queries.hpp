@@ -14,7 +14,7 @@ inline BigInt integer_part(const BigInt& x)   { return x; }
 inline BigFloat fractional_part(const BigFloat& x) { return x.get_fractional_part(); }
 inline BigFloat fractional_part(const BigUInt& x)  { return x.is_undefined() ? BigFloat::undefined() : BigFloat::zero(); }
 
- BigFloat fractional_part(const BigInt& x);
+BigFloat fractional_part(const BigInt& x);
 
 inline bool is_integer(const BigUInt& x)  { return !x.is_undefined(); }
 inline bool is_integer(const BigInt& x)   { return !(x.is_nan() || x.is_undefined()); }

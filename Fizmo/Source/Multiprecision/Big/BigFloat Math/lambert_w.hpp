@@ -30,7 +30,7 @@ struct lw_val {
 
 inline BFC lw_ctx(std::size_t p) { return BFC(BFC::clamp_precision(p), RoundingMode::nearest_even); }
 
- double lw_log2(const BF& x);
+double lw_log2(const BF& x);
 
 inline double lw_to_double(const BF& x) {                                 
     if (x.is_zero()) return 0.0;
@@ -38,7 +38,7 @@ inline double lw_to_double(const BF& x) {
     return x.signbit() ? -v : v;
 }
 
- bool lw_safe(const BF& v, std::size_t want, double lost, std::size_t prec);
+bool lw_safe(const BF& v, std::size_t want, double lost, std::size_t prec);
 
 template <typename Eval>
 inline BF lw_drive(const BFC& ctx, Eval eval) {
@@ -54,21 +54,21 @@ inline BF lw_drive(const BFC& ctx, Eval eval) {
     }
 }
 
- int lw_eps(const BF& x, BF& eps);
+int lw_eps(const BF& x, BF& eps);
 
- double lw_halley_d(double w, double x);
+double lw_halley_d(double w, double x);
 
- BF lw_seed(const BF& x, bool lower, const BF& eps, bool have_eps, std::size_t& sp);
+BF lw_seed(const BF& x, bool lower, const BF& eps, bool have_eps, std::size_t& sp);
 
- bool lw_newton(const BF& x, bool lower, const BF& eps, bool have_eps, std::size_t want, BF& w);
+bool lw_newton(const BF& x, bool lower, const BF& eps, bool have_eps, std::size_t want, BF& w);
 
- int lw_sign(const BF& y, const BF& x, std::size_t q);
+int lw_sign(const BF& y, const BF& x, std::size_t q);
 
- lw_val lw_raw(const BF& x, bool lower, const BF& eps, bool have_eps, std::size_t want);
+lw_val lw_raw(const BF& x, bool lower, const BF& eps, bool have_eps, std::size_t want);
 
 } // namespace lwdetail
 
- BigFloat lambert_w(const BigFloat& x, std::int64_t k, const BigFloatContext& ctx);
+BigFloat lambert_w(const BigFloat& x, std::int64_t k, const BigFloatContext& ctx);
 
 inline BigFloat lambert_w(const BigFloat& x, std::int64_t k = 0)            { return lambert_w(x, k, BigFloatContext::current()); }
 inline BigFloat lambert_w(const BigFloat& x, const BigFloatContext& ctx)    { return lambert_w(x, 0, ctx); }

@@ -20,7 +20,7 @@ enum class FontWeight : std::uint16_t {
 
 constexpr bool is_bold(FontWeight w) noexcept { return static_cast<std::uint16_t>(w) >= 700; }
 
- std::ostream& operator<<(std::ostream& os, FontWeight w);
+std::ostream& operator<<(std::ostream& os, FontWeight w);
 
 enum class FontSlant : std::uint8_t {
     Normal  = 0,
@@ -28,7 +28,7 @@ enum class FontSlant : std::uint8_t {
     Oblique = 2
 };
 
- std::ostream& operator<<(std::ostream& os, FontSlant s);
+std::ostream& operator<<(std::ostream& os, FontSlant s);
 
 enum class TextDecoration : std::uint8_t {
     None            = 0,
@@ -70,7 +70,7 @@ enum class TextAlign : std::uint8_t {
     Justify = 3
 };
 
- std::ostream& operator<<(std::ostream& os, TextAlign a);
+std::ostream& operator<<(std::ostream& os, TextAlign a);
 
 enum class VerticalAlign : std::uint8_t {
     Baseline    = 0,

@@ -50,11 +50,11 @@ inline pl_vcache& pl_zeta_cache() { static thread_local pl_vcache c; return c; }
 inline pl_vcache& pl_eta_cache()  { static thread_local pl_vcache c; return c; }
 inline pl_vcache& pl_zneg_cache() { static thread_local pl_vcache c; return c; }
 
- BigFloat pl_zeta_pos(std::uint64_t j, const BigFloatContext& wc);
+BigFloat pl_zeta_pos(std::uint64_t j, const BigFloatContext& wc);
 
- BigFloat pl_eta_pos(std::uint64_t j, const BigFloatContext& wc);
+BigFloat pl_eta_pos(std::uint64_t j, const BigFloatContext& wc);
 
- BigFloat pl_zeta_negodd(std::uint64_t m, const BigFloatContext& wc);
+BigFloat pl_zeta_negodd(std::uint64_t m, const BigFloatContext& wc);
 
 struct pl_acc {
     double err  = hz_ninf();
@@ -66,26 +66,26 @@ struct pl_acc {
     zt_val finish(const BigFloat& S, const BigFloatContext& wc, double ltail) const;
 };
 
- bool pl_neg_int(std::uint64_t m, const BigFloat& z, const BigFloatContext& ctx, BigFloat& out);
+bool pl_neg_int(std::uint64_t m, const BigFloat& z, const BigFloatContext& ctx, BigFloat& out);
 
- zt_val pl_int_direct(std::uint64_t n, const BigFloat& z, std::size_t want);
+zt_val pl_int_direct(std::uint64_t n, const BigFloat& z, std::size_t want);
 
 
- zt_val pl_int_mu(std::uint64_t n, const BigFloat& mu, bool eta, std::size_t want);
+zt_val pl_int_mu(std::uint64_t n, const BigFloat& mu, bool eta, std::size_t want);
 
- zt_val pl_int_raw(std::uint64_t n, const BigFloat& z, std::size_t want);
+zt_val pl_int_raw(std::uint64_t n, const BigFloat& z, std::size_t want);
 
- zt_val pl_int_inversion(std::uint64_t n, const BigFloat& z, std::size_t want);
+zt_val pl_int_inversion(std::uint64_t n, const BigFloat& z, std::size_t want);
 
- zt_val pl_nonint_mu(const BigFloat& s, const BigFloat& om, const BigFloat& mu, bool eta, std::size_t want);
+zt_val pl_nonint_mu(const BigFloat& s, const BigFloat& om, const BigFloat& mu, bool eta, std::size_t want);
 
- zt_val pl_raw_unit(const BigFloat& z, const BigFloat& s, const BigFloat& om, std::size_t want);
+zt_val pl_raw_unit(const BigFloat& z, const BigFloat& s, const BigFloat& om, std::size_t want);
 
- zt_val pl_li2_raw(const BigFloat& z, std::size_t want);
+zt_val pl_li2_raw(const BigFloat& z, std::size_t want);
 
 } // namespace pldetail
 
- BigFloat polylog(const BigFloat& z, const BigFloat& s, const BigFloatContext& ctx);
+BigFloat polylog(const BigFloat& z, const BigFloat& s, const BigFloatContext& ctx);
 
 inline BigFloat polylog(const BigFloat& z, const BigFloat& s) { return polylog(z, s, BigFloatContext::current()); }
 

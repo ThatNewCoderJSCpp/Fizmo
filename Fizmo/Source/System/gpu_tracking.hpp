@@ -4,7 +4,7 @@
 #include "tracker.hpp"
 #include "nvml.hpp"
 #include "platform_linux.hpp"
-#include "platform_windows.hpp"
+#include "win_library.hpp"
 #include <set>
 
 namespace fizmo {
@@ -145,159 +145,14 @@ private:
     std::vector<GPUAdapterSample> sample_adapters(double wall);
 
 #elif defined(OS_WINDOWS)
-    std::unique_ptr<detail::win::Dxgi> m_dxgi;
-    detail::win::Kmt                   m_kmt;
-    std::unique_ptr<detail::win::Pdh>  m_pdh;
-    detail::win::Pdh::Counter          m_engine    = nullptr;
-    detail::win::Pdh::Counter          m_dedicated = nullptr;
-    detail::win::Pdh::Counter          m_shared    = nullptr;
-    std::vector<detail::win::Pdh::Item> m_items;
-    std::vector<std::size_t>           m_dxgi_of;
-    std::vector<LUID>                  m_luids;
-    std::vector<std::string>           m_tags;
-    std::string                        m_pid_tag;
+    struct WinState;
+    detail::Opaque<WinState> m_win;
 
-    void discover() {
-        m_dxgi = std::make_unique<detail::win::Dxgi>();
-        const auto& list = m_dxgi->adapters();
+    void discover();
 
-        for (std::size_t i = 0; i < list.size(); ++i) {
-            const detail::win::DxgiAdapterInfo& d = list[i];
-            if (d.software) continue;
-            GPUAdapterInfo info;
-            info.name       = d.name;
-            info.vendor_id  = d.vendor_id;
-            info.device_id  = d.device_id;
-            info.vendor     = vendor_name(d.vendor_id);
-            info.luid_valid = true;
-            info.luid       = detail::win::luid_u64(d.luid);
-            info.memory_total = d.dedicated;
-            info.shared_total = d.shared;
-            info.integrated = d.dedicated < (512ull << 20);
-            m_info.push_back(info);
-            m_dxgi_of.push_back(i);
-            m_luids.push_back(d.luid);
-            m_tags.push_back(detail::win::luid_tag(d.luid));
-        }
+    static bool parse_engine(const std::string& name, std::string& luid, std::string& engine, std::string& type);
 
-        m_pid_tag = "pid_" + std::to_string(GetCurrentProcessId()) + "_";
-        m_pdh = std::make_unique<detail::win::Pdh>();
-        if (m_pdh->valid()) {
-            m_engine    = m_pdh->add(L"\\GPU Engine(*)\\Utilization Percentage");
-            m_dedicated = m_pdh->add(L"\\GPU Adapter Memory(*)\\Dedicated Usage");
-            m_shared    = m_pdh->add(L"\\GPU Adapter Memory(*)\\Shared Usage");
-            m_pdh->collect();
-        }
-
-        m_nvml_of.assign(m_info.size(), -1);
-        if (m_nvml.valid()) {
-            std::vector<bool> used(m_nvml.devices().size(), false);
-            for (std::size_t i = 0; i < m_info.size(); ++i) {
-                if (m_info[i].vendor_id != 0x10DE) continue;
-                for (std::size_t k = 0; k < m_nvml.devices().size(); ++k) {
-                    if (used[k] || (m_nvml.devices()[k].device_id && m_nvml.devices()[k].device_id != m_info[i].device_id)) continue;
-                    m_nvml_of[i] = static_cast<int>(k);
-                    used[k] = true;
-                    m_info[i].pci_bus = m_nvml.devices()[k].pci_bus;
-                    break;
-                }
-            }
-        }
-    }
-
-    static bool parse_engine(const std::string& name, std::string& luid, std::string& engine, std::string& type) {
-        const std::string n = detail::lower(name);
-        const std::size_t l = n.find("luid_");
-        const std::size_t p = n.find("_phys_");
-        const std::size_t e = n.find("_eng_");
-        const std::size_t t = n.find("_engtype_");
-        if (l == std::string::npos || p == std::string::npos || e == std::string::npos || t == std::string::npos || p < l || t < e) return false;
-        luid   = n.substr(l, p - l);
-        engine = n.substr(p, t - p);
-        type   = name.substr(t + 9);
-        if (type.empty()) type = "engine";
-        return true;
-    }
-
-    std::vector<GPUAdapterSample> sample_adapters(double) {
-        std::vector<GPUAdapterSample> out(m_info.size());
-        for (std::size_t i = 0; i < m_info.size(); ++i) {
-            GPUAdapterSample& a = out[i];
-            a.name = m_info[i].name;
-            a.vendor = m_info[i].vendor;
-            a.vendor_id = m_info[i].vendor_id;
-            a.device_id = m_info[i].device_id;
-            a.integrated = m_info[i].integrated;
-            a.memory_total = m_info[i].memory_total;
-            a.shared_total = m_info[i].shared_total;
-            a.source = "pdh+d3dkmt";
-        }
-
-        auto index_of = [&](const std::string& lowered) -> int {
-            for (std::size_t i = 0; i < m_tags.size(); ++i) if (lowered.find(m_tags[i]) != std::string::npos) return static_cast<int>(i);
-            return -1;
-        };
-
-        if (m_pdh && m_pdh->valid() && m_pdh->collect()) {
-            std::vector<std::map<std::string, double>> engine_total(m_info.size()), engine_self(m_info.size());
-            std::vector<std::map<std::string, std::string>> engine_type(m_info.size());
-
-            if (m_pdh->items(m_engine, m_items)) {
-                for (const auto& it : m_items) {
-                    std::string luid, engine, type;
-                    if (!parse_engine(it.name, luid, engine, type)) continue;
-                    const int idx = index_of(luid);
-                    if (idx < 0) continue;
-                    const std::size_t k = static_cast<std::size_t>(idx);
-                    engine_total[k][engine] += it.value;
-                    engine_type[k][engine] = type;
-                    if (detail::starts_with(detail::lower(it.name), m_pid_tag.c_str())) engine_self[k][engine] += it.value;
-                }
-            }
-
-            for (std::size_t k = 0; k < m_info.size(); ++k) {
-                GPUAdapterSample& a = out[k];
-                std::map<std::string, GPUEngine> by_type;
-                double top = 0.0, top_self = 0.0;
-                for (const auto& e : engine_total[k]) {
-                    const std::string& type = engine_type[k][e.first];
-                    const double total = detail::clamp_percent(e.second);
-                    const double self_v = detail::clamp_percent(engine_self[k][e.first]);
-                    GPUEngine& g = by_type[type];
-                    g.name = type;
-                    g.utilization_percent = std::max(g.utilization_percent, total);
-                    g.process_percent = std::max(g.process_percent.value_or(0.0), self_v);
-                    top = std::max(top, total);
-                    top_self = std::max(top_self, self_v);
-                }
-                if (!engine_total[k].empty()) {
-                    a.utilization_percent = top;
-                    a.process_percent = top_self;
-                }
-                for (auto& kv : by_type) a.engines.push_back(kv.second);
-            }
-
-            if (m_pdh->items(m_dedicated, m_items))
-                for (const auto& it : m_items) { const int idx = index_of(detail::lower(it.name)); if (idx >= 0) out[static_cast<std::size_t>(idx)].memory_used = static_cast<std::uint64_t>(it.value); }
-            if (m_pdh->items(m_shared, m_items))
-                for (const auto& it : m_items) { const int idx = index_of(detail::lower(it.name)); if (idx >= 0) out[static_cast<std::size_t>(idx)].shared_used = static_cast<std::uint64_t>(it.value); }
-        }
-
-        for (std::size_t k = 0; k < m_info.size(); ++k) {
-            GPUAdapterSample& a = out[k];
-            const detail::win::Kmt::Perf p = m_kmt.query(m_luids[k]);
-            a.temperature_c    = p.temperature_c;
-            a.fan_rpm          = p.fan_rpm;
-            a.power_percent    = p.power_percent;
-            a.memory_clock_mhz = p.memory_clock_mhz;
-            a.clock_mhz        = p.clock_mhz;
-            a.max_clock_mhz    = p.max_clock_mhz;
-            a.process_memory   = m_dxgi->process_local_usage(m_dxgi_of[k]);
-            apply_nvml(k, a);
-        }
-
-        return out;
-    }
+    std::vector<GPUAdapterSample> sample_adapters(double);
 
 #else
     void discover() {}

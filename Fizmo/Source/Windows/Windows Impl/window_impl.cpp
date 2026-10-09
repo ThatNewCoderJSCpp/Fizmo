@@ -1,5 +1,4 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 #include "window_factory.hpp"
 
 #if defined(OS_WINDOWS)

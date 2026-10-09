@@ -1,5 +1,4 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 #include "socket_impl_base.hpp"
 
 namespace fizmo {

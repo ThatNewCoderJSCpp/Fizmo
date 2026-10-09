@@ -1,6 +1,21 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 #include "paths.hpp"
+
+#if defined(OS_WINDOWS)
+#include <shlobj.h>
+
+namespace fizmo {
+namespace system {
+namespace paths {
+namespace detail {
+
+fs::path known_folder(const KNOWNFOLDERID& id);
+
+} // namespace detail
+} // namespace paths
+} // namespace system
+} // namespace fizmo
+#endif
 
 namespace fizmo {
 namespace system {
@@ -143,64 +158,84 @@ bool write_file(const fs::path& p, const void* data, std::size_t size) {
 }
 
 auto AssetPaths::operator=(const AssetPaths& o) -> AssetPaths& {
-        if (this == &o) return *this;
-        std::vector<fs::path> copy;
-        { std::lock_guard<std::mutex> g(o.m_lock); copy = o.m_roots; }
-        std::lock_guard<std::mutex> g(m_lock);
-        m_roots = std::move(copy);
-        return *this;
-    }
+    if (this == &o) return *this;
+    std::vector<fs::path> copy;
+    { std::lock_guard<std::mutex> g(o.m_lock); copy = o.m_roots; }
+    std::lock_guard<std::mutex> g(m_lock);
+    m_roots = std::move(copy);
+    return *this;
+}
 
-auto AssetPaths::add_defaults() -> void {
-        const std::string env = detail::env("FIZMO_ASSET_PATH");
+void AssetPaths::add_defaults() {
+    const std::string env = detail::env("FIZMO_ASSET_PATH");
 #if defined(OS_WINDOWS)
-        const char sep = ';';
+    const char sep = ';';
 #else
-        const char sep = ':';
+    const char sep = ':';
 #endif
-        std::size_t start = 0;
-        while (!env.empty() && start <= env.size()) {
-            std::size_t end = env.find(sep, start);
-            if (end == std::string::npos) end = env.size();
-            if (end > start) add_root(detail::u8(env.substr(start, end - start)));
-            start = end + 1;
-        }
-        const fs::path exe = executable_dir();
-        add_root(exe / "assets");
-        add_root(exe);
-        add_root(current_dir() / "assets");
-        add_root(current_dir());
+    std::size_t start = 0;
+    while (!env.empty() && start <= env.size()) {
+        std::size_t end = env.find(sep, start);
+        if (end == std::string::npos) end = env.size();
+        if (end > start) add_root(detail::u8(env.substr(start, end - start)));
+        start = end + 1;
     }
+    const fs::path exe = executable_dir();
+    add_root(exe / "assets");
+    add_root(exe);
+    add_root(current_dir() / "assets");
+    add_root(current_dir());
+}
 
-auto AssetPaths::add_root(const fs::path& root, bool front) -> void {
-        std::error_code ec;
-        fs::path p = fs::weakly_canonical(root, ec);
-        if (ec) p = root;
-        std::lock_guard<std::mutex> g(m_lock);
-        for (const fs::path& r : m_roots) if (r == p) return;
-        if (front) m_roots.insert(m_roots.begin(), p);
-        else m_roots.push_back(p);
-    }
+void AssetPaths::add_root(const fs::path& root, bool front) {
+    std::error_code ec;
+    fs::path p = fs::weakly_canonical(root, ec);
+    if (ec) p = root;
+    std::lock_guard<std::mutex> g(m_lock);
+    for (const fs::path& r : m_roots) if (r == p) return;
+    if (front) m_roots.insert(m_roots.begin(), p);
+    else m_roots.push_back(p);
+}
 
-auto AssetPaths::remove_root(const fs::path& root) -> bool {
-        std::error_code ec;
-        fs::path p = fs::weakly_canonical(root, ec);
-        if (ec) p = root;
-        std::lock_guard<std::mutex> g(m_lock);
-        for (auto it = m_roots.begin(); it != m_roots.end(); ++it) if (*it == p) { m_roots.erase(it); return true; }
-        return false;
-    }
+bool AssetPaths::remove_root(const fs::path& root) {
+    std::error_code ec;
+    fs::path p = fs::weakly_canonical(root, ec);
+    if (ec) p = root;
+    std::lock_guard<std::mutex> g(m_lock);
+    for (auto it = m_roots.begin(); it != m_roots.end(); ++it) if (*it == p) { m_roots.erase(it); return true; }
+    return false;
+}
 
 auto AssetPaths::resolve(const fs::path& relative) const -> std::optional<fs::path> {
-        std::error_code ec;
-        if (relative.is_absolute()) return fs::exists(relative, ec) ? std::optional<fs::path>(relative) : std::nullopt;
-        for (const fs::path& r : roots()) {
-            const fs::path candidate = r / relative;
-            if (fs::exists(candidate, ec)) return candidate;
-        }
-        return std::nullopt;
+    std::error_code ec;
+    if (relative.is_absolute()) return fs::exists(relative, ec) ? std::optional<fs::path>(relative) : std::nullopt;
+    for (const fs::path& r : roots()) {
+        const fs::path candidate = r / relative;
+        if (fs::exists(candidate, ec)) return candidate;
     }
+    return std::nullopt;
+}
 
+} // namespace paths
+} // namespace system
+} // namespace fizmo
+
+namespace fizmo {
+namespace system {
+namespace paths {
+namespace detail {
+
+#if defined(OS_WINDOWS)
+fs::path known_folder(const KNOWNFOLDERID& id) {
+    PWSTR p = nullptr;
+    fs::path out;
+    if (SUCCEEDED(SHGetKnownFolderPath(id, 0, nullptr, &p)) && p) out = fs::path(p);
+    if (p) CoTaskMemFree(p);
+    return out;
+}
+#endif
+
+} // namespace detail
 } // namespace paths
 } // namespace system
 } // namespace fizmo

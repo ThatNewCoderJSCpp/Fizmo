@@ -7,19 +7,19 @@ namespace fizmo {
 namespace multiprecision {
 namespace math {
 
- BigFloat fmod(const BigFloat& x, const BigFloat& y);
+BigFloat fmod(const BigFloat& x, const BigFloat& y);
 
- BigUInt gcd(const BigUInt& a, const BigUInt& b);
+BigUInt gcd(const BigUInt& a, const BigUInt& b);
 
- BigUInt lcm(const BigUInt& a, const BigUInt& b);
+BigUInt lcm(const BigUInt& a, const BigUInt& b);
 
- BigFloat trunc(const BigFloat& x);
+BigFloat trunc(const BigFloat& x);
 
- BigFloat round(const BigFloat& x);
+BigFloat round(const BigFloat& x);
 
- BigFloat floor(const BigFloat& x);
+BigFloat floor(const BigFloat& x);
 
- BigFloat ceiling(const BigFloat& x);
+BigFloat ceiling(const BigFloat& x);
 
 } // namespace math
 } // namespace multiprecision

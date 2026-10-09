@@ -1,5 +1,4 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 #include "window_events.hpp"
 
 namespace fizmo {
@@ -49,45 +48,45 @@ const char* event_type_name(WindowEventType et) noexcept {
     }
 }
 
-auto WindowEventHandler::add_event_listener(WindowEventType type, std::function<void(const WindowEvent&)> callback) noexcept -> std::uint64_t {
-        std::uint64_t id = m_next_id++;
-        m_listeners[index(type)].push_back({ id, std::move(callback) });
-        return id;
-    }
+std::uint64_t WindowEventHandler::add_event_listener(WindowEventType type, std::function<void(const WindowEvent&)> callback) noexcept {
+    std::uint64_t id = m_next_id++;
+    m_listeners[index(type)].push_back({ id, std::move(callback) });
+    return id;
+}
 
-auto WindowEventHandler::add_event_listener(const std::string& id_str, WindowEventType type, std::function<void(const WindowEvent&)> callback) noexcept -> std::uint64_t {
-        std::uint64_t id = hash_event_id(id_str);
-        remove_event_listener(id);
-        m_listeners[index(type)].push_back({ id, std::move(callback) });
-        return id;
-    }
+std::uint64_t WindowEventHandler::add_event_listener(const std::string& id_str, WindowEventType type, std::function<void(const WindowEvent&)> callback) noexcept {
+    std::uint64_t id = hash_event_id(id_str);
+    remove_event_listener(id);
+    m_listeners[index(type)].push_back({ id, std::move(callback) });
+    return id;
+}
 
-auto WindowEventHandler::remove_event_listener(std::uint64_t id) noexcept -> bool {
-        for (auto& vec : m_listeners) {
-            auto it = std::find_if(vec.begin(), vec.end(), [id](const Entry& e) { return e.id == id; });
+bool WindowEventHandler::remove_event_listener(std::uint64_t id) noexcept {
+    for (auto& vec : m_listeners) {
+        auto it = std::find_if(vec.begin(), vec.end(), [id](const Entry& e) { return e.id == id; });
 
-            if (it != vec.end()) {
-                vec.erase(it);
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-auto WindowEventHandler::dispatch_event(const WindowEvent& event) noexcept -> void {
-        const std::vector<Entry>& vec = m_listeners[index(event.type)];
-        for (std::size_t i = 0; i < vec.size(); ++i) {
-            const std::uint64_t id = vec[i].id;
-            auto cb = vec[i].callback;
-            if (cb) cb(event);
-            if (i >= vec.size() || vec[i].id != id) {
-                std::size_t j = 0;
-                while (j < vec.size() && vec[j].id != id) ++j;
-                i = j < vec.size() ? j : (i == 0 ? static_cast<std::size_t>(-1) : i - 1);
-            }
+        if (it != vec.end()) {
+            vec.erase(it);
+            return true;
         }
     }
+
+    return false;
+}
+
+void WindowEventHandler::dispatch_event(const WindowEvent& event) noexcept {
+    const std::vector<Entry>& vec = m_listeners[index(event.type)];
+    for (std::size_t i = 0; i < vec.size(); ++i) {
+        const std::uint64_t id = vec[i].id;
+        auto cb = vec[i].callback;
+        if (cb) cb(event);
+        if (i >= vec.size() || vec[i].id != id) {
+            std::size_t j = 0;
+            while (j < vec.size() && vec[j].id != id) ++j;
+            i = j < vec.size() ? j : (i == 0 ? static_cast<std::size_t>(-1) : i - 1);
+        }
+    }
+}
 
 } // namespace windows
 } // namespace fizmo

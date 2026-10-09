@@ -132,7 +132,7 @@ public:
     const std::string& error() const noexcept { return m_error; }
 };
 
- bool parse(const std::string& text, Value& out, std::string* error = nullptr);
+bool parse(const std::string& text, Value& out, std::string* error = nullptr);
 
 inline bool parse(const char* data, std::size_t size, Value& out, std::string* error = nullptr) {
     Parser p(data, size);

@@ -1,25 +1,24 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 #include "fancy_math.hpp"
 
 namespace fizmo {
 namespace text {
 
 auto MathTheme::set_role_color(mathtext::GlyphRole role, const graphics::Color& c) noexcept -> MathTheme& {
-        role_colors[static_cast<std::size_t>(role)] = c;
-        role_color_set[static_cast<std::size_t>(role)] = true;
-        return *this;
-    }
+    role_colors[static_cast<std::size_t>(role)] = c;
+    role_color_set[static_cast<std::size_t>(role)] = true;
+    return *this;
+}
 
 auto MathTheme::color_for(mathtext::GlyphRole role) const noexcept -> graphics::Color {
-        const std::size_t i = static_cast<std::size_t>(role);
-        if (i < role_color_set.size() && role_color_set[i]) return role_colors[i];
-        return role == mathtext::GlyphRole::Error ? error_color : color;
-    }
+    const std::size_t i = static_cast<std::size_t>(role);
+    if (i < role_color_set.size() && role_color_set[i]) return role_colors[i];
+    return role == mathtext::GlyphRole::Error ? error_color : color;
+}
 
-auto MathTheme::family_for(mathtext::GlyphRole role) const noexcept -> const std::string& {
-        return role == mathtext::GlyphRole::Text || role == mathtext::GlyphRole::Error ? text_family : math_family;
-    }
+const std::string& MathTheme::family_for(mathtext::GlyphRole role) const noexcept {
+    return role == mathtext::GlyphRole::Text || role == mathtext::GlyphRole::Error ? text_family : math_family;
+}
 
 RichText math_run(std::string text, double size, mathtext::GlyphRole role, const MathTheme& theme, bool synthetic_italic) {
     TextStyle style(size, theme.color_for(role));
@@ -30,24 +29,24 @@ RichText math_run(std::string text, double size, mathtext::GlyphRole role, const
 }
 
 auto FancyMathMetrics::measure(std::string_view utf8, double size, mathtext::GlyphRole role) -> mathtext::TextExtent {
-        std::string key(utf8);
-        key.push_back('\x1F');
-        key += std::to_string(size);
-        key.push_back(static_cast<char>('A' + static_cast<int>(role)));
-        auto it = m_cache.find(key);
-        if (it != m_cache.end()) return it->second;
-        mathtext::TextExtent e;
-        if (m_raster.ready()) {
-            const TextInk ink = m_raster.measure(math_run(std::string(utf8), size, role, m_theme, m_italic));
-            e.advance = ink.advance;
-            e.ascent = ink.has_ink ? ink.ascent : 0.0;
-            e.descent = ink.has_ink ? ink.descent : 0.0;
-        } else {
-            e = m_fallback.measure(utf8, size, role);
-        }
-        m_cache.emplace(std::move(key), e);
-        return e;
+    std::string key(utf8);
+    key.push_back('\x1F');
+    key += std::to_string(size);
+    key.push_back(static_cast<char>('A' + static_cast<int>(role)));
+    auto it = m_cache.find(key);
+    if (it != m_cache.end()) return it->second;
+    mathtext::TextExtent e;
+    if (m_raster.ready()) {
+        const TextInk ink = m_raster.measure(math_run(std::string(utf8), size, role, m_theme, m_italic));
+        e.advance = ink.advance;
+        e.ascent = ink.has_ink ? ink.ascent : 0.0;
+        e.descent = ink.has_ink ? ink.descent : 0.0;
+    } else {
+        e = m_fallback.measure(utf8, size, role);
     }
+    m_cache.emplace(std::move(key), e);
+    return e;
+}
 
 FancyText to_fancy_text(const mathtext::MathBox& box, const MathTheme& theme, bool synthetic_italic) {
     FancyText out;
@@ -123,29 +122,29 @@ std::string math_cache_key(std::string_view source, const MathRenderOptions& o, 
     return k;
 }
 
-auto MathCache::trim() -> void {
-        while (entries.size() > capacity && !entries.empty()) {
-            auto oldest = entries.begin();
-            for (auto it = entries.begin(); it != entries.end(); ++it) if (it->second.used < oldest->second.used) oldest = it;
-            entries.erase(oldest);
-        }
+void MathCache::trim() {
+    while (entries.size() > capacity && !entries.empty()) {
+        auto oldest = entries.begin();
+        for (auto it = entries.begin(); it != entries.end(); ++it) if (it->second.used < oldest->second.used) oldest = it;
+        entries.erase(oldest);
     }
+}
 
 auto MathCache::get(std::string_view source, const MathRenderOptions& options, bool texture) -> MathCacheEntry& {
-        std::string key = math_cache_key(source, options, texture);
-        auto it = entries.find(key);
-        if (it == entries.end()) {
-            MathCacheEntry e;
-            e.text = make_fancy_math(source, options);
-            if (texture) {
-                e.texture = fancy_text_texture(e.text);
-                e.has_texture = true;
-            }
-            it = entries.emplace(std::move(key), std::move(e)).first;
+    std::string key = math_cache_key(source, options, texture);
+    auto it = entries.find(key);
+    if (it == entries.end()) {
+        MathCacheEntry e;
+        e.text = make_fancy_math(source, options);
+        if (texture) {
+            e.texture = fancy_text_texture(e.text);
+            e.has_texture = true;
         }
-        it->second.used = ++tick;
-        return it->second;
+        it = entries.emplace(std::move(key), std::move(e)).first;
     }
+    it->second.used = ++tick;
+    return it->second;
+}
 
 } // namespace detail
 } // namespace text

@@ -5,6 +5,15 @@
 
 #ifdef OS_LINUX
 
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/x509.h>
+#include <openssl/x509v3.h>
+#include <openssl/x509_vfy.h>
+#include <openssl/pkcs12.h>
+#include <openssl/bio.h>
+#include <openssl/bn.h>
+#include <openssl/pem.h>
 #include <arpa/inet.h>
 #include <ctime>
 #include <cstring>
@@ -22,9 +31,9 @@ namespace networking {
 namespace security {
 namespace detail {
 
- void openssl_init_once() noexcept;
+void openssl_init_once() noexcept;
 
- std::string openssl_last_error() noexcept;
+std::string openssl_last_error() noexcept;
 
 inline void openssl_drain_errors() noexcept { ERR_clear_error(); }
 

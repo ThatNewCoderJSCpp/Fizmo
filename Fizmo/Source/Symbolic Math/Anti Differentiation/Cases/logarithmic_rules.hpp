@@ -9,7 +9,7 @@ namespace cas {
 namespace symbols {
 namespace integration {
 
- MathExpression try_logarithmic(
+MathExpression try_logarithmic(
     MathExpressionManager& mgr,
     MathExpressionSimplifier& /*simp*/,
     MathExpressionDifferentiator& /*diff*/,

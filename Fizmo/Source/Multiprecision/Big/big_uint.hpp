@@ -75,7 +75,7 @@ inline void mul_wide(std::uint64_t a, std::uint64_t b, std::uint64_t& hi, std::u
     mdetail::mul_wide64(a, b, hi, lo);
 }
 
- std::uint64_t div_wide(std::uint64_t hi, std::uint64_t lo, std::uint64_t d, std::uint64_t& rem) noexcept;
+std::uint64_t div_wide(std::uint64_t hi, std::uint64_t lo, std::uint64_t d, std::uint64_t& rem) noexcept;
 
 template <class T>
 typename std::enable_if<std::is_signed<T>::value, std::uint64_t>::type

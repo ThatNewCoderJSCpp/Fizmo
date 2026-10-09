@@ -36,7 +36,7 @@ struct MathRenderOptions {
     bool                    brace_syntax = false;
 };
 
- RichText math_run(std::string text, double size, mathtext::GlyphRole role, const MathTheme& theme, bool synthetic_italic);
+RichText math_run(std::string text, double size, mathtext::GlyphRole role, const MathTheme& theme, bool synthetic_italic);
 
 class FancyMathMetrics : public mathtext::FontMetrics {
 public:
@@ -52,13 +52,13 @@ private:
     std::unordered_map<std::string, mathtext::TextExtent> m_cache;
 };
 
- FancyText to_fancy_text(const mathtext::MathBox& box, const MathTheme& theme, bool synthetic_italic = false);
+FancyText to_fancy_text(const mathtext::MathBox& box, const MathTheme& theme, bool synthetic_italic = false);
 
- FancyText layout_math(const mathtext::Document& doc, mathtext::FontMetrics& metrics, const MathRenderOptions& options = MathRenderOptions());
+FancyText layout_math(const mathtext::Document& doc, mathtext::FontMetrics& metrics, const MathRenderOptions& options = MathRenderOptions());
 
- FancyText layout_math(const mathtext::Document& doc, TextRasterizer& raster, const MathRenderOptions& options = MathRenderOptions());
+FancyText layout_math(const mathtext::Document& doc, TextRasterizer& raster, const MathRenderOptions& options = MathRenderOptions());
 
- mathtext::Document parse_math_source(std::string_view source, const MathRenderOptions& options);
+mathtext::Document parse_math_source(std::string_view source, const MathRenderOptions& options);
 
 inline FancyText make_fancy_math(std::string_view source, TextRasterizer& raster, const MathRenderOptions& options = MathRenderOptions()) { return layout_math(parse_math_source(source, options), raster, options); }
 
@@ -75,14 +75,14 @@ inline void fingerprint_bytes(std::string& out, const void* data, std::size_t si
 template <typename T>
 inline void fingerprint_value(std::string& out, const T& v) { fingerprint_bytes(out, &v, sizeof(v)); }
 
- void fingerprint_color(std::string& out, const graphics::Color& c);
+void fingerprint_color(std::string& out, const graphics::Color& c);
 
 inline void fingerprint_string(std::string& out, const std::string& s) {
     fingerprint_value(out, s.size());
     out += s;
 }
 
- std::string math_cache_key(std::string_view source, const MathRenderOptions& o, bool texture);
+std::string math_cache_key(std::string_view source, const MathRenderOptions& o, bool texture);
 
 struct MathCacheEntry {
     FancyText     text;

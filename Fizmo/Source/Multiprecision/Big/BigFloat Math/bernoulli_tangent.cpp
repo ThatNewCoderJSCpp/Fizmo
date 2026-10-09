@@ -1,5 +1,4 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 
 namespace fizmo {
 namespace multiprecision {
@@ -205,41 +204,41 @@ std::vector<BigUInt> eulerian_row(std::size_t n) {
 }
 
 auto BigBernoulliNumber::make(std::size_t k) -> BigBernoulliNumber {
-        if (k == 0) return BigBernoulliNumber(BigInt(1), BigUInt::one(), 0, true);
-        if (k == 1) return BigBernoulliNumber(BigInt(-1), BigUInt(std::uint64_t(2)), 1, true);
-        if (k % 2 == 1) return BigBernoulliNumber(BigInt::zero(), BigUInt::one(), k, true);
-        const std::size_t n = k / 2;
-        if (n > detail::bn_index_cap) return BigBernoulliNumber(BigInt::undefined(), BigUInt::one(), k, false);
-        BigUInt num = tangent_number(n);
-        if (num.is_undefined()) return BigBernoulliNumber(BigInt::undefined(), BigUInt::one(), k, false);
-        num.mul_small_mutable(static_cast<std::uint64_t>(k));
-        BigUInt p = constants::bfdetail::unit(k);          
-        BigUInt q = p;
-        q.sub_small_mutable(1);
-        BigUInt den = p * q;
-        const BigUInt g = detail::bn_gcd(num, den);
+    if (k == 0) return BigBernoulliNumber(BigInt(1), BigUInt::one(), 0, true);
+    if (k == 1) return BigBernoulliNumber(BigInt(-1), BigUInt(std::uint64_t(2)), 1, true);
+    if (k % 2 == 1) return BigBernoulliNumber(BigInt::zero(), BigUInt::one(), k, true);
+    const std::size_t n = k / 2;
+    if (n > detail::bn_index_cap) return BigBernoulliNumber(BigInt::undefined(), BigUInt::one(), k, false);
+    BigUInt num = tangent_number(n);
+    if (num.is_undefined()) return BigBernoulliNumber(BigInt::undefined(), BigUInt::one(), k, false);
+    num.mul_small_mutable(static_cast<std::uint64_t>(k));
+    BigUInt p = constants::bfdetail::unit(k);          
+    BigUInt q = p;
+    q.sub_small_mutable(1);
+    BigUInt den = p * q;
+    const BigUInt g = detail::bn_gcd(num, den);
 
-        if (!g.is_one() && !g.is_zero()) {
-            num = num / g;
-            den = den / g;
-        }
-
-        const bool neg = (n % 2 == 0);
-        return BigBernoulliNumber(BigInt::from_magnitude(std::move(num), neg), std::move(den), k, true);
+    if (!g.is_one() && !g.is_zero()) {
+        num = num / g;
+        den = den / g;
     }
+
+    const bool neg = (n % 2 == 0);
+    return BigBernoulliNumber(BigInt::from_magnitude(std::move(num), neg), std::move(den), k, true);
+}
 
 auto BigBernoulliNumber::to_bigfloat(const BigFloatContext& ctx) const -> BigFloat {
-        if (!m_valid) return BigFloat::undefined();
-        return BigFloat::div(BigFloat(m_num), BigFloat(m_den), ctx);
-    }
+    if (!m_valid) return BigFloat::undefined();
+    return BigFloat::div(BigFloat(m_num), BigFloat(m_den), ctx);
+}
 
-auto BigBernoulliNumber::to_string() const -> std::string {
-        if (!m_valid) return "undefined";
-        std::string s = BigFloat(m_num).to_string(BigFloat::no_digit_limit, -1000000);
-        if (m_den.is_one()) return s;
-        s.push_back('/');
-        return s + BigFloat(m_den).to_string(BigFloat::no_digit_limit, -1000000);
-    }
+std::string BigBernoulliNumber::to_string() const {
+    if (!m_valid) return "undefined";
+    std::string s = BigFloat(m_num).to_string(BigFloat::no_digit_limit, -1000000);
+    if (m_den.is_one()) return s;
+    s.push_back('/');
+    return s + BigFloat(m_den).to_string(BigFloat::no_digit_limit, -1000000);
+}
 
 BigFloat bernoulli_float(std::size_t k, const BigFloatContext& ctx) {
     if (k == 0)     return BigFloat::one();

@@ -188,11 +188,11 @@ public:
     bool parse_string(const std::string& str, long long base, bool validate_only = false);
 };
 
- bool operator==(const BigInt& a, const BigInt& b) noexcept;
+bool operator==(const BigInt& a, const BigInt& b) noexcept;
 
- bool operator!=(const BigInt& a, const BigInt& b) noexcept;
+bool operator!=(const BigInt& a, const BigInt& b) noexcept;
 
- bool operator<(const BigInt& a, const BigInt& b) noexcept;
+bool operator<(const BigInt& a, const BigInt& b) noexcept;
 
 inline bool operator>(const BigInt& a, const BigInt& b) noexcept {
     if (!a.is_finite() || !b.is_finite()) return false;
@@ -224,7 +224,7 @@ inline BigInt operator-(const BigInt& a, const BigInt& b) { BigInt r(a); r.sub_m
 inline BigInt operator-(BigInt&& a,      const BigInt& b) { a.sub_mutable(b); return std::move(a); }
 inline BigInt operator-(BigInt&& a,      BigInt&& b)      { a.sub_mutable(b); return std::move(a); }
 
- BigInt operator-(const BigInt& a, BigInt&& b);
+BigInt operator-(const BigInt& a, BigInt&& b);
 
 inline BigInt operator*(const BigInt& a, const BigInt& b) { BigInt r(a); r.mul_mutable(b); return r; }
 inline BigInt operator*(BigInt&& a,      const BigInt& b) { a.mul_mutable(b); return std::move(a); }

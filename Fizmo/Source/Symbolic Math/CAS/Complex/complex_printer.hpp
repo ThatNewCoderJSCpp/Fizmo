@@ -8,15 +8,15 @@ namespace math {
 namespace cas {
 namespace complex_symbols {
 
- int complex_node_prec(ComplexNodeType t) noexcept;
+int complex_node_prec(ComplexNodeType t) noexcept;
 
- const char* complex_unary_fn_name(ComplexNodeType t) noexcept;
+const char* complex_unary_fn_name(ComplexNodeType t) noexcept;
 
- void print_complex_double(std::ostream& os, double v);
+void print_complex_double(std::ostream& os, double v);
 
- void print_complex_constant(std::ostream& os, double r, double i);
+void print_complex_constant(std::ostream& os, double r, double i);
 
- void print_complex_node(
+void print_complex_node(
     std::ostream& os,
     const ComplexMathExpressionNode* n,
     const ComplexVariableTable* vars,

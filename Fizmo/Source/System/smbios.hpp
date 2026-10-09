@@ -3,7 +3,7 @@
 
 #include "common.hpp"
 #include "platform_linux.hpp"
-#include "platform_windows.hpp"
+#include "win_library.hpp"
 
 namespace fizmo {
 namespace system {
@@ -21,11 +21,11 @@ struct MemoryModule {
 
 namespace detail {
 
- const char* memory_type_name(std::uint8_t t) noexcept;
+const char* memory_type_name(std::uint8_t t) noexcept;
 
- std::vector<MemoryModule> parse_smbios_memory(const std::uint8_t* data, std::size_t size);
+std::vector<MemoryModule> parse_smbios_memory(const std::uint8_t* data, std::size_t size);
 
- std::vector<MemoryModule> read_memory_modules();
+std::vector<MemoryModule> read_memory_modules();
 
 } // namespace detail
 } // namespace system

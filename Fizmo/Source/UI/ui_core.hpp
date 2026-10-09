@@ -65,7 +65,7 @@ enum class ButtonStyle : std::uint8_t { Normal = 0, Primary, Danger, Flat };
 
 inline Color with_alpha(const Color& c, std::uint8_t a) noexcept { return Color(c.red(), c.green(), c.blue(), a); }
 
- Color mix(const Color& a, const Color& b, float t) noexcept;
+Color mix(const Color& a, const Color& b, float t) noexcept;
 
 struct Theme {
     Color background{ 30, 31, 36 };

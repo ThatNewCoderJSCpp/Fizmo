@@ -30,7 +30,7 @@ struct ContactManifold {
 
 namespace narrowphase {
 
- void project_polygon(const PolygonShape& poly, const Transform2D& xf, const vector2d& axis, double& lo, double& hi);
+void project_polygon(const PolygonShape& poly, const Transform2D& xf, const vector2d& axis, double& lo, double& hi);
 
 inline void project_circle(const CircleShape& circ, const Transform2D& xf, const vector2d& axis, double& lo, double& hi) {
     vector2d c = xf.apply(circ.center);
@@ -39,17 +39,17 @@ inline void project_circle(const CircleShape& circ, const Transform2D& xf, const
     hi = p + circ.radius;
 }
 
- void project_capsule(const CapsuleShape& cap, const Transform2D& xf, const vector2d& axis, double& lo, double& hi);
+void project_capsule(const CapsuleShape& cap, const Transform2D& xf, const vector2d& axis, double& lo, double& hi);
 
- vector2d closest_point_on_segment(const vector2d& p, const vector2d& a, const vector2d& b);
+vector2d closest_point_on_segment(const vector2d& p, const vector2d& a, const vector2d& b);
 
- bool collide_circle_circle(
+bool collide_circle_circle(
     const CircleShape& ca, const Transform2D& xa,
     const CircleShape& cb, const Transform2D& xb,
     ContactManifold& m
 );
 
- bool collide_circle_polygon(
+bool collide_circle_polygon(
     const CircleShape& circ, const Transform2D& xc,
     const PolygonShape& poly, const Transform2D& xp,
     ContactManifold& m, bool flip
@@ -64,16 +64,16 @@ struct RoundPolygon {
     double radius = 0.0;
 };
 
- RoundPolygon make_round_polygon(const PolygonShape& p, const Transform2D& xf);
+RoundPolygon make_round_polygon(const PolygonShape& p, const Transform2D& xf);
 
- RoundPolygon make_round_segment(const vector2d& a, const vector2d& b, double radius);
+RoundPolygon make_round_segment(const vector2d& a, const vector2d& b, double radius);
 
 struct AxisResult {
     double separation;
     std::size_t edge_index;
 };
 
- AxisResult find_max_separation(const RoundPolygon& a, const RoundPolygon& b);
+AxisResult find_max_separation(const RoundPolygon& a, const RoundPolygon& b);
 
 struct SegmentDistance {
     vector2d closest1{};
@@ -83,49 +83,49 @@ struct SegmentDistance {
     double distance_squared = 0.0;
 };
 
- SegmentDistance segment_distance(const vector2d& p1, const vector2d& q1, const vector2d& p2, const vector2d& q2);
+SegmentDistance segment_distance(const vector2d& p1, const vector2d& q1, const vector2d& p2, const vector2d& q2);
 
- bool collide_round_polygons(const RoundPolygon& a, const RoundPolygon& b, ContactManifold& m);
+bool collide_round_polygons(const RoundPolygon& a, const RoundPolygon& b, ContactManifold& m);
 
 } // namespace detail_sat
 
- bool collide_polygon_polygon(
+bool collide_polygon_polygon(
     const PolygonShape& pa, const Transform2D& xa,
     const PolygonShape& pb, const Transform2D& xb,
     ContactManifold& m
 );
 
- bool collide_circle_capsule(
+bool collide_circle_capsule(
     const CircleShape& circ, const Transform2D& xc,
     const CapsuleShape& cap, const Transform2D& xk,
     ContactManifold& m, bool flip
 );
 
- bool collide_polygon_capsule(
+bool collide_polygon_capsule(
     const PolygonShape& poly, const Transform2D& xp,
     const CapsuleShape& cap, const Transform2D& xk,
     ContactManifold& m, bool flip
 );
 
- bool collide_capsule_capsule(
+bool collide_capsule_capsule(
     const CapsuleShape& ca, const Transform2D& xa,
     const CapsuleShape& cb, const Transform2D& xb,
     ContactManifold& m
 );
 
- bool collide_edge_circle(
+bool collide_edge_circle(
     const EdgeShape& edge, const Transform2D& xe,
     const CircleShape& circ, const Transform2D& xc,
     ContactManifold& m, bool flip
 );
 
- bool collide_edge_polygon(
+bool collide_edge_polygon(
     const EdgeShape& edge, const Transform2D& xe,
     const PolygonShape& poly, const Transform2D& xp,
     ContactManifold& m, bool flip
 );
 
- bool collide_edge_capsule(
+bool collide_edge_capsule(
     const EdgeShape& edge, const Transform2D& xe,
     const CapsuleShape& cap, const Transform2D& xk,
     ContactManifold& m, bool flip
@@ -133,7 +133,7 @@ struct SegmentDistance {
 
 } // namespace narrowphase
 
- bool collide_shapes(
+bool collide_shapes(
     const Shape2D& sa, const Transform2D& xa,
     const Shape2D& sb, const Transform2D& xb,
     ContactManifold& manifold

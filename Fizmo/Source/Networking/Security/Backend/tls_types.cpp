@@ -1,26 +1,25 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 #include "tls_types.hpp"
 
 namespace fizmo {
 namespace networking {
 namespace security {
 
-auto KeyUsage::any() const noexcept -> bool {
-        return digital_signature || key_encipherment || data_encipherment ||
-               key_agreement     || cert_sign        || crl_sign          ||
-               non_repudiation   || encipher_only    || decipher_only;
-    }
+bool KeyUsage::any() const noexcept {
+    return digital_signature || key_encipherment || data_encipherment ||
+           key_agreement     || cert_sign        || crl_sign          ||
+           non_repudiation   || encipher_only    || decipher_only;
+}
 
-auto CertificateInfo::clear() noexcept -> void {
-        subject.clear();
-        issuer.clear();
-        serial.clear();
-        not_before = 0;
-        not_after  = 0;
-        sans.clear();
-        key_usage = KeyUsage{};
-    }
+void CertificateInfo::clear() noexcept {
+    subject.clear();
+    issuer.clear();
+    serial.clear();
+    not_before = 0;
+    not_after  = 0;
+    sans.clear();
+    key_usage = KeyUsage{};
+}
 
 const char* verify_error_to_string(VerifyError e) noexcept {
     switch (e) {
@@ -36,27 +35,27 @@ const char* verify_error_to_string(VerifyError e) noexcept {
     }
 }
 
-auto VerifyResult::to_string() const -> std::string {
-        std::string s = passed ? "PASS" : "FAIL";
+std::string VerifyResult::to_string() const {
+    std::string s = passed ? "PASS" : "FAIL";
 
-        if (!passed) {
-            s += " error=";
-            s += verify_error_to_string(error);
+    if (!passed) {
+        s += " error=";
+        s += verify_error_to_string(error);
 
-            if (depth >= 0) {
-                s += " depth=";
-                s += std::to_string(depth);
-            }
-
-            if (!detail.empty()) {
-                s += " (";
-                s += detail;
-                s += ')';
-            }
+        if (depth >= 0) {
+            s += " depth=";
+            s += std::to_string(depth);
         }
 
-        return s;
+        if (!detail.empty()) {
+            s += " (";
+            s += detail;
+            s += ')';
+        }
     }
+
+    return s;
+}
 
 const char* tls_version_to_string(TLSVersion v) noexcept {
     switch (v) {

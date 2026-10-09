@@ -6,13 +6,13 @@
 namespace fizmo {
 namespace time {
 
- std::uint64_t tick_frequency() noexcept;
+std::uint64_t tick_frequency() noexcept;
 
- std::uint64_t tick_counter() noexcept;
+std::uint64_t tick_counter() noexcept;
 
- std::uint64_t wall_clock_ns() noexcept;
+std::uint64_t wall_clock_ns() noexcept;
 
- std::uint64_t tick_resolution_ns() noexcept;
+std::uint64_t tick_resolution_ns() noexcept;
 
 namespace detail {
 
@@ -96,9 +96,9 @@ R sum_pairs_ticks(std::initializer_list<std::pair<T, Unit>> pairs) noexcept {
 
 } // namespace detail
 
- std::uint64_t ns_to_ticks(std::uint64_t ns) noexcept;
+std::uint64_t ns_to_ticks(std::uint64_t ns) noexcept;
 
- std::uint64_t ticks_to_ns(std::uint64_t ticks) noexcept;
+std::uint64_t ticks_to_ns(std::uint64_t ticks) noexcept;
 
 template<typename R = default_storage_uint, typename... Args, typename = typename std::enable_if<(is_time_unit_v<Args> && ...)>::type>
 R time_to_ticks(const Args&... durations) noexcept { return detail::sum_ticks<R>(durations...); }

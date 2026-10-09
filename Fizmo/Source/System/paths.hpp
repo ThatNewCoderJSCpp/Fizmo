@@ -18,10 +18,6 @@
 #include <unistd.h>
 #endif
 
-#if defined(OS_WINDOWS)
-#include <shlobj.h>
-#endif
-
 namespace fizmo {
 namespace system {
 namespace paths {
@@ -30,22 +26,12 @@ namespace fs = std::filesystem;
 
 namespace detail {
 
- fs::path u8(const std::string& s);
+fs::path u8(const std::string& s);
 
 inline std::string env(const char* name) {
     const char* v = std::getenv(name);
     return v ? std::string(v) : std::string();
 }
-
-#if defined(OS_WINDOWS)
-inline fs::path known_folder(const KNOWNFOLDERID& id) {
-    PWSTR p = nullptr;
-    fs::path out;
-    if (SUCCEEDED(SHGetKnownFolderPath(id, 0, nullptr, &p)) && p) out = fs::path(p);
-    if (p) CoTaskMemFree(p);
-    return out;
-}
-#endif
 
 inline fs::path with_app(fs::path base, const std::string& app) {
     if (base.empty()) return base;
@@ -55,7 +41,7 @@ inline fs::path with_app(fs::path base, const std::string& app) {
 
 } // namespace detail
 
- fs::path executable_path();
+fs::path executable_path();
 
 inline fs::path executable_dir() {
     const fs::path p = executable_path();
@@ -68,7 +54,7 @@ inline fs::path current_dir() {
     return ec ? fs::path(".") : p;
 }
 
- fs::path home_dir();
+fs::path home_dir();
 
 inline fs::path temp_dir() {
     std::error_code ec;
@@ -76,13 +62,13 @@ inline fs::path temp_dir() {
     return ec ? fs::path(".") : p;
 }
 
- fs::path data_dir(const std::string& app = std::string());
+fs::path data_dir(const std::string& app = std::string());
 
- fs::path config_dir(const std::string& app = std::string());
+fs::path config_dir(const std::string& app = std::string());
 
- fs::path cache_dir(const std::string& app = std::string());
+fs::path cache_dir(const std::string& app = std::string());
 
- fs::path documents_dir();
+fs::path documents_dir();
 
 inline fs::path ensure_dir(const fs::path& p) {
     std::error_code ec;
@@ -97,11 +83,11 @@ inline std::string to_utf8(const fs::path& p) {
 
 inline fs::path from_utf8(const std::string& s) { return detail::u8(s); }
 
- std::optional<std::vector<std::uint8_t>> read_bytes(const fs::path& p);
+std::optional<std::vector<std::uint8_t>> read_bytes(const fs::path& p);
 
- std::optional<std::string> read_text(const fs::path& p);
+std::optional<std::string> read_text(const fs::path& p);
 
- bool write_file(const fs::path& p, const void* data, std::size_t size);
+bool write_file(const fs::path& p, const void* data, std::size_t size);
 
 inline bool write_file(const fs::path& p, const std::string& text) { return write_file(p, text.data(), text.size()); }
 inline bool write_file(const fs::path& p, const std::vector<std::uint8_t>& bytes) { return write_file(p, bytes.data(), bytes.size()); }

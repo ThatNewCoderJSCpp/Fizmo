@@ -31,7 +31,7 @@ struct ViewRect {
 
 namespace detail {
 
- ViewRect resolve_layout(const ViewLayout& layout, unsigned int win_w, unsigned int win_h) noexcept;
+ViewRect resolve_layout(const ViewLayout& layout, unsigned int win_w, unsigned int win_h) noexcept;
 
 } // namespace detail
 

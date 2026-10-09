@@ -9,17 +9,17 @@ namespace math {
 
 namespace detail {
 
- BigUInt isqrt(const BigUInt& v);
+BigUInt isqrt(const BigUInt& v);
 
- BigFloat sqrt_finite(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat sqrt_finite(const BigFloat& x, const BigFloatContext& ctx);
 
- BigUInt icbrt(const BigUInt& v);
+BigUInt icbrt(const BigUInt& v);
 
- BigFloat cbrt_finite(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat cbrt_finite(const BigFloat& x, const BigFloatContext& ctx);
 
 } // namespace detail
 
- BigFloat sqrt(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat sqrt(const BigFloat& x, const BigFloatContext& ctx);
 
 inline BigFloat sqrt(const BigFloat& x) { return sqrt(x, BigFloatContext::current()); }
 
@@ -30,11 +30,11 @@ inline BigFloat sqrt(const BigUInt& x, const BigFloatContext& ctx) {
 
 inline BigFloat sqrt(const BigUInt& x) { return sqrt(x, BigFloatContext::current()); }
 
- BigFloat sqrt(const BigInt& x, const BigFloatContext& ctx);
+BigFloat sqrt(const BigInt& x, const BigFloatContext& ctx);
 
 inline BigFloat sqrt(const BigInt& x) { return sqrt(x, BigFloatContext::current()); }
 
- BigFloat cbrt(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat cbrt(const BigFloat& x, const BigFloatContext& ctx);
 
 inline BigFloat cbrt(const BigFloat& x) { return cbrt(x, BigFloatContext::current()); }
 
@@ -45,7 +45,7 @@ inline BigFloat cbrt(const BigUInt& x, const BigFloatContext& ctx) {
 
 inline BigFloat cbrt(const BigUInt& x) { return cbrt(x, BigFloatContext::current()); }
 
- BigFloat cbrt(const BigInt& x, const BigFloatContext& ctx);
+BigFloat cbrt(const BigInt& x, const BigFloatContext& ctx);
 
 inline BigFloat cbrt(const BigInt& x) { return cbrt(x, BigFloatContext::current()); }
 

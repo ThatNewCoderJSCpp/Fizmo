@@ -35,7 +35,7 @@ enum class CriticalPointType {
     Inconclusive
 };
 
- std::ostream& operator<<(std::ostream& os, CriticalPointType type);
+std::ostream& operator<<(std::ostream& os, CriticalPointType type);
 
 struct CriticalPoint1D {
     double             point;

@@ -18,27 +18,27 @@ using ztdetail::zt_val;
 
 inline double dl_lost(double units) { return std::log2(units) + 1.0; }
 
- BigFloat dl_omp2(const BigFloat& x, const BigFloatContext& wc);
+BigFloat dl_omp2(const BigFloat& x, const BigFloatContext& wc);
 
 inline double dl_omp2_units(const BigFloat& x) {
     return 6.0 + 5.0 * 0.34657359027997264 * std::fabs(ztdetail::zt_to_double(x));
 }
 
- double dl_power_sum_bound(std::uint64_t n, double sd);
+double dl_power_sum_bound(std::uint64_t n, double sd);
 
- zt_val dl_alt(const BigFloat& s, bool odd, std::size_t want);
+zt_val dl_alt(const BigFloat& s, bool odd, std::size_t want);
 
- zt_val dl_eta_fe(const BigFloat& s, const BigFloat& om, std::size_t want);
+zt_val dl_eta_fe(const BigFloat& s, const BigFloat& om, std::size_t want);
 
- zt_val dl_lambda_pos(const BigFloat& s, const BigFloat& om, std::size_t want);
+zt_val dl_lambda_pos(const BigFloat& s, const BigFloat& om, std::size_t want);
 
- zt_val dl_lambda_neg(const BigFloat& s, const BigFloat& om, std::size_t want);
+zt_val dl_lambda_neg(const BigFloat& s, const BigFloat& om, std::size_t want);
 
- zt_val dl_beta_fe(const BigFloat& u, std::size_t want);
+zt_val dl_beta_fe(const BigFloat& u, std::size_t want);
 
- bool dl_nonpos_int(const BigFloat& s, bool& fits, std::uint64_t& m, bool& even);
+bool dl_nonpos_int(const BigFloat& s, bool& fits, std::uint64_t& m, bool& even);
 
- std::uint64_t dl_log3_threshold(std::size_t prec);
+std::uint64_t dl_log3_threshold(std::size_t prec);
 
 template <typename Eval>
 inline BigFloat dl_drive(const BigFloat& s, const BigFloatContext& ctx, Eval eval) {
@@ -56,11 +56,11 @@ inline BigFloat dl_drive(const BigFloat& s, const BigFloatContext& ctx, Eval eva
 
 } // namespace dldetail
 
- BigFloat dirichlet_eta(const BigFloat& s, const BigFloatContext& ctx);
+BigFloat dirichlet_eta(const BigFloat& s, const BigFloatContext& ctx);
 
- BigFloat dirichlet_lambda(const BigFloat& s, const BigFloatContext& ctx);
+BigFloat dirichlet_lambda(const BigFloat& s, const BigFloatContext& ctx);
 
- BigFloat dirichlet_beta(const BigFloat& s, const BigFloatContext& ctx);
+BigFloat dirichlet_beta(const BigFloat& s, const BigFloatContext& ctx);
 
 FIZMO_MP_TRIG_FORWARD(dirichlet_eta)
 FIZMO_MP_TRIG_FORWARD(dirichlet_lambda)

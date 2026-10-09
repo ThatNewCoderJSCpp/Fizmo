@@ -1,5 +1,4 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 #include "simulation_3d.hpp"
 
 namespace fizmo {
@@ -747,632 +746,632 @@ bool collide_shapes(
     return hit;
 }
 
-auto Simulation3D::remove_body(RigidBody3D& body) -> void {
-        if (m_locked) { m_pending_removals.push_back(&body); return; }
-        remove_body_now(&body);
-        flush_pending_removals();
+void Simulation3D::remove_body(RigidBody3D& body) {
+    if (m_locked) { m_pending_removals.push_back(&body); return; }
+    remove_body_now(&body);
+    flush_pending_removals();
+}
+
+void Simulation3D::step(double dt) {
+    if (dt <= 0.0) return;
+    m_locked = true;
+
+    for (auto& bp : m_bodies) {
+        RigidBody3D& b = *bp;
+        if (!is_enabled(b) || !b.is_awake()) continue;
+        b.ensure_mass_uptodate();
+        b.integrate_forces(dt, m_cfg.gravity);
+        if (m_cfg.gyroscopic) b.integrate_gyroscopic(dt);
     }
 
-auto Simulation3D::step(double dt) -> void {
-        if (dt <= 0.0) return;
-        m_locked = true;
+    broadphase();
+    narrowphase();
+    build_islands_and_wake();
+    build_velocity_constraints(dt);
+    if (m_cfg.warm_starting) warm_start();
+    for (int i = 0; i < m_cfg.velocity_iters; ++i) { solve_velocity_constraints((i & 1) != 0); }
+    store_impulses();
 
-        for (auto& bp : m_bodies) {
-            RigidBody3D& b = *bp;
-            if (!is_enabled(b) || !b.is_awake()) continue;
-            b.ensure_mass_uptodate();
-            b.integrate_forces(dt, m_cfg.gravity);
-            if (m_cfg.gyroscopic) b.integrate_gyroscopic(dt);
-        }
-
-        broadphase();
-        narrowphase();
-        build_islands_and_wake();
-        build_velocity_constraints(dt);
-        if (m_cfg.warm_starting) warm_start();
-        for (int i = 0; i < m_cfg.velocity_iters; ++i) { solve_velocity_constraints((i & 1) != 0); }
-        store_impulses();
-
-        for (auto& bp : m_bodies) {
-            RigidBody3D& b = *bp;
-            if (!is_enabled(b) || !b.is_awake()) continue;
-            b.integrate_velocities(dt);
-        }
-
-        for (int i = 0; i < m_cfg.position_iters; ++i) { if (solve_position_constraints((i & 1) != 0)) break; }
-
-        for (auto& bp : m_bodies) {
-            RigidBody3D& b = *bp;
-            if (!is_enabled(b)) continue;
-            b.synchronize_colliders();
-            b.clear_forces();
-        }
-
-        if (m_cfg.allow_sleeping) sleep_islands(dt);
-        update_contact_cache();
-
-        if (m_post_solve) {
-            for (auto& mf : m_manifolds) {
-                if (mf.body_a && mf.body_b) m_post_solve(*mf.body_a, *mf.body_b, mf);
-            }
-        }
-
-        m_locked = false;
-        dispatch_events();
-        flush_pending_removals();
-        cleanup_bodies();
+    for (auto& bp : m_bodies) {
+        RigidBody3D& b = *bp;
+        if (!is_enabled(b) || !b.is_awake()) continue;
+        b.integrate_velocities(dt);
     }
+
+    for (int i = 0; i < m_cfg.position_iters; ++i) { if (solve_position_constraints((i & 1) != 0)) break; }
+
+    for (auto& bp : m_bodies) {
+        RigidBody3D& b = *bp;
+        if (!is_enabled(b)) continue;
+        b.synchronize_colliders();
+        b.clear_forces();
+    }
+
+    if (m_cfg.allow_sleeping) sleep_islands(dt);
+    update_contact_cache();
+
+    if (m_post_solve) {
+        for (auto& mf : m_manifolds) {
+            if (mf.body_a && mf.body_b) m_post_solve(*mf.body_a, *mf.body_b, mf);
+        }
+    }
+
+    m_locked = false;
+    dispatch_events();
+    flush_pending_removals();
+    cleanup_bodies();
+}
 
 auto Simulation3D::query_aabb(const AABB3D& region) -> std::vector<RigidBody3D*> {
-        synchronize_all_colliders();
-        std::vector<RigidBody3D*> ptrs;
-        ptrs.reserve(m_bodies.size());
-        for (auto& b : m_bodies) ptrs.push_back(b.get());
-        std::vector<AABB3D> aabbs;
-        aabbs.reserve(m_bodies.size());
-        for (auto& b : m_bodies) aabbs.push_back(b->compute_body_aabb());
-        m_tree.rebuild(world_bounds_of(m_cfg), ptrs.data(), aabbs.data(), ptrs.size());
-        return m_tree.query(region);
-    }
+    synchronize_all_colliders();
+    std::vector<RigidBody3D*> ptrs;
+    ptrs.reserve(m_bodies.size());
+    for (auto& b : m_bodies) ptrs.push_back(b.get());
+    std::vector<AABB3D> aabbs;
+    aabbs.reserve(m_bodies.size());
+    for (auto& b : m_bodies) aabbs.push_back(b->compute_body_aabb());
+    m_tree.rebuild(world_bounds_of(m_cfg), ptrs.data(), aabbs.data(), ptrs.size());
+    return m_tree.query(region);
+}
 
 auto Simulation3D::point_query(const vector3d& point) -> RigidBody3D* {
-        const vector3d e{0.001, 0.001, 0.001};
-        auto results = query_aabb({ point - e, point + e });
+    const vector3d e{0.001, 0.001, 0.001};
+    auto results = query_aabb({ point - e, point + e });
 
-        for (auto* b : results) {
-            if (b->compute_body_aabb().contains(point)) return b;
-        }
-
-        return nullptr;
+    for (auto* b : results) {
+        if (b->compute_body_aabb().contains(point)) return b;
     }
 
-auto Simulation3D::is_active(const RigidBody3D& b) noexcept -> bool {
-        if (!b.is_awake()) return false;
-        if (b.inv_mass() > 0.0) return true;
-        return !vec3::is_zero(b.linear_velocity()) || !vec3::is_zero(b.angular_velocity());
+    return nullptr;
+}
+
+bool Simulation3D::is_active(const RigidBody3D& b) noexcept {
+    if (!b.is_awake()) return false;
+    if (b.inv_mass() > 0.0) return true;
+    return !vec3::is_zero(b.linear_velocity()) || !vec3::is_zero(b.angular_velocity());
+}
+
+bool Simulation3D::responds(const RigidBody3D& a, const RigidBody3D& b) noexcept {
+    return a.has(PhysicsFlags::CollisionResponse) && b.has(PhysicsFlags::CollisionResponse) &&
+          !a.has(PhysicsFlags::Intangible) && !b.has(PhysicsFlags::Intangible);
+}
+
+bool Simulation3D::wants_events(const RigidBody3D& a, const RigidBody3D& b, bool sensor) noexcept {
+    if (a.has(PhysicsFlags::ContactEvents) || b.has(PhysicsFlags::ContactEvents)) return true;
+    return sensor && (a.has(PhysicsFlags::SensorEvents) || b.has(PhysicsFlags::SensorEvents));
+}
+
+void Simulation3D::apply_impulse(RigidBody3D& a, RigidBody3D& b, const vector3d& rA, const vector3d& rB, const vector3d& P) {
+    a.set_linear_velocity(a.linear_velocity() - P * a.inv_mass());
+    a.set_angular_velocity(a.angular_velocity() - a.apply_inv_inertia(vec3::cross(rA, P)));
+    b.set_linear_velocity(b.linear_velocity() + P * b.inv_mass());
+    b.set_angular_velocity(b.angular_velocity() + b.apply_inv_inertia(vec3::cross(rB, P)));
+}
+
+double Simulation3D::effective_inv_mass(const RigidBody3D& a, const RigidBody3D& b, const vector3d& rA, const vector3d& rB, const vector3d& u) {
+    vector3d ra_u = vec3::cross(rA, u), rb_u = vec3::cross(rB, u);
+    return a.inv_mass() + b.inv_mass()
+         + vec3::dot(ra_u, a.apply_inv_inertia(ra_u))
+         + vec3::dot(rb_u, b.apply_inv_inertia(rb_u));
+}
+
+void Simulation3D::broadphase() {
+    m_pairs.clear();
+    synchronize_all_colliders();
+    m_body_ptrs.clear();
+    m_body_aabbs.clear();
+    m_body_ptrs.reserve(m_bodies.size());
+    m_body_aabbs.reserve(m_bodies.size());
+
+    for (auto& bp : m_bodies) {
+        RigidBody3D& b = *bp;
+        if (!is_enabled(b)) continue;
+        if (!has_flag(b.flags(), PhysicsFlags::BroadphaseActive) && !has_flag(b.flags(), PhysicsFlags::CollisionResponse)) continue;
+        b.ensure_mass_uptodate();
+        m_body_ptrs.push_back(&b);
+        m_body_aabbs.push_back(b.compute_body_aabb().fatten(m_cfg.broadphase_margin));
     }
 
-auto Simulation3D::responds(const RigidBody3D& a, const RigidBody3D& b) noexcept -> bool {
-        return a.has(PhysicsFlags::CollisionResponse) && b.has(PhysicsFlags::CollisionResponse) &&
-              !a.has(PhysicsFlags::Intangible) && !b.has(PhysicsFlags::Intangible);
-    }
+    if (m_body_ptrs.size() < 2) return;
+    m_tree.rebuild(world_bounds_of(m_cfg), m_body_ptrs.data(), m_body_aabbs.data(), m_body_ptrs.size());
 
-auto Simulation3D::wants_events(const RigidBody3D& a, const RigidBody3D& b, bool sensor) noexcept -> bool {
-        if (a.has(PhysicsFlags::ContactEvents) || b.has(PhysicsFlags::ContactEvents)) return true;
-        return sensor && (a.has(PhysicsFlags::SensorEvents) || b.has(PhysicsFlags::SensorEvents));
-    }
+    m_tree.find_pairs([this](RigidBody3D* a, RigidBody3D* b) {
+        if (!a->can_collide_with(*b)) return;
+        if (!is_active(*a) && !is_active(*b)) return;   
+        if (!is_dynamic(*a) && !is_dynamic(*b)) return; 
+        if (std::less<const RigidBody3D*>()(b, a)) std::swap(a, b);
+        m_pairs.push_back({a, b});
+    });
+}
 
-auto Simulation3D::apply_impulse(RigidBody3D& a, RigidBody3D& b, const vector3d& rA, const vector3d& rB, const vector3d& P) -> void {
-        a.set_linear_velocity(a.linear_velocity() - P * a.inv_mass());
-        a.set_angular_velocity(a.angular_velocity() - a.apply_inv_inertia(vec3::cross(rA, P)));
-        b.set_linear_velocity(b.linear_velocity() + P * b.inv_mass());
-        b.set_angular_velocity(b.angular_velocity() + b.apply_inv_inertia(vec3::cross(rB, P)));
-    }
+void Simulation3D::narrowphase() {
+    m_manifolds.clear();
+    m_manifolds.reserve(m_pairs.size());
+    m_touching.clear();
+    for (auto& [a, b] : m_pairs) { generate_contacts(a, b); }
+}
 
-auto Simulation3D::effective_inv_mass(const RigidBody3D& a, const RigidBody3D& b, const vector3d& rA, const vector3d& rB, const vector3d& u) -> double {
-        vector3d ra_u = vec3::cross(rA, u), rb_u = vec3::cross(rB, u);
-        return a.inv_mass() + b.inv_mass()
-             + vec3::dot(ra_u, a.apply_inv_inertia(ra_u))
-             + vec3::dot(rb_u, b.apply_inv_inertia(rb_u));
-    }
+void Simulation3D::generate_contacts(RigidBody3D* a, RigidBody3D* b) {
+    const auto& colA = a->colliders();
+    const auto& colB = b->colliders();
 
-auto Simulation3D::broadphase() -> void {
-        m_pairs.clear();
-        synchronize_all_colliders();
-        m_body_ptrs.clear();
-        m_body_aabbs.clear();
-        m_body_ptrs.reserve(m_bodies.size());
-        m_body_aabbs.reserve(m_bodies.size());
-
-        for (auto& bp : m_bodies) {
-            RigidBody3D& b = *bp;
-            if (!is_enabled(b)) continue;
-            if (!has_flag(b.flags(), PhysicsFlags::BroadphaseActive) && !has_flag(b.flags(), PhysicsFlags::CollisionResponse)) continue;
-            b.ensure_mass_uptodate();
-            m_body_ptrs.push_back(&b);
-            m_body_aabbs.push_back(b.compute_body_aabb().fatten(m_cfg.broadphase_margin));
-        }
-
-        if (m_body_ptrs.size() < 2) return;
-        m_tree.rebuild(world_bounds_of(m_cfg), m_body_ptrs.data(), m_body_aabbs.data(), m_body_ptrs.size());
-
-        m_tree.find_pairs([this](RigidBody3D* a, RigidBody3D* b) {
-            if (!a->can_collide_with(*b)) return;
-            if (!is_active(*a) && !is_active(*b)) return;   
-            if (!is_dynamic(*a) && !is_dynamic(*b)) return; 
-            if (std::less<const RigidBody3D*>()(b, a)) std::swap(a, b);
-            m_pairs.push_back({a, b});
-        });
-    }
-
-auto Simulation3D::narrowphase() -> void {
-        m_manifolds.clear();
-        m_manifolds.reserve(m_pairs.size());
-        m_touching.clear();
-        for (auto& [a, b] : m_pairs) { generate_contacts(a, b); }
-    }
-
-auto Simulation3D::generate_contacts(RigidBody3D* a, RigidBody3D* b) -> void {
-        const auto& colA = a->colliders();
-        const auto& colB = b->colliders();
-
-        for (std::size_t i = 0; i < colA.size(); ++i) {
-            for (std::size_t j = 0; j < colB.size(); ++j) {
-                const Collider3D& ca = colA[i];
-                const Collider3D& cb = colB[j];
-                if (!ca.world_aabb.fatten(m_cfg.speculative_distance).overlaps(cb.world_aabb)) continue;
-                if (!ca.filter.should_collide(cb.filter)) continue;
-                Transform3D wa = a->transform().compose(ca.local_offset);
-                Transform3D wb = b->transform().compose(cb.local_offset);
-                ContactManifold3D mf;
-                mf.body_a = a;
-                mf.body_b = b;
-                mf.collider_a = i;
-                mf.collider_b = j;
-                const bool sensor = ca.is_sensor || cb.is_sensor || !responds(*a, *b);
-                if (!collide_shapes(ca.shape, wa, cb.shape, wb, mf, sensor ? 0.0 : m_cfg.speculative_distance)) continue;
-                mf.friction    = std::sqrt(ca.material.friction * cb.material.friction);
-                mf.restitution = std::max(ca.material.restitution, cb.material.restitution);
-                mf.restitution_threshold = std::min(ca.material.restitution_threshold, cb.material.restitution_threshold);
-
-                for (int p = 0; p < mf.point_count; ++p) {
-                    ContactPoint3D& cp = mf.points[p];
-                    vector3d half = mf.normal * (cp.separation * 0.5);
-                    cp.local_anchor_a = a->transform().apply_inverse(cp.position - half);
-                    cp.local_anchor_b = b->transform().apply_inverse(cp.position + half);
-                }
-
-                int deepest = 0;
-                for (int p = 1; p < mf.point_count; ++p) if (mf.points[p].separation < mf.points[deepest].separation) deepest = p;
-                CachedContact& touch = m_touching[key_of(mf)];
-                touch.body_a = a;
-                touch.body_b = b;
-                touch.sensor = sensor;
-                touch.events = wants_events(*a, *b, sensor);
-                touch.touching = mf.points[deepest].separation <= 0.0;
-                touch.normal = mf.normal;
-                touch.point  = mf.points[deepest].position;
-                if (sensor) continue;
-                if (m_pre_solve) { if (!m_pre_solve(*a, *b, mf)) continue; }
-                m_manifolds.push_back(mf);
-            }
-        }
-    }
-
-auto Simulation3D::build_islands_and_wake() -> void {
-        const std::size_t n = m_bodies.size();
-        m_islands.reset(n);
-        m_body_index.clear();
-        m_carried.clear();
-        for (std::size_t i = 0; i < n; ++i) m_body_index[m_bodies[i].get()] = i;
-
-        auto link = [this](RigidBody3D* a, RigidBody3D* b) {
-            const bool da = is_dynamic(*a), db = is_dynamic(*b);
-
-            if (da && db) {
-                m_islands.unite(m_body_index[a], m_body_index[b]);
-            } else if (da && is_active(*b)) {
-                a->wake(); 
-            } else if (db && is_active(*a)) {
-                b->wake();
-            }
-        };
-
-        for (auto& [key, c] : m_contact_cache) {
-            if (m_touching.count(key)) continue;
-            if (!is_enabled(*c.body_a) || !is_enabled(*c.body_b)) continue;
-            if (is_active(*c.body_a) || is_active(*c.body_b)) continue;
-            m_carried.push_back(key);
-            if (!c.sensor) link(c.body_a, c.body_b);
-        }
-
-        for (auto& mf : m_manifolds) link(mf.body_a, mf.body_b);
-        std::vector<char> island_awake(n, 0);
-
-        for (std::size_t i = 0; i < n; ++i) {
-            const RigidBody3D& b = *m_bodies[i];
-            if (is_enabled(b) && is_dynamic(b) && b.is_awake()) island_awake[m_islands.find(i)] = 1;
-        }
-
-        for (std::size_t i = 0; i < n; ++i) {
-            RigidBody3D& b = *m_bodies[i];
-            if (is_enabled(b) && is_dynamic(b) && !b.is_awake() && island_awake[m_islands.find(i)]) b.wake();
-        }
-    }
-
-auto Simulation3D::sleep_islands(double dt) -> void {
-        const std::size_t n = std::min(m_islands.size(), m_bodies.size());
-        std::vector<double> min_timer(n, std::numeric_limits<double>::max());
-
-        for (std::size_t i = 0; i < n; ++i) {
-            RigidBody3D& b = *m_bodies[i];
-            if (!is_enabled(b) || !b.is_awake()) continue;
-
-            if (!is_dynamic(b)) {
-                b.update_sleep(dt); 
-                continue;
-            }
-
-            double t = b.advance_sleep_timer(dt);
-            std::size_t r = m_islands.find(i);
-            if (t < min_timer[r]) min_timer[r] = t;
-        }
-
-        for (std::size_t i = 0; i < n; ++i) {
-            RigidBody3D& b = *m_bodies[i];
-            if (!is_enabled(b) || !b.is_awake() || !is_dynamic(b)) continue;
-            if (min_timer[m_islands.find(i)] >= RigidBody3D::SLEEP_TIME_THRESHOLD) b.put_to_sleep();
-        }
-    }
-
-auto Simulation3D::build_velocity_constraints(double dt) -> void {
-        m_constraints.clear();
-        m_constraints.reserve(m_manifolds.size());
-        const double match_sq = m_cfg.warm_start_match_distance * m_cfg.warm_start_match_distance;
-
-        for (std::size_t mi = 0; mi < m_manifolds.size(); ++mi) {
-            const auto& mf = m_manifolds[mi];
-            RigidBody3D* a = mf.body_a;
-            RigidBody3D* b = mf.body_b;
-            a->ensure_mass_uptodate();
-            b->ensure_mass_uptodate();
-            VelocityConstraint3D vc;
-            vc.body_a = a;
-            vc.body_b = b;
-            vc.normal = mf.normal;
-            vec3::orthonormal_basis(mf.normal, vc.tangent1, vc.tangent2);
-            vc.friction = mf.friction;
-            vc.restitution = mf.restitution;
-            vc.restitution_threshold = mf.restitution_threshold;
-            vc.point_count = mf.point_count;
-            vc.manifold_index = mi;
-            const vector3d cA = a->world_center();
-            const vector3d cB = b->world_center();
-            const CachedContact* old = nullptr;
-
-            if (m_cfg.warm_starting) {
-                auto it = m_contact_cache.find(key_of(mf));
-                if (it != m_contact_cache.end() && !it->second.sensor) old = &it->second;
-            }
+    for (std::size_t i = 0; i < colA.size(); ++i) {
+        for (std::size_t j = 0; j < colB.size(); ++j) {
+            const Collider3D& ca = colA[i];
+            const Collider3D& cb = colB[j];
+            if (!ca.world_aabb.fatten(m_cfg.speculative_distance).overlaps(cb.world_aabb)) continue;
+            if (!ca.filter.should_collide(cb.filter)) continue;
+            Transform3D wa = a->transform().compose(ca.local_offset);
+            Transform3D wb = b->transform().compose(cb.local_offset);
+            ContactManifold3D mf;
+            mf.body_a = a;
+            mf.body_b = b;
+            mf.collider_a = i;
+            mf.collider_b = j;
+            const bool sensor = ca.is_sensor || cb.is_sensor || !responds(*a, *b);
+            if (!collide_shapes(ca.shape, wa, cb.shape, wb, mf, sensor ? 0.0 : m_cfg.speculative_distance)) continue;
+            mf.friction    = std::sqrt(ca.material.friction * cb.material.friction);
+            mf.restitution = std::max(ca.material.restitution, cb.material.restitution);
+            mf.restitution_threshold = std::min(ca.material.restitution_threshold, cb.material.restitution_threshold);
 
             for (int p = 0; p < mf.point_count; ++p) {
-                auto& vcp = vc.points[p];
-                vcp.rA = mf.points[p].position - cA;
-                vcp.rB = mf.points[p].position - cB;
-                double kn = effective_inv_mass(*a, *b, vcp.rA, vcp.rB, vc.normal);
-                double k1 = effective_inv_mass(*a, *b, vcp.rA, vcp.rB, vc.tangent1);
-                double k2 = effective_inv_mass(*a, *b, vcp.rA, vcp.rB, vc.tangent2);
-                vcp.normal_mass     = (kn > 0.0) ? 1.0 / kn : 0.0;
-                vcp.tangent_mass[0] = (k1 > 0.0) ? 1.0 / k1 : 0.0;
-                vcp.tangent_mass[1] = (k2 > 0.0) ? 1.0 / k2 : 0.0;
-                double vn_rel = vec3::dot(point_velocity(*b, vcp.rB) - point_velocity(*a, vcp.rA), vc.normal);
-                const double sep = mf.points[p].separation;
-                vcp.velocity_bias = (sep > 0.0) ? -sep / dt : 0.0;
-                if (vn_rel < -vc.restitution_threshold && vn_rel * dt + std::max(sep, 0.0) < 0.0) {
-                    vcp.velocity_bias = std::max(vcp.velocity_bias, -vc.restitution * vn_rel);
-                }
+                ContactPoint3D& cp = mf.points[p];
+                vector3d half = mf.normal * (cp.separation * 0.5);
+                cp.local_anchor_a = a->transform().apply_inverse(cp.position - half);
+                cp.local_anchor_b = b->transform().apply_inverse(cp.position + half);
+            }
 
-                for (int q = 0; q <= p; ++q) {
-                    const auto& o = vc.points[q];
-                    vector3d ra_p = vec3::cross(vcp.rA, vc.normal), rb_p = vec3::cross(vcp.rB, vc.normal);
-                    vector3d ra_q = vec3::cross(o.rA, vc.normal),   rb_q = vec3::cross(o.rB, vc.normal);
-                    double k = a->inv_mass() + b->inv_mass() + vec3::dot(ra_p, a->apply_inv_inertia(ra_q)) + vec3::dot(rb_p, b->apply_inv_inertia(rb_q));
-                    vc.normal_block[p][q] = vc.normal_block[q][p] = k;
-                }
+            int deepest = 0;
+            for (int p = 1; p < mf.point_count; ++p) if (mf.points[p].separation < mf.points[deepest].separation) deepest = p;
+            CachedContact& touch = m_touching[key_of(mf)];
+            touch.body_a = a;
+            touch.body_b = b;
+            touch.sensor = sensor;
+            touch.events = wants_events(*a, *b, sensor);
+            touch.touching = mf.points[deepest].separation <= 0.0;
+            touch.normal = mf.normal;
+            touch.point  = mf.points[deepest].position;
+            if (sensor) continue;
+            if (m_pre_solve) { if (!m_pre_solve(*a, *b, mf)) continue; }
+            m_manifolds.push_back(mf);
+        }
+    }
+}
 
-                if (old) {
-                    double best = match_sq;
+void Simulation3D::build_islands_and_wake() {
+    const std::size_t n = m_bodies.size();
+    m_islands.reset(n);
+    m_body_index.clear();
+    m_carried.clear();
+    for (std::size_t i = 0; i < n; ++i) m_body_index[m_bodies[i].get()] = i;
 
-                    for (int q = 0; q < old->point_count; ++q) {
-                        double d = vec3::length_squared(old->local_anchor_a[q] - mf.points[p].local_anchor_a);
+    auto link = [this](RigidBody3D* a, RigidBody3D* b) {
+        const bool da = is_dynamic(*a), db = is_dynamic(*b);
 
-                        if (d <= best) {
-                            best = d;
-                            vcp.normal_impulse     = old->normal_impulse[q];
-                            vcp.tangent_impulse[0] = vec3::dot(old->friction_impulse[q], vc.tangent1);
-                            vcp.tangent_impulse[1] = vec3::dot(old->friction_impulse[q], vc.tangent2);
-                        }
+        if (da && db) {
+            m_islands.unite(m_body_index[a], m_body_index[b]);
+        } else if (da && is_active(*b)) {
+            a->wake(); 
+        } else if (db && is_active(*a)) {
+            b->wake();
+        }
+    };
+
+    for (auto& [key, c] : m_contact_cache) {
+        if (m_touching.count(key)) continue;
+        if (!is_enabled(*c.body_a) || !is_enabled(*c.body_b)) continue;
+        if (is_active(*c.body_a) || is_active(*c.body_b)) continue;
+        m_carried.push_back(key);
+        if (!c.sensor) link(c.body_a, c.body_b);
+    }
+
+    for (auto& mf : m_manifolds) link(mf.body_a, mf.body_b);
+    std::vector<char> island_awake(n, 0);
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const RigidBody3D& b = *m_bodies[i];
+        if (is_enabled(b) && is_dynamic(b) && b.is_awake()) island_awake[m_islands.find(i)] = 1;
+    }
+
+    for (std::size_t i = 0; i < n; ++i) {
+        RigidBody3D& b = *m_bodies[i];
+        if (is_enabled(b) && is_dynamic(b) && !b.is_awake() && island_awake[m_islands.find(i)]) b.wake();
+    }
+}
+
+void Simulation3D::sleep_islands(double dt) {
+    const std::size_t n = std::min(m_islands.size(), m_bodies.size());
+    std::vector<double> min_timer(n, std::numeric_limits<double>::max());
+
+    for (std::size_t i = 0; i < n; ++i) {
+        RigidBody3D& b = *m_bodies[i];
+        if (!is_enabled(b) || !b.is_awake()) continue;
+
+        if (!is_dynamic(b)) {
+            b.update_sleep(dt); 
+            continue;
+        }
+
+        double t = b.advance_sleep_timer(dt);
+        std::size_t r = m_islands.find(i);
+        if (t < min_timer[r]) min_timer[r] = t;
+    }
+
+    for (std::size_t i = 0; i < n; ++i) {
+        RigidBody3D& b = *m_bodies[i];
+        if (!is_enabled(b) || !b.is_awake() || !is_dynamic(b)) continue;
+        if (min_timer[m_islands.find(i)] >= RigidBody3D::SLEEP_TIME_THRESHOLD) b.put_to_sleep();
+    }
+}
+
+void Simulation3D::build_velocity_constraints(double dt) {
+    m_constraints.clear();
+    m_constraints.reserve(m_manifolds.size());
+    const double match_sq = m_cfg.warm_start_match_distance * m_cfg.warm_start_match_distance;
+
+    for (std::size_t mi = 0; mi < m_manifolds.size(); ++mi) {
+        const auto& mf = m_manifolds[mi];
+        RigidBody3D* a = mf.body_a;
+        RigidBody3D* b = mf.body_b;
+        a->ensure_mass_uptodate();
+        b->ensure_mass_uptodate();
+        VelocityConstraint3D vc;
+        vc.body_a = a;
+        vc.body_b = b;
+        vc.normal = mf.normal;
+        vec3::orthonormal_basis(mf.normal, vc.tangent1, vc.tangent2);
+        vc.friction = mf.friction;
+        vc.restitution = mf.restitution;
+        vc.restitution_threshold = mf.restitution_threshold;
+        vc.point_count = mf.point_count;
+        vc.manifold_index = mi;
+        const vector3d cA = a->world_center();
+        const vector3d cB = b->world_center();
+        const CachedContact* old = nullptr;
+
+        if (m_cfg.warm_starting) {
+            auto it = m_contact_cache.find(key_of(mf));
+            if (it != m_contact_cache.end() && !it->second.sensor) old = &it->second;
+        }
+
+        for (int p = 0; p < mf.point_count; ++p) {
+            auto& vcp = vc.points[p];
+            vcp.rA = mf.points[p].position - cA;
+            vcp.rB = mf.points[p].position - cB;
+            double kn = effective_inv_mass(*a, *b, vcp.rA, vcp.rB, vc.normal);
+            double k1 = effective_inv_mass(*a, *b, vcp.rA, vcp.rB, vc.tangent1);
+            double k2 = effective_inv_mass(*a, *b, vcp.rA, vcp.rB, vc.tangent2);
+            vcp.normal_mass     = (kn > 0.0) ? 1.0 / kn : 0.0;
+            vcp.tangent_mass[0] = (k1 > 0.0) ? 1.0 / k1 : 0.0;
+            vcp.tangent_mass[1] = (k2 > 0.0) ? 1.0 / k2 : 0.0;
+            double vn_rel = vec3::dot(point_velocity(*b, vcp.rB) - point_velocity(*a, vcp.rA), vc.normal);
+            const double sep = mf.points[p].separation;
+            vcp.velocity_bias = (sep > 0.0) ? -sep / dt : 0.0;
+            if (vn_rel < -vc.restitution_threshold && vn_rel * dt + std::max(sep, 0.0) < 0.0) {
+                vcp.velocity_bias = std::max(vcp.velocity_bias, -vc.restitution * vn_rel);
+            }
+
+            for (int q = 0; q <= p; ++q) {
+                const auto& o = vc.points[q];
+                vector3d ra_p = vec3::cross(vcp.rA, vc.normal), rb_p = vec3::cross(vcp.rB, vc.normal);
+                vector3d ra_q = vec3::cross(o.rA, vc.normal),   rb_q = vec3::cross(o.rB, vc.normal);
+                double k = a->inv_mass() + b->inv_mass() + vec3::dot(ra_p, a->apply_inv_inertia(ra_q)) + vec3::dot(rb_p, b->apply_inv_inertia(rb_q));
+                vc.normal_block[p][q] = vc.normal_block[q][p] = k;
+            }
+
+            if (old) {
+                double best = match_sq;
+
+                for (int q = 0; q < old->point_count; ++q) {
+                    double d = vec3::length_squared(old->local_anchor_a[q] - mf.points[p].local_anchor_a);
+
+                    if (d <= best) {
+                        best = d;
+                        vcp.normal_impulse     = old->normal_impulse[q];
+                        vcp.tangent_impulse[0] = vec3::dot(old->friction_impulse[q], vc.tangent1);
+                        vcp.tangent_impulse[1] = vec3::dot(old->friction_impulse[q], vc.tangent2);
                     }
                 }
             }
+        }
 
-            m_constraints.push_back(vc);
+        m_constraints.push_back(vc);
+    }
+}
+
+void Simulation3D::warm_start() {
+    for (auto& vc : m_constraints) {
+        for (int p = 0; p < vc.point_count; ++p) {
+            const auto& vcp = vc.points[p];
+            vector3d P = vc.normal * vcp.normal_impulse + vc.tangent1 * vcp.tangent_impulse[0] + vc.tangent2 * vcp.tangent_impulse[1];
+            apply_impulse(*vc.body_a, *vc.body_b, vcp.rA, vcp.rB, P);
         }
     }
+}
 
-auto Simulation3D::warm_start() -> void {
-        for (auto& vc : m_constraints) {
-            for (int p = 0; p < vc.point_count; ++p) {
-                const auto& vcp = vc.points[p];
-                vector3d P = vc.normal * vcp.normal_impulse + vc.tangent1 * vcp.tangent_impulse[0] + vc.tangent2 * vcp.tangent_impulse[1];
-                apply_impulse(*vc.body_a, *vc.body_b, vcp.rA, vcp.rB, P);
-            }
-        }
-    }
+void Simulation3D::solve_velocity_constraints(bool reverse) {
+    const std::size_t count = m_constraints.size();
 
-auto Simulation3D::solve_velocity_constraints(bool reverse) -> void {
-        const std::size_t count = m_constraints.size();
-
-        for (std::size_t ci = 0; ci < count; ++ci) {
-            auto& vc = m_constraints[reverse ? count - 1 - ci : ci];
-            RigidBody3D& a = *vc.body_a;
-            RigidBody3D& b = *vc.body_b;
-
-            for (int pi = 0; pi < vc.point_count; ++pi) {
-                auto& vcp = vc.points[reverse ? vc.point_count - 1 - pi : pi];
-                vector3d dv = point_velocity(b, vcp.rB) - point_velocity(a, vcp.rA);
-                double old1 = vcp.tangent_impulse[0], old2 = vcp.tangent_impulse[1];
-                double new1 = old1 - vec3::dot(dv, vc.tangent1) * vcp.tangent_mass[0];
-                double new2 = old2 - vec3::dot(dv, vc.tangent2) * vcp.tangent_mass[1];
-                double max_friction = vc.friction * vcp.normal_impulse;
-                double mag_sq = new1 * new1 + new2 * new2;
-
-                if (mag_sq > max_friction * max_friction) {
-                    double scale = (mag_sq > 0.0) ? max_friction / std::sqrt(mag_sq) : 0.0;
-                    new1 *= scale;
-                    new2 *= scale;
-                }
-
-                vcp.tangent_impulse[0] = new1;
-                vcp.tangent_impulse[1] = new2;
-                apply_impulse(a, b, vcp.rA, vcp.rB, vc.tangent1 * (new1 - old1) + vc.tangent2 * (new2 - old2));
-            }
-
-            if (vc.point_count >= 2 && solve_normal_block(vc)) continue;
-
-            for (int pi = 0; pi < vc.point_count; ++pi) {
-                auto& vcp = vc.points[reverse ? vc.point_count - 1 - pi : pi];
-                double vn = vec3::dot(point_velocity(b, vcp.rB) - point_velocity(a, vcp.rA), vc.normal);
-                double lambda = -(vn - vcp.velocity_bias) * vcp.normal_mass;
-                double new_impulse = std::max(vcp.normal_impulse + lambda, 0.0);
-                lambda = new_impulse - vcp.normal_impulse;
-                vcp.normal_impulse = new_impulse;
-                apply_impulse(a, b, vcp.rA, vcp.rB, vc.normal * lambda);
-            }
-        }
-    }
-
-auto Simulation3D::solve_normal_block(VelocityConstraint3D& vc) -> bool {
-        constexpr int N = ContactManifold3D::MAX_POINTS;
-        const int n = vc.point_count;
+    for (std::size_t ci = 0; ci < count; ++ci) {
+        auto& vc = m_constraints[reverse ? count - 1 - ci : ci];
         RigidBody3D& a = *vc.body_a;
         RigidBody3D& b = *vc.body_b;
-        double bvec[N], acc[N], x[N];
-        double scale = 0.0;
 
-        for (int i = 0; i < n; ++i) {
-            const auto& c = vc.points[i];
-            acc[i] = c.normal_impulse;
-            bvec[i] = vec3::dot(point_velocity(b, c.rB) - point_velocity(a, c.rA), vc.normal) - c.velocity_bias;
-            scale = std::max(scale, vc.normal_block[i][i]);
-        }
+        for (int pi = 0; pi < vc.point_count; ++pi) {
+            auto& vcp = vc.points[reverse ? vc.point_count - 1 - pi : pi];
+            vector3d dv = point_velocity(b, vcp.rB) - point_velocity(a, vcp.rA);
+            double old1 = vcp.tangent_impulse[0], old2 = vcp.tangent_impulse[1];
+            double new1 = old1 - vec3::dot(dv, vc.tangent1) * vcp.tangent_mass[0];
+            double new2 = old2 - vec3::dot(dv, vc.tangent2) * vcp.tangent_mass[1];
+            double max_friction = vc.friction * vcp.normal_impulse;
+            double mag_sq = new1 * new1 + new2 * new2;
 
-        if (!(scale > 0.0)) return false;
-        for (int i = 0; i < n; ++i) for (int j = 0; j < n; ++j) bvec[i] -= vc.normal_block[i][j] * acc[j];
-        const double reg = 1e-6 * scale;
-        double b_max = 0.0;
-        for (int i = 0; i < n; ++i) b_max = std::max(b_max, std::abs(bvec[i]));
-        const double vel_tol = 1e-9 * (1.0 + b_max); // m/s
-        const double imp_tol = vel_tol / scale;      // N*s
-        const int subsets = 1 << n;
-
-        for (int size = n; size >= 0; --size) {
-            for (int mask = subsets - 1; mask >= 0; --mask) {
-                int bits = 0;
-                for (int i = 0; i < n; ++i) bits += (mask >> i) & 1;
-                if (bits != size) continue;
-                int idx[N], m = 0;
-                for (int i = 0; i < n; ++i) if (mask & (1 << i)) idx[m++] = i;
-                double A[N][N + 1];
-
-                for (int r = 0; r < m; ++r) {
-                    for (int c = 0; c < m; ++c) A[r][c] = vc.normal_block[idx[r]][idx[c]] + (r == c ? reg : 0.0);
-                    A[r][m] = -bvec[idx[r]];
-                }
-
-                bool ok = true;
-
-                for (int col = 0; col < m && ok; ++col) { 
-                    int piv = col;
-                    for (int r = col + 1; r < m; ++r) if (std::abs(A[r][col]) > std::abs(A[piv][col])) piv = r;
-                    if (std::abs(A[piv][col]) <= 1e-300) { ok = false; break; }
-                    if (piv != col) for (int c = 0; c <= m; ++c) std::swap(A[piv][c], A[col][c]);
-
-                    for (int r = col + 1; r < m; ++r) {
-                        double f = A[r][col] / A[col][col];
-                        for (int c = col; c <= m; ++c) A[r][c] -= f * A[col][c];
-                    }
-                }
-
-                if (!ok) continue;
-                for (int i = 0; i < n; ++i) x[i] = 0.0;
-
-                for (int r = m - 1; r >= 0; --r) {
-                    double v = A[r][m];
-                    for (int c = r + 1; c < m; ++c) v -= A[r][c] * x[idx[c]];
-                    x[idx[r]] = v / A[r][r];
-                }
-
-                for (int i = 0; i < n && ok; ++i) {
-                    if (mask & (1 << i)) {
-                        if (x[i] < -imp_tol) ok = false;
-                    } else {
-                        double w = bvec[i];
-                        for (int j = 0; j < n; ++j) w += vc.normal_block[i][j] * x[j];
-                        if (w < -vel_tol) ok = false;
-                    }
-                }
-
-                if (!ok) continue;
-                vector3d P_lin{}, ang_a{}, ang_b{};
-
-                for (int i = 0; i < n; ++i) {
-                    x[i] = std::max(x[i], 0.0);
-                    vector3d P = vc.normal * (x[i] - acc[i]);
-                    P_lin += P;
-                    ang_a += vec3::cross(vc.points[i].rA, P);
-                    ang_b += vec3::cross(vc.points[i].rB, P);
-                    vc.points[i].normal_impulse = x[i];
-                }
-
-                a.set_linear_velocity(a.linear_velocity() - P_lin * a.inv_mass());
-                a.set_angular_velocity(a.angular_velocity() - a.apply_inv_inertia(ang_a));
-                b.set_linear_velocity(b.linear_velocity() + P_lin * b.inv_mass());
-                b.set_angular_velocity(b.angular_velocity() + b.apply_inv_inertia(ang_b));
-                return true;
+            if (mag_sq > max_friction * max_friction) {
+                double scale = (mag_sq > 0.0) ? max_friction / std::sqrt(mag_sq) : 0.0;
+                new1 *= scale;
+                new2 *= scale;
             }
+
+            vcp.tangent_impulse[0] = new1;
+            vcp.tangent_impulse[1] = new2;
+            apply_impulse(a, b, vcp.rA, vcp.rB, vc.tangent1 * (new1 - old1) + vc.tangent2 * (new2 - old2));
         }
 
-        return false;
+        if (vc.point_count >= 2 && solve_normal_block(vc)) continue;
+
+        for (int pi = 0; pi < vc.point_count; ++pi) {
+            auto& vcp = vc.points[reverse ? vc.point_count - 1 - pi : pi];
+            double vn = vec3::dot(point_velocity(b, vcp.rB) - point_velocity(a, vcp.rA), vc.normal);
+            double lambda = -(vn - vcp.velocity_bias) * vcp.normal_mass;
+            double new_impulse = std::max(vcp.normal_impulse + lambda, 0.0);
+            lambda = new_impulse - vcp.normal_impulse;
+            vcp.normal_impulse = new_impulse;
+            apply_impulse(a, b, vcp.rA, vcp.rB, vc.normal * lambda);
+        }
+    }
+}
+
+bool Simulation3D::solve_normal_block(VelocityConstraint3D& vc) {
+    constexpr int N = ContactManifold3D::MAX_POINTS;
+    const int n = vc.point_count;
+    RigidBody3D& a = *vc.body_a;
+    RigidBody3D& b = *vc.body_b;
+    double bvec[N], acc[N], x[N];
+    double scale = 0.0;
+
+    for (int i = 0; i < n; ++i) {
+        const auto& c = vc.points[i];
+        acc[i] = c.normal_impulse;
+        bvec[i] = vec3::dot(point_velocity(b, c.rB) - point_velocity(a, c.rA), vc.normal) - c.velocity_bias;
+        scale = std::max(scale, vc.normal_block[i][i]);
     }
 
-auto Simulation3D::store_impulses() -> void {
-        for (const auto& vc : m_constraints) {
-            ContactManifold3D& mf = m_manifolds[vc.manifold_index];
+    if (!(scale > 0.0)) return false;
+    for (int i = 0; i < n; ++i) for (int j = 0; j < n; ++j) bvec[i] -= vc.normal_block[i][j] * acc[j];
+    const double reg = 1e-6 * scale;
+    double b_max = 0.0;
+    for (int i = 0; i < n; ++i) b_max = std::max(b_max, std::abs(bvec[i]));
+    const double vel_tol = 1e-9 * (1.0 + b_max); // m/s
+    const double imp_tol = vel_tol / scale;      // N*s
+    const int subsets = 1 << n;
 
-            for (int p = 0; p < vc.point_count; ++p) {
-                mf.points[p].normal_impulse   = vc.points[p].normal_impulse;
-                mf.points[p].friction_impulse = vc.tangent1 * vc.points[p].tangent_impulse[0] + vc.tangent2 * vc.points[p].tangent_impulse[1];
+    for (int size = n; size >= 0; --size) {
+        for (int mask = subsets - 1; mask >= 0; --mask) {
+            int bits = 0;
+            for (int i = 0; i < n; ++i) bits += (mask >> i) & 1;
+            if (bits != size) continue;
+            int idx[N], m = 0;
+            for (int i = 0; i < n; ++i) if (mask & (1 << i)) idx[m++] = i;
+            double A[N][N + 1];
+
+            for (int r = 0; r < m; ++r) {
+                for (int c = 0; c < m; ++c) A[r][c] = vc.normal_block[idx[r]][idx[c]] + (r == c ? reg : 0.0);
+                A[r][m] = -bvec[idx[r]];
             }
-        }
-    }
 
-auto Simulation3D::solve_position_constraints(bool reverse) -> bool {
-        double min_separation = 0.0;
-        const std::size_t count = m_manifolds.size();
+            bool ok = true;
 
-        for (std::size_t mi = 0; mi < count; ++mi) {
-            auto& mf = m_manifolds[reverse ? count - 1 - mi : mi];
-            RigidBody3D& a = *mf.body_a;
-            RigidBody3D& b = *mf.body_b;
+            for (int col = 0; col < m && ok; ++col) { 
+                int piv = col;
+                for (int r = col + 1; r < m; ++r) if (std::abs(A[r][col]) > std::abs(A[piv][col])) piv = r;
+                if (std::abs(A[piv][col]) <= 1e-300) { ok = false; break; }
+                if (piv != col) for (int c = 0; c <= m; ++c) std::swap(A[piv][c], A[col][c]);
 
-            for (int pi = 0; pi < mf.point_count; ++pi) {
-                const int p = reverse ? mf.point_count - 1 - pi : pi;
-                vector3d pA = a.transform().apply(mf.points[p].local_anchor_a);
-                vector3d pB = b.transform().apply(mf.points[p].local_anchor_b);
-                double separation = vec3::dot(pB - pA, mf.normal);
-                min_separation = std::min(min_separation, separation);
-                double C = std::clamp(m_cfg.baumgarte_factor * (separation + m_cfg.slop), -m_cfg.max_correction, 0.0);
-                if (C == 0.0) continue;
-                vector3d point = (pA + pB) * 0.5;
-                vector3d rA = point - a.world_center();
-                vector3d rB = point - b.world_center();
-                double K = effective_inv_mass(a, b, rA, rB, mf.normal);
-                double impulse = (K > 0.0) ? -C / K : 0.0;
-                vector3d P = mf.normal * impulse;
-                vector3d dwA = a.apply_inv_inertia(vec3::cross(rA, P)) * -1.0;
-                vector3d dwB = b.apply_inv_inertia(vec3::cross(rB, P));
-                a.apply_position_correction(P * -a.inv_mass(), dwA);
-                b.apply_position_correction(P *  b.inv_mass(), dwB);
+                for (int r = col + 1; r < m; ++r) {
+                    double f = A[r][col] / A[col][col];
+                    for (int c = col; c <= m; ++c) A[r][c] -= f * A[col][c];
+                }
             }
-        }
 
-        return min_separation >= -3.0 * m_cfg.slop;
-    }
+            if (!ok) continue;
+            for (int i = 0; i < n; ++i) x[i] = 0.0;
 
-auto Simulation3D::update_contact_cache() -> void {
-        for (const auto& mf : m_manifolds) {
-            auto it = m_touching.find(key_of(mf));
-            if (it == m_touching.end()) continue;
-            CachedContact& c = it->second;
-            c.point_count = mf.point_count;
-
-            for (int p = 0; p < mf.point_count; ++p) {
-                c.local_anchor_a[p]   = mf.points[p].local_anchor_a;
-                c.normal_impulse[p]   = mf.points[p].normal_impulse;
-                c.friction_impulse[p] = mf.points[p].friction_impulse;
+            for (int r = m - 1; r >= 0; --r) {
+                double v = A[r][m];
+                for (int c = r + 1; c < m; ++c) v -= A[r][c] * x[idx[c]];
+                x[idx[r]] = v / A[r][r];
             }
-        }
 
-        for (const Key& key : m_carried) {
-            auto old = m_contact_cache.find(key);
-            if (old != m_contact_cache.end()) m_touching.emplace(key, old->second);
-        }
-
-        auto was_touching = [](const ContactCache& cache, const Key& key) {
-            auto it = cache.find(key);
-            return it != cache.end() && it->second.touching;
-        };
-
-        for (auto& [key, c] : m_touching) {
-            if (!c.events || !c.touching || was_touching(m_contact_cache, key)) continue;
-            double impulse = 0.0;
-            for (int p = 0; p < c.point_count; ++p) impulse += c.normal_impulse[p];
-            m_begin_events.push_back({ c.body_a, c.body_b, c.normal, c.point, impulse, c.sensor });
-        }
-
-        for (auto& [key, c] : m_contact_cache) {
-            if (!c.events || !c.touching || was_touching(m_touching, key)) continue;
-            m_end_events.push_back({ c.body_a, c.body_b, c.normal, c.point, 0.0, c.sensor });
-        }
-
-        m_contact_cache.swap(m_touching);
-        m_touching.clear();
-        m_carried.clear();
-    }
-
-auto Simulation3D::dispatch_events() -> void {
-        if (m_begin_events.empty() && m_end_events.empty()) return;
-        std::vector<ContactEvent3D> begins, ends;
-        begins.swap(m_begin_events);
-        ends.swap(m_end_events);
-        m_locked = true;
-        if (m_on_begin) for (const auto& e : begins) m_on_begin(e);
-        if (m_on_end)   for (const auto& e : ends)   m_on_end(e);
-        m_locked = false;
-    }
-
-auto Simulation3D::remove_body_now(RigidBody3D* body) -> void {
-        auto find_owner = [this, body]() {
-            return std::find_if(m_bodies.begin(), m_bodies.end(), [body](const std::unique_ptr<RigidBody3D>& p) { return p.get() == body; });
-        };
-
-        if (find_owner() == m_bodies.end()) return;
-
-        for (auto it = m_contact_cache.begin(); it != m_contact_cache.end(); ) {
-            if (it->first.body_a == body || it->first.body_b == body) {
-                const CachedContact& c = it->second;
-                if (c.events && c.touching) m_end_events.push_back({ c.body_a, c.body_b, c.normal, c.point, 0.0, c.sensor });
-                it = m_contact_cache.erase(it);
-            } else {
-                ++it;
+            for (int i = 0; i < n && ok; ++i) {
+                if (mask & (1 << i)) {
+                    if (x[i] < -imp_tol) ok = false;
+                } else {
+                    double w = bvec[i];
+                    for (int j = 0; j < n; ++j) w += vc.normal_block[i][j] * x[j];
+                    if (w < -vel_tol) ok = false;
+                }
             }
-        }
 
-        auto refers = [body](const ContactManifold3D& mf) { return mf.body_a == body || mf.body_b == body; };
-        m_manifolds.erase(std::remove_if(m_manifolds.begin(), m_manifolds.end(), refers), m_manifolds.end());
-        m_constraints.clear();
-        m_pairs.clear();
-        m_body_ptrs.clear();
-        m_body_aabbs.clear();
-        dispatch_events(); 
-        auto owner = find_owner();
-        if (owner != m_bodies.end()) m_bodies.erase(owner);
-    }
+            if (!ok) continue;
+            vector3d P_lin{}, ang_a{}, ang_b{};
 
-auto Simulation3D::flush_pending_removals() -> void {
-        while (!m_pending_removals.empty()) {
-            std::vector<RigidBody3D*> pending;
-            pending.swap(m_pending_removals);
-            std::sort(pending.begin(), pending.end(), std::less<RigidBody3D*>());
-            pending.erase(std::unique(pending.begin(), pending.end()), pending.end());
-            for (RigidBody3D* b : pending) remove_body_now(b);
+            for (int i = 0; i < n; ++i) {
+                x[i] = std::max(x[i], 0.0);
+                vector3d P = vc.normal * (x[i] - acc[i]);
+                P_lin += P;
+                ang_a += vec3::cross(vc.points[i].rA, P);
+                ang_b += vec3::cross(vc.points[i].rB, P);
+                vc.points[i].normal_impulse = x[i];
+            }
+
+            a.set_linear_velocity(a.linear_velocity() - P_lin * a.inv_mass());
+            a.set_angular_velocity(a.angular_velocity() - a.apply_inv_inertia(ang_a));
+            b.set_linear_velocity(b.linear_velocity() + P_lin * b.inv_mass());
+            b.set_angular_velocity(b.angular_velocity() + b.apply_inv_inertia(ang_b));
+            return true;
         }
     }
 
-auto Simulation3D::cleanup_bodies() -> void {
-        const AABB3D world_bounds = world_bounds_of(m_cfg);
+    return false;
+}
 
-        for (auto& bp : m_bodies) {
-            RigidBody3D& b = *bp;
-            bool remove = false;
-            if (has_flag(b.flags(), PhysicsFlags::DestroyOnSleep) && !b.is_awake()) remove = true;
-            if (has_flag(b.flags(), PhysicsFlags::DestroyOffScreen) && !world_bounds.overlaps(b.compute_body_aabb())) remove = true;
-            if (remove) m_pending_removals.push_back(&b);
+void Simulation3D::store_impulses() {
+    for (const auto& vc : m_constraints) {
+        ContactManifold3D& mf = m_manifolds[vc.manifold_index];
+
+        for (int p = 0; p < vc.point_count; ++p) {
+            mf.points[p].normal_impulse   = vc.points[p].normal_impulse;
+            mf.points[p].friction_impulse = vc.tangent1 * vc.points[p].tangent_impulse[0] + vc.tangent2 * vc.points[p].tangent_impulse[1];
         }
-
-        flush_pending_removals();
     }
+}
+
+bool Simulation3D::solve_position_constraints(bool reverse) {
+    double min_separation = 0.0;
+    const std::size_t count = m_manifolds.size();
+
+    for (std::size_t mi = 0; mi < count; ++mi) {
+        auto& mf = m_manifolds[reverse ? count - 1 - mi : mi];
+        RigidBody3D& a = *mf.body_a;
+        RigidBody3D& b = *mf.body_b;
+
+        for (int pi = 0; pi < mf.point_count; ++pi) {
+            const int p = reverse ? mf.point_count - 1 - pi : pi;
+            vector3d pA = a.transform().apply(mf.points[p].local_anchor_a);
+            vector3d pB = b.transform().apply(mf.points[p].local_anchor_b);
+            double separation = vec3::dot(pB - pA, mf.normal);
+            min_separation = std::min(min_separation, separation);
+            double C = std::clamp(m_cfg.baumgarte_factor * (separation + m_cfg.slop), -m_cfg.max_correction, 0.0);
+            if (C == 0.0) continue;
+            vector3d point = (pA + pB) * 0.5;
+            vector3d rA = point - a.world_center();
+            vector3d rB = point - b.world_center();
+            double K = effective_inv_mass(a, b, rA, rB, mf.normal);
+            double impulse = (K > 0.0) ? -C / K : 0.0;
+            vector3d P = mf.normal * impulse;
+            vector3d dwA = a.apply_inv_inertia(vec3::cross(rA, P)) * -1.0;
+            vector3d dwB = b.apply_inv_inertia(vec3::cross(rB, P));
+            a.apply_position_correction(P * -a.inv_mass(), dwA);
+            b.apply_position_correction(P *  b.inv_mass(), dwB);
+        }
+    }
+
+    return min_separation >= -3.0 * m_cfg.slop;
+}
+
+void Simulation3D::update_contact_cache() {
+    for (const auto& mf : m_manifolds) {
+        auto it = m_touching.find(key_of(mf));
+        if (it == m_touching.end()) continue;
+        CachedContact& c = it->second;
+        c.point_count = mf.point_count;
+
+        for (int p = 0; p < mf.point_count; ++p) {
+            c.local_anchor_a[p]   = mf.points[p].local_anchor_a;
+            c.normal_impulse[p]   = mf.points[p].normal_impulse;
+            c.friction_impulse[p] = mf.points[p].friction_impulse;
+        }
+    }
+
+    for (const Key& key : m_carried) {
+        auto old = m_contact_cache.find(key);
+        if (old != m_contact_cache.end()) m_touching.emplace(key, old->second);
+    }
+
+    auto was_touching = [](const ContactCache& cache, const Key& key) {
+        auto it = cache.find(key);
+        return it != cache.end() && it->second.touching;
+    };
+
+    for (auto& [key, c] : m_touching) {
+        if (!c.events || !c.touching || was_touching(m_contact_cache, key)) continue;
+        double impulse = 0.0;
+        for (int p = 0; p < c.point_count; ++p) impulse += c.normal_impulse[p];
+        m_begin_events.push_back({ c.body_a, c.body_b, c.normal, c.point, impulse, c.sensor });
+    }
+
+    for (auto& [key, c] : m_contact_cache) {
+        if (!c.events || !c.touching || was_touching(m_touching, key)) continue;
+        m_end_events.push_back({ c.body_a, c.body_b, c.normal, c.point, 0.0, c.sensor });
+    }
+
+    m_contact_cache.swap(m_touching);
+    m_touching.clear();
+    m_carried.clear();
+}
+
+void Simulation3D::dispatch_events() {
+    if (m_begin_events.empty() && m_end_events.empty()) return;
+    std::vector<ContactEvent3D> begins, ends;
+    begins.swap(m_begin_events);
+    ends.swap(m_end_events);
+    m_locked = true;
+    if (m_on_begin) for (const auto& e : begins) m_on_begin(e);
+    if (m_on_end)   for (const auto& e : ends)   m_on_end(e);
+    m_locked = false;
+}
+
+void Simulation3D::remove_body_now(RigidBody3D* body) {
+    auto find_owner = [this, body]() {
+        return std::find_if(m_bodies.begin(), m_bodies.end(), [body](const std::unique_ptr<RigidBody3D>& p) { return p.get() == body; });
+    };
+
+    if (find_owner() == m_bodies.end()) return;
+
+    for (auto it = m_contact_cache.begin(); it != m_contact_cache.end(); ) {
+        if (it->first.body_a == body || it->first.body_b == body) {
+            const CachedContact& c = it->second;
+            if (c.events && c.touching) m_end_events.push_back({ c.body_a, c.body_b, c.normal, c.point, 0.0, c.sensor });
+            it = m_contact_cache.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    auto refers = [body](const ContactManifold3D& mf) { return mf.body_a == body || mf.body_b == body; };
+    m_manifolds.erase(std::remove_if(m_manifolds.begin(), m_manifolds.end(), refers), m_manifolds.end());
+    m_constraints.clear();
+    m_pairs.clear();
+    m_body_ptrs.clear();
+    m_body_aabbs.clear();
+    dispatch_events(); 
+    auto owner = find_owner();
+    if (owner != m_bodies.end()) m_bodies.erase(owner);
+}
+
+void Simulation3D::flush_pending_removals() {
+    while (!m_pending_removals.empty()) {
+        std::vector<RigidBody3D*> pending;
+        pending.swap(m_pending_removals);
+        std::sort(pending.begin(), pending.end(), std::less<RigidBody3D*>());
+        pending.erase(std::unique(pending.begin(), pending.end()), pending.end());
+        for (RigidBody3D* b : pending) remove_body_now(b);
+    }
+}
+
+void Simulation3D::cleanup_bodies() {
+    const AABB3D world_bounds = world_bounds_of(m_cfg);
+
+    for (auto& bp : m_bodies) {
+        RigidBody3D& b = *bp;
+        bool remove = false;
+        if (has_flag(b.flags(), PhysicsFlags::DestroyOnSleep) && !b.is_awake()) remove = true;
+        if (has_flag(b.flags(), PhysicsFlags::DestroyOffScreen) && !world_bounds.overlaps(b.compute_body_aabb())) remove = true;
+        if (remove) m_pending_removals.push_back(&b);
+    }
+
+    flush_pending_removals();
+}
 
 } // namespace physics
 } // namespace fizmo

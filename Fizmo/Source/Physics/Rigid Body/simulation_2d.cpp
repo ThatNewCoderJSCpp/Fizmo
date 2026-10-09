@@ -1,5 +1,4 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 #include "simulation_2d.hpp"
 
 namespace fizmo {
@@ -464,623 +463,623 @@ Simulation2D::Simulation2D(const Config& cfg) : m_cfg(cfg),
           ))
     {}
 
-auto Simulation2D::remove_body(RigidBody2D& body) -> void {
-        if (m_locked) { m_pending_removals.push_back(&body); return; }
-        remove_body_now(&body);
-        flush_pending_removals();
+void Simulation2D::remove_body(RigidBody2D& body) {
+    if (m_locked) { m_pending_removals.push_back(&body); return; }
+    remove_body_now(&body);
+    flush_pending_removals();
+}
+
+void Simulation2D::step(double dt) {
+    if (dt <= 0.0) return;
+    m_locked = true;
+
+    for (auto& bp : m_bodies) {
+        RigidBody2D& b = *bp;
+        if (!has_flag(b.flags(), PhysicsFlags::Enabled)) continue;
+        if (!b.is_awake()) continue;
+        b.ensure_mass_uptodate();
+        b.integrate_forces(dt, m_cfg.gravity);
     }
 
-auto Simulation2D::step(double dt) -> void {
-        if (dt <= 0.0) return;
-        m_locked = true;
+    broadphase();
+    narrowphase();
+    build_islands_and_wake();
+    build_velocity_constraints();
+    if (m_cfg.warm_starting) warm_start();
+    for (int i = 0; i < m_cfg.velocity_iters; ++i) { solve_velocity_constraints(); }
+    store_impulses();
 
-        for (auto& bp : m_bodies) {
-            RigidBody2D& b = *bp;
-            if (!has_flag(b.flags(), PhysicsFlags::Enabled)) continue;
-            if (!b.is_awake()) continue;
-            b.ensure_mass_uptodate();
-            b.integrate_forces(dt, m_cfg.gravity);
-        }
-
-        broadphase();
-        narrowphase();
-        build_islands_and_wake();
-        build_velocity_constraints();
-        if (m_cfg.warm_starting) warm_start();
-        for (int i = 0; i < m_cfg.velocity_iters; ++i) { solve_velocity_constraints(); }
-        store_impulses();
-
-        for (auto& bp : m_bodies) {
-            RigidBody2D& b = *bp;
-            if (!has_flag(b.flags(), PhysicsFlags::Enabled)) continue;
-            if (!b.is_awake()) continue;
-            b.integrate_velocities(dt);
-        }
-
-        for (int i = 0; i < m_cfg.position_iters; ++i) { if (solve_position_constraints()) break; }
-
-        for (auto& bp : m_bodies) {
-            RigidBody2D& b = *bp;
-            if (!has_flag(b.flags(), PhysicsFlags::Enabled)) continue;
-            b.synchronize_colliders();
-            b.clear_forces();
-        }
-
-        if (m_cfg.allow_sleeping) sleep_islands(dt);
-        update_contact_cache();
-
-        if (m_post_solve) {
-            for (auto& mf : m_manifolds) {
-                if (mf.body_a && mf.body_b) m_post_solve(*mf.body_a, *mf.body_b, mf);
-            }
-        }
-
-        m_locked = false;
-        dispatch_events();
-        flush_pending_removals();
-        cleanup_bodies();
+    for (auto& bp : m_bodies) {
+        RigidBody2D& b = *bp;
+        if (!has_flag(b.flags(), PhysicsFlags::Enabled)) continue;
+        if (!b.is_awake()) continue;
+        b.integrate_velocities(dt);
     }
+
+    for (int i = 0; i < m_cfg.position_iters; ++i) { if (solve_position_constraints()) break; }
+
+    for (auto& bp : m_bodies) {
+        RigidBody2D& b = *bp;
+        if (!has_flag(b.flags(), PhysicsFlags::Enabled)) continue;
+        b.synchronize_colliders();
+        b.clear_forces();
+    }
+
+    if (m_cfg.allow_sleeping) sleep_islands(dt);
+    update_contact_cache();
+
+    if (m_post_solve) {
+        for (auto& mf : m_manifolds) {
+            if (mf.body_a && mf.body_b) m_post_solve(*mf.body_a, *mf.body_b, mf);
+        }
+    }
+
+    m_locked = false;
+    dispatch_events();
+    flush_pending_removals();
+    cleanup_bodies();
+}
 
 auto Simulation2D::query_aabb(const AABB& region) -> std::vector<RigidBody2D*> {
-        synchronize_all_colliders();
-        std::vector<RigidBody2D*> ptrs;
-        ptrs.reserve(m_bodies.size());
-        for (auto& b : m_bodies) ptrs.push_back(b.get());
-        std::vector<AABB> aabbs;
-        aabbs.reserve(m_bodies.size());
-        for (auto& b : m_bodies) aabbs.push_back(b->compute_body_aabb());
+    synchronize_all_colliders();
+    std::vector<RigidBody2D*> ptrs;
+    ptrs.reserve(m_bodies.size());
+    for (auto& b : m_bodies) ptrs.push_back(b.get());
+    std::vector<AABB> aabbs;
+    aabbs.reserve(m_bodies.size());
+    for (auto& b : m_bodies) aabbs.push_back(b->compute_body_aabb());
 
-        m_tree.rebuild(
-            AABB({-m_cfg.world_half_extent, -m_cfg.world_half_extent},
-                 { m_cfg.world_half_extent,  m_cfg.world_half_extent}),
-            ptrs.data(), aabbs.data(), ptrs.size()
-        );
+    m_tree.rebuild(
+        AABB({-m_cfg.world_half_extent, -m_cfg.world_half_extent},
+             { m_cfg.world_half_extent,  m_cfg.world_half_extent}),
+        ptrs.data(), aabbs.data(), ptrs.size()
+    );
 
-        return m_tree.query(region);
-    }
+    return m_tree.query(region);
+}
 
 auto Simulation2D::point_query(const vector2d& point) -> RigidBody2D* {
-        AABB tiny = {{point.x - 0.001, point.y - 0.001}, {point.x + 0.001, point.y + 0.001}};
-        auto results = query_aabb(tiny);
+    AABB tiny = {{point.x - 0.001, point.y - 0.001}, {point.x + 0.001, point.y + 0.001}};
+    auto results = query_aabb(tiny);
 
-        for (auto* b : results) {
-            AABB body_bb = b->compute_body_aabb();
-            if (body_bb.contains(point)) return b;
-        }
-
-        return nullptr;
+    for (auto* b : results) {
+        AABB body_bb = b->compute_body_aabb();
+        if (body_bb.contains(point)) return b;
     }
 
-auto Simulation2D::is_active(const RigidBody2D& b) noexcept -> bool {
-        if (!b.is_awake()) return false;
-        if (b.inv_mass() > 0.0) return true;
-        vector2d v = b.linear_velocity();
-        return v.x != 0.0 || v.y != 0.0 || b.angular_velocity() != 0.0;
+    return nullptr;
+}
+
+bool Simulation2D::is_active(const RigidBody2D& b) noexcept {
+    if (!b.is_awake()) return false;
+    if (b.inv_mass() > 0.0) return true;
+    vector2d v = b.linear_velocity();
+    return v.x != 0.0 || v.y != 0.0 || b.angular_velocity() != 0.0;
+}
+
+bool Simulation2D::responds(const RigidBody2D& a, const RigidBody2D& b) noexcept {
+    return a.has(PhysicsFlags::CollisionResponse) && b.has(PhysicsFlags::CollisionResponse) &&
+          !a.has(PhysicsFlags::Intangible) && !b.has(PhysicsFlags::Intangible);
+}
+
+bool Simulation2D::wants_events(const RigidBody2D& a, const RigidBody2D& b, bool sensor) noexcept {
+    if (a.has(PhysicsFlags::ContactEvents) || b.has(PhysicsFlags::ContactEvents)) return true;
+    return sensor && (a.has(PhysicsFlags::SensorEvents) || b.has(PhysicsFlags::SensorEvents));
+}
+
+void Simulation2D::broadphase() {
+    m_pairs.clear();
+    synchronize_all_colliders();
+    m_body_ptrs.clear();
+    m_body_aabbs.clear();
+    m_body_ptrs.reserve(m_bodies.size());
+    m_body_aabbs.reserve(m_bodies.size());
+
+    for (auto& bp : m_bodies) {
+        RigidBody2D& b = *bp;
+        if (!is_enabled(b)) continue;
+        if (!has_flag(b.flags(), PhysicsFlags::BroadphaseActive) && !has_flag(b.flags(), PhysicsFlags::CollisionResponse)) continue;
+        b.ensure_mass_uptodate();
+        m_body_ptrs.push_back(&b);
+        m_body_aabbs.push_back(b.compute_body_aabb().fatten(m_cfg.broadphase_margin));
     }
 
-auto Simulation2D::responds(const RigidBody2D& a, const RigidBody2D& b) noexcept -> bool {
-        return a.has(PhysicsFlags::CollisionResponse) && b.has(PhysicsFlags::CollisionResponse) &&
-              !a.has(PhysicsFlags::Intangible) && !b.has(PhysicsFlags::Intangible);
-    }
+    if (m_body_ptrs.size() < 2) return;
 
-auto Simulation2D::wants_events(const RigidBody2D& a, const RigidBody2D& b, bool sensor) noexcept -> bool {
-        if (a.has(PhysicsFlags::ContactEvents) || b.has(PhysicsFlags::ContactEvents)) return true;
-        return sensor && (a.has(PhysicsFlags::SensorEvents) || b.has(PhysicsFlags::SensorEvents));
-    }
+    AABB world_bounds(
+        {-m_cfg.world_half_extent, -m_cfg.world_half_extent},
+        { m_cfg.world_half_extent,  m_cfg.world_half_extent}
+    );
 
-auto Simulation2D::broadphase() -> void {
-        m_pairs.clear();
-        synchronize_all_colliders();
-        m_body_ptrs.clear();
-        m_body_aabbs.clear();
-        m_body_ptrs.reserve(m_bodies.size());
-        m_body_aabbs.reserve(m_bodies.size());
+    m_tree.rebuild(
+        world_bounds,
+        m_body_ptrs.data(),
+        m_body_aabbs.data(),
+        m_body_ptrs.size()
+    );
 
-        for (auto& bp : m_bodies) {
-            RigidBody2D& b = *bp;
-            if (!is_enabled(b)) continue;
-            if (!has_flag(b.flags(), PhysicsFlags::BroadphaseActive) && !has_flag(b.flags(), PhysicsFlags::CollisionResponse)) continue;
-            b.ensure_mass_uptodate();
-            m_body_ptrs.push_back(&b);
-            m_body_aabbs.push_back(b.compute_body_aabb().fatten(m_cfg.broadphase_margin));
-        }
+    m_tree.find_pairs([this](RigidBody2D* a, RigidBody2D* b) {
+        if (!a->can_collide_with(*b)) return;
+        if (!is_active(*a) && !is_active(*b)) return;   
+        if (!is_dynamic(*a) && !is_dynamic(*b)) return; 
+        if (std::less<const RigidBody2D*>()(b, a)) std::swap(a, b); 
+        m_pairs.push_back({a, b});
+    });
+}
 
-        if (m_body_ptrs.size() < 2) return;
+void Simulation2D::narrowphase() {
+    m_manifolds.clear();
+    m_manifolds.reserve(m_pairs.size());
+    m_touching.clear();
+    for (auto& [a, b] : m_pairs) { generate_contacts(a, b); }
+}
 
-        AABB world_bounds(
-            {-m_cfg.world_half_extent, -m_cfg.world_half_extent},
-            { m_cfg.world_half_extent,  m_cfg.world_half_extent}
-        );
+void Simulation2D::generate_contacts(RigidBody2D* a, RigidBody2D* b) {
+    const auto& colA = a->colliders();
+    const auto& colB = b->colliders();
 
-        m_tree.rebuild(
-            world_bounds,
-            m_body_ptrs.data(),
-            m_body_aabbs.data(),
-            m_body_ptrs.size()
-        );
+    for (std::size_t i = 0; i < colA.size(); ++i) {
+        for (std::size_t j = 0; j < colB.size(); ++j) {
+            const Collider2D& ca = colA[i];
+            const Collider2D& cb = colB[j];
+            if (!ca.world_aabb.overlaps(cb.world_aabb)) continue;
+            if (!ca.filter.should_collide(cb.filter)) continue;
+            Transform2D wa = a->transform().compose(ca.local_offset);
+            Transform2D wb = b->transform().compose(cb.local_offset);
+            ContactManifold mf;
+            mf.body_a = a;
+            mf.body_b = b;
+            mf.collider_a = i;
+            mf.collider_b = j;
+            if (!collide_shapes(ca.shape, wa, cb.shape, wb, mf)) continue;
+            mf.friction    = std::sqrt(ca.material.friction * cb.material.friction);
+            mf.restitution = std::max(ca.material.restitution, cb.material.restitution);
 
-        m_tree.find_pairs([this](RigidBody2D* a, RigidBody2D* b) {
-            if (!a->can_collide_with(*b)) return;
-            if (!is_active(*a) && !is_active(*b)) return;   
-            if (!is_dynamic(*a) && !is_dynamic(*b)) return; 
-            if (std::less<const RigidBody2D*>()(b, a)) std::swap(a, b); 
-            m_pairs.push_back({a, b});
-        });
-    }
-
-auto Simulation2D::narrowphase() -> void {
-        m_manifolds.clear();
-        m_manifolds.reserve(m_pairs.size());
-        m_touching.clear();
-        for (auto& [a, b] : m_pairs) { generate_contacts(a, b); }
-    }
-
-auto Simulation2D::generate_contacts(RigidBody2D* a, RigidBody2D* b) -> void {
-        const auto& colA = a->colliders();
-        const auto& colB = b->colliders();
-
-        for (std::size_t i = 0; i < colA.size(); ++i) {
-            for (std::size_t j = 0; j < colB.size(); ++j) {
-                const Collider2D& ca = colA[i];
-                const Collider2D& cb = colB[j];
-                if (!ca.world_aabb.overlaps(cb.world_aabb)) continue;
-                if (!ca.filter.should_collide(cb.filter)) continue;
-                Transform2D wa = a->transform().compose(ca.local_offset);
-                Transform2D wb = b->transform().compose(cb.local_offset);
-                ContactManifold mf;
-                mf.body_a = a;
-                mf.body_b = b;
-                mf.collider_a = i;
-                mf.collider_b = j;
-                if (!collide_shapes(ca.shape, wa, cb.shape, wb, mf)) continue;
-                mf.friction    = std::sqrt(ca.material.friction * cb.material.friction);
-                mf.restitution = std::max(ca.material.restitution, cb.material.restitution);
-
-                mf.restitution_threshold = std::min(
-                    ca.material.restitution_threshold,
-                    cb.material.restitution_threshold
-                );
-
-                for (int p = 0; p < mf.point_count; ++p) {
-                    ContactPoint& cp = mf.points[p];
-                    vector2d half = mf.normal * (cp.separation * 0.5);
-                    cp.local_anchor_a = a->transform().apply_inverse(cp.position - half);
-                    cp.local_anchor_b = b->transform().apply_inverse(cp.position + half);
-                }
-
-                const bool sensor = ca.is_sensor || cb.is_sensor || !responds(*a, *b);
-                CachedContact& touch = m_touching[key_of(mf)];
-                touch.body_a = a;
-                touch.body_b = b;
-                touch.sensor = sensor;
-                touch.events = wants_events(*a, *b, sensor);
-                touch.normal = mf.normal;
-                touch.point  = mf.points[0].position;
-                if (sensor) continue;
-                if (m_pre_solve) { if (!m_pre_solve(*a, *b, mf)) continue; }
-                m_manifolds.push_back(mf);
-            }
-        }
-    }
-
-auto Simulation2D::build_islands_and_wake() -> void {
-        const std::size_t n = m_bodies.size();
-        m_islands.reset(n);
-        m_body_index.clear();
-        m_carried.clear();
-        for (std::size_t i = 0; i < n; ++i) m_body_index[m_bodies[i].get()] = i;
-
-        auto link = [this](RigidBody2D* a, RigidBody2D* b) {
-            const bool da = is_dynamic(*a), db = is_dynamic(*b);
-
-            if (da && db) {
-                m_islands.unite(m_body_index[a], m_body_index[b]);
-            } else if (da && is_active(*b)) {
-                a->wake(); 
-            } else if (db && is_active(*a)) {
-                b->wake();
-            }
-        };
-
-        for (auto& [key, c] : m_contact_cache) {
-            if (m_touching.count(key)) continue;
-            if (!is_enabled(*c.body_a) || !is_enabled(*c.body_b)) continue;
-            if (is_active(*c.body_a) || is_active(*c.body_b)) continue;
-            m_carried.push_back(key);
-            if (!c.sensor) link(c.body_a, c.body_b);
-        }
-
-        for (auto& mf : m_manifolds) link(mf.body_a, mf.body_b);
-        std::vector<char> island_awake(n, 0);
-
-        for (std::size_t i = 0; i < n; ++i) {
-            const RigidBody2D& b = *m_bodies[i];
-            if (is_enabled(b) && is_dynamic(b) && b.is_awake()) island_awake[m_islands.find(i)] = 1;
-        }
-
-        for (std::size_t i = 0; i < n; ++i) {
-            RigidBody2D& b = *m_bodies[i];
-            if (is_enabled(b) && is_dynamic(b) && !b.is_awake() && island_awake[m_islands.find(i)]) b.wake();
-        }
-    }
-
-auto Simulation2D::sleep_islands(double dt) -> void {
-        const std::size_t n = std::min(m_islands.size(), m_bodies.size());
-        std::vector<double> min_timer(n, std::numeric_limits<double>::max());
-
-        for (std::size_t i = 0; i < n; ++i) {
-            RigidBody2D& b = *m_bodies[i];
-            if (!is_enabled(b) || !b.is_awake()) continue;
-
-            if (!is_dynamic(b)) {
-                b.update_sleep(dt); 
-                continue;
-            }
-
-            double t = b.advance_sleep_timer(dt);
-            std::size_t r = m_islands.find(i);
-            if (t < min_timer[r]) min_timer[r] = t;
-        }
-
-        for (std::size_t i = 0; i < n; ++i) {
-            RigidBody2D& b = *m_bodies[i];
-            if (!is_enabled(b) || !b.is_awake() || !is_dynamic(b)) continue;
-            if (min_timer[m_islands.find(i)] >= RigidBody2D::SLEEP_TIME_THRESHOLD) b.put_to_sleep();
-        }
-    }
-
-auto Simulation2D::build_velocity_constraints() -> void {
-        m_constraints.clear();
-        m_constraints.reserve(m_manifolds.size());
-        const double match_sq = m_cfg.warm_start_match_distance * m_cfg.warm_start_match_distance;
-
-        for (std::size_t mi = 0; mi < m_manifolds.size(); ++mi) {
-            const auto& mf = m_manifolds[mi];
-            RigidBody2D* a = mf.body_a;
-            RigidBody2D* b = mf.body_b;
-            a->ensure_mass_uptodate();
-            b->ensure_mass_uptodate();
-            VelocityConstraint vc;
-            vc.body_a = a;
-            vc.body_b = b;
-            vc.normal = mf.normal;
-            vc.friction = mf.friction;
-            vc.restitution = mf.restitution;
-            vc.restitution_threshold = mf.restitution_threshold;
-            vc.point_count = mf.point_count;
-            vc.manifold_index = mi;
-            double inv_mA = a->inv_mass();
-            double inv_mB = b->inv_mass();
-            double inv_IA = a->inv_inertia();
-            double inv_IB = b->inv_inertia();
-            vector2d cA = a->world_center();
-            vector2d cB = b->world_center();
-            vector2d tangent = {-mf.normal.y, mf.normal.x};
-            const CachedContact* old = nullptr;
-
-            if (m_cfg.warm_starting) {
-                auto it = m_contact_cache.find(key_of(mf));
-                if (it != m_contact_cache.end() && !it->second.sensor) old = &it->second;
-            }
+            mf.restitution_threshold = std::min(
+                ca.material.restitution_threshold,
+                cb.material.restitution_threshold
+            );
 
             for (int p = 0; p < mf.point_count; ++p) {
-                auto& vcp = vc.points[p];
-                vcp.rA = mf.points[p].position - cA;
-                vcp.rB = mf.points[p].position - cB;
-                double rnA = vcp.rA.perp_dot(mf.normal);
-                double rnB = vcp.rB.perp_dot(mf.normal);
-                double k_normal = inv_mA + inv_mB + inv_IA * rnA * rnA + inv_IB * rnB * rnB;
-                vcp.normal_mass = (k_normal > 0.0) ? 1.0 / k_normal : 0.0;
-                double rtA = vcp.rA.perp_dot(tangent);
-                double rtB = vcp.rB.perp_dot(tangent);
-                double k_tangent = inv_mA + inv_mB + inv_IA * rtA * rtA + inv_IB * rtB * rtB;
-                vcp.tangent_mass = (k_tangent > 0.0) ? 1.0 / k_tangent : 0.0;
-                vector2d vA = a->linear_velocity() + vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
-                vector2d vB = b->linear_velocity() + vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
-                double vn_rel = (vB - vA).dot(mf.normal);
-                vcp.velocity_bias = 0.0;
-                if (vn_rel < -vc.restitution_threshold) { vcp.velocity_bias = -vc.restitution * vn_rel; }
+                ContactPoint& cp = mf.points[p];
+                vector2d half = mf.normal * (cp.separation * 0.5);
+                cp.local_anchor_a = a->transform().apply_inverse(cp.position - half);
+                cp.local_anchor_b = b->transform().apply_inverse(cp.position + half);
+            }
 
-                if (old) {
-                    double best = match_sq;
+            const bool sensor = ca.is_sensor || cb.is_sensor || !responds(*a, *b);
+            CachedContact& touch = m_touching[key_of(mf)];
+            touch.body_a = a;
+            touch.body_b = b;
+            touch.sensor = sensor;
+            touch.events = wants_events(*a, *b, sensor);
+            touch.normal = mf.normal;
+            touch.point  = mf.points[0].position;
+            if (sensor) continue;
+            if (m_pre_solve) { if (!m_pre_solve(*a, *b, mf)) continue; }
+            m_manifolds.push_back(mf);
+        }
+    }
+}
 
-                    for (int q = 0; q < old->point_count; ++q) {
-                        double d = (old->local_anchor_a[q] - mf.points[p].local_anchor_a).magnitude_squared();
+void Simulation2D::build_islands_and_wake() {
+    const std::size_t n = m_bodies.size();
+    m_islands.reset(n);
+    m_body_index.clear();
+    m_carried.clear();
+    for (std::size_t i = 0; i < n; ++i) m_body_index[m_bodies[i].get()] = i;
 
-                        if (d <= best) {
-                            best = d;
-                            vcp.normal_impulse  = old->normal_impulse[q];
-                            vcp.tangent_impulse = old->tangent_impulse[q];
-                        }
+    auto link = [this](RigidBody2D* a, RigidBody2D* b) {
+        const bool da = is_dynamic(*a), db = is_dynamic(*b);
+
+        if (da && db) {
+            m_islands.unite(m_body_index[a], m_body_index[b]);
+        } else if (da && is_active(*b)) {
+            a->wake(); 
+        } else if (db && is_active(*a)) {
+            b->wake();
+        }
+    };
+
+    for (auto& [key, c] : m_contact_cache) {
+        if (m_touching.count(key)) continue;
+        if (!is_enabled(*c.body_a) || !is_enabled(*c.body_b)) continue;
+        if (is_active(*c.body_a) || is_active(*c.body_b)) continue;
+        m_carried.push_back(key);
+        if (!c.sensor) link(c.body_a, c.body_b);
+    }
+
+    for (auto& mf : m_manifolds) link(mf.body_a, mf.body_b);
+    std::vector<char> island_awake(n, 0);
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const RigidBody2D& b = *m_bodies[i];
+        if (is_enabled(b) && is_dynamic(b) && b.is_awake()) island_awake[m_islands.find(i)] = 1;
+    }
+
+    for (std::size_t i = 0; i < n; ++i) {
+        RigidBody2D& b = *m_bodies[i];
+        if (is_enabled(b) && is_dynamic(b) && !b.is_awake() && island_awake[m_islands.find(i)]) b.wake();
+    }
+}
+
+void Simulation2D::sleep_islands(double dt) {
+    const std::size_t n = std::min(m_islands.size(), m_bodies.size());
+    std::vector<double> min_timer(n, std::numeric_limits<double>::max());
+
+    for (std::size_t i = 0; i < n; ++i) {
+        RigidBody2D& b = *m_bodies[i];
+        if (!is_enabled(b) || !b.is_awake()) continue;
+
+        if (!is_dynamic(b)) {
+            b.update_sleep(dt); 
+            continue;
+        }
+
+        double t = b.advance_sleep_timer(dt);
+        std::size_t r = m_islands.find(i);
+        if (t < min_timer[r]) min_timer[r] = t;
+    }
+
+    for (std::size_t i = 0; i < n; ++i) {
+        RigidBody2D& b = *m_bodies[i];
+        if (!is_enabled(b) || !b.is_awake() || !is_dynamic(b)) continue;
+        if (min_timer[m_islands.find(i)] >= RigidBody2D::SLEEP_TIME_THRESHOLD) b.put_to_sleep();
+    }
+}
+
+void Simulation2D::build_velocity_constraints() {
+    m_constraints.clear();
+    m_constraints.reserve(m_manifolds.size());
+    const double match_sq = m_cfg.warm_start_match_distance * m_cfg.warm_start_match_distance;
+
+    for (std::size_t mi = 0; mi < m_manifolds.size(); ++mi) {
+        const auto& mf = m_manifolds[mi];
+        RigidBody2D* a = mf.body_a;
+        RigidBody2D* b = mf.body_b;
+        a->ensure_mass_uptodate();
+        b->ensure_mass_uptodate();
+        VelocityConstraint vc;
+        vc.body_a = a;
+        vc.body_b = b;
+        vc.normal = mf.normal;
+        vc.friction = mf.friction;
+        vc.restitution = mf.restitution;
+        vc.restitution_threshold = mf.restitution_threshold;
+        vc.point_count = mf.point_count;
+        vc.manifold_index = mi;
+        double inv_mA = a->inv_mass();
+        double inv_mB = b->inv_mass();
+        double inv_IA = a->inv_inertia();
+        double inv_IB = b->inv_inertia();
+        vector2d cA = a->world_center();
+        vector2d cB = b->world_center();
+        vector2d tangent = {-mf.normal.y, mf.normal.x};
+        const CachedContact* old = nullptr;
+
+        if (m_cfg.warm_starting) {
+            auto it = m_contact_cache.find(key_of(mf));
+            if (it != m_contact_cache.end() && !it->second.sensor) old = &it->second;
+        }
+
+        for (int p = 0; p < mf.point_count; ++p) {
+            auto& vcp = vc.points[p];
+            vcp.rA = mf.points[p].position - cA;
+            vcp.rB = mf.points[p].position - cB;
+            double rnA = vcp.rA.perp_dot(mf.normal);
+            double rnB = vcp.rB.perp_dot(mf.normal);
+            double k_normal = inv_mA + inv_mB + inv_IA * rnA * rnA + inv_IB * rnB * rnB;
+            vcp.normal_mass = (k_normal > 0.0) ? 1.0 / k_normal : 0.0;
+            double rtA = vcp.rA.perp_dot(tangent);
+            double rtB = vcp.rB.perp_dot(tangent);
+            double k_tangent = inv_mA + inv_mB + inv_IA * rtA * rtA + inv_IB * rtB * rtB;
+            vcp.tangent_mass = (k_tangent > 0.0) ? 1.0 / k_tangent : 0.0;
+            vector2d vA = a->linear_velocity() + vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
+            vector2d vB = b->linear_velocity() + vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
+            double vn_rel = (vB - vA).dot(mf.normal);
+            vcp.velocity_bias = 0.0;
+            if (vn_rel < -vc.restitution_threshold) { vcp.velocity_bias = -vc.restitution * vn_rel; }
+
+            if (old) {
+                double best = match_sq;
+
+                for (int q = 0; q < old->point_count; ++q) {
+                    double d = (old->local_anchor_a[q] - mf.points[p].local_anchor_a).magnitude_squared();
+
+                    if (d <= best) {
+                        best = d;
+                        vcp.normal_impulse  = old->normal_impulse[q];
+                        vcp.tangent_impulse = old->tangent_impulse[q];
                     }
                 }
             }
-
-            m_constraints.push_back(vc);
         }
+
+        m_constraints.push_back(vc);
     }
+}
 
-auto Simulation2D::warm_start() -> void {
-        for (auto& vc : m_constraints) {
-            RigidBody2D* a = vc.body_a;
-            RigidBody2D* b = vc.body_b;
-            double inv_mA = a->inv_mass();
-            double inv_mB = b->inv_mass();
-            double inv_IA = a->inv_inertia();
-            double inv_IB = b->inv_inertia();
-
-            for (int p = 0; p < vc.point_count; ++p) {
-                auto& vcp = vc.points[p];
-                vector2d tangent = {-vc.normal.y, vc.normal.x};
-                vector2d P = vc.normal * vcp.normal_impulse + tangent * vcp.tangent_impulse;
-                a->set_linear_velocity(a->linear_velocity() - P * inv_mA);
-                a->set_angular_velocity(a->angular_velocity() - inv_IA * vcp.rA.perp_dot(P));
-                b->set_linear_velocity(b->linear_velocity() + P * inv_mB);
-                b->set_angular_velocity(b->angular_velocity() + inv_IB * vcp.rB.perp_dot(P));
-            }
-        }
-    }
-
-auto Simulation2D::solve_velocity_constraints() -> void {
-        for (auto& vc : m_constraints) {
-            RigidBody2D* a = vc.body_a;
-            RigidBody2D* b = vc.body_b;
-            double inv_mA = a->inv_mass();
-            double inv_mB = b->inv_mass();
-            double inv_IA = a->inv_inertia();
-            double inv_IB = b->inv_inertia();
-
-            for (int p = 0; p < vc.point_count; ++p) {
-                auto& vcp = vc.points[p];
-                vector2d vA = a->linear_velocity() + vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
-                vector2d vB = b->linear_velocity() + vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
-                vector2d dv = vB - vA;
-                vector2d tangent = {-vc.normal.y, vc.normal.x};
-                double vt = dv.dot(tangent);
-                double lambda_t = -vt * vcp.tangent_mass;
-                double max_friction = vc.friction * vcp.normal_impulse;
-
-                double new_impulse_t = std::clamp(
-                    vcp.tangent_impulse + lambda_t,
-                    -max_friction, max_friction
-                );
-
-                lambda_t = new_impulse_t - vcp.tangent_impulse;
-                vcp.tangent_impulse = new_impulse_t;
-                vector2d Pt = tangent * lambda_t;
-                a->set_linear_velocity(a->linear_velocity() - Pt * inv_mA);
-                a->set_angular_velocity(a->angular_velocity() - inv_IA * vcp.rA.perp_dot(Pt));
-                b->set_linear_velocity(b->linear_velocity() + Pt * inv_mB);
-                b->set_angular_velocity(b->angular_velocity() + inv_IB * vcp.rB.perp_dot(Pt));
-            }
-
-            if (vc.point_count == 2 && solve_block(vc)) continue;
-
-            for (int p = 0; p < vc.point_count; ++p) {
-                auto& vcp = vc.points[p];
-                vector2d vA = a->linear_velocity() + vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
-                vector2d vB = b->linear_velocity() + vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
-                vector2d dv = vB - vA;
-                double vn = dv.dot(vc.normal);
-                double lambda_n = -(vn - vcp.velocity_bias) * vcp.normal_mass;
-                double new_impulse_n = std::max(vcp.normal_impulse + lambda_n, 0.0);
-                lambda_n = new_impulse_n - vcp.normal_impulse;
-                vcp.normal_impulse = new_impulse_n;
-                vector2d Pn = vc.normal * lambda_n;
-                a->set_linear_velocity(a->linear_velocity() - Pn * inv_mA);
-                a->set_angular_velocity(a->angular_velocity() - inv_IA * vcp.rA.perp_dot(Pn));
-                b->set_linear_velocity(b->linear_velocity() + Pn * inv_mB);
-                b->set_angular_velocity(b->angular_velocity() + inv_IB * vcp.rB.perp_dot(Pn));
-            }
-        }
-    }
-
-auto Simulation2D::solve_block(VelocityConstraint& vc) -> bool {
+void Simulation2D::warm_start() {
+    for (auto& vc : m_constraints) {
         RigidBody2D* a = vc.body_a;
         RigidBody2D* b = vc.body_b;
-        const double inv_mA = a->inv_mass(), inv_mB = b->inv_mass();
-        const double inv_IA = a->inv_inertia(), inv_IB = b->inv_inertia();
-        VelocityConstraintPoint& c1 = vc.points[0];
-        VelocityConstraintPoint& c2 = vc.points[1];
-        const vector2d& n = vc.normal;
-        const double rn1A = c1.rA.perp_dot(n), rn1B = c1.rB.perp_dot(n);
-        const double rn2A = c2.rA.perp_dot(n), rn2B = c2.rB.perp_dot(n);
-        const double k11 = inv_mA + inv_mB + inv_IA * rn1A * rn1A + inv_IB * rn1B * rn1B;
-        const double k22 = inv_mA + inv_mB + inv_IA * rn2A * rn2A + inv_IB * rn2B * rn2B;
-        const double k12 = inv_mA + inv_mB + inv_IA * rn1A * rn2A + inv_IB * rn1B * rn2B;
-        const double det = k11 * k22 - k12 * k12;
-        constexpr double max_condition = 1000.0;
-        if (!(k11 * k11 < max_condition * det)) return false;
+        double inv_mA = a->inv_mass();
+        double inv_mB = b->inv_mass();
+        double inv_IA = a->inv_inertia();
+        double inv_IB = b->inv_inertia();
 
-        auto normal_velocity = [&](const VelocityConstraintPoint& c) {
-            vector2d vA = a->linear_velocity() + vector2d(-a->angular_velocity() * c.rA.y, a->angular_velocity() * c.rA.x);
-            vector2d vB = b->linear_velocity() + vector2d(-b->angular_velocity() * c.rB.y, b->angular_velocity() * c.rB.x);
-            return (vB - vA).dot(n);
-        };
-
-        const double a1 = c1.normal_impulse, a2 = c2.normal_impulse;
-        const double b1 = normal_velocity(c1) - c1.velocity_bias - (k11 * a1 + k12 * a2);
-        const double b2 = normal_velocity(c2) - c2.velocity_bias - (k12 * a1 + k22 * a2);
-        double x1, x2;
-
-        for (;;) {
-            x1 = -( k22 * b1 - k12 * b2) / det;
-            x2 = -(-k12 * b1 + k11 * b2) / det;
-            if (x1 >= 0.0 && x2 >= 0.0) break;
-            x1 = -b1 / k11; x2 = 0.0;
-            if (x1 >= 0.0 && k12 * x1 + b2 >= 0.0) break;
-            x1 = 0.0; x2 = -b2 / k22;
-            if (x2 >= 0.0 && k12 * x2 + b1 >= 0.0) break;
-            x1 = 0.0; x2 = 0.0;
-            if (b1 >= 0.0 && b2 >= 0.0) break;
-            return false; 
-        }
-
-        const vector2d P1 = n * (x1 - a1);
-        const vector2d P2 = n * (x2 - a2);
-        const vector2d P = P1 + P2;
-        a->set_linear_velocity(a->linear_velocity() - P * inv_mA);
-        a->set_angular_velocity(a->angular_velocity() - inv_IA * (c1.rA.perp_dot(P1) + c2.rA.perp_dot(P2)));
-        b->set_linear_velocity(b->linear_velocity() + P * inv_mB);
-        b->set_angular_velocity(b->angular_velocity() + inv_IB * (c1.rB.perp_dot(P1) + c2.rB.perp_dot(P2)));
-        c1.normal_impulse = x1;
-        c2.normal_impulse = x2;
-        return true;
-    }
-
-auto Simulation2D::store_impulses() -> void {
-        for (const auto& vc : m_constraints) {
-            ContactManifold& mf = m_manifolds[vc.manifold_index];
-
-            for (int p = 0; p < vc.point_count; ++p) {
-                mf.points[p].normal_impulse  = vc.points[p].normal_impulse;
-                mf.points[p].tangent_impulse = vc.points[p].tangent_impulse;
-            }
+        for (int p = 0; p < vc.point_count; ++p) {
+            auto& vcp = vc.points[p];
+            vector2d tangent = {-vc.normal.y, vc.normal.x};
+            vector2d P = vc.normal * vcp.normal_impulse + tangent * vcp.tangent_impulse;
+            a->set_linear_velocity(a->linear_velocity() - P * inv_mA);
+            a->set_angular_velocity(a->angular_velocity() - inv_IA * vcp.rA.perp_dot(P));
+            b->set_linear_velocity(b->linear_velocity() + P * inv_mB);
+            b->set_angular_velocity(b->angular_velocity() + inv_IB * vcp.rB.perp_dot(P));
         }
     }
+}
 
-auto Simulation2D::solve_position_constraints() -> bool {
-        double min_separation = 0.0;
+void Simulation2D::solve_velocity_constraints() {
+    for (auto& vc : m_constraints) {
+        RigidBody2D* a = vc.body_a;
+        RigidBody2D* b = vc.body_b;
+        double inv_mA = a->inv_mass();
+        double inv_mB = b->inv_mass();
+        double inv_IA = a->inv_inertia();
+        double inv_IB = b->inv_inertia();
 
-        for (auto& mf : m_manifolds) {
-            RigidBody2D* a = mf.body_a;
-            RigidBody2D* b = mf.body_b;
-            double inv_mA = a->inv_mass();
-            double inv_mB = b->inv_mass();
-            double inv_IA = a->inv_inertia();
-            double inv_IB = b->inv_inertia();
+        for (int p = 0; p < vc.point_count; ++p) {
+            auto& vcp = vc.points[p];
+            vector2d vA = a->linear_velocity() + vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
+            vector2d vB = b->linear_velocity() + vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
+            vector2d dv = vB - vA;
+            vector2d tangent = {-vc.normal.y, vc.normal.x};
+            double vt = dv.dot(tangent);
+            double lambda_t = -vt * vcp.tangent_mass;
+            double max_friction = vc.friction * vcp.normal_impulse;
 
-            for (int p = 0; p < mf.point_count; ++p) {
-                vector2d pA = a->transform().apply(mf.points[p].local_anchor_a);
-                vector2d pB = b->transform().apply(mf.points[p].local_anchor_b);
-                double separation = (pB - pA).dot(mf.normal);
-                min_separation = std::min(min_separation, separation);
+            double new_impulse_t = std::clamp(
+                vcp.tangent_impulse + lambda_t,
+                -max_friction, max_friction
+            );
 
-                double C = std::clamp(
-                    m_cfg.baumgarte_factor * (separation + m_cfg.slop),
-                    -m_cfg.max_correction, 0.0
-                );
-
-                vector2d point = (pA + pB) * 0.5;
-                vector2d rA = point - a->world_center();
-                vector2d rB = point - b->world_center();
-                double rnA = rA.perp_dot(mf.normal);
-                double rnB = rB.perp_dot(mf.normal);
-                double K = inv_mA + inv_mB + inv_IA * rnA * rnA + inv_IB * rnB * rnB;
-                double impulse = (K > 0.0) ? -C / K : 0.0;
-                vector2d P = mf.normal * impulse;
-                a->apply_position_correction(P * -inv_mA, -inv_IA * rA.perp_dot(P));
-                b->apply_position_correction(P *  inv_mB,  inv_IB * rB.perp_dot(P));
-            }
+            lambda_t = new_impulse_t - vcp.tangent_impulse;
+            vcp.tangent_impulse = new_impulse_t;
+            vector2d Pt = tangent * lambda_t;
+            a->set_linear_velocity(a->linear_velocity() - Pt * inv_mA);
+            a->set_angular_velocity(a->angular_velocity() - inv_IA * vcp.rA.perp_dot(Pt));
+            b->set_linear_velocity(b->linear_velocity() + Pt * inv_mB);
+            b->set_angular_velocity(b->angular_velocity() + inv_IB * vcp.rB.perp_dot(Pt));
         }
 
-        return min_separation >= -3.0 * m_cfg.slop;
+        if (vc.point_count == 2 && solve_block(vc)) continue;
+
+        for (int p = 0; p < vc.point_count; ++p) {
+            auto& vcp = vc.points[p];
+            vector2d vA = a->linear_velocity() + vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
+            vector2d vB = b->linear_velocity() + vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
+            vector2d dv = vB - vA;
+            double vn = dv.dot(vc.normal);
+            double lambda_n = -(vn - vcp.velocity_bias) * vcp.normal_mass;
+            double new_impulse_n = std::max(vcp.normal_impulse + lambda_n, 0.0);
+            lambda_n = new_impulse_n - vcp.normal_impulse;
+            vcp.normal_impulse = new_impulse_n;
+            vector2d Pn = vc.normal * lambda_n;
+            a->set_linear_velocity(a->linear_velocity() - Pn * inv_mA);
+            a->set_angular_velocity(a->angular_velocity() - inv_IA * vcp.rA.perp_dot(Pn));
+            b->set_linear_velocity(b->linear_velocity() + Pn * inv_mB);
+            b->set_angular_velocity(b->angular_velocity() + inv_IB * vcp.rB.perp_dot(Pn));
+        }
+    }
+}
+
+bool Simulation2D::solve_block(VelocityConstraint& vc) {
+    RigidBody2D* a = vc.body_a;
+    RigidBody2D* b = vc.body_b;
+    const double inv_mA = a->inv_mass(), inv_mB = b->inv_mass();
+    const double inv_IA = a->inv_inertia(), inv_IB = b->inv_inertia();
+    VelocityConstraintPoint& c1 = vc.points[0];
+    VelocityConstraintPoint& c2 = vc.points[1];
+    const vector2d& n = vc.normal;
+    const double rn1A = c1.rA.perp_dot(n), rn1B = c1.rB.perp_dot(n);
+    const double rn2A = c2.rA.perp_dot(n), rn2B = c2.rB.perp_dot(n);
+    const double k11 = inv_mA + inv_mB + inv_IA * rn1A * rn1A + inv_IB * rn1B * rn1B;
+    const double k22 = inv_mA + inv_mB + inv_IA * rn2A * rn2A + inv_IB * rn2B * rn2B;
+    const double k12 = inv_mA + inv_mB + inv_IA * rn1A * rn2A + inv_IB * rn1B * rn2B;
+    const double det = k11 * k22 - k12 * k12;
+    constexpr double max_condition = 1000.0;
+    if (!(k11 * k11 < max_condition * det)) return false;
+
+    auto normal_velocity = [&](const VelocityConstraintPoint& c) {
+        vector2d vA = a->linear_velocity() + vector2d(-a->angular_velocity() * c.rA.y, a->angular_velocity() * c.rA.x);
+        vector2d vB = b->linear_velocity() + vector2d(-b->angular_velocity() * c.rB.y, b->angular_velocity() * c.rB.x);
+        return (vB - vA).dot(n);
+    };
+
+    const double a1 = c1.normal_impulse, a2 = c2.normal_impulse;
+    const double b1 = normal_velocity(c1) - c1.velocity_bias - (k11 * a1 + k12 * a2);
+    const double b2 = normal_velocity(c2) - c2.velocity_bias - (k12 * a1 + k22 * a2);
+    double x1, x2;
+
+    for (;;) {
+        x1 = -( k22 * b1 - k12 * b2) / det;
+        x2 = -(-k12 * b1 + k11 * b2) / det;
+        if (x1 >= 0.0 && x2 >= 0.0) break;
+        x1 = -b1 / k11; x2 = 0.0;
+        if (x1 >= 0.0 && k12 * x1 + b2 >= 0.0) break;
+        x1 = 0.0; x2 = -b2 / k22;
+        if (x2 >= 0.0 && k12 * x2 + b1 >= 0.0) break;
+        x1 = 0.0; x2 = 0.0;
+        if (b1 >= 0.0 && b2 >= 0.0) break;
+        return false; 
     }
 
-auto Simulation2D::update_contact_cache() -> void {
-        for (const auto& mf : m_manifolds) {
-            auto it = m_touching.find(key_of(mf));
-            if (it == m_touching.end()) continue;
-            CachedContact& c = it->second;
-            c.point_count = mf.point_count;
+    const vector2d P1 = n * (x1 - a1);
+    const vector2d P2 = n * (x2 - a2);
+    const vector2d P = P1 + P2;
+    a->set_linear_velocity(a->linear_velocity() - P * inv_mA);
+    a->set_angular_velocity(a->angular_velocity() - inv_IA * (c1.rA.perp_dot(P1) + c2.rA.perp_dot(P2)));
+    b->set_linear_velocity(b->linear_velocity() + P * inv_mB);
+    b->set_angular_velocity(b->angular_velocity() + inv_IB * (c1.rB.perp_dot(P1) + c2.rB.perp_dot(P2)));
+    c1.normal_impulse = x1;
+    c2.normal_impulse = x2;
+    return true;
+}
 
-            for (int p = 0; p < mf.point_count; ++p) {
-                c.local_anchor_a[p]  = mf.points[p].local_anchor_a;
-                c.normal_impulse[p]  = mf.points[p].normal_impulse;
-                c.tangent_impulse[p] = mf.points[p].tangent_impulse;
-            }
+void Simulation2D::store_impulses() {
+    for (const auto& vc : m_constraints) {
+        ContactManifold& mf = m_manifolds[vc.manifold_index];
+
+        for (int p = 0; p < vc.point_count; ++p) {
+            mf.points[p].normal_impulse  = vc.points[p].normal_impulse;
+            mf.points[p].tangent_impulse = vc.points[p].tangent_impulse;
         }
-
-        for (const Key& key : m_carried) {
-            auto old = m_contact_cache.find(key);
-            if (old != m_contact_cache.end()) m_touching.emplace(key, old->second);
-        }
-
-        for (auto& [key, c] : m_touching) {
-            if (!c.events || m_contact_cache.count(key)) continue;
-            double impulse = 0.0;
-            for (int p = 0; p < c.point_count; ++p) impulse += c.normal_impulse[p];
-            m_begin_events.push_back({ c.body_a, c.body_b, c.normal, c.point, impulse, c.sensor });
-        }
-
-        for (auto& [key, c] : m_contact_cache) {
-            if (!c.events || m_touching.count(key)) continue;
-            m_end_events.push_back({ c.body_a, c.body_b, c.normal, c.point, 0.0, c.sensor });
-        }
-
-        m_contact_cache.swap(m_touching);
-        m_touching.clear();
-        m_carried.clear();
     }
+}
 
-auto Simulation2D::dispatch_events() -> void {
-        if (m_begin_events.empty() && m_end_events.empty()) return;
-        std::vector<ContactEvent> begins, ends;
-        begins.swap(m_begin_events);
-        ends.swap(m_end_events);
-        m_locked = true;
-        if (m_on_begin) for (const auto& e : begins) m_on_begin(e);
-        if (m_on_end)   for (const auto& e : ends)   m_on_end(e);
-        m_locked = false;
-    }
+bool Simulation2D::solve_position_constraints() {
+    double min_separation = 0.0;
 
-auto Simulation2D::remove_body_now(RigidBody2D* body) -> void {
-        auto owner = std::find_if(m_bodies.begin(), m_bodies.end(), [body](const std::unique_ptr<RigidBody2D>& p) { return p.get() == body; });
-        if (owner == m_bodies.end()) return;
+    for (auto& mf : m_manifolds) {
+        RigidBody2D* a = mf.body_a;
+        RigidBody2D* b = mf.body_b;
+        double inv_mA = a->inv_mass();
+        double inv_mB = b->inv_mass();
+        double inv_IA = a->inv_inertia();
+        double inv_IB = b->inv_inertia();
 
-        for (auto it = m_contact_cache.begin(); it != m_contact_cache.end(); ) {
-            if (it->first.body_a == body || it->first.body_b == body) {
-                const CachedContact& c = it->second;
-                if (c.events) m_end_events.push_back({ c.body_a, c.body_b, c.normal, c.point, 0.0, c.sensor });
-                it = m_contact_cache.erase(it);
-            } else {
-                ++it;
-            }
-        }
+        for (int p = 0; p < mf.point_count; ++p) {
+            vector2d pA = a->transform().apply(mf.points[p].local_anchor_a);
+            vector2d pB = b->transform().apply(mf.points[p].local_anchor_b);
+            double separation = (pB - pA).dot(mf.normal);
+            min_separation = std::min(min_separation, separation);
 
-        auto refers = [body](const ContactManifold& mf) { return mf.body_a == body || mf.body_b == body; };
-        m_manifolds.erase(std::remove_if(m_manifolds.begin(), m_manifolds.end(), refers), m_manifolds.end());
-        m_constraints.clear();
-        m_pairs.clear();
-        m_body_ptrs.clear();
-        m_body_aabbs.clear();
-        dispatch_events();
-        owner = std::find_if(m_bodies.begin(), m_bodies.end(), [body](const std::unique_ptr<RigidBody2D>& p) { return p.get() == body; });
-        if (owner != m_bodies.end()) m_bodies.erase(owner);
-    }
+            double C = std::clamp(
+                m_cfg.baumgarte_factor * (separation + m_cfg.slop),
+                -m_cfg.max_correction, 0.0
+            );
 
-auto Simulation2D::flush_pending_removals() -> void {
-        while (!m_pending_removals.empty()) {
-            std::vector<RigidBody2D*> pending;
-            pending.swap(m_pending_removals);
-            std::sort(pending.begin(), pending.end(), std::less<RigidBody2D*>());
-            pending.erase(std::unique(pending.begin(), pending.end()), pending.end());
-            for (RigidBody2D* b : pending) remove_body_now(b);
+            vector2d point = (pA + pB) * 0.5;
+            vector2d rA = point - a->world_center();
+            vector2d rB = point - b->world_center();
+            double rnA = rA.perp_dot(mf.normal);
+            double rnB = rB.perp_dot(mf.normal);
+            double K = inv_mA + inv_mB + inv_IA * rnA * rnA + inv_IB * rnB * rnB;
+            double impulse = (K > 0.0) ? -C / K : 0.0;
+            vector2d P = mf.normal * impulse;
+            a->apply_position_correction(P * -inv_mA, -inv_IA * rA.perp_dot(P));
+            b->apply_position_correction(P *  inv_mB,  inv_IB * rB.perp_dot(P));
         }
     }
 
-auto Simulation2D::cleanup_bodies() -> void {
-        AABB world_bounds(
-            {-m_cfg.world_half_extent, -m_cfg.world_half_extent},
-            { m_cfg.world_half_extent,  m_cfg.world_half_extent}
-        );
+    return min_separation >= -3.0 * m_cfg.slop;
+}
 
-        for (auto& bp : m_bodies) {
-            RigidBody2D& b = *bp;
-            bool remove = false;
+void Simulation2D::update_contact_cache() {
+    for (const auto& mf : m_manifolds) {
+        auto it = m_touching.find(key_of(mf));
+        if (it == m_touching.end()) continue;
+        CachedContact& c = it->second;
+        c.point_count = mf.point_count;
 
-            if (has_flag(b.flags(), PhysicsFlags::DestroyOnSleep) && !b.is_awake()) { remove = true; }
+        for (int p = 0; p < mf.point_count; ++p) {
+            c.local_anchor_a[p]  = mf.points[p].local_anchor_a;
+            c.normal_impulse[p]  = mf.points[p].normal_impulse;
+            c.tangent_impulse[p] = mf.points[p].tangent_impulse;
+        }
+    }
 
-            if (has_flag(b.flags(), PhysicsFlags::DestroyOffScreen)) {
-                AABB bb = b.compute_body_aabb();
-                if (!world_bounds.overlaps(bb)) remove = true;
-            }
+    for (const Key& key : m_carried) {
+        auto old = m_contact_cache.find(key);
+        if (old != m_contact_cache.end()) m_touching.emplace(key, old->second);
+    }
 
-            if (remove) m_pending_removals.push_back(&b);
+    for (auto& [key, c] : m_touching) {
+        if (!c.events || m_contact_cache.count(key)) continue;
+        double impulse = 0.0;
+        for (int p = 0; p < c.point_count; ++p) impulse += c.normal_impulse[p];
+        m_begin_events.push_back({ c.body_a, c.body_b, c.normal, c.point, impulse, c.sensor });
+    }
+
+    for (auto& [key, c] : m_contact_cache) {
+        if (!c.events || m_touching.count(key)) continue;
+        m_end_events.push_back({ c.body_a, c.body_b, c.normal, c.point, 0.0, c.sensor });
+    }
+
+    m_contact_cache.swap(m_touching);
+    m_touching.clear();
+    m_carried.clear();
+}
+
+void Simulation2D::dispatch_events() {
+    if (m_begin_events.empty() && m_end_events.empty()) return;
+    std::vector<ContactEvent> begins, ends;
+    begins.swap(m_begin_events);
+    ends.swap(m_end_events);
+    m_locked = true;
+    if (m_on_begin) for (const auto& e : begins) m_on_begin(e);
+    if (m_on_end)   for (const auto& e : ends)   m_on_end(e);
+    m_locked = false;
+}
+
+void Simulation2D::remove_body_now(RigidBody2D* body) {
+    auto owner = std::find_if(m_bodies.begin(), m_bodies.end(), [body](const std::unique_ptr<RigidBody2D>& p) { return p.get() == body; });
+    if (owner == m_bodies.end()) return;
+
+    for (auto it = m_contact_cache.begin(); it != m_contact_cache.end(); ) {
+        if (it->first.body_a == body || it->first.body_b == body) {
+            const CachedContact& c = it->second;
+            if (c.events) m_end_events.push_back({ c.body_a, c.body_b, c.normal, c.point, 0.0, c.sensor });
+            it = m_contact_cache.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    auto refers = [body](const ContactManifold& mf) { return mf.body_a == body || mf.body_b == body; };
+    m_manifolds.erase(std::remove_if(m_manifolds.begin(), m_manifolds.end(), refers), m_manifolds.end());
+    m_constraints.clear();
+    m_pairs.clear();
+    m_body_ptrs.clear();
+    m_body_aabbs.clear();
+    dispatch_events();
+    owner = std::find_if(m_bodies.begin(), m_bodies.end(), [body](const std::unique_ptr<RigidBody2D>& p) { return p.get() == body; });
+    if (owner != m_bodies.end()) m_bodies.erase(owner);
+}
+
+void Simulation2D::flush_pending_removals() {
+    while (!m_pending_removals.empty()) {
+        std::vector<RigidBody2D*> pending;
+        pending.swap(m_pending_removals);
+        std::sort(pending.begin(), pending.end(), std::less<RigidBody2D*>());
+        pending.erase(std::unique(pending.begin(), pending.end()), pending.end());
+        for (RigidBody2D* b : pending) remove_body_now(b);
+    }
+}
+
+void Simulation2D::cleanup_bodies() {
+    AABB world_bounds(
+        {-m_cfg.world_half_extent, -m_cfg.world_half_extent},
+        { m_cfg.world_half_extent,  m_cfg.world_half_extent}
+    );
+
+    for (auto& bp : m_bodies) {
+        RigidBody2D& b = *bp;
+        bool remove = false;
+
+        if (has_flag(b.flags(), PhysicsFlags::DestroyOnSleep) && !b.is_awake()) { remove = true; }
+
+        if (has_flag(b.flags(), PhysicsFlags::DestroyOffScreen)) {
+            AABB bb = b.compute_body_aabb();
+            if (!world_bounds.overlaps(bb)) remove = true;
         }
 
-        flush_pending_removals();
+        if (remove) m_pending_removals.push_back(&b);
     }
+
+    flush_pending_removals();
+}
 
 } // namespace physics
 } // namespace fizmo

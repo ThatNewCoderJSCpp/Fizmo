@@ -1,5 +1,4 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 
 namespace fizmo {
 namespace multiprecision {
@@ -250,34 +249,34 @@ namespace math {
 namespace detail {
 
 BigFloat log_scaled(const BigFloat& x, BigFloat (*inv_const)(const BigFloatContext&), const BigFloatContext& ctx) {
-        const std::size_t err = 4;   
-        std::size_t guard = 32;
+    const std::size_t err = 4;   
+    std::size_t guard = 32;
 
-        for (;;) {
-            const BigFloatContext wc(ctx.precision + guard, RoundingMode::nearest_even);
-            const BigFloat v = BigFloat::mul(ln(x, wc), inv_const(wc), wc);
-            if (!v.is_finite()) return v;
-            if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err)) return v.rounded(ctx);
-            if (log_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
-            guard *= 2;
-        }
+    for (;;) {
+        const BigFloatContext wc(ctx.precision + guard, RoundingMode::nearest_even);
+        const BigFloat v = BigFloat::mul(ln(x, wc), inv_const(wc), wc);
+        if (!v.is_finite()) return v;
+        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err)) return v.rounded(ctx);
+        if (log_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
+        guard *= 2;
     }
+}
 
 BigFloat log_ratio(const BigFloat& x, const BigFloat& b, const BigFloatContext& ctx) {
-        const std::size_t err = 4;
-        std::size_t guard = 32;
+    const std::size_t err = 4;
+    std::size_t guard = 32;
 
-        for (;;) {
-            const BigFloatContext wc(ctx.precision + guard, RoundingMode::nearest_even);
-            const BigFloat v = BigFloat::div(ln(x, wc), ln(b, wc), wc);
-            if (!v.is_finite()) return v;
-            if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err)) return v.rounded(ctx);
-            std::int64_t n = 0;
-            if (log_nearest_int(v, wc, n) && log_pow_matches(b, n, x)) return BigFloat(n).rounded(ctx);
-            if (log_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
-            guard *= 2;
-        }
+    for (;;) {
+        const BigFloatContext wc(ctx.precision + guard, RoundingMode::nearest_even);
+        const BigFloat v = BigFloat::div(ln(x, wc), ln(b, wc), wc);
+        if (!v.is_finite()) return v;
+        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err)) return v.rounded(ctx);
+        std::int64_t n = 0;
+        if (log_nearest_int(v, wc, n) && log_pow_matches(b, n, x)) return BigFloat(n).rounded(ctx);
+        if (log_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
+        guard *= 2;
     }
+}
 
 } // namespace detail
 } // namespace math

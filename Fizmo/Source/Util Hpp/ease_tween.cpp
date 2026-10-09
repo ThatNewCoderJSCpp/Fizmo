@@ -1,5 +1,4 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 #include "ease_tween.hpp"
 
 namespace fizmo {
@@ -7,19 +6,19 @@ namespace ease {
 namespace detail {
 
 double bounce_out(double t) noexcept {
-        if (t < 1.0 / 2.75) {
-            return 7.5625 * t * t;
-        } else if (t < 2.0 / 2.75) {
-            t -= 1.5 / 2.75;
-            return 7.5625 * t * t + 0.75;
-        } else if (t < 2.5 / 2.75) {
-            t -= 2.25 / 2.75;
-            return 7.5625 * t * t + 0.9375;
-        } else {
-            t -= 2.625 / 2.75;
-            return 7.5625 * t * t + 0.984375;
-        }
+    if (t < 1.0 / 2.75) {
+        return 7.5625 * t * t;
+    } else if (t < 2.0 / 2.75) {
+        t -= 1.5 / 2.75;
+        return 7.5625 * t * t + 0.75;
+    } else if (t < 2.5 / 2.75) {
+        t -= 2.25 / 2.75;
+        return 7.5625 * t * t + 0.9375;
+    } else {
+        t -= 2.625 / 2.75;
+        return 7.5625 * t * t + 0.984375;
     }
+}
 
 } // namespace detail
 } // namespace ease
@@ -118,76 +117,76 @@ std::function<double(double)> easing_from(Easing e) {
     }
 }
 
-auto Tween::start() noexcept -> void {
-        m_elapsed   = 0.0;
-        m_played    = 0;
-        m_forward   = true;
-        m_delay_rem = m_delay;
-        m_value     = m_from;
-        m_state     = TweenState::Running;
+void Tween::start() noexcept {
+    m_elapsed   = 0.0;
+    m_played    = 0;
+    m_forward   = true;
+    m_delay_rem = m_delay;
+    m_value     = m_from;
+    m_state     = TweenState::Running;
+}
+
+void Tween::finish() noexcept {
+    m_elapsed = m_duration;
+    m_value   = m_to;
+    m_state   = TweenState::Finished;
+    emit_update();
+    if (m_on_complete) m_on_complete();
+}
+
+void Tween::update(double dt) noexcept {
+    if (m_state != TweenState::Running) return;
+
+    if (m_delay_rem > 0.0) {
+        m_delay_rem -= dt;
+        if (m_delay_rem > 0.0) return;
+        dt = -m_delay_rem;  
+        m_delay_rem = 0.0;
     }
 
-auto Tween::finish() noexcept -> void {
+    m_elapsed += dt;
+
+    if (m_elapsed >= m_duration) {
         m_elapsed = m_duration;
-        m_value   = m_to;
-        m_state   = TweenState::Finished;
+        apply(1.0);
         emit_update();
-        if (m_on_complete) m_on_complete();
-    }
 
-auto Tween::update(double dt) noexcept -> void {
-        if (m_state != TweenState::Running) return;
-
-        if (m_delay_rem > 0.0) {
-            m_delay_rem -= dt;
-            if (m_delay_rem > 0.0) return;
-            dt = -m_delay_rem;  
-            m_delay_rem = 0.0;
-        }
-
-        m_elapsed += dt;
-
-        if (m_elapsed >= m_duration) {
-            m_elapsed = m_duration;
-            apply(1.0);
-            emit_update();
-
-            if (m_repeat == -1 || m_played < m_repeat) {
-                ++m_played;
-                if (m_on_repeat) m_on_repeat();
-                if (m_yoyo) m_forward = !m_forward;
-                m_elapsed   = 0.0;
-                m_delay_rem = m_delay;
-                return;
-            }
-
-            m_state = TweenState::Finished;
-            if (m_on_complete) m_on_complete();
+        if (m_repeat == -1 || m_played < m_repeat) {
+            ++m_played;
+            if (m_on_repeat) m_on_repeat();
+            if (m_yoyo) m_forward = !m_forward;
+            m_elapsed   = 0.0;
+            m_delay_rem = m_delay;
             return;
         }
 
-        double t = m_elapsed / m_duration;
-        apply(t);
-        emit_update();
+        m_state = TweenState::Finished;
+        if (m_on_complete) m_on_complete();
+        return;
     }
 
-auto Tween::apply(double t) noexcept -> void {
-        double eased = m_ease ? m_ease(t) : t;
+    double t = m_elapsed / m_duration;
+    apply(t);
+    emit_update();
+}
 
-        if (m_forward) {
-            m_value = m_from + (m_to - m_from) * eased;
-        } else {
-            m_value = m_to + (m_from - m_to) * eased;   // reversed for yoyo
-        }
+void Tween::apply(double t) noexcept {
+    double eased = m_ease ? m_ease(t) : t;
+
+    if (m_forward) {
+        m_value = m_from + (m_to - m_from) * eased;
+    } else {
+        m_value = m_to + (m_from - m_to) * eased;   // reversed for yoyo
     }
+}
 
-auto TweenManager::update(double dt) -> void {
-        for (auto& tw : m_tweens) tw.update(dt);
+void TweenManager::update(double dt) {
+    for (auto& tw : m_tweens) tw.update(dt);
         
-        m_tweens.erase(
-            std::remove_if(m_tweens.begin(), m_tweens.end(), [](const Tween& tw) { return tw.is_finished(); }),
-            m_tweens.end()
-        );
-    }
+    m_tweens.erase(
+        std::remove_if(m_tweens.begin(), m_tweens.end(), [](const Tween& tw) { return tw.is_finished(); }),
+        m_tweens.end()
+    );
+}
 
 } // namespace fizmo

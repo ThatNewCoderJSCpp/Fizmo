@@ -3,7 +3,7 @@
 
 #include "tracker.hpp"
 #include "platform_linux.hpp"
-#include "platform_windows.hpp"
+#include "win_library.hpp"
 #include <set>
 
 namespace fizmo {
@@ -97,239 +97,33 @@ private:
     CPUSample collect();
 
 #elif defined(OS_WINDOWS)
-    struct ProcessorPerf {
-        LARGE_INTEGER IdleTime;
-        LARGE_INTEGER KernelTime;
-        LARGE_INTEGER UserTime;
-        LARGE_INTEGER DpcTime;
-        LARGE_INTEGER InterruptTime;
-        ULONG         InterruptCount;
-    };
+    struct WinState;
+    detail::Opaque<WinState> m_win;
 
     struct PowerInfo {
-        ULONG Number;
-        ULONG MaxMhz;
-        ULONG CurrentMhz;
-        ULONG MhzLimit;
-        ULONG MaxIdleState;
-        ULONG CurrentIdleState;
+        unsigned long Number;
+        unsigned long MaxMhz;
+        unsigned long CurrentMhz;
+        unsigned long MhzLimit;
+        unsigned long MaxIdleState;
+        unsigned long CurrentIdleState;
     };
 
-    using QuerySystemFn = LONG (WINAPI*)(ULONG, PVOID, ULONG, PULONG);
-    using PowerFn       = LONG (WINAPI*)(int, PVOID, ULONG, PVOID, ULONG);
+    void discover();
 
-    detail::win::Library        m_ntdll{ L"ntdll.dll" };
-    detail::win::Library        m_powrprof{ L"powrprof.dll" };
-    QuerySystemFn               m_query_system = nullptr;
-    PowerFn                     m_power        = nullptr;
-    std::unique_ptr<detail::win::Pdh> m_pdh;
-    detail::win::Pdh::Counter   m_perf_total = nullptr;
-    detail::win::Pdh::Counter   m_perf_cores = nullptr;
-    detail::win::Pdh::Counter   m_thermal    = nullptr;
-    detail::win::Pdh::Counter   m_ctxt       = nullptr;
-    std::vector<detail::win::Pdh::Item> m_items;
+    std::vector<PowerInfo> read_power() const;
 
-    void discover() {
-        m_info.model  = detail::win::registry_string(HKEY_LOCAL_MACHINE, L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", L"ProcessorNameString");
-        m_info.vendor = detail::win::registry_string(HKEY_LOCAL_MACHINE, L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", L"VendorIdentifier");
-        if (m_info.vendor == "GenuineIntel") m_info.vendor = "Intel";
-        else if (m_info.vendor == "AuthenticAMD") m_info.vendor = "AMD";
-        const DWORD logical = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
-        m_info.logical_cores = logical > 0 ? logical : 1;
+    bool read_cores(std::vector<Times>& cores) const;
 
-        DWORD len = 0;
-        GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len);
-        if (len > 0) {
-            std::vector<unsigned char> buf(len);
-            if (GetLogicalProcessorInformationEx(RelationProcessorCore, reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>(buf.data()), &len)) {
-                unsigned int count = 0;
-                for (DWORD off = 0; off < len;) {
-                    const auto* e = reinterpret_cast<const SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buf.data() + off);
-                    if (e->Size == 0) break;
-                    if (e->Relationship == RelationProcessorCore) ++count;
-                    off += e->Size;
-                }
-                m_info.physical_cores = count;
-            }
-        }
-        if (m_info.physical_cores == 0) m_info.physical_cores = m_info.logical_cores;
+    static Times read_total();
 
-        m_query_system = m_ntdll.get<QuerySystemFn>("NtQuerySystemInformation");
-        m_power        = m_powrprof.get<PowerFn>("CallNtPowerInformation");
+    static void read_process(std::uint64_t& user, std::uint64_t& kernel);
 
-        if (const auto mhz = detail::win::registry_dword(HKEY_LOCAL_MACHINE, L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", L"~MHz")) m_info.base_mhz = *mhz;
-        std::vector<PowerInfo> power = read_power();
-        if (!power.empty()) {
-            ULONG top = 0;
-            for (const PowerInfo& p : power) top = std::max(top, p.MaxMhz);
-            if (top > 0) { m_info.base_mhz = top; }
-        }
+    static std::uint32_t count_threads();
 
-        m_pdh = std::make_unique<detail::win::Pdh>();
-        if (m_pdh->valid()) {
-            m_perf_total = m_pdh->add(L"\\Processor Information(_Total)\\% Processor Performance");
-            m_perf_cores = m_pdh->add(L"\\Processor Information(*)\\% Processor Performance");
-            m_thermal    = m_pdh->add(L"\\Thermal Zone Information(*)\\Temperature");
-            m_ctxt       = m_pdh->add(L"\\System\\Context Switches/sec");
-            m_pdh->collect();
-        }
-    }
+    void prime();
 
-    std::vector<PowerInfo> read_power() const {
-        std::vector<PowerInfo> out;
-        if (!m_power) return out;
-        out.resize(std::max(1u, m_info.logical_cores));
-        if (m_power(11, nullptr, 0, out.data(), static_cast<ULONG>(out.size() * sizeof(PowerInfo))) != 0) out.clear();
-        return out;
-    }
-
-    bool read_cores(std::vector<Times>& cores) const {
-        cores.clear();
-        if (!m_query_system) return false;
-        std::vector<ProcessorPerf> buf(std::max(1u, m_info.logical_cores));
-        ULONG got = 0;
-        if (m_query_system(8, buf.data(), static_cast<ULONG>(buf.size() * sizeof(ProcessorPerf)), &got) != 0) return false;
-        const std::size_t n = got / sizeof(ProcessorPerf);
-        cores.resize(n);
-
-        for (std::size_t i = 0; i < n; ++i) {
-            const std::uint64_t idle   = static_cast<std::uint64_t>(buf[i].IdleTime.QuadPart);
-            const std::uint64_t kernel = static_cast<std::uint64_t>(buf[i].KernelTime.QuadPart);
-            const std::uint64_t user   = static_cast<std::uint64_t>(buf[i].UserTime.QuadPart);
-            cores[i].idle   = idle;
-            cores[i].user   = user;
-            cores[i].kernel = kernel > idle ? kernel - idle : 0;
-            cores[i].total  = kernel + user;
-        }
-
-        return true;
-    }
-
-    static Times read_total() {
-        Times t;
-        FILETIME idle{}, kernel{}, user{};
-        if (!GetSystemTimes(&idle, &kernel, &user)) return t;
-        const std::uint64_t i = detail::win::filetime_u64(idle), k = detail::win::filetime_u64(kernel), u = detail::win::filetime_u64(user);
-        t.idle   = i;
-        t.user   = u;
-        t.kernel = k > i ? k - i : 0;
-        t.total  = k + u;
-        return t;
-    }
-
-    static void read_process(std::uint64_t& user, std::uint64_t& kernel) {
-        FILETIME c{}, e{}, k{}, u{};
-        if (!GetProcessTimes(GetCurrentProcess(), &c, &e, &k, &u)) return;
-        user   = detail::win::filetime_u64(u);
-        kernel = detail::win::filetime_u64(k);
-    }
-
-    static std::uint32_t count_threads() {
-        const HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-        if (snap == INVALID_HANDLE_VALUE) return 0;
-        const DWORD pid = GetCurrentProcessId();
-        THREADENTRY32 te{};
-        te.dwSize = sizeof(te);
-        std::uint32_t n = 0;
-        if (Thread32First(snap, &te)) {
-            do { if (te.th32OwnerProcessID == pid) ++n; } while (Thread32Next(snap, &te));
-        }
-        CloseHandle(snap);
-        return n;
-    }
-
-    void prime() {
-        m_prev_total = read_total();
-        read_cores(m_prev_cores);
-        read_process(m_prev_proc_user, m_prev_proc_kernel);
-        m_prev_time = detail::Clock::now();
-    }
-
-    CPUSample collect() {
-        CPUSample s;
-        const Times total = read_total();
-        std::vector<Times> cores;
-        read_cores(cores);
-        std::uint64_t pu = m_prev_proc_user, pk = m_prev_proc_kernel;
-        read_process(pu, pk);
-        const detail::Clock::time_point now = detail::Clock::now();
-        const double wall = detail::seconds_between(m_prev_time, now);
-
-        usage_from(total, m_prev_total, s.usage_percent, s.user_percent, s.kernel_percent, nullptr);
-        s.cores.resize(cores.size());
-
-        for (std::size_t i = 0; i < cores.size(); ++i) {
-            const Times before = i < m_prev_cores.size() ? m_prev_cores[i] : Times{};
-            double u = 0.0, k = 0.0;
-            usage_from(cores[i], before, s.cores[i].usage_percent, u, k, nullptr);
-        }
-
-        if (wall > 0.0) {
-            const double logical  = std::max(1u, m_info.logical_cores);
-            const double user_s   = static_cast<double>(pu >= m_prev_proc_user ? pu - m_prev_proc_user : 0) / 1.0e7;
-            const double kernel_s = static_cast<double>(pk >= m_prev_proc_kernel ? pk - m_prev_proc_kernel : 0) / 1.0e7;
-            s.process_core_percent   = 100.0 * (user_s + kernel_s) / wall;
-            s.process_percent        = detail::clamp_percent(s.process_core_percent / logical);
-            s.process_user_percent   = detail::clamp_percent(100.0 * user_s / wall / logical);
-            s.process_kernel_percent = detail::clamp_percent(100.0 * kernel_s / wall / logical);
-        }
-
-        s.process_threads = count_threads();
-        DWORD handles = 0;
-        if (GetProcessHandleCount(GetCurrentProcess(), &handles)) s.process_handles = handles;
-
-        if (m_pdh && m_pdh->valid() && m_pdh->collect()) {
-            if (m_info.base_mhz) {
-                if (const auto perf = m_pdh->value(m_perf_total)) s.frequency_mhz = *m_info.base_mhz * *perf / 100.0;
-
-                if (m_pdh->items(m_perf_cores, m_items)) {
-                    std::size_t idx = 0;
-                    double top = 0.0;
-                    for (const auto& it : m_items) {
-                        if (it.name.find("_Total") != std::string::npos) continue;
-                        const double mhz = *m_info.base_mhz * it.value / 100.0;
-                        if (idx < s.cores.size()) s.cores[idx].frequency_mhz = mhz;
-                        top = std::max(top, mhz);
-                        ++idx;
-                    }
-                    if (top > 0.0) s.max_core_frequency_mhz = top;
-                }
-            }
-
-            if (m_pdh->items(m_thermal, m_items)) {
-                for (const auto& it : m_items) {
-                    if (it.value <= 0.0) continue;
-                    const double c = it.value - 273.15;
-                    if (c > -50.0 && c < 150.0 && (!s.temperature_c || c > *s.temperature_c)) s.temperature_c = c;
-                }
-                if (s.temperature_c) s.temperature_source = "acpi thermal zone";
-            }
-
-            s.context_switches_per_sec = m_pdh->value(m_ctxt);
-        }
-
-        if (!s.frequency_mhz) {
-            const std::vector<PowerInfo> power = read_power();
-            if (!power.empty()) {
-                double sum = 0.0, top = 0.0;
-                for (std::size_t i = 0; i < power.size(); ++i) {
-                    if (i < s.cores.size()) s.cores[i].frequency_mhz = power[i].CurrentMhz;
-                    sum += power[i].CurrentMhz;
-                    top = std::max(top, static_cast<double>(power[i].CurrentMhz));
-                }
-                s.frequency_mhz = sum / static_cast<double>(power.size());
-                s.max_core_frequency_mhz = top;
-            }
-        }
-
-        m_prev_total = total;
-        m_prev_cores = std::move(cores);
-        m_prev_proc_user = pu;
-        m_prev_proc_kernel = pk;
-        m_prev_time = now;
-        s.frames = take_frames();
-        return s;
-    }
+    CPUSample collect();
 
 #else
     void discover() {}

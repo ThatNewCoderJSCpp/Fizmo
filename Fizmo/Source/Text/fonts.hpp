@@ -9,7 +9,6 @@
 #include <ostream>
 
 #ifdef OS_LINUX
-    #include "../x11_compat.hpp"
 #endif
 
 namespace fizmo {
@@ -180,7 +179,7 @@ enum class FontCategory : std::uint8_t {
     System     // OS UI font        
 };
 
- std::ostream& operator<<(std::ostream& os, FontCategory f);
+std::ostream& operator<<(std::ostream& os, FontCategory f);
 
 #define FIZMO_ENUM_ONLY(name, css) name,
 #define FIZMO_ENUM_CSS(name, css)     case Font::name:        return css;
@@ -230,7 +229,7 @@ inline const char* font_css_name(HandwritingFont f) noexcept {
     switch (f) { FIZMO_HANDWRITING_FONTS(FIZMO_ENUM_CSS_CAT) default: return ""; }
 }
 
- FontCategory font_category(Font f) noexcept;
+FontCategory font_category(Font f) noexcept;
 
 inline Font to_font(SerifFont f) noexcept {
     switch (f) { FIZMO_SERIF_FONTS(FIZMO_TO_FONT) default: return Font::None; }
@@ -248,17 +247,17 @@ inline Font to_font(HandwritingFont f) noexcept {
     switch (f) { FIZMO_HANDWRITING_FONTS(FIZMO_TO_FONT) default: return Font::None; }
 }
 
- SerifFont to_serif(Font f) noexcept;
+SerifFont to_serif(Font f) noexcept;
 
- SansSerifFont to_sans_serif(Font f) noexcept;
+SansSerifFont to_sans_serif(Font f) noexcept;
 
- MonospaceFont to_monospace(Font f) noexcept;
+MonospaceFont to_monospace(Font f) noexcept;
 
- DisplayFont to_display(Font f) noexcept;
+DisplayFont to_display(Font f) noexcept;
 
- HandwritingFont to_handwriting(Font f) noexcept;
+HandwritingFont to_handwriting(Font f) noexcept;
 
- std::ostream& operator<<(std::ostream& os, Font f);
+std::ostream& operator<<(std::ostream& os, Font f);
 
 inline std::ostream& operator<<(std::ostream& os, SerifFont f)       { return os << font_css_name(f); }
 inline std::ostream& operator<<(std::ostream& os, SansSerifFont f)   { return os << font_css_name(f); }

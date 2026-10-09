@@ -1,19 +1,18 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 
 namespace fizmo {
 namespace multiprecision {
 namespace math {
 namespace spdetail {
 
-auto sp_sum::add(const BF& t, double units, const BFC& ac, std::size_t want) -> void {
-        s = BF::add(s, t, ac);
-        if (t.is_zero()) return;
-        const double lt = hz_l2(t);
-        if (lt > lmax) lmax = lt;
-        err = hz_lsum(err, lt + std::log2(units) - static_cast<double>(want));
-        err = hz_lsum(err, lmax - static_cast<double>(want) - 39.0);
-    }
+void sp_sum::add(const BF& t, double units, const BFC& ac, std::size_t want) {
+    s = BF::add(s, t, ac);
+    if (t.is_zero()) return;
+    const double lt = hz_l2(t);
+    if (lt > lmax) lmax = lt;
+    err = hz_lsum(err, lt + std::log2(units) - static_cast<double>(want));
+    err = hz_lsum(err, lmax - static_cast<double>(want) - 39.0);
+}
 
 zt_val sp_finish(const BF& v, double err, std::size_t want) {
     if (v.is_zero() || !v.is_finite()) return zt_val{v, 1.0e9};

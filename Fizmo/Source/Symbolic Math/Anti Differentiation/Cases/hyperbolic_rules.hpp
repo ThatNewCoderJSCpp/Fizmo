@@ -16,11 +16,11 @@ inline bool linear_or_var(MathExpressionNode* inner, std::uint64_t vid, double& 
     return is_linear_in_var(inner, vid, a, b);
 }
 
- bool is_hyp_squared(MathExpressionNode* n, NodeType fn, std::uint64_t vid, double& a_out, double& b_out, MathExpressionNode*& inner_out);
+bool is_hyp_squared(MathExpressionNode* n, NodeType fn, std::uint64_t vid, double& a_out, double& b_out, MathExpressionNode*& inner_out);
 
 } // namespace detail_hyp
 
- MathExpression try_hyperbolic(
+MathExpression try_hyperbolic(
     MathExpressionManager& mgr,
     MathExpressionSimplifier& /*simp*/,
     MathExpressionDifferentiator& /*diff*/,

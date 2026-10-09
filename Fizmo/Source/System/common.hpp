@@ -25,6 +25,22 @@
 namespace fizmo {
 namespace system {
 
+namespace detail {
+
+template <typename T>
+class Opaque {
+private:
+    mutable std::shared_ptr<void> m_ptr;
+
+public:
+    T& get() const {
+        if (!m_ptr) m_ptr = std::make_shared<T>();
+        return *static_cast<T*>(m_ptr.get());
+    }
+};
+
+} // namespace detail
+
 struct Statistics {
     std::size_t count   = 0;
     double      min     = 0.0;
@@ -69,7 +85,7 @@ inline double clamp_percent(double v) noexcept {
     return v > 100.0 ? 100.0 : v;
 }
 
- std::string trim(const std::string& s);
+std::string trim(const std::string& s);
 
 inline std::string lower(std::string s) {
     for (char& c : s) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
@@ -81,17 +97,17 @@ inline bool starts_with(const std::string& s, const char* prefix) noexcept {
     return s.size() >= n && s.compare(0, n, prefix) == 0;
 }
 
- bool ends_with(const std::string& s, const char* suffix) noexcept;
+bool ends_with(const std::string& s, const char* suffix) noexcept;
 
- std::vector<std::string> split_ws(const std::string& s);
+std::vector<std::string> split_ws(const std::string& s);
 
- std::vector<std::string> split_lines(const std::string& s);
+std::vector<std::string> split_lines(const std::string& s);
 
- std::optional<std::uint64_t> parse_u64(const std::string& s, int base = 10) noexcept;
+std::optional<std::uint64_t> parse_u64(const std::string& s, int base = 10) noexcept;
 
- std::optional<std::int64_t> parse_i64(const std::string& s) noexcept;
+std::optional<std::int64_t> parse_i64(const std::string& s) noexcept;
 
- std::optional<double> parse_double(const std::string& s) noexcept;
+std::optional<double> parse_double(const std::string& s) noexcept;
 
 inline std::string fixed(double v, int decimals) {
     char buf[64];
@@ -108,15 +124,15 @@ inline void push_value(std::vector<double>& out, T v) { out.push_back(static_cas
 template <typename T>
 inline void push_value(std::vector<double>& out, const std::optional<T>& v) { if (v) push_value(out, *v); }
 
- Statistics summarize(std::vector<double> values);
+Statistics summarize(std::vector<double> values);
 
 } // namespace detail
 
- std::string format_bytes(std::uint64_t bytes);
+std::string format_bytes(std::uint64_t bytes);
 
- std::string format_rate(double bytes_per_second);
+std::string format_rate(double bytes_per_second);
 
- std::string format_bitrate(double bytes_per_second);
+std::string format_bitrate(double bytes_per_second);
 
 inline std::string format_optional(const std::optional<double>& v, int decimals, const char* unit) {
     if (!v) return "n/a";

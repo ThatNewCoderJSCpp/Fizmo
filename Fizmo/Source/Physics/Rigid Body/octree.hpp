@@ -22,7 +22,7 @@ inline bool overlap_spheres(
     return vec3::length_squared(c2 - c1) <= r_sum * r_sum;
 }
 
- bool overlap_aabb_sphere(
+bool overlap_aabb_sphere(
     const AABB3D& box,
     const vector3d& center,
     double radius
@@ -34,14 +34,14 @@ struct OverlapResult3D {
     vector3d normal{};    // unit push direction (a out of b)
 };
 
- OverlapResult3D overlap_aabb_mtv(const AABB3D& a, const AABB3D& b) noexcept;
+OverlapResult3D overlap_aabb_mtv(const AABB3D& a, const AABB3D& b) noexcept;
 
- OverlapResult3D overlap_spheres_mtv(
+OverlapResult3D overlap_spheres_mtv(
     const vector3d& c1, double r1,
     const vector3d& c2, double r2
 ) noexcept;
 
- OverlapResult3D overlap_aabb_sphere_mtv(
+OverlapResult3D overlap_aabb_sphere_mtv(
     const AABB3D& box,
     const vector3d& center,
     double radius

@@ -9,7 +9,7 @@ namespace cas {
 namespace symbols {
 namespace integration {
 
- MathExpression try_polynomial(
+MathExpression try_polynomial(
     MathExpressionManager& mgr,
     MathExpressionSimplifier& simp,
     MathExpressionDifferentiator& /*diff*/,

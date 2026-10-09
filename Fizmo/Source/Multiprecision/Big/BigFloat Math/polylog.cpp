@@ -1,5 +1,4 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 
 namespace fizmo {
 namespace multiprecision {
@@ -20,20 +19,20 @@ BigFloat pl_zeta_negodd(std::uint64_t m, const BigFloatContext& wc) {
     });
 }
 
-auto pl_acc::add(const BigFloat& t, double e, double sw) -> void {
-        const double lt = hz_l2(t);
-        err = hz_lsum(err, lt + std::log2(e));
-        if (sw > 0.0) sens = hz_lsum(sens, lt + std::log2(sw));
-        if (lt > lmax) lmax = lt;
-    }
+void pl_acc::add(const BigFloat& t, double e, double sw) {
+    const double lt = hz_l2(t);
+    err = hz_lsum(err, lt + std::log2(e));
+    if (sw > 0.0) sens = hz_lsum(sens, lt + std::log2(sw));
+    if (lt > lmax) lmax = lt;
+}
 
 auto pl_acc::finish(const BigFloat& S, const BigFloatContext& wc, double ltail) const -> zt_val {
-        const BigFloat v = S.rounded(wc);
-        if (v.is_zero() || !v.is_finite()) return zt_val{v, 1.0e9};
-        const double lv    = hz_l2(v);
-        const double units = std::exp2(err - lv) + std::exp2(sens - lv) + std::exp2(ltail + static_cast<double>(wc.precision) - lv) + 1.0;
-        return zt_val{v, std::log2(units) + 1.0};
-    }
+    const BigFloat v = S.rounded(wc);
+    if (v.is_zero() || !v.is_finite()) return zt_val{v, 1.0e9};
+    const double lv    = hz_l2(v);
+    const double units = std::exp2(err - lv) + std::exp2(sens - lv) + std::exp2(ltail + static_cast<double>(wc.precision) - lv) + 1.0;
+    return zt_val{v, std::log2(units) + 1.0};
+}
 
 bool pl_neg_int(std::uint64_t m, const BigFloat& z, const BigFloatContext& ctx, BigFloat& out) {
     const BigFloat omz = hz_xadd(BigFloat::one(), z, true);

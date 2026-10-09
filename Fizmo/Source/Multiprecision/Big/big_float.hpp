@@ -429,9 +429,9 @@ inline bool operator>(const BigFloat& a, const BigFloat& b) noexcept {
     return BigFloat::compare(a, b) == BigFloat::ordering::greater;
 }
 
- bool operator<=(const BigFloat& a, const BigFloat& b) noexcept;
+bool operator<=(const BigFloat& a, const BigFloat& b) noexcept;
 
- bool operator>=(const BigFloat& a, const BigFloat& b) noexcept;
+bool operator>=(const BigFloat& a, const BigFloat& b) noexcept;
 
 inline BigFloat operator+(const BigFloat& a) { return a; }
 inline BigFloat operator+(BigFloat&& a)      { return std::move(a); }

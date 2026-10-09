@@ -587,32 +587,7 @@ private:
 };
 
 #ifdef OS_WINDOWS
-inline void blit_framebuffer(void* hdc_raw, const graphics::Framebuffer& fb) {
-    HDC hdc = static_cast<HDC>(hdc_raw);
-    unsigned int w = fb.width(), h = fb.height();
-    BITMAPINFO bmi = {};
-    bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth       = static_cast<LONG>(w);
-    bmi.bmiHeader.biHeight      = -static_cast<LONG>(h);
-    bmi.bmiHeader.biPlanes      = 1;
-    bmi.bmiHeader.biBitCount    = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
-    std::vector<std::uint8_t> bits(w * h * 4);
-    const graphics::Color* px = fb.data();
-
-    for (unsigned int i = 0; i < w * h; ++i) {
-        bits[i * 4 + 0] = px[i].blue();
-        bits[i * 4 + 1] = px[i].green();
-        bits[i * 4 + 2] = px[i].red();
-        bits[i * 4 + 3] = px[i].alpha();
-    }
-
-    SetDIBitsToDevice(
-        hdc, 0, 0, w, h,
-        0, 0, 0, h,
-        bits.data(), &bmi, DIB_RGB_COLORS
-    );
-}
+void blit_framebuffer(void* hdc_raw, const graphics::Framebuffer& fb);
 #endif // OS_WINDOWS
 
 } // namespace windows

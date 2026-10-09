@@ -16,11 +16,11 @@ struct ProductSplit {
     MathExpressionNode* right;
 };
 
- void strip_const(MathExpressionNode* n, double& coeff, MathExpressionNode*& core);
+void strip_const(MathExpressionNode* n, double& coeff, MathExpressionNode*& core);
 
 } // namespace detail_heur
 
- MathExpression try_heuristic(
+MathExpression try_heuristic(
     MathExpressionManager& mgr,
     MathExpressionSimplifier& simp,
     MathExpressionDifferentiator& diff,

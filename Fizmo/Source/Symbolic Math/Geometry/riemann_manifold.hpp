@@ -20,9 +20,9 @@ namespace math {
 
 namespace tensors {
 
- IndexedTensor make_metric(const SymbolicSquareTensor& g, const std::string& idx_a = "mu", const std::string& idx_b = "nu");
+IndexedTensor make_metric(const SymbolicSquareTensor& g, const std::string& idx_a = "mu", const std::string& idx_b = "nu");
 
- IndexedTensor make_metric_inverse(const SymbolicSquareTensor& g_inv, const std::string& idx_a = "mu", const std::string& idx_b = "nu");
+IndexedTensor make_metric_inverse(const SymbolicSquareTensor& g_inv, const std::string& idx_a = "mu", const std::string& idx_b = "nu");
 
 inline SymbolicSquareTensor invert_metric(const SymbolicSquareTensor& g) {
     auto mat = g.to_matrix();

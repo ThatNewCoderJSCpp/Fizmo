@@ -24,9 +24,9 @@ inline std::size_t tg_splits(std::size_t p) noexcept {
     return s;
 }
 
- void tg_sincos_small(const BigFloat& r, const BigFloatContext& wc, BigFloat& s, BigFloat& c);
+void tg_sincos_small(const BigFloat& r, const BigFloatContext& wc, BigFloat& s, BigFloat& c);
 
- bool tg_sincos_raw(const BigFloat& x, std::size_t want, BigFloat& sx, BigFloat& cx);
+bool tg_sincos_raw(const BigFloat& x, std::size_t want, BigFloat& sx, BigFloat& cx);
 
 enum class trig_sel : std::uint8_t { sin_v, cos_v, tan_v, cot_v, sec_v, csc_v };
 
@@ -34,15 +34,15 @@ inline bool tg_guard_exhausted(std::size_t prec, std::size_t guard) {
     return guard >= 4096 || prec + guard >= BigFloatContext::max_prec / 4;
 }
 
- BigFloat tg_dispatch(const BigFloat& x, trig_sel sel, const BigFloatContext& ctx);
+BigFloat tg_dispatch(const BigFloat& x, trig_sel sel, const BigFloatContext& ctx);
 
- BigFloat tg_just_under_one(const BigFloatContext& ctx);
+BigFloat tg_just_under_one(const BigFloatContext& ctx);
 
- bool tg_negligible(const BigFloat& x, std::size_t prec);
+bool tg_negligible(const BigFloat& x, std::size_t prec);
 
- std::size_t tg_err_of(const BigFloat& v, std::size_t want);
+std::size_t tg_err_of(const BigFloat& v, std::size_t want);
 
- BigFloat sinc_finite(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat sinc_finite(const BigFloat& x, const BigFloatContext& ctx);
 
 } // namespace detail
 
@@ -60,27 +60,27 @@ inline bool tg_guard_exhausted(std::size_t prec, std::size_t guard) {
     }                                                                                              \
     inline BigFloat FN(const BigInt& x) { return FN(x, BigFloatContext::current()); }
 
- BigFloat sin(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat sin(const BigFloat& x, const BigFloatContext& ctx);
 
 namespace detail {
-     void tg_fold_half(const BigFloat& x, BigFloat& f, bool& flip);
+    void tg_fold_half(const BigFloat& x, BigFloat& f, bool& flip);
 
-     BigFloat normalized_sinc_finite(const BigFloat& x, const BigFloatContext& ctx);
+    BigFloat normalized_sinc_finite(const BigFloat& x, const BigFloatContext& ctx);
 }
 
- BigFloat cos(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat cos(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat tan(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat tan(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat cot(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat cot(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat sec(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat sec(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat csc(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat csc(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat sinc(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat sinc(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat normalized_sinc(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat normalized_sinc(const BigFloat& x, const BigFloatContext& ctx);
 
 FIZMO_MP_TRIG_FORWARD(sin)
 FIZMO_MP_TRIG_FORWARD(cos)

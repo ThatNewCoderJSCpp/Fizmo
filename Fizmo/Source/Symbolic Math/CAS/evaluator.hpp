@@ -21,7 +21,7 @@ namespace math {
 namespace cas {
 namespace symbols {
 
- double eval_node(const MathExpressionNode* n, const EvalContext& ctx);
+double eval_node(const MathExpressionNode* n, const EvalContext& ctx);
 
 inline double evaluate(MathExpression e, const EvalContext& ctx) {
     return eval_node(e.get(), ctx);

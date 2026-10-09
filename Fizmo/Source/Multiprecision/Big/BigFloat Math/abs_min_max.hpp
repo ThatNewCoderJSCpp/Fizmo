@@ -11,13 +11,13 @@ namespace math {
 
 inline BigFloat abs(const BigFloat& x) { return x.abs(); }
 
- BigFloat min(const BigFloat& a, const BigFloat& b);
+BigFloat min(const BigFloat& a, const BigFloat& b);
 
- BigFloat max(const BigFloat& a, const BigFloat& b);
+BigFloat max(const BigFloat& a, const BigFloat& b);
 
- BigFloat min(std::initializer_list<BigFloat> values);
+BigFloat min(std::initializer_list<BigFloat> values);
 
- BigFloat max(std::initializer_list<BigFloat> values);
+BigFloat max(std::initializer_list<BigFloat> values);
 
 template <typename... Args>
 inline BigFloat min(const BigFloat& a, const BigFloat& b, const Args&... args) {
@@ -42,7 +42,7 @@ inline BigFloat max(const BigFloat& a, const BigFloat& b, const Args&... args) {
 }
 
 
- BigFloat clamp(
+BigFloat clamp(
     const BigFloat& x,
     const BigFloat& lo,
     const BigFloat& hi

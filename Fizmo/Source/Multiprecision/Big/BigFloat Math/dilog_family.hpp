@@ -23,25 +23,25 @@ inline zt_val rg_combine_units(const BigFloat& v, double units) {
     return zt_val{v, std::log2(units) + 1.0};
 }
 
- zt_val rg_low(const BigFloat& x, std::size_t want);
+zt_val rg_low(const BigFloat& x, std::size_t want);
 
- zt_val rg_high(const BigFloat& x, std::size_t want);
+zt_val rg_high(const BigFloat& x, std::size_t want);
 
- zt_val rg_raw(const BigFloat& x, std::size_t want);
+zt_val rg_raw(const BigFloat& x, std::size_t want);
 
- std::size_t rg_guard0(const BigFloat& x);
+std::size_t rg_guard0(const BigFloat& x);
 
- bool rg_normalized_exact(const BigFloat& x, BigFloat& out);
+bool rg_normalized_exact(const BigFloat& x, BigFloat& out);
 
 } // namespace rgdetail
 
- BigFloat rogers_l(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat rogers_l(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat rogers_l_normalized(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat rogers_l_normalized(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat spence_function(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat spence_function(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat spence_integral(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat spence_integral(const BigFloat& x, const BigFloatContext& ctx);
 
 FIZMO_MP_TRIG_FORWARD(rogers_l)
 FIZMO_MP_TRIG_FORWARD(rogers_l_normalized)

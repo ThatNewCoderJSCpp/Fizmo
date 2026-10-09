@@ -1,148 +1,147 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 
 namespace fizmo {
 namespace multiprecision {
 namespace fdetail {
 namespace decimal {
 
-auto bignum::bit_length() const noexcept -> long long {
-        if (limbs.empty()) return 0;
-        std::uint32_t top = limbs.back();
-        long long n = 0;
-        while (top) { ++n; top >>= 1; }
-        return static_cast<long long>(limbs.size() - 1) * 32 + n;
-    }
+long long bignum::bit_length() const noexcept {
+    if (limbs.empty()) return 0;
+    std::uint32_t top = limbs.back();
+    long long n = 0;
+    while (top) { ++n; top >>= 1; }
+    return static_cast<long long>(limbs.size() - 1) * 32 + n;
+}
 
-auto bignum::get_bit(long long i) const noexcept -> bool {
-        const std::size_t li = static_cast<std::size_t>(i / 32);
-        if (i < 0 || li >= limbs.size()) return false;
-        return ((limbs[li] >> (i % 32)) & 1u) != 0;
-    }
+bool bignum::get_bit(long long i) const noexcept {
+    const std::size_t li = static_cast<std::size_t>(i / 32);
+    if (i < 0 || li >= limbs.size()) return false;
+    return ((limbs[li] >> (i % 32)) & 1u) != 0;
+}
 
-auto bignum::set_bit(long long i) -> void {
-        const std::size_t li = static_cast<std::size_t>(i / 32);
-        if (limbs.size() <= li) limbs.resize(li + 1, 0);
-        limbs[li] |= (1u << (i % 32));
-    }
+void bignum::set_bit(long long i) {
+    const std::size_t li = static_cast<std::size_t>(i / 32);
+    if (limbs.size() <= li) limbs.resize(li + 1, 0);
+    limbs[li] |= (1u << (i % 32));
+}
 
-auto bignum::mul_small(std::uint32_t k) -> void {
-        if (k == 0) { limbs.clear(); return; }
-        std::uint64_t carry = 0;
+void bignum::mul_small(std::uint32_t k) {
+    if (k == 0) { limbs.clear(); return; }
+    std::uint64_t carry = 0;
+    for (std::uint32_t& l : limbs) {
+        const std::uint64_t t = static_cast<std::uint64_t>(l) * k + carry;
+        l = static_cast<std::uint32_t>(t & 0xFFFFFFFFull);
+        carry = t >> 32;
+    }
+    if (carry) limbs.push_back(static_cast<std::uint32_t>(carry));
+}
+
+void bignum::add_small(std::uint32_t k) {
+    std::uint64_t carry = k;
+    for (std::size_t i = 0; carry && i < limbs.size(); ++i) {
+        const std::uint64_t t = static_cast<std::uint64_t>(limbs[i]) + carry;
+        limbs[i] = static_cast<std::uint32_t>(t & 0xFFFFFFFFull);
+        carry = t >> 32;
+    }
+    if (carry) limbs.push_back(static_cast<std::uint32_t>(carry));
+}
+
+void bignum::shl(long long bits) {
+    if (limbs.empty() || bits <= 0) return;
+    const std::size_t whole = static_cast<std::size_t>(bits / 32);
+    const unsigned part = static_cast<unsigned>(bits % 32);
+
+    if (part) {
+        std::uint32_t carry = 0;
         for (std::uint32_t& l : limbs) {
-            const std::uint64_t t = static_cast<std::uint64_t>(l) * k + carry;
-            l = static_cast<std::uint32_t>(t & 0xFFFFFFFFull);
-            carry = t >> 32;
+            const std::uint32_t next = l >> (32 - part);
+            l = (l << part) | carry;
+            carry = next;
         }
-        if (carry) limbs.push_back(static_cast<std::uint32_t>(carry));
+        if (carry) limbs.push_back(carry);
     }
 
-auto bignum::add_small(std::uint32_t k) -> void {
-        std::uint64_t carry = k;
-        for (std::size_t i = 0; carry && i < limbs.size(); ++i) {
-            const std::uint64_t t = static_cast<std::uint64_t>(limbs[i]) + carry;
-            limbs[i] = static_cast<std::uint32_t>(t & 0xFFFFFFFFull);
-            carry = t >> 32;
-        }
-        if (carry) limbs.push_back(static_cast<std::uint32_t>(carry));
+    if (whole) limbs.insert(limbs.begin(), whole, 0u);
+}
+
+int bignum::compare(const bignum& a, const bignum& b) noexcept {
+    if (a.limbs.size() != b.limbs.size()) return a.limbs.size() < b.limbs.size() ? -1 : 1;
+    for (std::size_t i = a.limbs.size(); i-- > 0;) {
+        if (a.limbs[i] != b.limbs[i]) return a.limbs[i] < b.limbs[i] ? -1 : 1;
     }
+    return 0;
+}
 
-auto bignum::shl(long long bits) -> void {
-        if (limbs.empty() || bits <= 0) return;
-        const std::size_t whole = static_cast<std::size_t>(bits / 32);
-        const unsigned part = static_cast<unsigned>(bits % 32);
-
-        if (part) {
-            std::uint32_t carry = 0;
-            for (std::uint32_t& l : limbs) {
-                const std::uint32_t next = l >> (32 - part);
-                l = (l << part) | carry;
-                carry = next;
-            }
-            if (carry) limbs.push_back(carry);
-        }
-
-        if (whole) limbs.insert(limbs.begin(), whole, 0u);
+void bignum::add(const bignum& b) {
+    if (limbs.size() < b.limbs.size()) limbs.resize(b.limbs.size(), 0);
+    std::uint64_t carry = 0;
+    for (std::size_t i = 0; i < limbs.size(); ++i) {
+        const std::uint64_t t = static_cast<std::uint64_t>(limbs[i]) + (i < b.limbs.size() ? b.limbs[i] : 0u) + carry;
+        limbs[i] = static_cast<std::uint32_t>(t & 0xFFFFFFFFull);
+        carry = t >> 32;
     }
+    if (carry) limbs.push_back(static_cast<std::uint32_t>(carry));
+}
 
-auto bignum::compare(const bignum& a, const bignum& b) noexcept -> int {
-        if (a.limbs.size() != b.limbs.size()) return a.limbs.size() < b.limbs.size() ? -1 : 1;
-        for (std::size_t i = a.limbs.size(); i-- > 0;) {
-            if (a.limbs[i] != b.limbs[i]) return a.limbs[i] < b.limbs[i] ? -1 : 1;
-        }
-        return 0;
+void bignum::sub(const bignum& b) {
+    std::int64_t borrow = 0;
+    for (std::size_t i = 0; i < limbs.size(); ++i) {
+        std::int64_t t = static_cast<std::int64_t>(limbs[i]) - (i < b.limbs.size() ? static_cast<std::int64_t>(b.limbs[i]) : 0) - borrow;
+        borrow = t < 0 ? 1 : 0;
+        if (t < 0) t += (std::int64_t(1) << 32);
+        limbs[i] = static_cast<std::uint32_t>(t);
     }
-
-auto bignum::add(const bignum& b) -> void {
-        if (limbs.size() < b.limbs.size()) limbs.resize(b.limbs.size(), 0);
-        std::uint64_t carry = 0;
-        for (std::size_t i = 0; i < limbs.size(); ++i) {
-            const std::uint64_t t = static_cast<std::uint64_t>(limbs[i]) + (i < b.limbs.size() ? b.limbs[i] : 0u) + carry;
-            limbs[i] = static_cast<std::uint32_t>(t & 0xFFFFFFFFull);
-            carry = t >> 32;
-        }
-        if (carry) limbs.push_back(static_cast<std::uint32_t>(carry));
-    }
-
-auto bignum::sub(const bignum& b) -> void {
-        std::int64_t borrow = 0;
-        for (std::size_t i = 0; i < limbs.size(); ++i) {
-            std::int64_t t = static_cast<std::int64_t>(limbs[i]) - (i < b.limbs.size() ? static_cast<std::int64_t>(b.limbs[i]) : 0) - borrow;
-            borrow = t < 0 ? 1 : 0;
-            if (t < 0) t += (std::int64_t(1) << 32);
-            limbs[i] = static_cast<std::uint32_t>(t);
-        }
-        trim();
-    }
+    trim();
+}
 
 auto bignum::mul(const bignum& a, const bignum& b) -> bignum {
-        bignum r;
-        if (a.is_zero() || b.is_zero()) return r;
-        r.limbs.assign(a.limbs.size() + b.limbs.size(), 0);
+    bignum r;
+    if (a.is_zero() || b.is_zero()) return r;
+    r.limbs.assign(a.limbs.size() + b.limbs.size(), 0);
 
-        for (std::size_t i = 0; i < a.limbs.size(); ++i) {
-            std::uint64_t carry = 0;
-            const std::uint64_t ai = a.limbs[i];
-            for (std::size_t j = 0; j < b.limbs.size(); ++j) {
-                const std::uint64_t t = ai * b.limbs[j] + r.limbs[i + j] + carry;
-                r.limbs[i + j] = static_cast<std::uint32_t>(t & 0xFFFFFFFFull);
-                carry = t >> 32;
-            }
-            std::size_t k = i + b.limbs.size();
-            while (carry) {
-                const std::uint64_t t = static_cast<std::uint64_t>(r.limbs[k]) + carry;
-                r.limbs[k] = static_cast<std::uint32_t>(t & 0xFFFFFFFFull);
-                carry = t >> 32;
-                ++k;
-            }
+    for (std::size_t i = 0; i < a.limbs.size(); ++i) {
+        std::uint64_t carry = 0;
+        const std::uint64_t ai = a.limbs[i];
+        for (std::size_t j = 0; j < b.limbs.size(); ++j) {
+            const std::uint64_t t = ai * b.limbs[j] + r.limbs[i + j] + carry;
+            r.limbs[i + j] = static_cast<std::uint32_t>(t & 0xFFFFFFFFull);
+            carry = t >> 32;
         }
-
-        r.trim();
-        return r;
+        std::size_t k = i + b.limbs.size();
+        while (carry) {
+            const std::uint64_t t = static_cast<std::uint64_t>(r.limbs[k]) + carry;
+            r.limbs[k] = static_cast<std::uint32_t>(t & 0xFFFFFFFFull);
+            carry = t >> 32;
+            ++k;
+        }
     }
+
+    r.trim();
+    return r;
+}
 
 auto bignum::pow5(long long n) -> bignum {
-        bignum result(1), base(5);
-        while (n > 0) {
-            if (n & 1) result = mul(result, base);
-            n >>= 1;
-            if (n) base = mul(base, base);
-        }
-        return result;
+    bignum result(1), base(5);
+    while (n > 0) {
+        if (n & 1) result = mul(result, base);
+        n >>= 1;
+        if (n) base = mul(base, base);
     }
+    return result;
+}
 
 auto bignum::div_bits(bignum a, const bignum& b, long long qbits, bool& remainder_nonzero) -> bignum {
-        bignum q;
+    bignum q;
 
-        for (long long i = qbits - 1; i >= 0; --i) {
-            bignum t = b;
-            t.shl(i);
-            if (compare(a, t) >= 0) { a.sub(t); q.set_bit(i); }
-        }
-
-        remainder_nonzero = !a.is_zero();
-        return q;
+    for (long long i = qbits - 1; i >= 0; --i) {
+        bignum t = b;
+        t.shl(i);
+        if (compare(a, t) >= 0) { a.sub(t); q.set_bit(i); }
     }
+
+    remainder_nonzero = !a.is_zero();
+    return q;
+}
 
 digits_result shortest(const bignum& f, long long e, bool lower_gap_half, bool even) {
     bignum r, s, mplus, mminus;

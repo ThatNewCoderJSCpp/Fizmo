@@ -1,5 +1,4 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 
 namespace fizmo {
 namespace math {
@@ -78,58 +77,58 @@ namespace cas {
 namespace symbols {
 
 auto MathExpressionIntegrator::integrate(MathExpression expr, const std::string& var_name) -> MathExpression {
-        std::uint64_t vid = vars_.get(var_name);
-        if (vid == VariableTable::invalid_id) { return mgr_.binary(NodeType::Multiply, expr, mgr_.variable(var_name)); }
-        MathExpression result = integrate_node(expr.get(), vid);
-        if (result) result = simp_.simplify(result);
-        return result;
-    }
+    std::uint64_t vid = vars_.get(var_name);
+    if (vid == VariableTable::invalid_id) { return mgr_.binary(NodeType::Multiply, expr, mgr_.variable(var_name)); }
+    MathExpression result = integrate_node(expr.get(), vid);
+    if (result) result = simp_.simplify(result);
+    return result;
+}
 
 auto MathExpressionIntegrator::integrate_node(MathExpressionNode* n, std::uint64_t vid) -> MathExpression {
-        using namespace integration;
-        if (is_free(n, vid)) return mul(W(n), var_expr(vid));
-        if (is_var(n, vid)) return divn(pw(var_expr(vid), K(2.0)), K(2.0));
-        if (n->type == NodeType::Add || n->type == NodeType::Subtract) {
-            MathExpression lhs = integrate_node(n->binary.left,  vid);
-            MathExpression rhs = integrate_node(n->binary.right, vid);
-            if (!lhs || !rhs) return {};
-            return (n->type == NodeType::Add) ? add(lhs, rhs) : sub(lhs, rhs);
-        }
-        if (n->type == NodeType::Negate) {
-            MathExpression inner = integrate_node(n->unary.child, vid);
-            return inner ? neg(inner) : MathExpression{};
-        }
-        if (n->type == NodeType::Multiply) {
-            if (is_free(n->binary.left, vid)) {
-                MathExpression inner = integrate_node(n->binary.right, vid);
-                return inner ? mul(W(n->binary.left), inner) : MathExpression{};
-            }
-            if (is_free(n->binary.right, vid)) {
-                MathExpression inner = integrate_node(n->binary.left, vid);
-                return inner ? mul(inner, W(n->binary.right)) : MathExpression{};
-            }
-        }
-        if (n->type == NodeType::Divide && is_free(n->binary.right, vid)) {
-            MathExpression inner = integrate_node(n->binary.left, vid);
-            return inner ? divn(inner, W(n->binary.right)) : MathExpression{};
-        }
-        MathExpression result;
-        result = try_polynomial(mgr_, simp_, diff_, n, vid);
-        if (result) return result;
-        result = try_exponential(mgr_, simp_, diff_, n, vid);
-        if (result) return result;
-        result = try_logarithmic(mgr_, simp_, diff_, n, vid);
-        if (result) return result;
-        result = try_trigonometric(mgr_, simp_, diff_, n, vid);
-        if (result) return result;
-        result = try_hyperbolic(mgr_, simp_, diff_, n, vid);
-        if (result) return result;
-        result = try_algebraic_forms(mgr_, simp_, diff_, n, vid);
-        if (result) return result;
-        result = try_heuristic(mgr_, simp_, diff_, n, vid);
-        if (result) return result;
-        return {};
+    using namespace integration;
+    if (is_free(n, vid)) return mul(W(n), var_expr(vid));
+    if (is_var(n, vid)) return divn(pw(var_expr(vid), K(2.0)), K(2.0));
+    if (n->type == NodeType::Add || n->type == NodeType::Subtract) {
+        MathExpression lhs = integrate_node(n->binary.left,  vid);
+        MathExpression rhs = integrate_node(n->binary.right, vid);
+        if (!lhs || !rhs) return {};
+        return (n->type == NodeType::Add) ? add(lhs, rhs) : sub(lhs, rhs);
     }
+    if (n->type == NodeType::Negate) {
+        MathExpression inner = integrate_node(n->unary.child, vid);
+        return inner ? neg(inner) : MathExpression{};
+    }
+    if (n->type == NodeType::Multiply) {
+        if (is_free(n->binary.left, vid)) {
+            MathExpression inner = integrate_node(n->binary.right, vid);
+            return inner ? mul(W(n->binary.left), inner) : MathExpression{};
+        }
+        if (is_free(n->binary.right, vid)) {
+            MathExpression inner = integrate_node(n->binary.left, vid);
+            return inner ? mul(inner, W(n->binary.right)) : MathExpression{};
+        }
+    }
+    if (n->type == NodeType::Divide && is_free(n->binary.right, vid)) {
+        MathExpression inner = integrate_node(n->binary.left, vid);
+        return inner ? divn(inner, W(n->binary.right)) : MathExpression{};
+    }
+    MathExpression result;
+    result = try_polynomial(mgr_, simp_, diff_, n, vid);
+    if (result) return result;
+    result = try_exponential(mgr_, simp_, diff_, n, vid);
+    if (result) return result;
+    result = try_logarithmic(mgr_, simp_, diff_, n, vid);
+    if (result) return result;
+    result = try_trigonometric(mgr_, simp_, diff_, n, vid);
+    if (result) return result;
+    result = try_hyperbolic(mgr_, simp_, diff_, n, vid);
+    if (result) return result;
+    result = try_algebraic_forms(mgr_, simp_, diff_, n, vid);
+    if (result) return result;
+    result = try_heuristic(mgr_, simp_, diff_, n, vid);
+    if (result) return result;
+    return {};
+}
 
 } // namespace symbols
 } // namespace cas

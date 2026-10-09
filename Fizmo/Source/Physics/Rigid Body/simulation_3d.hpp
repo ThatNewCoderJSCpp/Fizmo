@@ -37,7 +37,7 @@ struct Candidate {
     double   separation;
 };
 
- vector3d closest_point_on_segment(const vector3d& p, const vector3d& a, const vector3d& b);
+vector3d closest_point_on_segment(const vector3d& p, const vector3d& a, const vector3d& b);
 
 struct SegmentPair {
     vector3d closest1{};
@@ -47,13 +47,13 @@ struct SegmentPair {
     double distance_squared = 0.0;
 };
 
- SegmentPair closest_segment_points(const vector3d& p1, const vector3d& q1, const vector3d& p2, const vector3d& q2);
+SegmentPair closest_segment_points(const vector3d& p1, const vector3d& q1, const vector3d& p2, const vector3d& q2);
 
- void reduce_contacts(ContactManifold3D& m, const std::vector<Candidate>& c, const vector3d& normal);
+void reduce_contacts(ContactManifold3D& m, const std::vector<Candidate>& c, const vector3d& normal);
 
- bool point_in_face(const HullShape& h, const HullFace& f, const vector3d& q);
+bool point_in_face(const HullShape& h, const HullFace& f, const vector3d& q);
 
- vector3d closest_point_on_face(const HullShape& h, const HullFace& f, const vector3d& p);
+vector3d closest_point_on_face(const HullShape& h, const HullFace& f, const vector3d& p);
 
 struct PointHullResult {
     bool     inside = false;
@@ -62,33 +62,33 @@ struct PointHullResult {
     double   distance = 0.0; // signed: negative when p is inside
 };
 
- PointHullResult closest_point_on_hull(const HullShape& h, const vector3d& p);
+PointHullResult closest_point_on_hull(const HullShape& h, const vector3d& p);
 
- bool segment_intersects_hull(const HullShape& h, const vector3d& p1, const vector3d& p2);
+bool segment_intersects_hull(const HullShape& h, const vector3d& p1, const vector3d& p2);
 
- bool clip_segment_to_face(const HullShape& h, const HullFace& f, vector3d& a, vector3d& b);
+bool clip_segment_to_face(const HullShape& h, const HullFace& f, vector3d& a, vector3d& b);
 
- int support_edge(const HullShape& h, const vector3d& dir, const vector3d& axis, double sign);
+int support_edge(const HullShape& h, const vector3d& dir, const vector3d& axis, double sign);
 
- void project_hull(const HullShape& h, const vector3d& axis, double& lo, double& hi);
+void project_hull(const HullShape& h, const vector3d& axis, double& lo, double& hi);
 
- void project_points(const std::vector<vector3d>& pts, const vector3d& axis, double& lo, double& hi);
+void project_points(const std::vector<vector3d>& pts, const vector3d& axis, double& lo, double& hi);
 
- bool collide_sphere_sphere(
+bool collide_sphere_sphere(
     const SphereShape& sa, const Transform3D& xa,
     const SphereShape& sb, const Transform3D& xb,
     ContactManifold3D& m, double margin = 0.0
 );
 
- bool collide_sphere_point(const vector3d& c, double ra, const vector3d& p, double rb, ContactManifold3D& m, double margin);
+bool collide_sphere_point(const vector3d& c, double ra, const vector3d& p, double rb, ContactManifold3D& m, double margin);
 
- bool collide_sphere_capsule(
+bool collide_sphere_capsule(
     const SphereShape& s, const Transform3D& xs,
     const CapsuleShape3D& k, const Transform3D& xk,
     ContactManifold3D& m, double margin = 0.0
 );
 
- bool collide_sphere_hull(
+bool collide_sphere_hull(
     const SphereShape& s, const Transform3D& xs,
     const HullShape& h, const Transform3D& xh,
     ContactManifold3D& m, double margin = 0.0
@@ -99,31 +99,31 @@ inline void plane_in_world(const PlaneShape& p, const Transform3D& xp, vector3d&
     d = p.offset + vec3::dot(n, xp.position);
 }
 
- bool collide_sphere_plane(
+bool collide_sphere_plane(
     const SphereShape& s, const Transform3D& xs,
     const PlaneShape& p, const Transform3D& xp,
     ContactManifold3D& m, double margin = 0.0
 );
 
- bool collide_capsule_capsule(
+bool collide_capsule_capsule(
     const CapsuleShape3D& ka, const Transform3D& xa,
     const CapsuleShape3D& kb, const Transform3D& xb,
     ContactManifold3D& m, double margin = 0.0
 );
 
- bool collide_capsule_plane(
+bool collide_capsule_plane(
     const CapsuleShape3D& k, const Transform3D& xk,
     const PlaneShape& p, const Transform3D& xp,
     ContactManifold3D& m, double margin = 0.0
 );
 
- bool collide_hull_plane(
+bool collide_hull_plane(
     const HullShape& h, const Transform3D& xh,
     const PlaneShape& p, const Transform3D& xp,
     ContactManifold3D& m, double margin = 0.0
 );
 
- bool collide_capsule_hull(
+bool collide_capsule_hull(
     const CapsuleShape3D& k, const Transform3D& xk,
     const HullShape& h, const Transform3D& xh,
     ContactManifold3D& m, double margin = 0.0
@@ -143,13 +143,13 @@ struct EdgeQuery {
     vector3d axis{}; 
 };
 
- FaceQuery query_faces(const HullShape& a, const std::vector<vector3d>& other);
+FaceQuery query_faces(const HullShape& a, const std::vector<vector3d>& other);
 
- EdgeQuery query_edges(const HullShape& a, const std::vector<vector3d>& b_vertices, const std::vector<vector3d>& b_dirs);
+EdgeQuery query_edges(const HullShape& a, const std::vector<vector3d>& b_vertices, const std::vector<vector3d>& b_dirs);
 
- void clip_polygon(std::vector<vector3d>& poly, const vector3d& n, double d, std::vector<vector3d>& scratch);
+void clip_polygon(std::vector<vector3d>& poly, const vector3d& n, double d, std::vector<vector3d>& scratch);
 
- void face_contact(
+void face_contact(
     const HullShape& r, const Transform3D& xr, int rf,
     const HullShape& inc, const Transform3D& xi,
     std::vector<Candidate>& out, vector3d& normal, double margin
@@ -157,7 +157,7 @@ struct EdgeQuery {
 
 } // namespace detail_sat3d
 
- bool collide_hull_hull(
+bool collide_hull_hull(
     const HullShape& a, const Transform3D& xa,
     const HullShape& b, const Transform3D& xb,
     ContactManifold3D& m, double margin = 0.0
@@ -165,7 +165,7 @@ struct EdgeQuery {
 
 } // namespace narrowphase3d
 
- bool collide_shapes(
+bool collide_shapes(
     const Shape3D& sa, const Transform3D& xa,
     const Shape3D& sb, const Transform3D& xb,
     ContactManifold3D& manifold, double margin = 0.0

@@ -18,10 +18,10 @@ namespace math {
 namespace cas {
 namespace complex_symbols {
 
- ComplexD complex_nan();
- ComplexD complex_inf();
+ComplexD complex_nan();
+ComplexD complex_inf();
 
- ComplexD eval_complex_node(const ComplexMathExpressionNode* n, const ComplexEvalContext& ctx);
+ComplexD eval_complex_node(const ComplexMathExpressionNode* n, const ComplexEvalContext& ctx);
 
 inline ComplexD evaluate(ComplexMathExpression e, const ComplexEvalContext& ctx) { return eval_complex_node(e.get(), ctx); }
 

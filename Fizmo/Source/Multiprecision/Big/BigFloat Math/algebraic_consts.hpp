@@ -11,7 +11,7 @@ namespace acdetail {
 
 enum class ac_kind : std::uint8_t { ratio, mean, beraha };
 
- BigFloat ac_once(ac_kind k, std::uint64_t n, std::size_t wp, std::size_t& lost);
+BigFloat ac_once(ac_kind k, std::uint64_t n, std::size_t wp, std::size_t& lost);
 
 struct const_cache {
     BigFloat    v;
@@ -20,7 +20,7 @@ struct const_cache {
     bool        valid = false;
 };
 
- BigFloat ac_drive(ac_kind k, std::uint64_t n, const BigFloatContext& ctx, const_cache* c);
+BigFloat ac_drive(ac_kind k, std::uint64_t n, const BigFloatContext& ctx, const_cache* c);
 
 static const std::uint64_t ac_ratio_cap = 4000000000ull;
 static const std::uint64_t ac_mean_cap  = 4000000000000000000ull;
@@ -31,15 +31,15 @@ inline const_cache& ac_silver_c_cache()  { static thread_local const_cache c; re
 
 } // namespace acdetail
 
- BigFloat metallic_ratio(std::uint64_t n, const BigFloatContext& ctx);
+BigFloat metallic_ratio(std::uint64_t n, const BigFloatContext& ctx);
 
- BigFloat inv_metallic_ratio(std::uint64_t n, const BigFloatContext& ctx);
+BigFloat inv_metallic_ratio(std::uint64_t n, const BigFloatContext& ctx);
 
- BigFloat metallic_mean(std::uint64_t n, const BigFloatContext& ctx);
+BigFloat metallic_mean(std::uint64_t n, const BigFloatContext& ctx);
 
- BigFloat inv_metallic_mean(std::uint64_t n, const BigFloatContext& ctx);
+BigFloat inv_metallic_mean(std::uint64_t n, const BigFloatContext& ctx);
 
- BigFloat beraha(std::uint64_t n, const BigFloatContext& ctx);
+BigFloat beraha(std::uint64_t n, const BigFloatContext& ctx);
 
 inline BigFloat silver_ratio(const BigFloatContext& ctx) {
     return acdetail::ac_drive(acdetail::ac_kind::ratio, 2, ctx, &acdetail::ac_silver_cache());
@@ -49,7 +49,7 @@ inline BigFloat bronze_ratio(const BigFloatContext& ctx) {
     return acdetail::ac_drive(acdetail::ac_kind::ratio, 3, ctx, &acdetail::ac_bronze_cache());
 }
 
- BigFloat silver_constant(const BigFloatContext& ctx);
+BigFloat silver_constant(const BigFloatContext& ctx);
 
 inline BigFloat metallic_ratio(std::uint64_t n)     { return metallic_ratio(n, BigFloatContext::current()); }
 inline BigFloat inv_metallic_ratio(std::uint64_t n) { return inv_metallic_ratio(n, BigFloatContext::current()); }

@@ -21,7 +21,7 @@ inline T tween_lerp(const T& a, const T& b, double t) {
 }
 
 template <>
- graphics::Color tween_lerp<graphics::Color>(const graphics::Color& a, const graphics::Color& b, double t);
+graphics::Color tween_lerp<graphics::Color>(const graphics::Color& a, const graphics::Color& b, double t);
 
 template <typename T>
 inline Tween tween_to(T& target, const T& to, double duration, Easing easing = Easing::Linear) {

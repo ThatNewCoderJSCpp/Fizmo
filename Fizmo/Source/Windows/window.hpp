@@ -116,9 +116,9 @@ public:
     bool gestures_enabled() const noexcept { return m_gestures_enabled; }
 };
 
- std::vector<MonitorInfo> monitors();
+std::vector<MonitorInfo> monitors();
 
- MonitorInfo primary_monitor();
+MonitorInfo primary_monitor();
 
 class CursorLock {
 private:

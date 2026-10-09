@@ -33,7 +33,7 @@ enum class HandshakeState : std::uint8_t {
     Failed                  // terminal error
 };
 
- const char* handshake_state_to_string(HandshakeState s) noexcept;
+const char* handshake_state_to_string(HandshakeState s) noexcept;
 
 enum class HandshakeError : std::uint8_t {
     None = 0,
@@ -48,7 +48,7 @@ enum class HandshakeError : std::uint8_t {
     ContextNotInitialised
 };
 
- const char* handshake_error_to_string(HandshakeError e) noexcept;
+const char* handshake_error_to_string(HandshakeError e) noexcept;
 
 struct HandshakeResult {
     HandshakeState            state = HandshakeState::NotStarted;

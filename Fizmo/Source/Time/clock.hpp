@@ -4,12 +4,20 @@
 #include "calendar_classes.hpp"
 #include "ticks.hpp"
 
-#ifdef OS_WINDOWS
-#include <windows.h>
-#endif
 
 namespace fizmo {
 namespace time {
+
+#ifdef OS_WINDOWS
+namespace detail {
+
+std::uint64_t windows_uptime_ms() noexcept;
+std::uint64_t windows_filetime_now() noexcept;
+void windows_performance_counter(std::uint64_t& counter, std::uint64_t& frequency) noexcept;
+bool windows_time_increment(std::uint64_t& increment) noexcept;
+
+} // namespace detail
+#endif
 
 template<typename T = default_wide_int, typename = typename std::enable_if<detail::is_signed_integer_like_v<T>>::type>
 class Clock {
@@ -71,7 +79,7 @@ public:
 
     static difference_type uptime() noexcept {
     #if defined(OS_WINDOWS)
-        const ULONGLONG ms = GetTickCount64();
+        const std::uint64_t ms = detail::windows_uptime_ms();
         const T planck = T(ms) * planck_per_unit<T>(Unit::millisecond);
     #elif defined(OS_LINUX)
         const std::uint64_t ns = detail::linux_now_ns(CLOCK_BOOTTIME);
@@ -159,12 +167,7 @@ public:
 private:
     static datetime_type system_now() noexcept {
     #if defined(OS_WINDOWS)
-        FILETIME ft;
-        GetSystemTimePreciseAsFileTime(&ft);
-        ULARGE_INTEGER uli;
-        uli.LowPart  = ft.dwLowDateTime;
-        uli.HighPart = ft.dwHighDateTime;
-        const std::uint64_t ticks = uli.QuadPart;
+        const std::uint64_t ticks = detail::windows_filetime_now();
         const std::uint64_t days_since_1601   = ticks / filetime_ticks_per_day_;
         const std::uint64_t remainder_ticks   = ticks % filetime_ticks_per_day_;
         const std::uint64_t remainder_ns = remainder_ticks * ns_per_filetime_tick_;
@@ -187,12 +190,10 @@ private:
 
     static datetime_type steady_now() noexcept {
     #if defined(OS_WINDOWS)
-        LARGE_INTEGER counter, freq;
-        QueryPerformanceCounter(&counter);
-        QueryPerformanceFrequency(&freq);
-        if (freq.QuadPart == 0) { return datetime_type(); }
-        const std::uint64_t ticks = static_cast<std::uint64_t>(counter.QuadPart);
-        const std::uint64_t f     = static_cast<std::uint64_t>(freq.QuadPart);
+        std::uint64_t ticks = 0;
+        std::uint64_t f     = 0;
+        detail::windows_performance_counter(ticks, f);
+        if (f == 0) { return datetime_type(); }
         const std::uint64_t ns_per_tick = 1000000000ULL / f;
         const std::uint64_t ns_remainder_ratio = 1000000000ULL % f;
         const std::uint64_t whole_ns = ticks * ns_per_tick + (ticks * ns_remainder_ratio) / f;
@@ -217,9 +218,8 @@ private:
 
     static TimeUnit<Unit::nanosecond, default_storage_uint> system_resolution() noexcept {
     #if defined(OS_WINDOWS)
-        DWORD time_adjustment, time_increment;
-        BOOL disabled;
-        if (GetSystemTimeAdjustment(&time_adjustment, &time_increment, &disabled)) { return TimeUnit<Unit::nanosecond, default_storage_uint>(static_cast<std::uint64_t>(time_increment) * ns_per_filetime_tick_); }
+        std::uint64_t time_increment = 0;
+        if (detail::windows_time_increment(time_increment)) { return TimeUnit<Unit::nanosecond, default_storage_uint>(time_increment * ns_per_filetime_tick_); }
         return TimeUnit<Unit::nanosecond, default_storage_uint>(std::uint64_t(15625000));
     #elif defined(OS_LINUX)
         struct timespec ts;

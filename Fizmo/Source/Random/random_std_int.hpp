@@ -12,23 +12,10 @@
 #include <thread>
 #include <type_traits>
 
-#if defined(OS_WINDOWS)
-    #include <bcrypt.h>         
-#elif defined(OS_LINUX)
-    #include <errno.h>
-    #include <fcntl.h>
-    #include <sys/random.h>
-    #include <unistd.h>
-#endif
-
-#if defined(_MSC_VER)
-    #include <intrin.h>
-#endif
-
 namespace fizmo {
 namespace detail {
 
- void os_random_bytes(void* buffer, std::size_t length);
+void os_random_bytes(void* buffer, std::size_t length);
 
 class RNG {
 private:

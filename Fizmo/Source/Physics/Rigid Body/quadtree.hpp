@@ -14,12 +14,12 @@ namespace physics {
 
 inline bool overlap_aabb(const AABB& a, const AABB& b) noexcept { return a.overlaps(b); }
 
- bool overlap_circles(
+bool overlap_circles(
     const vector2d& c1, double r1,
     const vector2d& c2, double r2
 ) noexcept;
 
- bool overlap_aabb_circle(
+bool overlap_aabb_circle(
     const AABB& box,
     const vector2d& center,
     double radius
@@ -32,14 +32,14 @@ struct OverlapResult {
     vector2d normal{};      
 };
 
- OverlapResult overlap_aabb_mtv(const AABB& a, const AABB& b) noexcept;
+OverlapResult overlap_aabb_mtv(const AABB& a, const AABB& b) noexcept;
 
- OverlapResult overlap_circles_mtv(
+OverlapResult overlap_circles_mtv(
     const vector2d& c1, double r1,
     const vector2d& c2, double r2
 ) noexcept;
 
- OverlapResult overlap_aabb_circle_mtv(
+OverlapResult overlap_aabb_circle_mtv(
     const AABB& box,
     const vector2d& center,
     double radius

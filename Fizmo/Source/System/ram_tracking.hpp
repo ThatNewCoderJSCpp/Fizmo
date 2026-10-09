@@ -4,7 +4,7 @@
 #include "tracker.hpp"
 #include "smbios.hpp"
 #include "platform_linux.hpp"
-#include "platform_windows.hpp"
+#include "win_library.hpp"
 
 namespace fizmo {
 namespace system {
@@ -60,65 +60,12 @@ private:
     RAMSample collect();
 
 #elif defined(OS_WINDOWS)
-    using ProcessMemoryFn = BOOL (WINAPI*)(HANDLE, PPROCESS_MEMORY_COUNTERS, DWORD);
-    using PerformanceFn   = BOOL (WINAPI*)(PPERFORMANCE_INFORMATION, DWORD);
+    struct WinState;
+    detail::Opaque<WinState> m_win;
 
-    detail::win::Library m_kernel{ L"kernel32.dll" };
-    ProcessMemoryFn      m_process_memory = nullptr;
-    PerformanceFn        m_performance    = nullptr;
+    void discover();
 
-    void discover() {
-        SYSTEM_INFO si{};
-        GetSystemInfo(&si);
-        m_info.page_size = si.dwPageSize;
-        MEMORYSTATUSEX ms{};
-        ms.dwLength = sizeof(ms);
-        if (GlobalMemoryStatusEx(&ms)) m_info.total = ms.ullTotalPhys;
-        m_info.modules = detail::read_memory_modules();
-        m_process_memory = m_kernel.get<ProcessMemoryFn>("K32GetProcessMemoryInfo");
-        m_performance    = m_kernel.get<PerformanceFn>("K32GetPerformanceInfo");
-        PROCESS_MEMORY_COUNTERS_EX pm{};
-        if (m_process_memory && m_process_memory(GetCurrentProcess(), reinterpret_cast<PPROCESS_MEMORY_COUNTERS>(&pm), sizeof(pm))) m_prev_faults = pm.PageFaultCount;
-    }
-
-    RAMSample collect() {
-        RAMSample s;
-        MEMORYSTATUSEX ms{};
-        ms.dwLength = sizeof(ms);
-
-        if (GlobalMemoryStatusEx(&ms)) {
-            s.total        = ms.ullTotalPhys;
-            s.available    = ms.ullAvailPhys;
-            s.free         = ms.ullAvailPhys;
-            s.used         = s.total > s.available ? s.total - s.available : 0;
-            s.commit_limit = ms.ullTotalPageFile;
-            s.commit_used  = ms.ullTotalPageFile > ms.ullAvailPageFile ? ms.ullTotalPageFile - ms.ullAvailPageFile : 0;
-            s.process_virtual = ms.ullTotalVirtual > ms.ullAvailVirtual ? ms.ullTotalVirtual - ms.ullAvailVirtual : 0;
-            s.usage_percent = s.total ? 100.0 * static_cast<double>(s.used) / static_cast<double>(s.total) : 0.0;
-            s.swap_total = s.commit_limit > s.total ? s.commit_limit - s.total : 0;
-            s.swap_used  = s.commit_used > s.used ? std::min(s.commit_used - s.used, s.swap_total) : 0;
-        }
-
-        PERFORMANCE_INFORMATION pi{};
-        pi.cb = sizeof(pi);
-        if (m_performance && m_performance(&pi, sizeof(pi))) s.cached = static_cast<std::uint64_t>(pi.SystemCache) * pi.PageSize;
-
-        PROCESS_MEMORY_COUNTERS_EX pm{};
-        pm.cb = sizeof(pm);
-
-        if (m_process_memory && m_process_memory(GetCurrentProcess(), reinterpret_cast<PPROCESS_MEMORY_COUNTERS>(&pm), sizeof(pm))) {
-            s.process_resident      = pm.WorkingSetSize;
-            s.process_peak_resident = pm.PeakWorkingSetSize;
-            s.process_private       = pm.PrivateUsage;
-            const detail::Clock::time_point now = detail::Clock::now();
-            s.process_page_faults_per_sec = detail::per_second(pm.PageFaultCount, m_prev_faults, detail::seconds_between(m_prev_time, now));
-            m_prev_faults = pm.PageFaultCount;
-            m_prev_time = now;
-        }
-
-        s.process_percent = s.total ? 100.0 * static_cast<double>(s.process_resident) / static_cast<double>(s.total) : 0.0;
-        return s;
-    }
+    RAMSample collect();
 
 #else
     void discover() {}

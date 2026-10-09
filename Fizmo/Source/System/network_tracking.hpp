@@ -3,7 +3,7 @@
 
 #include "tracker.hpp"
 #include "platform_linux.hpp"
-#include "platform_windows.hpp"
+#include "win_library.hpp"
 
 #if defined(OS_LINUX)
     #include <arpa/inet.h>
@@ -121,133 +121,24 @@ private:
     NetworkSample collect();
 
 #elif defined(OS_WINDOWS)
-    using Socket = SOCKET;
-    static constexpr Socket kBadSocket = INVALID_SOCKET;
-    static void close_socket(Socket s) { ::closesocket(s); }
-    static bool set_nonblocking(Socket s) {
-        u_long on = 1;
-        return ::ioctlsocket(s, FIONBIO, &on) == 0;
-    }
-    static bool in_progress() { return WSAGetLastError() == WSAEWOULDBLOCK; }
+    using Socket = std::uintptr_t;
+    static constexpr Socket kBadSocket = ~Socket(0);
+    static void close_socket(Socket s);
+    static bool set_nonblocking(Socket s);
+    static bool in_progress();
 
-    static bool wait_writable(Socket s, int timeout_ms) {
-        fd_set w, e;
-        FD_ZERO(&w);
-        FD_ZERO(&e);
-        FD_SET(s, &w);
-        FD_SET(s, &e);
-        timeval tv{ timeout_ms / 1000, (timeout_ms % 1000) * 1000 };
-        return ::select(0, nullptr, &w, &e, &tv) > 0 && FD_ISSET(s, &w);
-    }
+    static bool wait_writable(Socket s, int timeout_ms);
 
-    using GetIfTable2Fn  = DWORD (WINAPI*)(PMIB_IF_TABLE2*);
-    using FreeMibTableFn = void (WINAPI*)(PVOID);
-    using AdaptersFn     = ULONG (WINAPI*)(ULONG, ULONG, PVOID, PIP_ADAPTER_ADDRESSES, PULONG);
+    struct WinState;
+    detail::Opaque<WinState> m_win;
 
-    detail::win::Library m_iphlp{ L"iphlpapi.dll" };
-    GetIfTable2Fn        m_get_table = nullptr;
-    FreeMibTableFn       m_free_table = nullptr;
-    AdaptersFn           m_adapters = nullptr;
-    bool                 m_wsa = false;
+    std::map<unsigned long, std::vector<std::string>> addresses() const;
 
-    std::map<NET_IFINDEX, std::vector<std::string>> addresses() const {
-        std::map<NET_IFINDEX, std::vector<std::string>> out;
-        if (!m_adapters) return out;
-        ULONG size = 16384;
-        std::vector<unsigned char> buf;
-        ULONG r = ERROR_BUFFER_OVERFLOW;
+    void discover();
 
-        for (int attempt = 0; attempt < 3 && r == ERROR_BUFFER_OVERFLOW; ++attempt) {
-            buf.resize(size);
-            r = m_adapters(AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER, nullptr, reinterpret_cast<PIP_ADAPTER_ADDRESSES>(buf.data()), &size);
-        }
+    void read_interfaces(NetworkSample& s, bool details);
 
-        if (r != NO_ERROR) return out;
-
-        for (auto* a = reinterpret_cast<PIP_ADAPTER_ADDRESSES>(buf.data()); a; a = a->Next) {
-            for (auto* u = a->FirstUnicastAddress; u; u = u->Next) {
-                char text[INET6_ADDRSTRLEN] = {};
-                const sockaddr* sa = u->Address.lpSockaddr;
-                if (!sa) continue;
-                if (sa->sa_family == AF_INET) ::inet_ntop(AF_INET, &reinterpret_cast<const sockaddr_in*>(sa)->sin_addr, text, sizeof(text));
-                else if (sa->sa_family == AF_INET6) ::inet_ntop(AF_INET6, &reinterpret_cast<const sockaddr_in6*>(sa)->sin6_addr, text, sizeof(text));
-                else continue;
-                out[a->IfIndex ? a->IfIndex : a->Ipv6IfIndex].push_back(text);
-            }
-        }
-
-        return out;
-    }
-
-    void discover() {
-        WSADATA data;
-        m_wsa = WSAStartup(MAKEWORD(2, 2), &data) == 0;
-        m_get_table  = m_iphlp.get<GetIfTable2Fn>("GetIfTable2");
-        m_free_table = m_iphlp.get<FreeMibTableFn>("FreeMibTable");
-        m_adapters   = m_iphlp.get<AdaptersFn>("GetAdaptersAddresses");
-        NetworkSample s;
-        read_interfaces(s, false);
-        finish(s, 0.0);
-    }
-
-    void read_interfaces(NetworkSample& s, bool details) {
-        if (!m_get_table || !m_free_table) return;
-        PMIB_IF_TABLE2 table = nullptr;
-        if (m_get_table(&table) != NO_ERROR || !table) return;
-        std::map<NET_IFINDEX, std::vector<std::string>> addrs;
-        if (details) addrs = addresses();
-
-        for (ULONG k = 0; k < table->NumEntries; ++k) {
-            const MIB_IF_ROW2& row = table->Table[k];
-            if (row.InterfaceAndOperStatusFlags.FilterInterface) continue;
-            const bool loopback = row.Type == IF_TYPE_SOFTWARE_LOOPBACK;
-            const bool up = row.OperStatus == IfOperStatusUp;
-            if (!row.InterfaceAndOperStatusFlags.HardwareInterface && !loopback && !(up && row.Type != IF_TYPE_TUNNEL)) continue;
-            NetworkInterfaceSample i;
-            i.name       = detail::win::narrow(row.Alias);
-            if (i.name.empty()) i.name = "if" + std::to_string(row.InterfaceIndex);
-            i.description = detail::win::narrow(row.Description);
-            i.up         = up;
-            i.loopback   = loopback;
-            i.wireless   = row.Type == IF_TYPE_IEEE80211;
-            i.mtu        = row.Mtu;
-            i.rx_bytes   = row.InOctets;
-            i.tx_bytes   = row.OutOctets;
-            i.rx_errors  = row.InErrors;
-            i.tx_errors  = row.OutErrors;
-            i.rx_dropped = row.InDiscards;
-            i.tx_dropped = row.OutDiscards;
-            m_packets_rx[i.name] = row.InUcastPkts + row.InNUcastPkts;
-            m_packets_tx[i.name] = row.OutUcastPkts + row.OutNUcastPkts;
-            const std::uint64_t speed = std::max<std::uint64_t>(row.ReceiveLinkSpeed, row.TransmitLinkSpeed);
-            if (up && speed > 0 && speed < (1ull << 50)) i.link_mbps = static_cast<double>(speed) / 1.0e6;
-
-            if (row.PhysicalAddressLength > 0) {
-                char mac[3 * IF_MAX_PHYS_ADDRESS_LENGTH + 1] = {};
-                std::size_t at = 0;
-                for (ULONG b = 0; b < row.PhysicalAddressLength && b < IF_MAX_PHYS_ADDRESS_LENGTH; ++b) {
-                    at += static_cast<std::size_t>(std::snprintf(mac + at, sizeof(mac) - at, b ? ":%02x" : "%02x", row.PhysicalAddress[b]));
-                }
-                i.mac = mac;
-            }
-
-            const auto a = addrs.find(row.InterfaceIndex);
-            if (a != addrs.end()) i.addresses = a->second;
-            s.interfaces.push_back(std::move(i));
-        }
-
-        m_free_table(table);
-    }
-
-    NetworkSample collect() {
-        NetworkSample s;
-        read_interfaces(s, true);
-        const detail::Clock::time_point now = detail::Clock::now();
-        finish(s, detail::seconds_between(m_prev_time, now));
-        m_prev_time = now;
-        probe(s);
-        return s;
-    }
+    NetworkSample collect();
 
 #else
     using Socket = int;
@@ -268,12 +159,7 @@ public:
         discover();
     }
 
-    ~NetworkTracking() {
-        shutdown();
-#if defined(OS_WINDOWS)
-        if (m_wsa) WSACleanup();
-#endif
-    }
+    ~NetworkTracking();
 
     void set_latency_target(const std::string& host, std::uint16_t port = 443, std::chrono::milliseconds every = std::chrono::milliseconds(2000), std::chrono::milliseconds timeout = std::chrono::milliseconds(1000));
 

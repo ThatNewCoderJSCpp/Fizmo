@@ -5,10 +5,6 @@
 #include <initializer_list>
 #include <utility>
 
-#ifdef OS_WINDOWS
-#include <windows.h>
-#endif
-
 namespace fizmo {
 namespace time {
 
@@ -18,7 +14,7 @@ namespace time {
     #endif
 
 namespace detail {
- std::uint64_t linux_now_ns(clockid_t id) noexcept;
+std::uint64_t linux_now_ns(clockid_t id) noexcept;
 } // namespace detail
 #endif
 
@@ -160,21 +156,21 @@ std::uint64_t sum_pairs_ms(std::initializer_list<std::pair<T, Unit>> pairs) noex
 
 } // namespace detail
 
- void cpu_relax() noexcept;
+void cpu_relax() noexcept;
 
 namespace impl {
 
 #ifdef OS_LINUX
- std::uint64_t mono_ns() noexcept;
+std::uint64_t mono_ns() noexcept;
 
- bool sleep_until_ns(std::uint64_t deadline_ns) noexcept;
+bool sleep_until_ns(std::uint64_t deadline_ns) noexcept;
 #endif
 
- bool do_sleep(std::uint64_t ms, std::uint64_t ns) noexcept;
+bool do_sleep(std::uint64_t ms, std::uint64_t ns) noexcept;
 
- bool do_wait(std::uint64_t target_ns) noexcept;
+bool do_wait(std::uint64_t target_ns) noexcept;
 
- bool do_precise_wait(std::uint64_t total_ns) noexcept;
+bool do_precise_wait(std::uint64_t total_ns) noexcept;
 
 } // namespace impl
 
@@ -223,7 +219,7 @@ bool precise_wait(std::initializer_list<std::pair<T, Unit>> pairs) noexcept {
     return impl::do_precise_wait(detail::sum_pairs_ns(pairs));
 }
 
- bool yield() noexcept;
+bool yield() noexcept;
 
 } // namespace time
 } // namespace fizmo

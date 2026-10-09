@@ -2,6 +2,7 @@
 #define FIZMO_SYSTEM_FILE_WATCHER_HPP
 
 #include "../Basic/fizmo_defines.hpp"
+#include "common.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -80,15 +81,10 @@ private:
     std::map<Path, std::pair<int, int>> m_dir_wd;
     std::unordered_map<int, Path>       m_wd_dir;
 #elif defined(OS_WINDOWS)
-    struct WinDir {
-        HANDLE             handle = INVALID_HANDLE_VALUE;
-        OVERLAPPED         ov{};
-        std::vector<DWORD> buffer;
-        bool               subtree = false;
-        int                refs    = 0;
-        bool               pending = false;
-    };
-    std::map<std::pair<Path, bool>, std::unique_ptr<WinDir>> m_dirs;
+    struct WinDir;
+    struct WinState;
+    detail::Opaque<WinState> m_win;
+
 #endif
 
     static Path normal(const Path& p);
@@ -134,103 +130,24 @@ private:
     }
 
 #elif defined(OS_WINDOWS)
-    static constexpr DWORD kFilter = FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_CREATION;
 
-    static bool issue(WinDir& d) {
-        d.ov = OVERLAPPED{};
-        d.pending = ReadDirectoryChangesW(d.handle, d.buffer.data(), static_cast<DWORD>(d.buffer.size() * sizeof(DWORD)), d.subtree ? TRUE : FALSE, kFilter, nullptr, &d.ov, nullptr) != FALSE;
-        return d.pending;
-    }
+    static bool issue(WinDir& d);
 
-    static void close_dir(WinDir& d) {
-        if (d.handle == INVALID_HANDLE_VALUE) return;
-        if (d.pending) {
-            CancelIoEx(d.handle, &d.ov);
-            DWORD bytes = 0;
-            GetOverlappedResult(d.handle, &d.ov, &bytes, TRUE);
-        }
-        CloseHandle(d.handle);
-        d.handle = INVALID_HANDLE_VALUE;
-        d.pending = false;
-    }
+    static void close_dir(WinDir& d);
 
-    bool add_dir(const Path& dir, bool subtree) {
-        const auto key = std::make_pair(dir, subtree);
-        auto it = m_dirs.find(key);
-        if (it != m_dirs.end()) { ++it->second->refs; return true; }
-        auto d = std::make_unique<WinDir>();
-        d->handle = CreateFileW(dir.c_str(), FILE_LIST_DIRECTORY, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
-        if (d->handle == INVALID_HANDLE_VALUE) return false;
-        d->buffer.resize(16384);
-        d->subtree = subtree;
-        d->refs = 1;
-        if (!issue(*d)) { close_dir(*d); return false; }
-        m_dirs[key] = std::move(d);
-        return true;
-    }
+    bool add_dir(const Path& dir, bool subtree);
 
-    void release_dir(const Path& dir, bool subtree) {
-        auto it = m_dirs.find(std::make_pair(dir, subtree));
-        if (it == m_dirs.end()) return;
-        if (--it->second->refs > 0) return;
-        close_dir(*it->second);
-        m_dirs.erase(it);
-    }
+    void release_dir(const Path& dir, bool subtree);
 
-    bool attach_native(Watch& w) {
-        const Path dir = w.is_dir ? w.target : w.target.parent_path();
-        if (!add_dir(dir, w.is_dir && w.recursive)) return false;
-        w.dirs.push_back(dir);
-        return true;
-    }
+    bool attach_native(Watch& w);
 
-    void detach_native(Watch& w) {
-        for (const Path& d : w.dirs) release_dir(d, w.is_dir && w.recursive);
-        w.dirs.clear();
-    }
+    void detach_native(Watch& w);
 
-    void read_native() {
-        for (auto& kv : m_dirs) {
-            WinDir& d = *kv.second;
-            if (!d.pending || !HasOverlappedIoCompleted(&d.ov)) continue;
-            DWORD bytes = 0;
-            d.pending = false;
-            const BOOL ok = GetOverlappedResult(d.handle, &d.ov, &bytes, FALSE);
+    void read_native();
 
-            if (!ok || bytes == 0) {
-                for (auto& w : m_watches) if (w->target == kv.first.first || under(w->target, kv.first.first)) record(w->target, FileAction::Modified);
-            } else {
-                const char* base = reinterpret_cast<const char*>(d.buffer.data());
-                for (DWORD offset = 0;;) {
-                    const FILE_NOTIFY_INFORMATION* info = reinterpret_cast<const FILE_NOTIFY_INFORMATION*>(base + offset);
-                    const std::wstring name(info->FileName, info->FileNameLength / sizeof(WCHAR));
-                    const Path path = kv.first.first / Path(name);
-                    switch (info->Action) {
-                        case FILE_ACTION_ADDED:
-                        case FILE_ACTION_RENAMED_NEW_NAME: record(path, FileAction::Added); break;
-                        case FILE_ACTION_REMOVED:
-                        case FILE_ACTION_RENAMED_OLD_NAME: record(path, FileAction::Removed); break;
-                        default: {
-                            std::error_code ec;
-                            if (!std::filesystem::is_directory(path, ec)) record(path, FileAction::Modified);
-                            break;
-                        }
-                    }
-                    if (info->NextEntryOffset == 0) break;
-                    offset += info->NextEntryOffset;
-                }
-            }
+    void open_native();
 
-            issue(d);
-        }
-    }
-
-    void open_native() {}
-
-    void close_native() {
-        for (auto& kv : m_dirs) close_dir(*kv.second);
-        m_dirs.clear();
-    }
+    void close_native();
 
 #else
     bool attach_native(Watch&) { return false; }

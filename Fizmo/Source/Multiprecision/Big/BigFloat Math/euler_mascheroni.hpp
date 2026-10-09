@@ -20,16 +20,16 @@ struct bm_main_t {
     bm_main_t();
 };
 
- void bm_main_split(std::uint64_t a, std::uint64_t b, std::uint64_t n2, bool need_P, bm_main_t& r);
+void bm_main_split(std::uint64_t a, std::uint64_t b, std::uint64_t n2, bool need_P, bm_main_t& r);
 
 struct bm_corr_t {
     BigUInt P, Q, T;
     bm_corr_t() : P(BigUInt::zero()), Q(BigUInt::zero()), T(BigUInt::zero()) {}
 };
 
- void bm_corr_split(std::uint64_t a, std::uint64_t b, std::uint64_t n2, bool need_P, bm_corr_t& r);
+void bm_corr_split(std::uint64_t a, std::uint64_t b, std::uint64_t n2, bool need_P, bm_corr_t& r);
 
- BigFloat bm_gamma(std::size_t wp, std::size_t& lost);
+BigFloat bm_gamma(std::size_t wp, std::size_t& lost);
 
 inline bool bm_guard_exhausted(std::size_t prec, std::size_t guard) {
     return guard >= 8192 || prec + guard >= BigFloatContext::max_prec / 4;
@@ -49,7 +49,7 @@ inline bm_cache_t& bm_cache() {
 
 } // namespace detail
 
- BigFloat euler_mascheroni(const BigFloatContext& ctx);
+BigFloat euler_mascheroni(const BigFloatContext& ctx);
 
 inline BigFloat euler_mascheroni() { return euler_mascheroni(BigFloatContext::current()); }
 

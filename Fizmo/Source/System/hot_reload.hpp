@@ -21,15 +21,15 @@ namespace system {
 
 enum class ImageFormat : std::uint8_t { Unknown = 0, Bmp, Png, Jpeg };
 
- ImageFormat detect_image_format(const std::vector<std::uint8_t>& bytes) noexcept;
+ImageFormat detect_image_format(const std::vector<std::uint8_t>& bytes) noexcept;
 
- bool image_file_complete(const std::vector<std::uint8_t>& bytes, ImageFormat format) noexcept;
+bool image_file_complete(const std::vector<std::uint8_t>& bytes, ImageFormat format) noexcept;
 
- std::optional<images::BitmapImage> load_image_memory(const std::uint8_t* data, std::size_t size, std::string* error = nullptr);
+std::optional<images::BitmapImage> load_image_memory(const std::uint8_t* data, std::size_t size, std::string* error = nullptr);
 
- std::optional<images::BitmapImage> load_image(const std::filesystem::path& path, std::string* error = nullptr);
+std::optional<images::BitmapImage> load_image(const std::filesystem::path& path, std::string* error = nullptr);
 
- bool save_image_png(const images::BitmapImage& img, const std::filesystem::path& path, bool alpha = true);
+bool save_image_png(const images::BitmapImage& img, const std::filesystem::path& path, bool alpha = true);
 
 struct ReloadEvent {
     std::filesystem::path path;

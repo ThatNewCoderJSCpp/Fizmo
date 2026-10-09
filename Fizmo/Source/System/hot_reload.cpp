@@ -1,5 +1,4 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 #include "hot_reload.hpp"
 
 namespace fizmo {
@@ -69,72 +68,72 @@ bool save_image_png(const images::BitmapImage& img, const std::filesystem::path&
 }
 
 auto HotReloader::watch(const std::filesystem::path& path, Reload reload) -> WatchId {
-        auto fn = std::make_shared<Reload>(std::move(reload));
-        return m_watcher.watch(path, [this, fn](const FileChange& c) {
-            if (c.action == FileAction::Removed) return;
-            ReloadEvent e{ c.path, c.action, true, {} };
-            try {
-                e.ok = (*fn)(c.path, e.error);
-            } catch (const std::exception& ex) {
-                e.ok = false;
-                e.error = ex.what();
-            }
-            report(e);
-        });
-    }
+    auto fn = std::make_shared<Reload>(std::move(reload));
+    return m_watcher.watch(path, [this, fn](const FileChange& c) {
+        if (c.action == FileAction::Removed) return;
+        ReloadEvent e{ c.path, c.action, true, {} };
+        try {
+            e.ok = (*fn)(c.path, e.error);
+        } catch (const std::exception& ex) {
+            e.ok = false;
+            e.error = ex.what();
+        }
+        report(e);
+    });
+}
 
 auto HotReloader::watch(const std::filesystem::path& path, std::function<void(const std::filesystem::path&)> reload) -> WatchId {
-        auto fn = std::make_shared<std::function<void(const std::filesystem::path&)>>(std::move(reload));
-        return watch(path, Reload([fn](const std::filesystem::path& p, std::string&) { (*fn)(p); return true; }));
-    }
+    auto fn = std::make_shared<std::function<void(const std::filesystem::path&)>>(std::move(reload));
+    return watch(path, Reload([fn](const std::filesystem::path& p, std::string&) { (*fn)(p); return true; }));
+}
 
 auto HotReloader::watch_directory(const std::filesystem::path& dir, Reload reload, bool recursive) -> WatchId {
-        auto fn = std::make_shared<Reload>(std::move(reload));
-        return m_watcher.watch(dir, [this, fn](const FileChange& c) {
-            std::error_code ec;
-            if (c.action == FileAction::Removed || std::filesystem::is_directory(c.path, ec)) return;
-            ReloadEvent e{ c.path, c.action, true, {} };
-            try {
-                e.ok = (*fn)(c.path, e.error);
-            } catch (const std::exception& ex) {
-                e.ok = false;
-                e.error = ex.what();
-            }
-            report(e);
-        }, recursive);
-    }
+    auto fn = std::make_shared<Reload>(std::move(reload));
+    return m_watcher.watch(dir, [this, fn](const FileChange& c) {
+        std::error_code ec;
+        if (c.action == FileAction::Removed || std::filesystem::is_directory(c.path, ec)) return;
+        ReloadEvent e{ c.path, c.action, true, {} };
+        try {
+            e.ok = (*fn)(c.path, e.error);
+        } catch (const std::exception& ex) {
+            e.ok = false;
+            e.error = ex.what();
+        }
+        report(e);
+    }, recursive);
+}
 
 auto HotReloader::watch_image(images::BitmapImage& image, const std::filesystem::path& path) -> WatchId {
-        images::BitmapImage* target = &image;
-        return watch(path, Reload([target](const std::filesystem::path& p, std::string& error) {
-            auto loaded = load_image(p, &error);
-            if (!loaded) return false;
-            *target = std::move(*loaded);
-            return true;
-        }));
-    }
+    images::BitmapImage* target = &image;
+    return watch(path, Reload([target](const std::filesystem::path& p, std::string& error) {
+        auto loaded = load_image(p, &error);
+        if (!loaded) return false;
+        *target = std::move(*loaded);
+        return true;
+    }));
+}
 
 auto HotReloader::watch_image(const std::shared_ptr<images::BitmapImage>& image, const std::filesystem::path& path) -> WatchId {
-        std::weak_ptr<images::BitmapImage> weak = image;
-        return watch(path, Reload([weak](const std::filesystem::path& p, std::string& error) {
-            auto target = weak.lock();
-            if (!target) return true;
-            auto loaded = load_image(p, &error);
-            if (!loaded) return false;
-            *target = std::move(*loaded);
-            return true;
-        }));
-    }
+    std::weak_ptr<images::BitmapImage> weak = image;
+    return watch(path, Reload([weak](const std::filesystem::path& p, std::string& error) {
+        auto target = weak.lock();
+        if (!target) return true;
+        auto loaded = load_image(p, &error);
+        if (!loaded) return false;
+        *target = std::move(*loaded);
+        return true;
+    }));
+}
 
 auto HotReloader::watch_text(std::string& text, const std::filesystem::path& path) -> WatchId {
-        std::string* target = &text;
-        return watch(path, Reload([target](const std::filesystem::path& p, std::string& error) {
-            auto loaded = paths::read_text(p);
-            if (!loaded) { error = "cannot read " + paths::to_utf8(p); return false; }
-            *target = std::move(*loaded);
-            return true;
-        }));
-    }
+    std::string* target = &text;
+    return watch(path, Reload([target](const std::filesystem::path& p, std::string& error) {
+        auto loaded = paths::read_text(p);
+        if (!loaded) { error = "cannot read " + paths::to_utf8(p); return false; }
+        *target = std::move(*loaded);
+        return true;
+    }));
+}
 
 } // namespace system
 } // namespace fizmo

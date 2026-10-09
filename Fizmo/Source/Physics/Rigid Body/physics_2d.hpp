@@ -193,23 +193,23 @@ namespace detail {
 
 inline double circle_area(const CircleShape& c) { return constants::pi() * c.radius * c.radius; }
 
- double polygon_area(const PolygonShape& p);
+double polygon_area(const PolygonShape& p);
 
- double capsule_area(const CapsuleShape& c);
+double capsule_area(const CapsuleShape& c);
 
 inline double edge_area(const EdgeShape&) { return 0.0; }
 
 } // namespace detail
 
- double compute_shape_area(const Shape2D& shape);
+double compute_shape_area(const Shape2D& shape);
 
 namespace detail {
 
- MassData compute_circle_mass(const CircleShape& c, double density);
+MassData compute_circle_mass(const CircleShape& c, double density);
 
- MassData compute_polygon_mass(const PolygonShape& p, double density);
+MassData compute_polygon_mass(const PolygonShape& p, double density);
 
- MassData compute_capsule_mass(const CapsuleShape& c, double density);
+MassData compute_capsule_mass(const CapsuleShape& c, double density);
 
 inline MassData compute_edge_mass(const EdgeShape&, double) { return { 0.0, 0.0, {} }; }
 
@@ -233,7 +233,7 @@ convert_position_vec(const vector2d& v, FromU from, ToU to) {
 
 } // namespace detail
 
- MassData compute_mass(const Shape2D& shape, double density);
+MassData compute_mass(const Shape2D& shape, double density);
 
 struct MassSpec {
 public:

@@ -25,47 +25,47 @@ inline bool ef_guard_exhausted(std::size_t prec, std::size_t guard) {
     return guard >= 8192 || prec + guard >= BigFloatContext::max_prec / 4;
 }
 
- std::size_t ef_err_of(const BigFloat& v, std::size_t want, std::size_t lost);
+std::size_t ef_err_of(const BigFloat& v, std::size_t want, std::size_t lost);
 
- long double ef_to_ld(const BigFloat& v);
+long double ef_to_ld(const BigFloat& v);
 
 inline long double ef_x2_ld(const BigFloat& ax) { const long double d = ef_to_ld(ax); return d * d; }
 
- std::size_t ef_x2_log2e(const BigFloat& ax);
+std::size_t ef_x2_log2e(const BigFloat& ax);
 
- std::size_t ef_x2_bits(const BigFloat& ax);
+std::size_t ef_x2_bits(const BigFloat& ax);
 
- bool ef_asymptotic(const BigFloat& ax, std::size_t want);
+bool ef_asymptotic(const BigFloat& ax, std::size_t want);
 
- bool ef_tiny(const BigFloat& x, std::size_t prec);
+bool ef_tiny(const BigFloat& x, std::size_t prec);
 
- BigFloat ef_just_under_one(const BigFloatContext& ctx);
+BigFloat ef_just_under_one(const BigFloatContext& ctx);
 
- BigFloat ef_just_over_one(const BigFloatContext& ctx);
+BigFloat ef_just_over_one(const BigFloatContext& ctx);
 
- BigFloat ef_erf_series(const BigFloat& ax, const BigFloatContext& wc, std::size_t& lost, bool& ok);
+BigFloat ef_erf_series(const BigFloat& ax, const BigFloatContext& wc, std::size_t& lost, bool& ok);
 
- BigFloat ef_erfcx_asym(const BigFloat& ax, const BigFloatContext& wc, std::size_t& lost);
+BigFloat ef_erfcx_asym(const BigFloat& ax, const BigFloatContext& wc, std::size_t& lost);
 
- BigFloat ef_erfix_asym(const BigFloat& ax, const BigFloatContext& wc, std::size_t& lost);
+BigFloat ef_erfix_asym(const BigFloat& ax, const BigFloatContext& wc, std::size_t& lost);
 
- BigFloat ef_erfi_series(const BigFloat& ax, const BigFloatContext& wc, std::size_t& lost, bool& ok);
+BigFloat ef_erfi_series(const BigFloat& ax, const BigFloatContext& wc, std::size_t& lost, bool& ok);
 
- BigFloat ef_erfc_pos(const BigFloat& ax, const BigFloatContext& wc, std::size_t& lost, bool& ok);
+BigFloat ef_erfc_pos(const BigFloat& ax, const BigFloatContext& wc, std::size_t& lost, bool& ok);
 
- BigFloat ef_erfi_pos(const BigFloat& ax, const BigFloatContext& wc, std::size_t& lost, bool& ok);
+BigFloat ef_erfi_pos(const BigFloat& ax, const BigFloatContext& wc, std::size_t& lost, bool& ok);
 
 enum class ef_kind : std::uint8_t { erf_v, erfc_v, erfi_v };
 
- BigFloat ef_dispatch(ef_kind k, const BigFloat& ax, const BigFloatContext& ctx);
+BigFloat ef_dispatch(ef_kind k, const BigFloat& ax, const BigFloatContext& ctx);
 
 } // namespace detail
 
- BigFloat erf(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat erf(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat erfc(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat erfc(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat erfi(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat erfi(const BigFloat& x, const BigFloatContext& ctx);
 
 inline BigFloat erf(const BigFloat& x)  { return erf(x,  BigFloatContext::current()); }
 inline BigFloat erfc(const BigFloat& x) { return erfc(x, BigFloatContext::current()); }
@@ -75,29 +75,29 @@ namespace detail {
 
 enum class ef_solve : std::uint8_t { erf_s, erfc_s, erfi_s };
 
- BigFloat ef_newton_step(ef_solve k, const BigFloat& x, const BigFloat& target, const BigFloatContext& wc);
+BigFloat ef_newton_step(ef_solve k, const BigFloat& x, const BigFloat& target, const BigFloatContext& wc);
 
- BigFloat ef_newton(ef_solve k, const BigFloat& seed, const BigFloat& target, std::size_t bits);
+BigFloat ef_newton(ef_solve k, const BigFloat& seed, const BigFloat& target, std::size_t bits);
 
- BigFloat ef_seed_erfc(const BigFloat& z);
+BigFloat ef_seed_erfc(const BigFloat& z);
 
- BigFloat ef_seed_erf(const BigFloat& y);
+BigFloat ef_seed_erf(const BigFloat& y);
 
- long double ef_erfi_ld(long double x);
+long double ef_erfi_ld(long double x);
 
- BigFloat ef_seed_erfi(const BigFloat& y);
+BigFloat ef_seed_erfi(const BigFloat& y);
 
- BigFloat ef_inv_dispatch(ef_solve k, const BigFloat& target, const BigFloat& seed, const BigFloatContext& ctx);
+BigFloat ef_inv_dispatch(ef_solve k, const BigFloat& target, const BigFloat& seed, const BigFloatContext& ctx);
 
- BigFloat ef_exact_sub(const BigFloat& a, const BigFloat& b);
+BigFloat ef_exact_sub(const BigFloat& a, const BigFloat& b);
 
 } // namespace detail
 
- BigFloat inv_erf(const BigFloat& y, const BigFloatContext& ctx);
+BigFloat inv_erf(const BigFloat& y, const BigFloatContext& ctx);
 
- BigFloat inv_erfc(const BigFloat& z, const BigFloatContext& ctx);
+BigFloat inv_erfc(const BigFloat& z, const BigFloatContext& ctx);
 
- BigFloat inv_erfi(const BigFloat& y, const BigFloatContext& ctx);
+BigFloat inv_erfi(const BigFloat& y, const BigFloatContext& ctx);
 
 inline BigFloat inv_erf(const BigFloat& y)  { return inv_erf(y,  BigFloatContext::current()); }
 inline BigFloat inv_erfc(const BigFloat& z) { return inv_erfc(z, BigFloatContext::current()); }
@@ -105,13 +105,13 @@ inline BigFloat inv_erfi(const BigFloat& y) { return inv_erfi(y, BigFloatContext
 
 namespace detail {
 
- bool ef_abs_ge_one(const BigFloat& v);
+bool ef_abs_ge_one(const BigFloat& v);
 
- BigFloat ef_gen_diff(const BigFloat& x, const BigFloat& b, const BigFloatContext& ctx);
+BigFloat ef_gen_diff(const BigFloat& x, const BigFloat& b, const BigFloatContext& ctx);
 
 } // namespace detail
 
- BigFloat generalized_erf(const BigFloat& x, const BigFloat& base, const BigFloatContext& ctx);
+BigFloat generalized_erf(const BigFloat& x, const BigFloat& base, const BigFloatContext& ctx);
 
 inline BigFloat generalized_erfc(const BigFloat& x, const BigFloat& base, const BigFloatContext& ctx) {
     return -generalized_erf(x, base, ctx);               

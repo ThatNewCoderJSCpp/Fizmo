@@ -11,11 +11,11 @@ namespace cas {
 namespace symbols {
 namespace integration {
 
- bool is_free(const MathExpressionNode* n, std::uint64_t vid);
+bool is_free(const MathExpressionNode* n, std::uint64_t vid);
 
 inline bool is_var(const MathExpressionNode* n, std::uint64_t vid) { return n && n->type == NodeType::Variable && n->variable.var_id == vid; }
 
- bool match_linear(MathExpressionNode* n, std::uint64_t vid, double& a_out, double& b_out);
+bool match_linear(MathExpressionNode* n, std::uint64_t vid, double& a_out, double& b_out);
 
 inline bool is_linear_in_var(MathExpressionNode* n, std::uint64_t vid, double& a, double& b) {
     if (is_free(n, vid)) return false;

@@ -3,7 +3,7 @@
 
 #include "common.hpp"
 #include "platform_linux.hpp"
-#include "platform_windows.hpp"
+#include "win_library.hpp"
 
 namespace fizmo {
 namespace system {
@@ -86,21 +86,14 @@ private:
     std::vector<Device> m_devices;
 
 #if defined(OS_WINDOWS)
-    static win::Library open_library() {
-        win::Library lib(L"nvml.dll");
-        if (lib.valid()) return lib;
-        wchar_t path[MAX_PATH];
-        const DWORD n = ExpandEnvironmentStringsW(L"%ProgramW6432%\\NVIDIA Corporation\\NVSMI\\nvml.dll", path, MAX_PATH);
-        if (n == 0 || n > MAX_PATH) return lib;
-        return win::Library(path, false);
-    }
+    static win::Library open_library();
 #endif
 
 public:
 #if defined(OS_LINUX)
     Nvml() : m_lib("libnvidia-ml.so.1") { load(); }
 #elif defined(OS_WINDOWS)
-    Nvml() : m_lib(open_library()) { load(); }
+    Nvml();
 #else
     Nvml() {}
 #endif

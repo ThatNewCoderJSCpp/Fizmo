@@ -13,7 +13,6 @@
 #include <cstdint>
 
 #ifdef OS_LINUX
-#include "../x11_compat.hpp"
 #endif 
 
 namespace fizmo {
@@ -63,7 +62,7 @@ enum class WindowEventType {
     Count
 };
 
- const char* event_type_name(WindowEventType et) noexcept;
+const char* event_type_name(WindowEventType et) noexcept;
 
 inline std::ostream& operator<<(std::ostream& os, WindowEventType et) { return os << event_type_name(et); }
 

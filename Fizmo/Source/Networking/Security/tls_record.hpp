@@ -20,7 +20,7 @@ enum class ContentType : std::uint8_t {
     ApplicationData  = 23
 };
 
- const char* content_type_to_string(ContentType ct) noexcept;
+const char* content_type_to_string(ContentType ct) noexcept;
 
 inline bool is_valid_content_type(std::uint8_t raw) noexcept {
     return raw >= 20 && raw <= 23;
@@ -44,7 +44,7 @@ enum class ParseStatus : std::uint8_t {
     VersionMismatch  // Record version outside accepted range
 };
 
- const char* parse_status_to_string(ParseStatus s) noexcept;
+const char* parse_status_to_string(ParseStatus s) noexcept;
 
 struct ParseResult {
     ParseStatus  status         = ParseStatus::NeedMoreData;

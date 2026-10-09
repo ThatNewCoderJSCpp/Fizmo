@@ -11,13 +11,13 @@ namespace ui {
 
 namespace utf8 {
 
- std::size_t next(const std::string& s, std::size_t i) noexcept;
+std::size_t next(const std::string& s, std::size_t i) noexcept;
 
- std::size_t prev(const std::string& s, std::size_t i) noexcept;
+std::size_t prev(const std::string& s, std::size_t i) noexcept;
 
- char32_t decode(const std::string& s, std::size_t i) noexcept;
+char32_t decode(const std::string& s, std::size_t i) noexcept;
 
- void append(std::string& out, char32_t cp);
+void append(std::string& out, char32_t cp);
 
 inline std::size_t length(const std::string& s) noexcept {
     std::size_t n = 0;
@@ -25,7 +25,7 @@ inline std::size_t length(const std::string& s) noexcept {
     return n;
 }
 
- std::u32string to_u32(const std::string& s);
+std::u32string to_u32(const std::string& s);
 
 inline std::string from_u32(const std::u32string& s) {
     std::string out;
@@ -68,7 +68,7 @@ public:
 
 enum class TextCase : std::uint8_t { Any = 0, Upper, Lower };
 
- std::optional<double> evaluate_expression(const std::string& text);
+std::optional<double> evaluate_expression(const std::string& text);
 
 class TextField : public Widget {
 protected:

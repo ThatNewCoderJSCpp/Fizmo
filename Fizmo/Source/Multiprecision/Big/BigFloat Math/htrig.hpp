@@ -23,9 +23,9 @@ inline std::size_t hy_splits(std::size_t p) noexcept {
     return s;
 }
 
- void hy_small(const BigFloat& ax, const BigFloatContext& wc, BigFloat& sh, BigFloat& ch);
+void hy_small(const BigFloat& ax, const BigFloatContext& wc, BigFloat& sh, BigFloat& ch);
 
- void hy_raw(const BigFloat& ax, std::size_t want, BigFloat& sh, BigFloat& ch);
+void hy_raw(const BigFloat& ax, std::size_t want, BigFloat& sh, BigFloat& ch);
 
 enum class hyp_sel : std::uint8_t { sinh_v, cosh_v, tanh_v, coth_v, sech_v, csch_v };
 
@@ -33,23 +33,23 @@ inline bool hy_guard_exhausted(std::size_t prec, std::size_t guard) {
     return guard >= 4096 || prec + guard >= BigFloatContext::max_prec / 4;
 }
 
- bool hy_saturates(const BigFloat& ax, std::size_t prec);
+bool hy_saturates(const BigFloat& ax, std::size_t prec);
 
- BigFloat hy_dispatch(const BigFloat& x, hyp_sel sel, const BigFloatContext& ctx);
+BigFloat hy_dispatch(const BigFloat& x, hyp_sel sel, const BigFloatContext& ctx);
 
 } // namespace detail
 
- BigFloat sinh(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat sinh(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat cosh(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat cosh(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat tanh(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat tanh(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat coth(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat coth(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat sech(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat sech(const BigFloat& x, const BigFloatContext& ctx);
 
- BigFloat csch(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat csch(const BigFloat& x, const BigFloatContext& ctx);
 
 FIZMO_MP_TRIG_FORWARD(sinh)
 FIZMO_MP_TRIG_FORWARD(cosh)

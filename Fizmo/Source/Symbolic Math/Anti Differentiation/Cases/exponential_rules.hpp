@@ -9,7 +9,7 @@ namespace cas {
 namespace symbols {
 namespace integration {
 
- MathExpression try_exponential(
+MathExpression try_exponential(
     MathExpressionManager& mgr,
     MathExpressionSimplifier& /*simp*/,
     MathExpressionDifferentiator& /*diff*/,

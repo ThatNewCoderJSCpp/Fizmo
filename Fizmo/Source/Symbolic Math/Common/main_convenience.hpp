@@ -12,7 +12,7 @@ inline Expression make_expr(SymbolicContext& ctx, const Expression& e) { return 
 inline Expression make_expr(SymbolicContext& ctx, double v) { return ctx.constant(v); }
 
 // NEGATE
- Expression NEGATE(SymbolicContext& ctx, const Expression& a);
+Expression NEGATE(SymbolicContext& ctx, const Expression& a);
 inline Expression NEGATE(SymbolicContext& ctx, double a) {
     return NEGATE(ctx, make_expr(ctx, a));
 }
@@ -21,13 +21,13 @@ inline Expression NEGATE(SymbolicContext& ctx, double a) {
 #ifdef ABS
 #undef ABS
 #endif
- Expression ABS(SymbolicContext& ctx, const Expression& a);
+Expression ABS(SymbolicContext& ctx, const Expression& a);
 inline Expression ABS(SymbolicContext& ctx, double a) {
     return ABS(ctx, make_expr(ctx, a));
 }
 
 // FLOOR
- Expression FLOOR(SymbolicContext& ctx, const Expression& a);
+Expression FLOOR(SymbolicContext& ctx, const Expression& a);
 inline Expression FLOOR(SymbolicContext& ctx, double a) {
     return FLOOR(ctx, make_expr(ctx, a));
 }
@@ -41,25 +41,25 @@ inline Expression CEIL(SymbolicContext& ctx, double a) {
 }
 
 // ROUND
- Expression ROUND(SymbolicContext& ctx, const Expression& a);
+Expression ROUND(SymbolicContext& ctx, const Expression& a);
 inline Expression ROUND(SymbolicContext& ctx, double a) {
     return ROUND(ctx, make_expr(ctx, a));
 }
 
 // TRUNC
- Expression TRUNC(SymbolicContext& ctx, const Expression& a);
+Expression TRUNC(SymbolicContext& ctx, const Expression& a);
 inline Expression TRUNC(SymbolicContext& ctx, double a) {
     return TRUNC(ctx, make_expr(ctx, a));
 }
 
 // FRAC
- Expression FRAC(SymbolicContext& ctx, const Expression& a);
+Expression FRAC(SymbolicContext& ctx, const Expression& a);
 inline Expression FRAC(SymbolicContext& ctx, double a) {
     return FRAC(ctx, make_expr(ctx, a));
 }
 
 // INT
- Expression INT(SymbolicContext& ctx, const Expression& a);
+Expression INT(SymbolicContext& ctx, const Expression& a);
 inline Expression INT(SymbolicContext& ctx, double a) {
     return INT(ctx, make_expr(ctx, a));
 }
@@ -71,17 +71,17 @@ inline Expression SIGN(SymbolicContext& ctx, const Expression& a) {
 inline Expression SIGN(SymbolicContext& ctx, double a) { return SIGN(ctx, make_expr(ctx, a)); }
 
 // UNIT_STEP (Heaviside)
- Expression UNIT_STEP(SymbolicContext& ctx, const Expression& a);
+Expression UNIT_STEP(SymbolicContext& ctx, const Expression& a);
 inline Expression UNIT_STEP(SymbolicContext& ctx, double a) { return UNIT_STEP(ctx, make_expr(ctx, a)); }
 
 // EXP
- Expression EXP(SymbolicContext& ctx, const Expression& a);
+Expression EXP(SymbolicContext& ctx, const Expression& a);
 inline Expression EXP(SymbolicContext& ctx, double a) {
     return EXP(ctx, make_expr(ctx, a));
 }
 
 // LN
- Expression LN(SymbolicContext& ctx, const Expression& a);
+Expression LN(SymbolicContext& ctx, const Expression& a);
 inline Expression LN(SymbolicContext& ctx, double a) {
     return LN(ctx, make_expr(ctx, a));
 }
@@ -119,7 +119,7 @@ inline Expression SINC(SymbolicContext& ctx, double a) {
 }
 
 // NSINC (NormalSinc)
- Expression NSINC(SymbolicContext& ctx, const Expression& a);
+Expression NSINC(SymbolicContext& ctx, const Expression& a);
 inline Expression NSINC(SymbolicContext& ctx, double a) {
     return NSINC(ctx, make_expr(ctx, a));
 }
@@ -165,25 +165,25 @@ inline Expression COT(SymbolicContext& ctx, double a) {
 }
 
 // ASIN
- Expression ASIN(SymbolicContext& ctx, const Expression& a);
+Expression ASIN(SymbolicContext& ctx, const Expression& a);
 inline Expression ASIN(SymbolicContext& ctx, double a) {
     return ASIN(ctx, make_expr(ctx, a));
 }
 
 // ACOS
- Expression ACOS(SymbolicContext& ctx, const Expression& a);
+Expression ACOS(SymbolicContext& ctx, const Expression& a);
 inline Expression ACOS(SymbolicContext& ctx, double a) {
     return ACOS(ctx, make_expr(ctx, a));
 }
 
 // ATAN
- Expression ATAN(SymbolicContext& ctx, const Expression& a);
+Expression ATAN(SymbolicContext& ctx, const Expression& a);
 inline Expression ATAN(SymbolicContext& ctx, double a) {
     return ATAN(ctx, make_expr(ctx, a));
 }
 
 // ATAN2
- Expression ATAN2(SymbolicContext& ctx, const Expression& y, const Expression& x);
+Expression ATAN2(SymbolicContext& ctx, const Expression& y, const Expression& x);
 inline Expression ATAN2(SymbolicContext& ctx, const Expression& y, double x) {
     return ATAN2(ctx, y, make_expr(ctx, x));
 }
@@ -195,19 +195,19 @@ inline Expression ATAN2(SymbolicContext& ctx, double y, double x) {
 }
 
 // ACSC
- Expression ACSC(SymbolicContext& ctx, const Expression& a);
+Expression ACSC(SymbolicContext& ctx, const Expression& a);
 inline Expression ACSC(SymbolicContext& ctx, double a) {
     return ACSC(ctx, make_expr(ctx, a));
 }
 
 // ASEC
- Expression ASEC(SymbolicContext& ctx, const Expression& a);
+Expression ASEC(SymbolicContext& ctx, const Expression& a);
 inline Expression ASEC(SymbolicContext& ctx, double a) {
     return ASEC(ctx, make_expr(ctx, a));
 }
 
 // ACOT
- Expression ACOT(SymbolicContext& ctx, const Expression& a);
+Expression ACOT(SymbolicContext& ctx, const Expression& a);
 inline Expression ACOT(SymbolicContext& ctx, double a) {
     return ACOT(ctx, make_expr(ctx, a));
 }
@@ -261,37 +261,37 @@ inline Expression COTH(SymbolicContext& ctx, double a) {
 }
 
 // ASINH
- Expression ASINH(SymbolicContext& ctx, const Expression& a);
+Expression ASINH(SymbolicContext& ctx, const Expression& a);
 inline Expression ASINH(SymbolicContext& ctx, double a) {
     return ASINH(ctx, make_expr(ctx, a));
 }
 
 // ACOSH
- Expression ACOSH(SymbolicContext& ctx, const Expression& a);
+Expression ACOSH(SymbolicContext& ctx, const Expression& a);
 inline Expression ACOSH(SymbolicContext& ctx, double a) {
     return ACOSH(ctx, make_expr(ctx, a));
 }
 
 // ATANH
- Expression ATANH(SymbolicContext& ctx, const Expression& a);
+Expression ATANH(SymbolicContext& ctx, const Expression& a);
 inline Expression ATANH(SymbolicContext& ctx, double a) {
     return ATANH(ctx, make_expr(ctx, a));
 }
 
 // ACSCH
- Expression ACSCH(SymbolicContext& ctx, const Expression& a);
+Expression ACSCH(SymbolicContext& ctx, const Expression& a);
 inline Expression ACSCH(SymbolicContext& ctx, double a) {
     return ACSCH(ctx, make_expr(ctx, a));
 }
 
 // ASECH
- Expression ASECH(SymbolicContext& ctx, const Expression& a);
+Expression ASECH(SymbolicContext& ctx, const Expression& a);
 inline Expression ASECH(SymbolicContext& ctx, double a) {
     return ASECH(ctx, make_expr(ctx, a));
 }
 
 // ACOTH
- Expression ACOTH(SymbolicContext& ctx, const Expression& a);
+Expression ACOTH(SymbolicContext& ctx, const Expression& a);
 inline Expression ACOTH(SymbolicContext& ctx, double a) {
     return ACOTH(ctx, make_expr(ctx, a));
 }
@@ -313,11 +313,11 @@ inline Expression ERFC(SymbolicContext& ctx, double a) {
 }
 
 // INVERSE_ERF 
- Expression INVERSE_ERF(SymbolicContext& ctx, const Expression& a);
+Expression INVERSE_ERF(SymbolicContext& ctx, const Expression& a);
 inline Expression INVERSE_ERF(SymbolicContext& ctx, double a) { return INVERSE_ERF(ctx, make_expr(ctx, a)); }
 
 // INVERSE_ERFC
- Expression INVERSE_ERFC(SymbolicContext& ctx, const Expression& a);
+Expression INVERSE_ERFC(SymbolicContext& ctx, const Expression& a);
 inline Expression INVERSE_ERFC(SymbolicContext& ctx, double a) { return INVERSE_ERFC(ctx, make_expr(ctx, a)); }
 
 // ERFI
@@ -327,11 +327,11 @@ inline Expression ERFI(SymbolicContext& ctx, const Expression& a) {
 inline Expression ERFI(SymbolicContext& ctx, double a) { return ERFI(ctx, make_expr(ctx, a)); }
 
 // INVERSE_ERFI
- Expression INVERSE_ERFI(SymbolicContext& ctx, const Expression& a);
+Expression INVERSE_ERFI(SymbolicContext& ctx, const Expression& a);
 inline Expression INVERSE_ERFI(SymbolicContext& ctx, double a) { return INVERSE_ERFI(ctx, make_expr(ctx, a)); }
 
 // ADD
- Expression ADD(SymbolicContext& ctx, const Expression& a, const Expression& b);
+Expression ADD(SymbolicContext& ctx, const Expression& a, const Expression& b);
 inline Expression ADD(SymbolicContext& ctx, const Expression& a, double b) {
     return ADD(ctx, a, make_expr(ctx, b));
 }
@@ -343,7 +343,7 @@ inline Expression ADD(SymbolicContext& ctx, double a, double b) {
 }
 
 // SUB
- Expression SUB(SymbolicContext& ctx, const Expression& a, const Expression& b);
+Expression SUB(SymbolicContext& ctx, const Expression& a, const Expression& b);
 inline Expression SUB(SymbolicContext& ctx, const Expression& a, double b) {
     return SUB(ctx, a, make_expr(ctx, b));
 }
@@ -355,7 +355,7 @@ inline Expression SUB(SymbolicContext& ctx, double a, double b) {
 }
 
 // MUL
- Expression MUL(SymbolicContext& ctx, const Expression& a, const Expression& b);
+Expression MUL(SymbolicContext& ctx, const Expression& a, const Expression& b);
 inline Expression MUL(SymbolicContext& ctx, const Expression& a, double b) {
     return MUL(ctx, a, make_expr(ctx, b));
 }
@@ -367,7 +367,7 @@ inline Expression MUL(SymbolicContext& ctx, double a, double b) {
 }
 
 // DIV
- Expression DIV(SymbolicContext& ctx, const Expression& a, const Expression& b);
+Expression DIV(SymbolicContext& ctx, const Expression& a, const Expression& b);
 inline Expression DIV(SymbolicContext& ctx, const Expression& a, double b) {
     return DIV(ctx, a, make_expr(ctx, b));
 }
@@ -379,7 +379,7 @@ inline Expression DIV(SymbolicContext& ctx, double a, double b) {
 }
 
 // MOD
- Expression MOD(SymbolicContext& ctx, const Expression& a, const Expression& b);
+Expression MOD(SymbolicContext& ctx, const Expression& a, const Expression& b);
 inline Expression MOD(SymbolicContext& ctx, const Expression& a, double b) {
     return MOD(ctx, a, make_expr(ctx, b));
 }
@@ -405,7 +405,7 @@ inline Expression POW(SymbolicContext& ctx, double a, double b) {
 }
 
 // LOG(arg, base)
- Expression LOG(SymbolicContext& ctx, const Expression& arg, const Expression& base);
+Expression LOG(SymbolicContext& ctx, const Expression& arg, const Expression& base);
 inline Expression LOG(SymbolicContext& ctx, const Expression& arg, double base) {
     return LOG(ctx, arg, make_expr(ctx, base));
 }
@@ -417,7 +417,7 @@ inline Expression LOG(SymbolicContext& ctx, double arg, double base) {
 }
 
 // ROOT(radicand, degree)  (matches symbols::NodeType::Root: left=radicand, right=degree)
- Expression ROOT(SymbolicContext& ctx, const Expression& rad, const Expression& deg);
+Expression ROOT(SymbolicContext& ctx, const Expression& rad, const Expression& deg);
 inline Expression ROOT(SymbolicContext& ctx, const Expression& rad, double deg) {
     return ROOT(ctx, rad, make_expr(ctx, deg));
 }
@@ -429,7 +429,7 @@ inline Expression ROOT(SymbolicContext& ctx, double rad, double deg) {
 }
 
 // GENERALIZED_ERFERALIZED(a, b)
- Expression GENERALIZED_ERF(SymbolicContext& ctx, const Expression& a, const Expression& b);
+Expression GENERALIZED_ERF(SymbolicContext& ctx, const Expression& a, const Expression& b);
 inline Expression GENERALIZED_ERF(SymbolicContext& ctx, const Expression& a, double b) {
     return GENERALIZED_ERF(ctx, a, make_expr(ctx, b));
 }
@@ -441,7 +441,7 @@ inline Expression GENERALIZED_ERF(SymbolicContext& ctx, double a, double b) {
 }
 
 // GENERALIZED_ERFCERALIZED(a, b)
- Expression GENERALIZED_ERFC(SymbolicContext& ctx, const Expression& a, const Expression& b);
+Expression GENERALIZED_ERFC(SymbolicContext& ctx, const Expression& a, const Expression& b);
 inline Expression GENERALIZED_ERFC(SymbolicContext& ctx, const Expression& a, double b) {
     return GENERALIZED_ERFC(ctx, a, make_expr(ctx, b));
 }
@@ -453,27 +453,27 @@ inline Expression GENERALIZED_ERFC(SymbolicContext& ctx, double a, double b) {
 }
 
 // Gamma
- Expression GAMMA(SymbolicContext& ctx, const Expression& a);
+Expression GAMMA(SymbolicContext& ctx, const Expression& a);
 inline Expression GAMMA(SymbolicContext& ctx, double a) { return GAMMA(ctx, make_expr(ctx, a)); }
 
 // Factorial
- Expression FACTORIAL(SymbolicContext& ctx, const Expression& a);
+Expression FACTORIAL(SymbolicContext& ctx, const Expression& a);
 inline Expression FACTORIAL(SymbolicContext& ctx, double a) { return FACTORIAL(ctx, make_expr(ctx, a)); }
 
 // Digamma
- Expression DIGAMMA(SymbolicContext& ctx, const Expression& a);
+Expression DIGAMMA(SymbolicContext& ctx, const Expression& a);
 inline Expression DIGAMMA(SymbolicContext& ctx, double a) { return DIGAMMA(ctx, make_expr(ctx, a)); }
 
 // Trigamma
- Expression TRIGAMMA(SymbolicContext& ctx, const Expression& a);
+Expression TRIGAMMA(SymbolicContext& ctx, const Expression& a);
 inline Expression TRIGAMMA(SymbolicContext& ctx, double a) { return TRIGAMMA(ctx, make_expr(ctx, a)); }
 
 // Polygamma
- Expression POLYGAMMA(SymbolicContext& ctx, const Expression& a, int n);
+Expression POLYGAMMA(SymbolicContext& ctx, const Expression& a, int n);
 inline Expression POLYGAMMA(SymbolicContext& ctx, double a, int n) { return POLYGAMMA(ctx, make_expr(ctx, a), n); }
 
 // Beta function
- Expression BETA(SymbolicContext& ctx, const Expression& x, const Expression& y);
+Expression BETA(SymbolicContext& ctx, const Expression& x, const Expression& y);
 inline Expression BETA(SymbolicContext& ctx, const Expression& x, double y) {
     return BETA(ctx, x, make_expr(ctx, y));
 }
@@ -485,13 +485,13 @@ inline Expression BETA(SymbolicContext& ctx, double x, double y) {
 }
 
 // LAMBERT_W
- Expression LAMBERT_W(SymbolicContext& ctx, const Expression& z, int k = 0);
+Expression LAMBERT_W(SymbolicContext& ctx, const Expression& z, int k = 0);
 inline Expression LAMBERT_W(SymbolicContext& ctx, double z, int k = 0) { 
     return LAMBERT_W(ctx, make_expr(ctx, z), k); 
 }
 
 // Chebyshev functions
- Expression CHEBYSHEV_U(SymbolicContext& ctx, const Expression& x, const Expression& y);
+Expression CHEBYSHEV_U(SymbolicContext& ctx, const Expression& x, const Expression& y);
 inline Expression CHEBYSHEV_U(SymbolicContext& ctx, const Expression& x, double y) {
     return CHEBYSHEV_U(ctx, x, make_expr(ctx, y));
 }
@@ -502,7 +502,7 @@ inline Expression CHEBYSHEV_U(SymbolicContext& ctx, double x, double y) {
     return CHEBYSHEV_U(ctx, make_expr(ctx, x), make_expr(ctx, y));
 }
 
- Expression CHEBYSHEV_T(SymbolicContext& ctx, const Expression& x, const Expression& y);
+Expression CHEBYSHEV_T(SymbolicContext& ctx, const Expression& x, const Expression& y);
 inline Expression CHEBYSHEV_T(SymbolicContext& ctx, const Expression& x, double y) {
     return CHEBYSHEV_T(ctx, x, make_expr(ctx, y));
 }
@@ -514,123 +514,123 @@ inline Expression CHEBYSHEV_T(SymbolicContext& ctx, double x, double y) {
 }
 
 // EI (Exponential Integral)
- Expression EI(SymbolicContext& ctx, const Expression& a);
+Expression EI(SymbolicContext& ctx, const Expression& a);
 inline Expression EI(SymbolicContext& ctx, double a) { return EI(ctx, make_expr(ctx, a)); }
 
 // LI (Logarithmic Integral)
- Expression LI(SymbolicContext& ctx, const Expression& a);
+Expression LI(SymbolicContext& ctx, const Expression& a);
 inline Expression LI(SymbolicContext& ctx, double a) { return LI(ctx, make_expr(ctx, a)); }
 
 // GENERALIZED_EI(x, n)  -> E_n(x)
- Expression GENERALIZED_EI(SymbolicContext& ctx, const Expression& x, const Expression& n);
+Expression GENERALIZED_EI(SymbolicContext& ctx, const Expression& x, const Expression& n);
 inline Expression GENERALIZED_EI(SymbolicContext& ctx, const Expression& x, double n) { return GENERALIZED_EI(ctx, x, make_expr(ctx, n)); }
 inline Expression GENERALIZED_EI(SymbolicContext& ctx, double x, const Expression& n) { return GENERALIZED_EI(ctx, make_expr(ctx, x), n); }
 inline Expression GENERALIZED_EI(SymbolicContext& ctx, double x, double n)            { return GENERALIZED_EI(ctx, make_expr(ctx, x), make_expr(ctx, n)); }
 
 // GENERALIZED_LI(x, n)
- Expression GENERALIZED_LI(SymbolicContext& ctx, const Expression& x, const Expression& n);
+Expression GENERALIZED_LI(SymbolicContext& ctx, const Expression& x, const Expression& n);
 inline Expression GENERALIZED_LI(SymbolicContext& ctx, const Expression& x, double n) { return GENERALIZED_LI(ctx, x, make_expr(ctx, n)); }
 inline Expression GENERALIZED_LI(SymbolicContext& ctx, double x, const Expression& n) { return GENERALIZED_LI(ctx, make_expr(ctx, x), n); }
 inline Expression GENERALIZED_LI(SymbolicContext& ctx, double x, double n)            { return GENERALIZED_LI(ctx, make_expr(ctx, x), make_expr(ctx, n)); }
 
 // Bell polynomial
- Expression BELL(SymbolicContext& ctx, const Expression& x, unsigned int n);
+Expression BELL(SymbolicContext& ctx, const Expression& x, unsigned int n);
 
 inline Expression BELL(SymbolicContext& ctx, double x, unsigned int n) { return BELL(ctx, make_expr(ctx, x), n); }
 
 // SI (Sin Integral)
- Expression SI(SymbolicContext& ctx, const Expression& a);
+Expression SI(SymbolicContext& ctx, const Expression& a);
 inline Expression SI(SymbolicContext& ctx, double a) { return SI(ctx, make_expr(ctx, a)); }
 
 // CI (Cos Integral)
- Expression CI(SymbolicContext& ctx, const Expression& a);
+Expression CI(SymbolicContext& ctx, const Expression& a);
 inline Expression CI(SymbolicContext& ctx, double a) { return CI(ctx, make_expr(ctx, a)); }
 
 // SHI (Sinh Integral)
- Expression SHI(SymbolicContext& ctx, const Expression& a);
+Expression SHI(SymbolicContext& ctx, const Expression& a);
 inline Expression SHI(SymbolicContext& ctx, double a) { return SHI(ctx, make_expr(ctx, a)); }
 
 // CHI (Cosh Integral)
- Expression CHI(SymbolicContext& ctx, const Expression& a);
+Expression CHI(SymbolicContext& ctx, const Expression& a);
 inline Expression CHI(SymbolicContext& ctx, double a) { return CHI(ctx, make_expr(ctx, a)); }
 
 // Fresnel S
- Expression FRESNEL_S(SymbolicContext& ctx, const Expression& a);
+Expression FRESNEL_S(SymbolicContext& ctx, const Expression& a);
 inline Expression FRESNEL_S(SymbolicContext& ctx, double a) { return FRESNEL_S(ctx, make_expr(ctx, a)); }
 
 // Fresnel S
- Expression FRESNEL_C(SymbolicContext& ctx, const Expression& a);
+Expression FRESNEL_C(SymbolicContext& ctx, const Expression& a);
 inline Expression FRESNEL_C(SymbolicContext& ctx, double a) { return FRESNEL_C(ctx, make_expr(ctx, a)); }
 
 // Riemann 
- Expression RIEMANN_ZETA(SymbolicContext& ctx, const Expression& a);
+Expression RIEMANN_ZETA(SymbolicContext& ctx, const Expression& a);
 inline Expression RIEMANN_ZETA(SymbolicContext& ctx, double a) { return RIEMANN_ZETA(ctx, make_expr(ctx, a)); }
 
 // Logs
- Expression DILOGARITHM(SymbolicContext& ctx, const Expression& a);
+Expression DILOGARITHM(SymbolicContext& ctx, const Expression& a);
 inline Expression DILOGARITHM(SymbolicContext& ctx, double a) { return DILOGARITHM(ctx, make_expr(ctx, a)); }
 
- Expression TRILOGARITHM(SymbolicContext& ctx, const Expression& a);
+Expression TRILOGARITHM(SymbolicContext& ctx, const Expression& a);
 inline Expression TRILOGARITHM(SymbolicContext& ctx, double a) { return TRILOGARITHM(ctx, make_expr(ctx, a)); }
 
- Expression POLYLOGARITHM(SymbolicContext& ctx, const Expression& a, const Expression& b);
+Expression POLYLOGARITHM(SymbolicContext& ctx, const Expression& a, const Expression& b);
 inline Expression POLYLOGARITHM(SymbolicContext& ctx, double a, const Expression& b) { return POLYLOGARITHM(ctx, make_expr(ctx, a), b); }
 inline Expression POLYLOGARITHM(SymbolicContext& ctx, const Expression& a, double b) { return POLYLOGARITHM(ctx, a, make_expr(ctx, b)); }
 inline Expression POLYLOGARITHM(SymbolicContext& ctx, double a, double b)            { return POLYLOGARITHM(ctx, make_expr(ctx, a), make_expr(ctx, b)); }
 
 // Spence
- Expression SPENCE_FUNCTION(SymbolicContext& ctx, const Expression& a);
+Expression SPENCE_FUNCTION(SymbolicContext& ctx, const Expression& a);
 inline Expression SPENCE_FUNCTION(SymbolicContext& ctx, double a) { return SPENCE_FUNCTION(ctx, make_expr(ctx, a)); }
 
- Expression SPENCE_INTEGRAL(SymbolicContext& ctx, const Expression& a);
+Expression SPENCE_INTEGRAL(SymbolicContext& ctx, const Expression& a);
 inline Expression SPENCE_INTEGRAL(SymbolicContext& ctx, double a) { return SPENCE_INTEGRAL(ctx, make_expr(ctx, a)); }
 
 // Rogers
- Expression ROGERS_L(SymbolicContext& ctx, const Expression& a);
+Expression ROGERS_L(SymbolicContext& ctx, const Expression& a);
 inline Expression ROGERS_L(SymbolicContext& ctx, double a) { return ROGERS_L(ctx, make_expr(ctx, a)); }
 
- Expression ROGERS_L_R(SymbolicContext& ctx, const Expression& a);
+Expression ROGERS_L_R(SymbolicContext& ctx, const Expression& a);
 inline Expression ROGERS_L_R(SymbolicContext& ctx, double a) { return ROGERS_L_R(ctx, make_expr(ctx, a)); }
 
 // Rogers
- Expression GUDERMANNIAN(SymbolicContext& ctx, const Expression& a);
+Expression GUDERMANNIAN(SymbolicContext& ctx, const Expression& a);
 inline Expression GUDERMANNIAN(SymbolicContext& ctx, double a) { return GUDERMANNIAN(ctx, make_expr(ctx, a)); }
 
- Expression INVERSE_GUDERMANNIAN(SymbolicContext& ctx, const Expression& a);
+Expression INVERSE_GUDERMANNIAN(SymbolicContext& ctx, const Expression& a);
 inline Expression INVERSE_GUDERMANNIAN(SymbolicContext& ctx, double a) { return INVERSE_GUDERMANNIAN(ctx, make_expr(ctx, a)); }
 
 // COMBINATION  C(n, k)
- Expression COMBINATION(SymbolicContext& ctx, const Expression& n, const Expression& k);
+Expression COMBINATION(SymbolicContext& ctx, const Expression& n, const Expression& k);
 inline Expression COMBINATION(SymbolicContext& ctx, const Expression& n, double k) { return COMBINATION(ctx, n, make_expr(ctx, k)); }
 inline Expression COMBINATION(SymbolicContext& ctx, double n, const Expression& k) { return COMBINATION(ctx, make_expr(ctx, n), k); }
 inline Expression COMBINATION(SymbolicContext& ctx, double n, double k)            { return COMBINATION(ctx, make_expr(ctx, n), make_expr(ctx, k)); }
 
 // PERMUTATION  P(n, k)
- Expression PERMUTATION(SymbolicContext& ctx, const Expression& n, const Expression& k);
+Expression PERMUTATION(SymbolicContext& ctx, const Expression& n, const Expression& k);
 inline Expression PERMUTATION(SymbolicContext& ctx, const Expression& n, double k) { return PERMUTATION(ctx, n, make_expr(ctx, k)); }
 inline Expression PERMUTATION(SymbolicContext& ctx, double n, const Expression& k) { return PERMUTATION(ctx, make_expr(ctx, n), k); }
 inline Expression PERMUTATION(SymbolicContext& ctx, double n, double k)            { return PERMUTATION(ctx, make_expr(ctx, n), make_expr(ctx, k)); }
 
 // Fibonacci Polynomial(x, n)
- Expression FIBONACCI_POLYNOMIAL(SymbolicContext& ctx, const Expression& x, int n);
+Expression FIBONACCI_POLYNOMIAL(SymbolicContext& ctx, const Expression& x, int n);
 
 inline Expression FIBONACCI_POLYNOMIAL(SymbolicContext& ctx, double x, int n) { 
     return FIBONACCI_POLYNOMIAL(ctx, make_expr(ctx, x), n); 
 }
 
 // Lucas Polynomial(x, n)
- Expression LUCAS_POLYNOMIAL(SymbolicContext& ctx, const Expression& x, int n);
+Expression LUCAS_POLYNOMIAL(SymbolicContext& ctx, const Expression& x, int n);
 
 inline Expression LUCAS_POLYNOMIAL(SymbolicContext& ctx, double x, int n) { 
     return FIBONACCI_POLYNOMIAL(ctx, make_expr(ctx, x), n); 
 }
 
 // Fibonacci 
- Expression FIBONACCI(SymbolicContext& ctx, const Expression& x);
+Expression FIBONACCI(SymbolicContext& ctx, const Expression& x);
 inline Expression FIBONACCI(SymbolicContext& ctx, double x) { return FIBONACCI(ctx, make_expr(ctx, x)); }
 
 // Lucas 
- Expression LUCAS(SymbolicContext& ctx, const Expression& x);
+Expression LUCAS(SymbolicContext& ctx, const Expression& x);
 inline Expression LUCAS(SymbolicContext& ctx, double x) { return LUCAS(ctx, make_expr(ctx, x)); }
 
 // ------------------------------------------------------------

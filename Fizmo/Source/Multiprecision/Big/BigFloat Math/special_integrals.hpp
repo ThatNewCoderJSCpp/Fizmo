@@ -47,112 +47,112 @@ struct sp_sum {
     bool done(double ltail, std::size_t want) const { return ltail <= lmax - static_cast<double>(want) - 8.0; }
 };
 
- zt_val sp_finish(const BF& v, double err, std::size_t want);
+zt_val sp_finish(const BF& v, double err, std::size_t want);
 
- zt_val sp_si_series(const BF& x, bool hyp, std::size_t want);
+zt_val sp_si_series(const BF& x, bool hyp, std::size_t want);
 
- zt_val sp_ci_series(const BF& x, bool hyp, std::size_t want);
+zt_val sp_ci_series(const BF& x, bool hyp, std::size_t want);
 
- bool sp_sici_asym_ok(const BF& x, double target);
+bool sp_sici_asym_ok(const BF& x, double target);
 
- zt_val sp_sici_asym(bool ci, const BF& x, std::size_t want);
+zt_val sp_sici_asym(bool ci, const BF& x, std::size_t want);
 
- zt_val sp_sici_raw(int kind, const BF& x, std::size_t want);
+zt_val sp_sici_raw(int kind, const BF& x, std::size_t want);
 
- std::size_t sp_sici_guard(int kind, const BF& x, std::size_t prec);
+std::size_t sp_sici_guard(int kind, const BF& x, std::size_t prec);
 
- zt_val sp_ei_series(const BF& x, std::size_t want);
+zt_val sp_ei_series(const BF& x, std::size_t want);
 
- zt_val sp_en_series(const BF& x, std::uint64_t n, std::size_t want);
+zt_val sp_en_series(const BF& x, std::uint64_t n, std::size_t want);
 
- bool sp_en_asym_ok(double lx, std::uint64_t n, double target);
+bool sp_en_asym_ok(double lx, std::uint64_t n, double target);
 
- zt_val sp_en_asym(const BF& x, std::uint64_t n, std::size_t want);
+zt_val sp_en_asym(const BF& x, std::uint64_t n, std::size_t want);
 
- zt_val sp_en_raw(const BF& x, std::uint64_t n, std::size_t want);
+zt_val sp_en_raw(const BF& x, std::uint64_t n, std::size_t want);
 
- std::size_t sp_en_guard(const BF& x, std::uint64_t n, std::size_t prec);
+std::size_t sp_en_guard(const BF& x, std::uint64_t n, std::size_t prec);
 
- zt_val sp_ei_raw(const BF& x, std::size_t want);
+zt_val sp_ei_raw(const BF& x, std::size_t want);
 
 inline std::size_t sp_ei_guard(const BF& x, std::size_t prec) { return x.signbit() ? sp_en_guard(-x, 1, prec) : 32; }
 
- zt_val sp_li_raw(const BF& x, std::size_t want);
+zt_val sp_li_raw(const BF& x, std::size_t want);
 
- zt_val sp_lin_series(const BF& y, std::uint64_t n, std::size_t want);
+zt_val sp_lin_series(const BF& y, std::uint64_t n, std::size_t want);
 
- zt_val sp_lin_raw(const BF& x, std::uint64_t n, std::size_t want);
+zt_val sp_lin_raw(const BF& x, std::uint64_t n, std::size_t want);
 
 inline std::size_t sp_lin_guard(const BF& x, std::uint64_t n, std::size_t prec) {
     const BF u = ln(x, sp_ctx(64));
     return u.signbit() ? sp_en_guard(u.abs(), n, prec) : 32;
 }
 
- zt_val sp_fact_poly(const BF& z, std::uint64_t m, std::size_t want);
+zt_val sp_fact_poly(const BF& z, std::uint64_t m, std::size_t want);
 
- std::size_t sp_fact_poly_guard(const BF& z, std::uint64_t m);
+std::size_t sp_fact_poly_guard(const BF& z, std::uint64_t m);
 
- zt_val sp_linneg_raw(const BF& x, std::uint64_t m, std::size_t want);
+zt_val sp_linneg_raw(const BF& x, std::uint64_t m, std::size_t want);
 
 inline std::size_t sp_linneg_guard(const BF& x, std::uint64_t m) {
     return sp_fact_poly_guard(-ln(x, sp_ctx(64)), m);
 }
 
- zt_val sp_en_neg_raw(const BF& x, std::uint64_t m, std::size_t want);
+zt_val sp_en_neg_raw(const BF& x, std::uint64_t m, std::size_t want);
 
- void sp_sincospi(const BF& q, const BFC& wc, BF& s, BF& c);
+void sp_sincospi(const BF& q, const BFC& wc, BF& s, BF& c);
 
- zt_val sp_fresnel_series(bool sine, const BF& x, std::size_t want);
+zt_val sp_fresnel_series(bool sine, const BF& x, std::size_t want);
 
- bool sp_fresnel_asym_ok(const BF& x, double target);
+bool sp_fresnel_asym_ok(const BF& x, double target);
 
- zt_val sp_fresnel_asym(bool sine, const BF& x, std::size_t want);
+zt_val sp_fresnel_asym(bool sine, const BF& x, std::size_t want);
 
- zt_val sp_fresnel_raw(bool sine, const BF& x, std::size_t want);
+zt_val sp_fresnel_raw(bool sine, const BF& x, std::size_t want);
 
- std::size_t sp_fresnel_guard(const BF& x, std::size_t prec);
+std::size_t sp_fresnel_guard(const BF& x, std::size_t prec);
 
- bool sp_reduce_2pi(const BF& t, std::size_t want, BF& r, bool& reduced);
+bool sp_reduce_2pi(const BF& t, std::size_t want, BF& r, bool& reduced);
 
- zt_val sp_clausen_raw(const BF& theta, std::uint64_t s, std::size_t want);
+zt_val sp_clausen_raw(const BF& theta, std::uint64_t s, std::size_t want);
 
- const std::vector<BigUInt>& sp_cl_poly(std::size_t m);
+const std::vector<BigUInt>& sp_cl_poly(std::size_t m);
 
- zt_val sp_clausen_neg_raw(const BF& theta, std::uint64_t m, std::size_t want);
+zt_val sp_clausen_neg_raw(const BF& theta, std::uint64_t m, std::size_t want);
 
- zt_val sp_debye_small(const BF& x, std::uint64_t n, std::size_t want);
+zt_val sp_debye_small(const BF& x, std::uint64_t n, std::size_t want);
 
- zt_val sp_debye_tail_sum(const BF& x, std::uint64_t n, std::size_t want);
+zt_val sp_debye_tail_sum(const BF& x, std::uint64_t n, std::size_t want);
 
- zt_val sp_debye_raw(int kind, const BF& x, std::uint64_t n, std::size_t want);
+zt_val sp_debye_raw(int kind, const BF& x, std::uint64_t n, std::size_t want);
 
- BF sp_neg_constant(const BFC& ctx, BF (*fn)(const BFC&));
+BF sp_neg_constant(const BFC& ctx, BF (*fn)(const BFC&));
 
 inline bool sp_bad(const BF& x) { return x.is_nan() || x.is_undefined(); }
 
 } // namespace spdetail
 
- BigFloat fresnel_c(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
+BigFloat fresnel_c(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
 
- BigFloat fresnel_s(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
+BigFloat fresnel_s(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
 
- BigFloat sin_integral(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
+BigFloat sin_integral(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
 
- BigFloat cos_integral(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
+BigFloat cos_integral(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
 
- BigFloat sinh_integral(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
+BigFloat sinh_integral(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
 
- BigFloat cosh_integral(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
+BigFloat cosh_integral(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
 
- BigFloat exp_integral(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
+BigFloat exp_integral(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
 
- BigFloat exp_integral_generalized(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx = BigFloatContext::current());
+BigFloat exp_integral_generalized(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx = BigFloatContext::current());
 
- BigFloat log_integral(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
+BigFloat log_integral(const BigFloat& x, const BigFloatContext& ctx = BigFloatContext::current());
 
- BigFloat log_integral_generalized(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx = BigFloatContext::current());
+BigFloat log_integral_generalized(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx = BigFloatContext::current());
 
- BigFloat clausen(const BigFloat& theta, std::int64_t s, const BigFloatContext& ctx = BigFloatContext::current());
+BigFloat clausen(const BigFloat& theta, std::int64_t s, const BigFloatContext& ctx = BigFloatContext::current());
 
 inline BigFloat clausen_integral(const BigFloat& theta, const BigFloatContext& ctx = BigFloatContext::current()) {
     return clausen(theta, 2, ctx);
@@ -160,7 +160,7 @@ inline BigFloat clausen_integral(const BigFloat& theta, const BigFloatContext& c
 
 namespace spdetail {
 
- BigFloat sp_debye_public(int kind, const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
+BigFloat sp_debye_public(int kind, const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
 
 } // namespace spdetail
 

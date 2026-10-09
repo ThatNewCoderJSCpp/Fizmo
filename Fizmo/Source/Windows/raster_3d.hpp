@@ -14,7 +14,7 @@ namespace detail {
 
 using Mat4f = std::array<float, 16>;   
 
- Mat4f mat4_mul(const Mat4f& a, const Mat4f& b) noexcept;
+Mat4f mat4_mul(const Mat4f& a, const Mat4f& b) noexcept;
 
 inline Mat4f mat4_identity() noexcept { return { 1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1 }; }
 

@@ -26,29 +26,29 @@ using ztdetail::zt_val;
 
 static const std::uint64_t lg_n_cap = 1ull << 28;
 
- double lg_span(const BigFloat& x);
+double lg_span(const BigFloat& x);
 
- bool lg_p_exact(std::uint64_t n, const BigFloat& x, const BigFloatContext& ctx, BigFloat& out);
+bool lg_p_exact(std::uint64_t n, const BigFloat& x, const BigFloatContext& ctx, BigFloat& out);
 
- pl_val lg_div_int(const pl_val& a, std::uint64_t d, const BigFloatContext& wc);
+pl_val lg_div_int(const pl_val& a, std::uint64_t d, const BigFloatContext& wc);
 
- pl_val lg_recur(std::uint64_t n, const BigFloat& x, pl_val f0, pl_val f1, const BigFloatContext& wc);
+pl_val lg_recur(std::uint64_t n, const BigFloat& x, pl_val f0, pl_val f1, const BigFloatContext& wc);
 
- bool lg_q_zero(std::uint64_t n, const BigFloatContext& ctx, BigFloat& out);
+bool lg_q_zero(std::uint64_t n, const BigFloatContext& ctx, BigFloat& out);
 
- double lg_xi(const BigFloat& ax);
+double lg_xi(const BigFloat& ax);
 
- zt_val lg_q_hyper(std::uint64_t n, const BigFloat& ax, std::size_t want);
+zt_val lg_q_hyper(std::uint64_t n, const BigFloat& ax, std::size_t want);
 
- bool lc_neg_int(std::uint64_t m, const BigFloat& x, const BigFloatContext& ctx, BigFloat& out);
+bool lc_neg_int(std::uint64_t m, const BigFloat& x, const BigFloatContext& ctx, BigFloat& out);
 
 } // namespace lgdetail
 
- BigFloat legendre_p(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
+BigFloat legendre_p(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
 
- BigFloat legendre_q(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
+BigFloat legendre_q(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
 
- BigFloat legendre_chi(const BigFloat& x, const BigFloat& s, const BigFloatContext& ctx);
+BigFloat legendre_chi(const BigFloat& x, const BigFloat& s, const BigFloatContext& ctx);
 
 #define FIZMO_MP_LEGENDRE_FORWARD(FN)                                                                         \
     inline BigFloat FN(const BigFloat& x, std::int64_t n) { return FN(x, n, BigFloatContext::current()); }    \

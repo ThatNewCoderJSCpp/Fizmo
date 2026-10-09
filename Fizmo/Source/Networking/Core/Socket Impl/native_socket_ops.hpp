@@ -26,7 +26,7 @@ inline native_handle_t create_raw_handle(AddressFamily family, int protocol) noe
     return ::socket(address_family_value(family), kSockRaw, protocol);
 }
 
- std::unique_ptr<SocketImplBase> adopt(
+std::unique_ptr<SocketImplBase> adopt(
     native_handle_t handle,
     SocketType type,
     AddressFamily family
@@ -37,16 +37,16 @@ inline native_handle_t handle_of(SocketImplBase* impl) noexcept {
     return impl->native_handle();
 }
 
- int peek(SocketImplBase* impl, void* buffer, std::size_t length) noexcept;
+int peek(SocketImplBase* impl, void* buffer, std::size_t length) noexcept;
 
- int peek_from(
+int peek_from(
     SocketImplBase* impl,
     void* buffer,
     std::size_t length,
     NetworkAddress& source
 ) noexcept;
 
- bool dissolve_association(SocketImplBase* impl) noexcept;
+bool dissolve_association(SocketImplBase* impl) noexcept;
 
 } // namespace sockops
 } // namespace detail

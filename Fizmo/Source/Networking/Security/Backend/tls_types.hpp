@@ -7,7 +7,6 @@
 #include <cstdint>
 
 #ifdef OS_LINUX
-#include "../../../x11_compat.hpp"
 #endif
 
 namespace fizmo {
@@ -95,7 +94,7 @@ enum class VerifyError : std::uint8_t {
     RevocationUnknown   
 };
 
- const char* verify_error_to_string(VerifyError e) noexcept;
+const char* verify_error_to_string(VerifyError e) noexcept;
 
 struct VerifyResult {
     bool        passed = false;
@@ -114,9 +113,9 @@ struct VerifyResult {
     std::string to_string() const;
 };
 
- const char* tls_version_to_string(TLSVersion v) noexcept;
+const char* tls_version_to_string(TLSVersion v) noexcept;
 
- const char* verify_mode_to_string(VerifyMode m) noexcept;
+const char* verify_mode_to_string(VerifyMode m) noexcept;
 
 } // namespace security
 } // namespace networking

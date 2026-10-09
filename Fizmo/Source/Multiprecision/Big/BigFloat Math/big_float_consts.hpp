@@ -14,11 +14,11 @@ inline BigUInt unit(std::size_t N) {
     return r;
 }
 
- BigUInt isqrt(const BigUInt& v);
+BigUInt isqrt(const BigUInt& v);
 
- BigUInt atan_inv_fixed(std::uint64_t q, std::size_t N);
+BigUInt atan_inv_fixed(std::uint64_t q, std::size_t N);
 
- BigUInt atanh_inv_fixed(std::uint64_t q, std::size_t N);
+BigUInt atanh_inv_fixed(std::uint64_t q, std::size_t N);
 
 inline BigUInt fx_recip(const BigUInt& v, std::size_t N) { 
     BigUInt num = unit(2 * N);
@@ -31,7 +31,7 @@ inline BigUInt fx_mul(const BigUInt& a, const BigUInt& b, std::size_t N) {
     return p;
 }
 
- BigUInt pi_fixed(std::size_t N);
+BigUInt pi_fixed(std::size_t N);
 
 inline BigUInt inv_pi_fixed(std::size_t N)      { return fx_recip(pi_fixed(N), N); }
 inline BigUInt third_pi_fixed(std::size_t N)    { BigUInt v = pi_fixed(N); v.div_small_mutable(3);   return v; }
@@ -39,14 +39,14 @@ inline BigUInt sixth_pi_fixed(std::size_t N)    { BigUInt v = pi_fixed(N); v.div
 inline BigUInt pi_180_fixed(std::size_t N)      { BigUInt v = pi_fixed(N); v.div_small_mutable(180); return v; }
 inline BigUInt inv_pi_180_fixed(std::size_t N)  { BigUInt v = inv_pi_fixed(N); v.mul_small_mutable(180); return v; }
 
- BigUInt ln2_fixed(std::size_t N);
+BigUInt ln2_fixed(std::size_t N);
 
- BigUInt ln10_fixed(std::size_t N);
+BigUInt ln10_fixed(std::size_t N);
 
 inline BigUInt inv_ln2_fixed(std::size_t N)  { return fx_recip(ln2_fixed(N), N); }
 inline BigUInt inv_ln10_fixed(std::size_t N) { return fx_recip(ln10_fixed(N), N); }
 
- BigUInt e_fixed(std::size_t N);
+BigUInt e_fixed(std::size_t N);
 
 inline BigUInt inv_e_fixed(std::size_t N) { return fx_recip(e_fixed(N), N); }
 
@@ -99,9 +99,9 @@ inline BigUInt zeta2_fixed(std::size_t N) {
     return v;
 }
 
- BigUInt apery_fixed(std::size_t N);
+BigUInt apery_fixed(std::size_t N);
 
- bool round_is_safe(const BigUInt& mag, std::size_t prec, std::size_t err_bits);
+bool round_is_safe(const BigUInt& mag, std::size_t prec, std::size_t err_bits);
 
 typedef BigUInt (*fixed_fn)(std::size_t);
 
@@ -111,7 +111,7 @@ struct fixed_cache {
     fixed_cache() : value(BigUInt::zero()), bits(0) {}
 };
 
- BigFloat materialize(fixed_fn gen, fixed_cache& cache, bool neg, const BigFloatContext& ctx);
+BigFloat materialize(fixed_fn gen, fixed_cache& cache, bool neg, const BigFloatContext& ctx);
 
 } // namespace bfdetail
 

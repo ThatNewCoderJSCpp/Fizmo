@@ -26,9 +26,9 @@ inline std::string& root() {
 
 inline std::string full(const std::string& p) { return root() + p; }
 
- bool read_text(const std::string& p, std::string& out, std::size_t limit = 8u << 20);
+bool read_text(const std::string& p, std::string& out, std::size_t limit = 8u << 20);
 
- std::string read_line(const std::string& p);
+std::string read_line(const std::string& p);
 
 inline std::optional<std::uint64_t> read_u64(const std::string& p) { return parse_u64(read_line(p)); }
 inline std::optional<std::int64_t> read_i64(const std::string& p) { return parse_i64(read_line(p)); }
@@ -39,23 +39,23 @@ inline bool exists(const std::string& p) {
     return ::stat(full(p).c_str(), &st) == 0;
 }
 
- std::vector<std::string> list(const std::string& p);
+std::vector<std::string> list(const std::string& p);
 
 inline std::string base_name(const std::string& p) {
     const std::size_t s = p.find_last_of('/');
     return s == std::string::npos ? p : p.substr(s + 1);
 }
 
- std::string resolve(const std::string& p);
+std::string resolve(const std::string& p);
 
- std::string read_link(const std::string& p);
+std::string read_link(const std::string& p);
 
 inline std::string link_name(const std::string& p) {
     const std::string r = resolve(p);
     return r.empty() ? std::string() : base_name(r);
 }
 
- std::map<std::string, std::uint64_t> key_values(const std::string& p);
+std::map<std::string, std::uint64_t> key_values(const std::string& p);
 
 inline std::optional<std::uint64_t> value_of(const std::map<std::string, std::uint64_t>& m, const char* key) {
     const auto it = m.find(key);
@@ -68,18 +68,18 @@ struct HwmonTemp {
     double      celsius = 0.0;
 };
 
- std::vector<HwmonTemp> hwmon_temps(const std::string& dir);
+std::vector<HwmonTemp> hwmon_temps(const std::string& dir);
 
- std::vector<std::string> hwmon_dirs_under(const std::string& device_dir);
+std::vector<std::string> hwmon_dirs_under(const std::string& device_dir);
 
- std::vector<std::pair<std::string, std::string>> hwmon_by_name();
+std::vector<std::pair<std::string, std::string>> hwmon_by_name();
 
 struct PciName {
     std::string vendor;
     std::string device;
 };
 
- PciName pci_name(std::uint32_t vendor, std::uint32_t device);
+PciName pci_name(std::uint32_t vendor, std::uint32_t device);
 
 class SharedLibrary {
 private:

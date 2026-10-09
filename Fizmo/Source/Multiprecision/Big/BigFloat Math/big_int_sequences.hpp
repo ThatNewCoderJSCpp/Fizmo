@@ -18,7 +18,7 @@ inline int seq_msb(std::uint64_t v) {
     return i;
 }
 
- std::uint64_t seq_cap(std::uint64_t milli_bits_per_index);
+std::uint64_t seq_cap(std::uint64_t milli_bits_per_index);
 
 inline std::uint64_t fib_n_cap()  { static const std::uint64_t c = seq_cap(695);  return c; }
 inline std::uint64_t pell_n_cap() { static const std::uint64_t c = seq_cap(1272); return c; }
@@ -28,7 +28,7 @@ static const std::uint64_t seq_table_cap = 4096;
 inline std::vector<BigUInt>& fib_cache()  { static thread_local std::vector<BigUInt> c; return c; }
 inline std::vector<BigUInt>& pell_cache() { static thread_local std::vector<BigUInt> c; return c; }
 
- bool seq_extend(std::vector<BigUInt>& c, std::uint64_t m, std::uint64_t mul);
+bool seq_extend(std::vector<BigUInt>& c, std::uint64_t m, std::uint64_t mul);
 
 struct pair_memo {
     std::uint64_t n[4];
@@ -51,17 +51,17 @@ struct pair_memo {
 inline pair_memo& fib_memo()  { static thread_local pair_memo m; return m; }
 inline pair_memo& pell_memo() { static thread_local pair_memo m; return m; }
 
- void fib_double(std::uint64_t n, BigUInt& F, BigUInt& L);
+void fib_double(std::uint64_t n, BigUInt& F, BigUInt& L);
 
- void pell_double(std::uint64_t n, BigUInt& P, BigUInt& H);
+void pell_double(std::uint64_t n, BigUInt& P, BigUInt& H);
 
 } // namespace seqdetail
 
- bool fibonacci_pair(std::uint64_t n, BigUInt& F, BigUInt& L);
+bool fibonacci_pair(std::uint64_t n, BigUInt& F, BigUInt& L);
 
- bool pell_pair(std::uint64_t n, BigUInt& P, BigUInt& H);
+bool pell_pair(std::uint64_t n, BigUInt& P, BigUInt& H);
 
- BigUInt fibonacci(std::uint64_t n);
+BigUInt fibonacci(std::uint64_t n);
 
 inline BigUInt lucas(std::uint64_t n) {
     BigUInt F, L;
@@ -69,7 +69,7 @@ inline BigUInt lucas(std::uint64_t n) {
     return L;
 }
 
- BigUInt pell(std::uint64_t n);
+BigUInt pell(std::uint64_t n);
 
 inline BigUInt pell_companion(std::uint64_t n) {
     BigUInt P, H;
@@ -79,7 +79,7 @@ inline BigUInt pell_companion(std::uint64_t n) {
 
 namespace seqdetail {
 
- BigInt seq_signed(BigUInt m, bool neg);
+BigInt seq_signed(BigUInt m, bool neg);
 
 inline std::uint64_t seq_abs(std::int64_t n) {
     return (n < 0) ? (static_cast<std::uint64_t>(-(n + 1)) + 1ull) : static_cast<std::uint64_t>(n);
@@ -87,13 +87,13 @@ inline std::uint64_t seq_abs(std::int64_t n) {
 
 } // namespace seqdetail
 
- BigInt fibonacci(std::int64_t n);
+BigInt fibonacci(std::int64_t n);
 
- BigInt lucas(std::int64_t n);
+BigInt lucas(std::int64_t n);
 
- BigInt pell(std::int64_t n);
+BigInt pell(std::int64_t n);
 
- BigInt pell_companion(std::int64_t n);
+BigInt pell_companion(std::int64_t n);
 
 } // namespace sequences
 } // namespace multiprecision

@@ -41,15 +41,15 @@ inline double pl_mag(const BigFloat& v) {
     return v.is_zero() ? pl_ninf() : static_cast<double>(pl_top(v) + 1);
 }
 
- double pl_lsum(double a, double b);
+double pl_lsum(double a, double b);
 
- bool pl_mul_exact(const BigFloat& a, const BigFloat& b, std::size_t w);
+bool pl_mul_exact(const BigFloat& a, const BigFloat& b, std::size_t w);
 
- bool pl_add_exact(const BigFloat& a, const BigFloat& b, std::size_t w);
+bool pl_add_exact(const BigFloat& a, const BigFloat& b, std::size_t w);
 
- pl_val pl_mul(const pl_val& a, const pl_val& b, const BigFloatContext& wc);
+pl_val pl_mul(const pl_val& a, const pl_val& b, const BigFloatContext& wc);
 
- pl_val pl_addsub(const pl_val& a, const pl_val& b, bool sub, const BigFloatContext& wc);
+pl_val pl_addsub(const pl_val& a, const pl_val& b, bool sub, const BigFloatContext& wc);
 
 inline pl_val pl_add(const pl_val& a, const pl_val& b, const BigFloatContext& wc) { return pl_addsub(a, b, false, wc); }
 inline pl_val pl_sub(const pl_val& a, const pl_val& b, const BigFloatContext& wc) { return pl_addsub(a, b, true,  wc); }
@@ -62,15 +62,15 @@ inline pl_val pl_scale2(const pl_val& a, std::int64_t k) {
     return pl_val{a.v.scaled_pow2(k), a.le + static_cast<double>(k)};
 }
 
- void pl_lucas_u(std::uint64_t n, const pl_val& P, bool q_neg, const BigFloatContext& wc, pl_val& A, pl_val& B);
+void pl_lucas_u(std::uint64_t n, const pl_val& P, bool q_neg, const BigFloatContext& wc, pl_val& A, pl_val& B);
 
- pl_val pl_lucas_v(std::uint64_t n, const pl_val& P, bool q_neg, const BigFloatContext& wc);
+pl_val pl_lucas_v(std::uint64_t n, const pl_val& P, bool q_neg, const BigFloatContext& wc);
 
 inline bool pl_guard_exhausted(std::size_t prec, std::size_t guard) {
     return guard >= 8192 || prec + guard >= BigFloatContext::max_prec / 4;
 }
 
- bool pl_safe(const BigFloat& v, std::size_t want, double le, std::size_t prec);
+bool pl_safe(const BigFloat& v, std::size_t want, double le, std::size_t prec);
 
 template <typename Eval>
 inline BigFloat pl_drive(std::uint64_t n, bool flip, const BigFloatContext& ctx, Eval eval) {
@@ -89,27 +89,27 @@ inline BigFloat pl_drive(std::uint64_t n, bool flip, const BigFloatContext& ctx,
     }
 }
 
- bool pl_special(const BigFloat& x, std::uint64_t deg, std::uint64_t c0, bool flip, const BigFloatContext& ctx, BigFloat& out);
+bool pl_special(const BigFloat& x, std::uint64_t deg, std::uint64_t c0, bool flip, const BigFloatContext& ctx, BigFloat& out);
 
 inline BigInt pc_int(std::int64_t v) { return BigInt(v); }
 
- std::vector<BigInt> pc_step(const std::vector<BigInt>& cur, const std::vector<BigInt>& prev, bool two_x, bool q_neg);
+std::vector<BigInt> pc_step(const std::vector<BigInt>& cur, const std::vector<BigInt>& prev, bool two_x, bool q_neg);
 
- std::vector<BigInt> pc_run(std::size_t n, std::vector<BigInt> y0, std::vector<BigInt> y1, bool two_x, bool q_neg);
+std::vector<BigInt> pc_run(std::size_t n, std::vector<BigInt> y0, std::vector<BigInt> y1, bool two_x, bool q_neg);
 
 } // namespace pldetail
 
- BigFloat chebyshev_t(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
+BigFloat chebyshev_t(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
 
- BigFloat chebyshev_u(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
+BigFloat chebyshev_u(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
 
- BigFloat chebyshev_v(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
+BigFloat chebyshev_v(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
 
- BigFloat chebyshev_w(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
+BigFloat chebyshev_w(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
 
- BigFloat fibonacci_polynomial(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
+BigFloat fibonacci_polynomial(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
 
- BigFloat lucas_polynomial(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
+BigFloat lucas_polynomial(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx);
 
 #define FIZMO_MP_POLY_FORWARD(FN)                                                                          \
     inline BigFloat FN(const BigFloat& x, std::int64_t n) { return FN(x, n, BigFloatContext::current()); } \
@@ -138,20 +138,20 @@ FIZMO_MP_POLY_FORWARD(lucas_polynomial)
 
 #undef FIZMO_MP_POLY_FORWARD
 
- std::vector<BigInt> chebyshev_t_coefficients(std::size_t n);
+std::vector<BigInt> chebyshev_t_coefficients(std::size_t n);
 
- std::vector<BigInt> chebyshev_u_coefficients(std::size_t n);
+std::vector<BigInt> chebyshev_u_coefficients(std::size_t n);
 
- std::vector<BigInt> chebyshev_v_coefficients(std::size_t n);
+std::vector<BigInt> chebyshev_v_coefficients(std::size_t n);
 
- std::vector<BigInt> chebyshev_w_coefficients(std::size_t n);
+std::vector<BigInt> chebyshev_w_coefficients(std::size_t n);
 
 inline std::vector<BigInt> fibonacci_polynomial_coefficients(std::size_t n) {
     using pldetail::pc_int;
     return pldetail::pc_run(n, {pc_int(0)}, {pc_int(1)}, false, true);
 }
 
- std::vector<BigInt> lucas_polynomial_coefficients(std::size_t n);
+std::vector<BigInt> lucas_polynomial_coefficients(std::size_t n);
 
 } // namespace math
 } // namespace multiprecision

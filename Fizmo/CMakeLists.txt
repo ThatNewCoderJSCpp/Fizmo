@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.2.1
+    VERSION 0.2.2
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -29,6 +29,8 @@ target_sources(fizmo PRIVATE ${FIZMO_SOURCES})
 target_include_directories(fizmo PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Includes>
     $<INSTALL_INTERFACE:include/fizmo/Includes>)
+
+target_include_directories(fizmo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
 
 target_compile_features(fizmo PUBLIC cxx_std_17)
 
@@ -59,7 +61,7 @@ elseif(MINGW)
 endif()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoDependencies.cmake)
-target_link_libraries(fizmo PUBLIC ${FIZMO_DEPENDENCY_TARGETS})
+target_link_libraries(fizmo PRIVATE ${FIZMO_DEPENDENCY_TARGETS})
 
 option(FIZMO_BUILD_TOOLS "Build the fizmo command line tools" OFF)
 if(FIZMO_BUILD_TOOLS)

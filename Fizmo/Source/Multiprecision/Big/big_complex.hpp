@@ -163,29 +163,29 @@ inline std::int64_t dy_top (const dyadic& d) noexcept { return d.exp + dy_len(d)
 
 inline dyadic dy_bad_value() { return dyadic(BigUInt::undefined(), 0, false); }
 
- dyadic dy_of(const BF& x);
+dyadic dy_of(const BF& x);
 
 inline dyadic dy_neg(dyadic d) { d.neg = !d.neg; return d; }
 
- dyadic dy_mul(const BF& x, const BF& y);
+dyadic dy_mul(const BF& x, const BF& y);
 
- dyadic dy_square(const BF& x);
+dyadic dy_square(const BF& x);
 
 inline dyadic dy_twice(dyadic d) { if (!dy_zero(d)) ++d.exp; return d; }
 
 inline BF dy_unit(const dyadic& d) { return BF(d.mag, d.neg, -dy_len(d)); }
 
- BF dy_round(const dyadic& d, const BFC& ctx);
+BF dy_round(const dyadic& d, const BFC& ctx);
 
- BF dy_exact(const dyadic& d);
+BF dy_exact(const dyadic& d);
 
- dyadic dy_add_exact(const dyadic& a, const dyadic& b);
+dyadic dy_add_exact(const dyadic& a, const dyadic& b);
 
- dyadic dy_sum(const dyadic& a, const dyadic& b, std::size_t K, RoundingMode mode, bool& exact);
+dyadic dy_sum(const dyadic& a, const dyadic& b, std::size_t K, RoundingMode mode, bool& exact);
 
- dyadic dy_truncate(const dyadic& d, std::size_t K, bool& exact);
+dyadic dy_truncate(const dyadic& d, std::size_t K, bool& exact);
 
- BF dy_divide(const dyadic& n, const dyadic& d, const BFC& ctx);
+BF dy_divide(const dyadic& n, const dyadic& d, const BFC& ctx);
 
 template <typename Num, typename Den>
 inline BF dy_quotient(const Num& num, const Den& den, const BFC& ctx) {
@@ -223,9 +223,9 @@ inline BF dy_quotient(const Num& num, const Den& den, const BFC& ctx) {
     }
 }
 
- int dy_cmp_abs(const dyadic& x, const dyadic& y);
+int dy_cmp_abs(const dyadic& x, const dyadic& y);
 
- bool dy_order(const dyadic& a, bool a_exact, const dyadic& b, bool b_exact, int& out);
+bool dy_order(const dyadic& a, bool a_exact, const dyadic& b, bool b_exact, int& out);
 
 inline std::size_t bits_u64(std::uint64_t v) noexcept {
     std::size_t n = 0;
@@ -239,7 +239,7 @@ inline std::uint64_t abs_u64(std::int64_t v) noexcept {
 
 inline int dy_sign(const dyadic& d) noexcept { return dy_zero(d) ? 0 : (d.neg ? -1 : 1); }
 
- int dy_sign_of_difference(const dyadic& p, const dyadic& q);
+int dy_sign_of_difference(const dyadic& p, const dyadic& q);
 
 inline int argument_class(const BF& x, const BF& y) noexcept {
     if (y.is_zero()) return x.signbit() ? (y.signbit() ? 0 : 4) : 2;
@@ -253,12 +253,12 @@ inline void swap_by_move(T& a, T& b) {
     b = std::move(t);
 }
 
- bool symmetric(RoundingMode r) noexcept;
+bool symmetric(RoundingMode r) noexcept;
 
 inline BF to_infinity(const BF& s) { return s.is_zero() ? s : BF::infinity(s.signbit()); }
 inline BF to_zero(const BF& s)     { return BF::zero(s.signbit()); }
 
- BigFloat::ordering to_ordering(int c) noexcept;
+BigFloat::ordering to_ordering(int c) noexcept;
 
 } // namespace bcdetail
 

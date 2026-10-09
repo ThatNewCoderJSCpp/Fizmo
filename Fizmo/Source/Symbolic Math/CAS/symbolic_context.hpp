@@ -26,14 +26,7 @@ namespace cas {
 class SymbolicContext {
 public:
     explicit SymbolicContext(std::size_t arena_block_size = 64 * 1024)
-        : arena_(arena_block_size),
-          mgr_(arena_, vars_),
-          simp_(mgr_),
-          diff_(mgr_, vars_, simp_),
-          subst_(mgr_, vars_, simp_),
-          rewriter_(mgr_, simp_),
-          integ_(mgr_, vars_, simp_, diff_)
-    {}
+;
 
     symbols::MathExpressionManager& manager() noexcept { return mgr_; }
     const symbols::MathExpressionManager& manager() const noexcept { return mgr_; }
@@ -66,57 +59,22 @@ public:
     Expression nth_derivative_recursive(const Expression& e, const std::string& var, unsigned int order) { return Expression(diff_.nth_derivative_recursive(e.inner(), var, order), mgr_); }
     void reset_arena() { arena_.reset(); }
 
-    Expression substitute(const Expression& e, const std::unordered_map<std::string, Expression>& named) {
-        std::unordered_map<std::string, symbols::MathExpression> inner;
-        inner.reserve(named.size());
-        for (auto& [k, v] : named) inner.emplace(k, v.inner());
-        return Expression(subst_.substitute(e.inner(), inner), mgr_);
-    }
+    Expression substitute(const Expression& e, const std::unordered_map<std::string, Expression>& named);
 
     Expression substitute(const Expression& e, const std::unordered_map<std::string, double>& named) { return Expression(subst_.substitute(e.inner(), named), mgr_); }
 
-    Expression substitute(const Expression& e, std::initializer_list<std::pair<std::string, Expression>> pairs) {
-        std::initializer_list<std::pair<std::string, symbols::MathExpression>> converted; 
-        std::vector<std::pair<std::string, symbols::MathExpression>> v;
-        v.reserve(pairs.size());
-        for (auto& [k, expr] : pairs) v.emplace_back(k, expr.inner());
-        symbols::SubstitutionMap smap;
-        for (auto& [name, me] : v) {
-            auto id = variables().get(name);
-            if (id != symbols::VariableTable::invalid_id) smap.by_var[id] = me.get();
-        }
-        return Expression(subst_.substitute(e.inner(), smap), mgr_);
-    }
+    Expression substitute(const Expression& e, std::initializer_list<std::pair<std::string, Expression>> pairs);
 
     Expression substitute(const Expression& e, std::initializer_list<std::pair<std::string, double>> pairs) { return Expression(subst_.substitute(e.inner(), pairs), mgr_); }
 
-    Expression substitute(const Expression& e, std::initializer_list<Expression> positional) {
-        std::vector<symbols::MathExpression> v;
-        v.reserve(positional.size());
-        for (auto& p : positional) v.push_back(p.inner());
-        symbols::SubstitutionMap smap;
-        std::uint64_t id = 0;
-        for (auto& me : v) {
-            if (id >= variables().size()) break;
-            smap.by_var[id] = me.get();
-            ++id;
-        }
-        return Expression(subst_.substitute(e.inner(), smap), mgr_);
-    }
+    Expression substitute(const Expression& e, std::initializer_list<Expression> positional);
 
     Expression substitute(const Expression& e, std::initializer_list<double> positional) { return Expression(subst_.substitute(e.inner(), positional), mgr_); }
     Expression substitute(const Expression& e, const std::string& var_name, const Expression& repl) { return Expression(subst_.substitute(e.inner(), var_name, repl.inner()), mgr_); }
     Expression substitute(const Expression& e, const std::string& var_name, double val) { return Expression(subst_.substitute(e.inner(), var_name, val), mgr_); }
     Expression substitute(const Expression& e, const Expression& from, const Expression& to) { return Expression(subst_.substitute(e.inner(), from.inner(), to.inner()), mgr_); }
     
-    Expression substitute(const Expression& e, std::initializer_list<std::pair<Expression, Expression>> pairs) {
-        std::vector<std::pair<symbols::MathExpression, symbols::MathExpression>> v;
-        v.reserve(pairs.size());
-        for (auto& [f, t] : pairs) v.emplace_back(f.inner(), t.inner());
-        symbols::SubstitutionMap smap;
-        for (auto& [f, t] : v) smap.by_node[f.get()] = t.get();
-        return Expression(subst_.substitute(e.inner(), smap), mgr_);
-    }
+    Expression substitute(const Expression& e, std::initializer_list<std::pair<Expression, Expression>> pairs);
 
     Expression partial_evaluate(const Expression& e, const std::string& var, const Expression& repl) {
         return Expression(subst_.substitute(e.inner(), var, repl.inner()), mgr_);
@@ -126,25 +84,13 @@ public:
         return Expression(subst_.substitute(e.inner(), var, val), mgr_);
     }
 
-    Expression partial_evaluate(const Expression& e, const std::unordered_map<std::string, Expression>& named) {
-        std::unordered_map<std::string, symbols::MathExpression> inner;
-        inner.reserve(named.size());
-        for (auto& [k, v] : named) inner.emplace(k, v.inner());
-        return Expression(subst_.substitute(e.inner(), inner), mgr_);
-    }
+    Expression partial_evaluate(const Expression& e, const std::unordered_map<std::string, Expression>& named);
 
     Expression partial_evaluate(const Expression& e, const std::unordered_map<std::string, double>& named) {
         return Expression(subst_.substitute(e.inner(), named), mgr_);
     }
 
-    Expression partial_evaluate(const Expression& e, std::initializer_list<std::pair<std::string, Expression>> pairs) {
-        symbols::SubstitutionMap smap;
-        for (auto& [name, expr] : pairs) {
-            auto id = vars_.get(name);
-            if (id != symbols::VariableTable::invalid_id) smap.by_var[id] = expr.inner().get();
-        }
-        return Expression(subst_.substitute(e.inner(), smap), mgr_);
-    }
+    Expression partial_evaluate(const Expression& e, std::initializer_list<std::pair<std::string, Expression>> pairs);
 
     Expression partial_evaluate(const Expression& e, std::initializer_list<std::pair<std::string, double>> pairs) {
         return Expression(subst_.substitute(e.inner(), pairs), mgr_);
@@ -154,28 +100,13 @@ public:
         return Expression(subst_.substitute(e.inner(), from.inner(), to.inner()), mgr_);
     }
 
-    Expression partial_evaluate(const Expression& e, std::initializer_list<std::pair<Expression, Expression>> pairs) {
-        symbols::SubstitutionMap smap;
-        for (auto& [f, t] : pairs) smap.by_node[f.inner().get()] = t.inner().get();
-        return Expression(subst_.substitute(e.inner(), smap), mgr_);
-    }
+    Expression partial_evaluate(const Expression& e, std::initializer_list<std::pair<Expression, Expression>> pairs);
 
-    Expression rewrite(const Expression& e, const symbols::MathExpressionRewriter::Config& cfg = {}) {
-        symbols::MathExpressionRewriter rw(mgr_, simp_, cfg);
-        return Expression(rw.rewrite(e.inner()), mgr_);
-    }
+    Expression rewrite(const Expression& e, const symbols::MathExpressionRewriter::Config& cfg = {});
 
-    Expression full_simplify(const Expression& e, const symbols::MathExpressionRewriter::Config& cfg = {}) {
-        symbols::MathExpression s = simp_.simplify(e.inner());
-        symbols::MathExpressionRewriter rw(mgr_, simp_, cfg);
-        return Expression(rw.rewrite(s), mgr_);
-    }
+    Expression full_simplify(const Expression& e, const symbols::MathExpressionRewriter::Config& cfg = {});
 
-    Expression integrate(const Expression& e, const std::string& var) {
-        symbols::MathExpression result = integ_.integrate(e.inner(), var);
-        if (!result) return Expression{}; // integration failed
-        return Expression(result, mgr_);
-    }
+    Expression integrate(const Expression& e, const std::string& var);
 
 private:
     symbols::VariableTable vars_;

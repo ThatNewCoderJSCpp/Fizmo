@@ -1,5 +1,4 @@
-#define ALL_FIZMO
-#include <fizmo/includes.hpp>
+#include "fizmo_library.hpp"
 #include "game_loop.hpp"
 
 namespace fizmo {
@@ -47,71 +46,71 @@ ViewRect resolve_layout(const ViewLayout& layout, unsigned int win_w, unsigned i
 namespace fizmo {
 namespace windows {
 
-auto GameLoop::render_frame(Renderer& r) -> void {
-        if (!uses_logical_size()) {
-            if (m_auto_clear) r.clear(m_clear);
-            if (m_on_render) m_on_render(r);
-            return;
-        }
-
-        r.clear(m_letterbox);
-        r.push_transform();
-        r.reset_transform();
-        r.set_clip_rect(m_rect.x, m_rect.y, m_rect.w, m_rect.h);
-        r.translate(m_rect.x, m_rect.y);
-        r.scale(static_cast<double>(m_rect.w) / view_width(), static_cast<double>(m_rect.h) / view_height());
-        if (m_auto_clear) r.draw_rect(0, 0, view_width(), view_height(), graphics::Paint::fill(m_clear));
+void GameLoop::render_frame(Renderer& r) {
+    if (!uses_logical_size()) {
+        if (m_auto_clear) r.clear(m_clear);
         if (m_on_render) m_on_render(r);
-        r.pop_transform();
-        r.reset_clip_rect();
+        return;
     }
 
-auto GameLoop::set_logical_size(unsigned int w, unsigned int h, bool integer_scale) noexcept -> void {
-        ViewLayout l = m_layout;
-        l.mode = ViewLayout::Mode::fit;
-        l.fixed_w = w; l.fixed_h = h;
-        l.integer_scale = integer_scale;
-        set_view_layout(l);
-    }
+    r.clear(m_letterbox);
+    r.push_transform();
+    r.reset_transform();
+    r.set_clip_rect(m_rect.x, m_rect.y, m_rect.w, m_rect.h);
+    r.translate(m_rect.x, m_rect.y);
+    r.scale(static_cast<double>(m_rect.w) / view_width(), static_cast<double>(m_rect.h) / view_height());
+    if (m_auto_clear) r.draw_rect(0, 0, view_width(), view_height(), graphics::Paint::fill(m_clear));
+    if (m_on_render) m_on_render(r);
+    r.pop_transform();
+    r.reset_clip_rect();
+}
+
+void GameLoop::set_logical_size(unsigned int w, unsigned int h, bool integer_scale) noexcept {
+    ViewLayout l = m_layout;
+    l.mode = ViewLayout::Mode::fit;
+    l.fixed_w = w; l.fixed_h = h;
+    l.integer_scale = integer_scale;
+    set_view_layout(l);
+}
 
 auto GameLoop::window_to_view(double wx, double wy) const noexcept -> vector2d {
-        if (m_rect.w == 0 || m_rect.h == 0) return { wx, wy };
-        return {
-            (wx - m_rect.x) * static_cast<double>(view_width())  / m_rect.w,
-            (wy - m_rect.y) * static_cast<double>(view_height()) / m_rect.h
-        };
-    }
+    if (m_rect.w == 0 || m_rect.h == 0) return { wx, wy };
+    return {
+        (wx - m_rect.x) * static_cast<double>(view_width())  / m_rect.w,
+        (wy - m_rect.y) * static_cast<double>(view_height()) / m_rect.h
+    };
+}
 
 auto GameLoop::view_to_window(double vx, double vy) const noexcept -> vector2d {
-        if (view_width() == 0 || view_height() == 0) return { vx, vy };
-        return {
-            m_rect.x + vx * static_cast<double>(m_rect.w) / view_width(),
-            m_rect.y + vy * static_cast<double>(m_rect.h) / view_height()
-        };
-    }
+    if (view_width() == 0 || view_height() == 0) return { vx, vy };
+    return {
+        m_rect.x + vx * static_cast<double>(m_rect.w) / view_width(),
+        m_rect.y + vy * static_cast<double>(m_rect.h) / view_height()
+    };
+}
 
-auto GameLoop::is_inside_view(int wx, int wy) const noexcept -> bool {
-        return wx >= m_rect.x && wx < m_rect.x + static_cast<int>(m_rect.w) && wy >= m_rect.y && wy < m_rect.y + static_cast<int>(m_rect.h);
-    }
+bool GameLoop::is_inside_view(int wx, int wy) const noexcept {
+    return wx >= m_rect.x && wx < m_rect.x + static_cast<int>(m_rect.w) && wy >= m_rect.y && wy < m_rect.y + static_cast<int>(m_rect.h);
+}
 
-auto GameLoop::run() noexcept -> int {
-        m_app.set_auto_clear(false);
+int GameLoop::run() noexcept {
+    m_app.set_auto_clear(false);
 
-        m_app.on_startup([this](Application&) {
-            rebuild_view();
-            if (m_on_startup) m_on_startup(*this);
-        });
+    m_app.on_startup([this](Application&) {
+        rebuild_view();
+        if (m_on_startup) m_on_startup(*this);
+    });
 
-        m_app.on_event([this](const WindowEvent& e) {
-            if (e.type == WindowEventType::WindowResize) rebuild_view();
-            if (m_on_event) m_on_event(e);
-        });
+    m_app.on_event([this](const WindowEvent& e) {
+        if (e.type == WindowEventType::WindowResize) rebuild_view();
+        if (m_on_event) m_on_event(e);
+    });
 
-        m_app.on_update([this](double dt) { if (m_on_update) m_on_update(dt); });
-        m_app.on_render([this](Renderer& r) { try { render_frame(r); } catch (...) {} });
-        m_app.on_shutdown([this]() { if (m_on_shutdown) m_on_shutdown(); });
-        return m_app.run();
-    }
+    m_app.on_update([this](double dt) { if (m_on_update) m_on_update(dt); });
+    m_app.on_render([this](Renderer& r) { try { render_frame(r); } catch (...) {} });
+    m_app.on_shutdown([this]() { if (m_on_shutdown) m_on_shutdown(); });
+    return m_app.run();
+}
 
 } // namespace windows
 } // namespace fizmo

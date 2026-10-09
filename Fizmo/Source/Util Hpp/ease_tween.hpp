@@ -28,7 +28,7 @@ namespace ease {
 namespace detail {
     inline double clamp01(double t) noexcept { return (t < 0.0) ? 0.0 : (t > 1.0) ? 1.0 : t; }
 
-     double bounce_out(double t) noexcept;
+    double bounce_out(double t) noexcept;
 } // namespace detail
 
 inline double linear(double t) noexcept { return t; }
@@ -70,11 +70,11 @@ inline double in_expo(double t) noexcept {
 inline double out_expo(double t) noexcept {
     return (t >= 1.0) ? 1.0 : 1.0 - std::pow(2.0, -10.0 * t);
 }
- double in_out_expo(double t) noexcept;
+double in_out_expo(double t) noexcept;
 
 inline double in_circ(double t) noexcept    { return 1.0 - std::sqrt(1.0 - t * t); }
 inline double out_circ(double t) noexcept   { double u = t - 1.0; return std::sqrt(1.0 - u * u); }
- double in_out_circ(double t) noexcept;
+double in_out_circ(double t) noexcept;
 
 inline double in_back(double t) noexcept {
     constexpr double s = 1.70158;
@@ -85,19 +85,19 @@ inline double out_back(double t) noexcept {
     double u = t - 1.0;
     return u * u * ((s + 1.0) * u + s) + 1.0;
 }
- double in_out_back(double t) noexcept;
+double in_out_back(double t) noexcept;
 
- double in_elastic(double t) noexcept;
- double out_elastic(double t) noexcept;
- double in_out_elastic(double t) noexcept;
+double in_elastic(double t) noexcept;
+double out_elastic(double t) noexcept;
+double in_out_elastic(double t) noexcept;
 
 inline double out_bounce(double t) noexcept { return detail::bounce_out(t); }
 inline double in_bounce(double t) noexcept  { return 1.0 - detail::bounce_out(1.0 - t); }
- double in_out_bounce(double t) noexcept;
+double in_out_bounce(double t) noexcept;
 
 } // namespace ease
 
- std::function<double(double)> easing_from(Easing e);
+std::function<double(double)> easing_from(Easing e);
 
 enum class TweenState : std::uint8_t {
     Idle = 0,

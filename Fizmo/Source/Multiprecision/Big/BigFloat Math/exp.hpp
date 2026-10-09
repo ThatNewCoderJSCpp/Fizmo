@@ -10,7 +10,7 @@ namespace math {
 
 namespace detail {
 
- bool ziv_round_safe(const BigFloat& v, std::size_t w, std::size_t err, std::size_t prec);
+bool ziv_round_safe(const BigFloat& v, std::size_t w, std::size_t err, std::size_t prec);
 
 inline std::size_t exp_splits(std::size_t p) noexcept {
     std::size_t s = 4, q = 1;
@@ -24,7 +24,7 @@ inline std::size_t exp_bits_u64(std::uint64_t v) noexcept {
     return n;
 }
 
- BigFloat exp_taylor_small(const BigFloat& r, const BigFloatContext& wc, std::size_t splits, std::size_t& nterms);
+BigFloat exp_taylor_small(const BigFloat& r, const BigFloatContext& wc, std::size_t splits, std::size_t& nterms);
 
 inline BigFloat exp_taylor_small(const BigFloat& x, const BigFloatContext& ctx) {
     std::size_t n = 0;
@@ -35,11 +35,11 @@ inline bool exp_guard_exhausted(std::size_t prec, std::size_t guard) noexcept {
     return guard >= 4096 || prec + guard >= BigFloatContext::max_prec / 2;
 }
 
- BigFloat exp_finite(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat exp_finite(const BigFloat& x, const BigFloatContext& ctx);
 
 } // namespace detail
 
- BigFloat exp(const BigFloat& x, const BigFloatContext& ctx);
+BigFloat exp(const BigFloat& x, const BigFloatContext& ctx);
 
 inline BigFloat exp(const BigFloat& x) {
     return exp(x, BigFloatContext::current());
@@ -54,7 +54,7 @@ inline BigFloat exp(const BigUInt& x) {
     return exp(x, BigFloatContext::current());
 }
 
- BigFloat exp(const BigInt& x, const BigFloatContext& ctx);
+BigFloat exp(const BigInt& x, const BigFloatContext& ctx);
 
 inline BigFloat exp(const BigInt& x) {
     return exp(x, BigFloatContext::current());
