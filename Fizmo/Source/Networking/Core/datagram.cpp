@@ -1,4 +1,5 @@
-#include "fizmo_library.hpp"
+#define ALL_FIZMO
+#include <fizmo/includes.hpp>
 #include "datagram.hpp"
 
 namespace fizmo {

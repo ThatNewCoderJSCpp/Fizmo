@@ -5,6 +5,7 @@
 #include "../../Basic/basic_includes.hpp"
 
 #ifdef OS_LINUX
+#include "../../x11_compat.hpp"
 #endif
 
 namespace fizmo {
