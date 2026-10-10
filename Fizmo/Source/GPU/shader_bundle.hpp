@@ -118,23 +118,19 @@ public:
 
 class ShaderCompiler {
 private:
-    std::string m_python;
     std::string m_tool;
     int         m_gl_version      = 410;
     int         m_compute_version = 430;
 
     static std::string default_tool();
 
-    static std::string default_python();
-
 public:
-    ShaderCompiler() : m_python(default_python()), m_tool(default_tool()) {}
+    ShaderCompiler() : m_tool(default_tool()) {}
 
-    void set_python(const std::string& python) { m_python = python; }
     void set_tool(const std::string& tool) { m_tool = tool; }
     void set_versions(int gl_version, int compute_version) noexcept { m_gl_version = gl_version; m_compute_version = compute_version; }
     const std::string& tool() const noexcept { return m_tool; }
-    bool available() const { return !m_python.empty() && !m_tool.empty(); }
+    bool available() const { return !m_tool.empty(); }
 
     bool compile(const std::filesystem::path& source, ShaderBundle& out, std::string* log = nullptr) const;
 

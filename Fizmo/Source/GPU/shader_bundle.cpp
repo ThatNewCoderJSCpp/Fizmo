@@ -1,6 +1,12 @@
 #include "fizmo_library.hpp"
 #include "shader_bundle.hpp"
 
+#if defined(__has_include)
+#if __has_include("fizmo_tool_paths.hpp")
+#include "fizmo_tool_paths.hpp"
+#endif
+#endif
+
 namespace fizmo {
 namespace gpu {
 
@@ -126,44 +132,41 @@ std::string ShaderCompiler::default_tool() {
     if (env && *env) return env;
     namespace fs = std::filesystem;
     std::error_code ec;
-    const fs::path here = fs::path(__FILE__).parent_path();
-    const fs::path candidates[] = {
-        here / ".." / ".." / "tools" / "gen_gl_shaders.py",
-        system::paths::executable_dir() / "tools" / "gen_gl_shaders.py",
-        system::paths::current_dir() / "tools" / "gen_gl_shaders.py",
-    };
-    for (const fs::path& c : candidates) if (fs::exists(c, ec)) return system::paths::to_utf8(fs::weakly_canonical(c, ec));
-    return {};
-}
-
-std::string ShaderCompiler::default_python() {
-    const char* env = std::getenv("FIZMO_PYTHON");
-    if (env && *env) return env;
 #if defined(OS_WINDOWS)
-    const char* names[] = { "python", "py", "python3" };
+    const std::string exe = "fizmo-shaders.exe";
 #else
-    const char* names[] = { "python3", "python" };
+    const std::string exe = "fizmo-shaders";
 #endif
-    for (const char* n : names) if (!system::find_program(n).empty()) return n;
-    return {};
+    const fs::path candidates[] = {
+        system::paths::executable_dir() / exe,
+        system::paths::executable_dir() / "tools" / exe,
+#if defined(FIZMO_SHADER_TOOL_BUILD_PATH)
+        system::paths::from_utf8(FIZMO_SHADER_TOOL_BUILD_PATH),
+#endif
+#if defined(FIZMO_SHADER_TOOL_INSTALL_PATH)
+        system::paths::from_utf8(FIZMO_SHADER_TOOL_INSTALL_PATH),
+#endif
+    };
+    for (const fs::path& c : candidates) if (fs::is_regular_file(c, ec)) return system::paths::to_utf8(c);
+    return system::find_program("fizmo-shaders");
 }
 
 bool ShaderCompiler::compile(const std::filesystem::path& source, ShaderBundle& out, std::string* log) const {
     namespace fs = std::filesystem;
-    if (!available()) { if (log) *log = "shader tool or python not found (set FIZMO_SHADER_TOOL / FIZMO_PYTHON)"; return false; }
+    if (!available()) { if (log) *log = "fizmo-shaders was not found (build fizmo with FIZMO_BUILD_SHADER_TOOL or set FIZMO_SHADER_TOOL)"; return false; }
     std::error_code ec;
     static std::atomic<std::uint64_t> counter{ 0 };
     const fs::path dir = system::paths::temp_dir() / ("fizmo_shaders_" + std::to_string(counter.fetch_add(1)) + "_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)));
     fs::create_directories(dir, ec);
     const std::vector<std::string> args = {
-        m_tool, system::paths::to_utf8(source), "--bundle", system::paths::to_utf8(dir),
+        system::paths::to_utf8(source), "--bundle", system::paths::to_utf8(dir),
         "--gl-version", std::to_string(m_gl_version), "--compute-version", std::to_string(m_compute_version),
     };
-    const system::ProcessResult r = system::run_process(m_python, args);
+    const system::ProcessResult r = system::run_process(m_tool, args);
     bool ok = false;
 
     if (!r.started) {
-        if (log) *log = "could not run " + m_python;
+        if (log) *log = "could not run " + m_tool;
     } else if (r.exit_code != 0) {
         if (log) *log = r.output;
     } else {

@@ -4,6 +4,12 @@
 #include <cstdint>
 #include <cstddef>
 
+#if !defined(FIZMO_MUL_THRESHOLDS_RUNTIME) && defined(__has_include)
+#if __has_include(<fizmo_mul_tuning.hpp>)
+#include <fizmo_mul_tuning.hpp>
+#endif
+#endif
+
 namespace fizmo {
 namespace multiprecision {
 namespace mdetail {
@@ -23,12 +29,34 @@ inline void mul_wide64(std::uint64_t a, std::uint64_t b, std::uint64_t& hi, std:
 // 64 Bit Windows 11 Home
 // AMD Ryzen 7 9850x3D
 // VS-Code, G++ and CLANG using -O3
+#ifndef FIZMO_MUL_KARATSUBA_THRESHOLD
+#define FIZMO_MUL_KARATSUBA_THRESHOLD   35
+#endif
+#ifndef FIZMO_MUL_TOOM3_THRESHOLD
+#define FIZMO_MUL_TOOM3_THRESHOLD       85
+#endif
+#ifndef FIZMO_MUL_TOOM4_THRESHOLD
+#define FIZMO_MUL_TOOM4_THRESHOLD      125
+#endif
+#ifndef FIZMO_MUL_NTT_THRESHOLD
+#define FIZMO_MUL_NTT_THRESHOLD       3825
+#endif
+
+#if defined(FIZMO_MUL_THRESHOLDS_RUNTIME)
 struct mul_threshold {
-    static constexpr std::size_t karatsuba =   35;
-    static constexpr std::size_t toom3     =   85;
-    static constexpr std::size_t toom4     =  125;
-    static constexpr std::size_t ntt       = 3825;
+    static inline std::size_t karatsuba = FIZMO_MUL_KARATSUBA_THRESHOLD;
+    static inline std::size_t toom3     = FIZMO_MUL_TOOM3_THRESHOLD;
+    static inline std::size_t toom4     = FIZMO_MUL_TOOM4_THRESHOLD;
+    static inline std::size_t ntt       = FIZMO_MUL_NTT_THRESHOLD;
 };
+#else
+struct mul_threshold {
+    static constexpr std::size_t karatsuba = FIZMO_MUL_KARATSUBA_THRESHOLD;
+    static constexpr std::size_t toom3     = FIZMO_MUL_TOOM3_THRESHOLD;
+    static constexpr std::size_t toom4     = FIZMO_MUL_TOOM4_THRESHOLD;
+    static constexpr std::size_t ntt       = FIZMO_MUL_NTT_THRESHOLD;
+};
+#endif
 
 inline void        mul_n(std::uint64_t* rp, const std::uint64_t* ap, const std::uint64_t* bp, std::size_t n, std::uint64_t* ws);
 inline std::size_t mul_n_scratch(std::size_t n);

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.2.2
+    VERSION 0.2.5
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -34,6 +34,8 @@ target_include_directories(fizmo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
 
 target_compile_features(fizmo PUBLIC cxx_std_17)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoTuning.cmake)
+
 set_target_properties(fizmo PROPERTIES
     OUTPUT_NAME fizmo
     VERSION ${PROJECT_VERSION}
@@ -63,6 +65,29 @@ endif()
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoDependencies.cmake)
 target_link_libraries(fizmo PRIVATE ${FIZMO_DEPENDENCY_TARGETS})
 
+option(FIZMO_BUILD_SHADER_TOOL "Build fizmo-shaders, which turns GLSL into fizmo shader headers and bundles" ON)
+if(FIZMO_BUILD_SHADER_TOOL)
+    add_executable(fizmo-shaders tools/fizmo_shaders.cpp)
+    target_link_libraries(fizmo-shaders PRIVATE fizmo)
+    target_compile_definitions(fizmo-shaders PRIVATE FIZMO_TOOL_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    if(MINGW)
+        target_compile_options(fizmo-shaders PRIVATE -Wa,-mbig-obj)
+    elseif(MSVC)
+        target_compile_options(fizmo-shaders PRIVATE /bigobj /utf-8)
+    endif()
+    include(GNUInstallDirs)
+    file(GENERATE OUTPUT "${FIZMO_GENERATED_DIR}/tools/$<CONFIG>/fizmo_tool_paths.hpp" CONTENT
+"#ifndef FIZMO_TOOL_PATHS_HPP
+#define FIZMO_TOOL_PATHS_HPP
+
+#define FIZMO_SHADER_TOOL_BUILD_PATH \"$<TARGET_FILE:fizmo-shaders>\"
+#define FIZMO_SHADER_TOOL_INSTALL_PATH \"${CMAKE_INSTALL_FULL_BINDIR}/fizmo-shaders${CMAKE_EXECUTABLE_SUFFIX}\"
+
+#endif // FIZMO_TOOL_PATHS_HPP
+")
+    target_include_directories(fizmo PRIVATE "${FIZMO_GENERATED_DIR}/tools/$<CONFIG>")
+endif()
+
 option(FIZMO_BUILD_TOOLS "Build the fizmo command line tools" OFF)
 if(FIZMO_BUILD_TOOLS)
     add_subdirectory(tools/mathtext)
@@ -91,7 +116,11 @@ if(PROJECT_IS_TOP_LEVEL OR CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    if(FIZMO_BUILD_SHADER_TOOL)
+        install(TARGETS fizmo-shaders RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    endif()
     install(DIRECTORY Includes/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fizmo/Includes)
+    install(FILES ${FIZMO_GENERATED_DIR}/fizmo_mul_tuning.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fizmo/generated OPTIONAL)
     install(DIRECTORY Source/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fizmo/Source
         FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h" PATTERN "*.inl")
 
