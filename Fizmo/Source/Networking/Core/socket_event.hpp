@@ -7,7 +7,6 @@
 #include <unordered_map>
 
 #ifdef OS_LINUX
-#include "../../x11_compat.hpp"
 #endif
 
 namespace fizmo {
