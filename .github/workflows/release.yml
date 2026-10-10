@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    name: Linux x86_64
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the version matches the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version=$(sed -n 's/^ *VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt | head -n 1)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::CMakeLists.txt says VERSION $version but the tag is $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config \
+            libx11-dev libxft-dev libxrender-dev libfontconfig1-dev libfreetype-dev \
+            libssl-dev libpango1.0-dev libcairo2-dev zlib1g-dev libjpeg-dev \
+            libvulkan-dev libgl-dev
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_PACKAGE_PLATFORM=linux-x86_64
+
+      - name: Build
+        run: cmake --build build -j 4
+
+      - name: Package
+        working-directory: build
+        run: cpack
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fizmo-linux-x86_64
+          path: build/fizmo-*.tar.gz
+          if-no-files-found: error
+
+  windows:
+    name: Windows ${{ matrix.platform }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - msystem: MINGW64
+            prefix: mingw-w64-x86_64
+            platform: windows-mingw64
+          - msystem: UCRT64
+            prefix: mingw-w64-ucrt-x86_64
+            platform: windows-ucrt64
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          install: >-
+            ${{ matrix.prefix }}-gcc
+            ${{ matrix.prefix }}-cmake
+            ${{ matrix.prefix }}-ninja
+            ${{ matrix.prefix }}-zlib
+            ${{ matrix.prefix }}-libjpeg-turbo
+            ${{ matrix.prefix }}-vulkan-headers
+
+      - name: Check the version matches the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's/^ *VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt | head -n 1)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::CMakeLists.txt says VERSION $version but the tag is $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_PACKAGE_PLATFORM=${{ matrix.platform }}
+
+      - name: Build
+        run: cmake --build build -j 4
+
+      - name: Package
+        working-directory: build
+        run: cpack
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fizmo-${{ matrix.platform }}
+          path: build/fizmo-*.zip
+          if-no-files-found: error
+
+  publish:
+    name: Attach packages to the release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: packages/*
+          fail_on_unmatched_files: true
