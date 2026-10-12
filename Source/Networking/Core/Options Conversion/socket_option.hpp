@@ -339,38 +339,38 @@ public:
 
 // Out-of-class definitions
 #define FIZMO_GEN(name, cat, type) \
-    constexpr BooleanOption BooleanOption::name { OptionCode::name };
+    inline constexpr BooleanOption BooleanOption::name { OptionCode::name };
     FIZMO_PLATFORM_EXPAND(FIZMO_GEN)
 #undef FIZMO_GEN
 
 #define FIZMO_GEN(name, cat, type) \
-    constexpr IntegerOption IntegerOption::name { OptionCode::name };
+    inline constexpr IntegerOption IntegerOption::name { OptionCode::name };
     FIZMO_PLATFORM_EXPAND(FIZMO_GEN)
 #undef FIZMO_GEN
 
 #define FIZMO_GEN(name, cat, type) \
-    constexpr SizeOption SizeOption::name { OptionCode::name };
+    inline constexpr SizeOption SizeOption::name { OptionCode::name };
     FIZMO_PLATFORM_EXPAND(FIZMO_GEN)
 #undef FIZMO_GEN
 
 #define FIZMO_GEN(name, cat, type) \
-    constexpr LingerOption LingerOption::name { OptionCode::name };
+    inline constexpr LingerOption LingerOption::name { OptionCode::name };
     FIZMO_PLATFORM_EXPAND(FIZMO_GEN)
 #undef FIZMO_GEN
 
 #define FIZMO_GEN(name, cat, type) \
-    constexpr TimevalOption TimevalOption::name { OptionCode::name };
+    inline constexpr TimevalOption TimevalOption::name { OptionCode::name };
     FIZMO_PLATFORM_EXPAND(FIZMO_GEN)
 #undef FIZMO_GEN
 
 #define FIZMO_GEN(name, cat, type) \
-    constexpr CommonOption CommonOption::name { OptionCode::name };
+    inline constexpr CommonOption CommonOption::name { OptionCode::name };
     FIZMO_PLATFORM_EXPAND(FIZMO_GEN)
 #undef FIZMO_GEN
 
 #ifdef OS_WINDOWS
 #define FIZMO_GEN(name, cat, type) \
-    constexpr WindowsOption WindowsOption::name { OptionCode::name };
+    inline constexpr WindowsOption WindowsOption::name { OptionCode::name };
     FIZMO_PLATFORM_EXPAND(FIZMO_GEN)
 #undef FIZMO_GEN
 #endif // OS_WINDOWS
