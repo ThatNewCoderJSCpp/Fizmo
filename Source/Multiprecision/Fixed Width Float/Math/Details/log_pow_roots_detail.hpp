@@ -63,9 +63,9 @@ using bdetail::common_result;
 template <class F, class T>
 F widen(const T& v) noexcept { return F(v); }
 
-template <class F, std::size_t B, sign S>
-F widen(const integer<B, S>& n) noexcept {                 
-    using GI = typename fizmo_float_from_int_t<integer<B, S>>::guard_t;
+template <class F, std::size_t B, fizmo::multiprecision::sign S>
+F widen(const fizmo::multiprecision::integer<B, S>& n) noexcept {                 
+    using GI = typename fizmo_float_from_int_t<fizmo::multiprecision::integer<B, S>>::guard_t;
     return multiprecision::fmath::float_cast<F>(GI(typename GI::sstore_t(n)));
 }
 
@@ -86,7 +86,7 @@ F log_run(const F& a, const F& b, const BigFloat& x, const BigFloat& y) {
     }
 
     if (a == b) return one;
-    return bdetail::eval<F>([&](const BigFloatContext& c) { return log(x, y, c); });
+    return bdetail::eval<F>([&](const fizmo::multiprecision::BigFloatContext& c) { return log(x, y, c); });
 }
 
 } // namespace ldetail
@@ -132,8 +132,8 @@ exp_parts(T v, std::uint64_t& mag, bool& neg, bool& huge) noexcept {
     return true;
 }
 
-template <std::size_t B, sign S>
-bool exp_parts(const integer<B, S>& v, std::uint64_t& mag, bool& neg, bool& huge) noexcept {
+template <std::size_t B, fizmo::multiprecision::sign S>
+bool exp_parts(const fizmo::multiprecision::integer<B, S>& v, std::uint64_t& mag, bool& neg, bool& huge) noexcept {
     if (v.is_undefined()) return false;
     neg  = v.is_negative();
     huge = (v.magnitude().highest_bit() >= 64);
@@ -158,7 +158,7 @@ R int_pow(const R& a, const E& e) noexcept {
     if (huge) return R();                                
 
     if (!mag.any_bit_below(static_cast<std::size_t>(hb))) {       
-        using U = integer<R::bits, sign::is_unsigned>;
+        using U = fizmo::multiprecision::integer<R::bits, fizmo::multiprecision::sign::is_unsigned>;
         const std::uint64_t k = static_cast<std::uint64_t>(hb);
         const bool over = m > (static_cast<std::uint64_t>(R::bits) - 1ull) / k;
         const R r = over ? R() : R(U(std::uint64_t(1)) << static_cast<std::size_t>(k * m));
@@ -196,7 +196,7 @@ F pow_run(const F& a, const F& b, const BigFloat& x, const BigFloat& y) {
     if (a.is_zero())     return b.is_negative() ? edetail::signed_root(F::infinity(), rneg) : edetail::signed_root(F::zero(),     rneg);
     if (a.is_infinite()) return b.is_negative() ? edetail::signed_root(F::zero(),     rneg) : edetail::signed_root(F::infinity(), rneg);
     if (aneg && !bint)   return F::nan();
-    return bdetail::eval<F>([&](const BigFloatContext& c) { return pow(x, y, c); });
+    return bdetail::eval<F>([&](const fizmo::multiprecision::BigFloatContext& c) { return pow(x, y, c); });
 }
 
 } // namespace pdetail
@@ -229,8 +229,8 @@ read_degree(T v) noexcept {
     return d;
 }
 
-template <std::size_t B, sign S>
-degree read_degree(const integer<B, S>& v) noexcept {
+template <std::size_t B, fizmo::multiprecision::sign S>
+degree read_degree(const fizmo::multiprecision::integer<B, S>& v) noexcept {
     degree d;
     if (v.is_undefined()) { d.bad = true; return d; }
     d.is_int = true;
@@ -257,8 +257,8 @@ read_degree(T v) noexcept {
     return d;
 }
 
-template <std::size_t TB, std::size_t MB, sign S>
-degree read_degree(const floatmp<TB, MB, S>& v) noexcept {
+template <std::size_t TB, std::size_t MB, fizmo::multiprecision::sign S>
+degree read_degree(const fizmo::multiprecision::floatmp<TB, MB, S>& v) noexcept {
     degree d;
     if (v.is_undefined() || v.is_nan()) { d.bad = true; return d; }
     if (!edetail::is_integral_value(v)) return d;
@@ -284,7 +284,7 @@ F root_run(const F& x, const N& deg, const BigFloat& a, const BigFloat& n) {
         if (x.is_zero())     return fd.is_negative() ? F::infinity() : F::zero();
         if (x.is_infinite()) return fd.is_negative() ? F::zero() : F::infinity();
         if (x == F(1))       return F(1);
-        return bdetail::eval<F>([&](const BigFloatContext& c) { return nth_root(a, n, c); });
+        return bdetail::eval<F>([&](const fizmo::multiprecision::BigFloatContext& c) { return nth_root(a, n, c); });
     }
 
     if (xneg && !d.odd) return F::nan();
@@ -293,14 +293,14 @@ F root_run(const F& x, const N& deg, const BigFloat& a, const BigFloat& n) {
     if (!d.fits) {
         if (x.is_zero())     return F::zero(rneg);
         if (x.is_infinite()) return edetail::signed_root(F::infinity(), rneg);
-        return bdetail::eval<F>([&](const BigFloatContext& c) { return nth_root(a, n, c); });
+        return bdetail::eval<F>([&](const fizmo::multiprecision::BigFloatContext& c) { return nth_root(a, n, c); });
     }
 
     if (d.n == 0) return F::nan();
     if (x.is_zero())     return (d.n > 0) ? F::zero(rneg) : edetail::signed_root(F::infinity(), rneg);
     if (x.is_infinite()) return (d.n > 0) ? edetail::signed_root(F::infinity(), rneg) : F::zero(rneg);
     if (d.n == 1) return x;
-    return bdetail::eval<F>([&](const BigFloatContext& c) { return nth_root(a, n, c); });
+    return bdetail::eval<F>([&](const fizmo::multiprecision::BigFloatContext& c) { return nth_root(a, n, c); });
 }
 
 template <class X, class N, bool Native = (std::is_arithmetic<X>::value && std::is_arithmetic<N>::value)>

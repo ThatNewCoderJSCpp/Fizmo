@@ -12,12 +12,12 @@ namespace math {
 namespace bdetail {
 
 template <class T> struct is_mp_float : std::false_type {};
-template <std::size_t TB, std::size_t MB, sign S>
-struct is_mp_float<floatmp<TB, MB, S>> : std::true_type {};
+template <std::size_t TB, std::size_t MB, fizmo::multiprecision::sign S>
+struct is_mp_float<fizmo::multiprecision::floatmp<TB, MB, S>> : std::true_type {};
 
 template <class T> struct is_mp_int : std::false_type {};
-template <std::size_t B, sign S>
-struct is_mp_int<integer<B, S>> : std::true_type {};
+template <std::size_t B, fizmo::multiprecision::sign S>
+struct is_mp_int<fizmo::multiprecision::integer<B, S>> : std::true_type {};
 
 template <class T>
 struct is_operand : std::integral_constant<bool,
@@ -29,8 +29,8 @@ struct as_float { using type = T; };
 template <class T>
 struct as_float<T, typename std::enable_if<std::is_integral<T>::value>::type> { using type = double; };
 
-template <std::size_t B, sign S>
-struct as_float<integer<B, S>, void> { using type = fizmo_float_from_int_t<integer<B, S>>; };
+template <std::size_t B, fizmo::multiprecision::sign S>
+struct as_float<fizmo::multiprecision::integer<B, S>, void> { using type = fizmo_float_from_int_t<fizmo::multiprecision::integer<B, S>>; };
 
 template <class FA, class FB, bool AMp, bool BMp> struct pick;
 template <class FA, class FB> struct pick<FA, FB, true,  true > { using type = fizmo_common_type_t<FA, FB>; };
@@ -70,10 +70,10 @@ template <class... T>
 using enable_fw_t = typename std::enable_if<all_operand<T...>::value && any_fw<T...>::value, int>::type;
 
 template <class T>
-BigFloat to_bf(const T& v) { return BigFloat(v); }
+fizmo::multiprecision::BigFloat to_bf(const T& v) { return fizmo::multiprecision::BigFloat(v); }
 
-inline BigFloatContext ctx_of(std::size_t p) {
-    return BigFloatContext(BigFloatContext::clamp_precision(p), RoundingMode::nearest_even);
+inline fizmo::multiprecision::BigFloatContext ctx_of(std::size_t p) {
+    return fizmo::multiprecision::BigFloatContext(fizmo::multiprecision::BigFloatContext::clamp_precision(p), fizmo::multiprecision::RoundingMode::nearest_even);
 }
 
 template <class F>
@@ -83,12 +83,12 @@ std::int64_t min_exponent_ll() noexcept {
     return 1 - bias;
 }
 
-inline std::int64_t top_exponent(const BigFloat& r) noexcept {
+inline std::int64_t top_exponent(const fizmo::multiprecision::BigFloat& r) noexcept {
     return r.exponent() + static_cast<std::int64_t>(r.significand().bit_length()) - 1;
 }
 
 template <class F>
-F finish(const BigFloat& r) {
+F finish(const fizmo::multiprecision::BigFloat& r) {
     if (!is_fizmo_signed_v<F> && r.signbit() && !r.is_nan() && !r.is_undefined() && !r.is_zero()) return F::nan();
     return r.template to_floatmp<F>();
 }
@@ -98,7 +98,7 @@ F eval(Eval&& ev) {
     const std::int64_t digits = std::numeric_limits<F>::digits;
     const std::int64_t emin   = std::numeric_limits<F>::min_exponent - 1;
     std::size_t        p      = static_cast<std::size_t>(digits);
-    BigFloat           r      = ev(ctx_of(p));
+    fizmo::multiprecision::BigFloat           r      = ev(ctx_of(p));
 
     for (int i = 0; i < 4 && r.is_finite() && !r.is_zero(); ++i) {
         const std::int64_t top = top_exponent(r);
@@ -116,7 +116,7 @@ template <class F, class Eval, typename std::enable_if<!std::is_floating_point<F
 F eval(Eval&& ev) {
     const std::size_t full = F::mantissa_bits + 1;
     std::size_t       p    = full;
-    BigFloat          r    = ev(ctx_of(p));
+    fizmo::multiprecision::BigFloat          r    = ev(ctx_of(p));
 
     for (int i = 0; i < 4 && r.is_finite() && !r.is_zero(); ++i) {
         const std::int64_t me  = min_exponent_ll<F>();
@@ -132,7 +132,7 @@ F eval(Eval&& ev) {
 }
 
 template <class F>
-F exact(const BigFloat& v) { return finish<F>(v); }
+F exact(const fizmo::multiprecision::BigFloat& v) { return finish<F>(v); }
 
 } // namespace bdetail
 } // namespace math

@@ -46,15 +46,15 @@ U gcd_u(U a, U b) noexcept {
     return static_cast<U>(a << sh);
 }
 
-template <std::size_t B, sign S>
-long long ctz(const integer<B, S>& x) noexcept {       
+template <std::size_t B, fizmo::multiprecision::sign S>
+long long ctz(const fizmo::multiprecision::integer<B, S>& x) noexcept {       
     const multiprecision::umag<B> m = x.magnitude();
     return (m & (multiprecision::umag<B>() - m)).highest_bit();        
 }
 
-template <std::size_t B, sign S>
-integer<B, S> gcd_mp(integer<B, S> a, integer<B, S> b) noexcept {
-    using I = integer<B, S>;
+template <std::size_t B, fizmo::multiprecision::sign S>
+fizmo::multiprecision::integer<B, S> gcd_mp(fizmo::multiprecision::integer<B, S> a, fizmo::multiprecision::integer<B, S> b) noexcept {
+    using I = fizmo::multiprecision::integer<B, S>;
     if (a.is_undefined() || b.is_undefined()) return empty_fold<I>::get();
     a = math::abs(a);
     b = math::abs(b);

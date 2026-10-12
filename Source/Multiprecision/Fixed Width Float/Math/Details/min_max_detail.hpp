@@ -57,43 +57,43 @@ struct empty_fold { static OPTIONAL_CPP14_CONSTEXPR T get() noexcept { return T(
 template <class T> struct empty_fold<T, 1> { static constexpr T get() noexcept { return std::numeric_limits<T>::quiet_NaN(); } };
 template <class T> struct empty_fold<T, 2> { static OPTIONAL_CPP14_CONSTEXPR T get() noexcept { return T::undefined(); } };
 
-template <std::size_t TB, std::size_t MB, sign S>
-OPTIONAL_CPP14_CONSTEXPR floatmp<TB, MB, S> min2(const floatmp<TB, MB, S>& a, const floatmp<TB, MB, S>& b) noexcept {
-    using F = floatmp<TB, MB, S>;
+template <std::size_t TB, std::size_t MB, fizmo::multiprecision::sign S>
+OPTIONAL_CPP14_CONSTEXPR fizmo::multiprecision::floatmp<TB, MB, S> min2(const fizmo::multiprecision::floatmp<TB, MB, S>& a, const fizmo::multiprecision::floatmp<TB, MB, S>& b) noexcept {
+    using F = fizmo::multiprecision::floatmp<TB, MB, S>;
     if (a.is_nan()       || b.is_nan())       return F::nan();
     if (a.is_undefined() || b.is_undefined()) return F::undefined();
     return (b < a) ? b : a;
 }
 
-template <std::size_t TB, std::size_t MB, sign S>
-OPTIONAL_CPP14_CONSTEXPR floatmp<TB, MB, S> max2(const floatmp<TB, MB, S>& a, const floatmp<TB, MB, S>& b) noexcept {
-    using F = floatmp<TB, MB, S>;
+template <std::size_t TB, std::size_t MB, fizmo::multiprecision::sign S>
+OPTIONAL_CPP14_CONSTEXPR fizmo::multiprecision::floatmp<TB, MB, S> max2(const floatmp<TB, MB, S>& a, const fizmo::multiprecision::floatmp<TB, MB, S>& b) noexcept {
+    using F = fizmo::multiprecision::floatmp<TB, MB, S>;
     if (a.is_nan()       || b.is_nan())       return F::nan();
     if (a.is_undefined() || b.is_undefined()) return F::undefined();
     return (a < b) ? b : a;
 }
 
 template <std::size_t B>
-OPTIONAL_CPP14_CONSTEXPR integer<B, sign::is_signed> min2(const integer<B, sign::is_signed>& a, const integer<B, sign::is_signed>& b) noexcept {
-    using I = integer<B, sign::is_signed>;
+OPTIONAL_CPP14_CONSTEXPR fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_signed> min2(const fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_signed>& a, const fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_signed>& b) noexcept {
+    using I = fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_signed>;
     if (a.is_undefined() || b.is_undefined()) return I::undefined();
     return (b < a) ? b : a;
 }
 
 template <std::size_t B>
-OPTIONAL_CPP14_CONSTEXPR integer<B, sign::is_signed> max2(const integer<B, sign::is_signed>& a, const integer<B, sign::is_signed>& b) noexcept {
-    using I = integer<B, sign::is_signed>;
+OPTIONAL_CPP14_CONSTEXPR fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_signed> max2(const fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_signed>& a, const fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_signed>& b) noexcept {
+    using I = fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_signed>;
     if (a.is_undefined() || b.is_undefined()) return I::undefined();
     return (a < b) ? b : a;
 }
 
 template <std::size_t B>
-constexpr integer<B, sign::is_unsigned> min2(const integer<B, sign::is_unsigned>& a, const integer<B, sign::is_unsigned>& b) noexcept {
+constexpr fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_unsigned> min2(const fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_unsigned>& a, const fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_unsigned>& b) noexcept {
     return (b < a) ? b : a;
 }
 
 template <std::size_t B>
-constexpr integer<B, sign::is_unsigned> max2(const integer<B, sign::is_unsigned>& a, const integer<B, sign::is_unsigned>& b) noexcept {
+constexpr fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_unsigned> max2(const fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_unsigned>& a, const fizmo::multiprecision::integer<B, fizmo::multiprecision::sign::is_unsigned>& b) noexcept {
     return (a < b) ? b : a;
 }
 

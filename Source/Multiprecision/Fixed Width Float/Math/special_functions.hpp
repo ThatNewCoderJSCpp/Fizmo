@@ -7,65 +7,65 @@ namespace fizmo {
 namespace math {
 
 #define FIZMO_FW_UNARY(NAME)                                                                                       \
-    template <std::size_t TB, std::size_t MB, sign S>                                                              \
-    floatmp<TB, MB, S> NAME(const floatmp<TB, MB, S>& x) {                                                         \
-        const BigFloat a(x);                                                                                       \
-        return bdetail::eval<floatmp<TB, MB, S>>([&a](const BigFloatContext& c) { return NAME(a, c); });          \
+    template <std::size_t TB, std::size_t MB, fizmo::multiprecision::sign S>                                                              \
+    fizmo::multiprecision::floatmp<TB, MB, S> NAME(const fizmo::multiprecision::floatmp<TB, MB, S>& x) {                                                         \
+        const fizmo::multiprecision::BigFloat a(x);                                                                                       \
+        return bdetail::eval<fizmo::multiprecision::floatmp<TB, MB, S>>([&a](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, c); });          \
     }                                                                                                              \
                                                                                                                    \
-    template <std::size_t B, sign S>                                                                               \
-    fizmo_float_from_int_t<integer<B, S>> NAME(const integer<B, S>& n) {                                           \
-        const BigFloat a(n);                                                                                       \
-        return bdetail::eval<fizmo_float_from_int_t<integer<B, S>>>([&a](const BigFloatContext& c) { return NAME(a, c); }); \
+    template <std::size_t B, fizmo::multiprecision::sign S>                                                                               \
+    fizmo_float_from_int_t<fizmo::multiprecision::integer<B, S>> NAME(const fizmo::multiprecision::integer<B, S>& n) {                                           \
+        const fizmo::multiprecision::BigFloat a(n);                                                                                       \
+        return bdetail::eval<fizmo_float_from_int_t<fizmo::multiprecision::integer<B, S>>>([&a](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, c); }); \
     }
 
 #define FIZMO_FW_BINARY(NAME)                                                                                      \
     template <class A, class B, bdetail::enable_fw_t<A, B> = 0>                                                    \
     bdetail::common_t<A, B> NAME(const A& x, const B& y) {                                                         \
-        const BigFloat a = bdetail::to_bf(x);                                                                      \
-        const BigFloat b = bdetail::to_bf(y);                                                                      \
-        return bdetail::eval<bdetail::common_t<A, B>>([&](const BigFloatContext& c) { return NAME(a, b, c); });   \
+        const fizmo::multiprecision::BigFloat a = bdetail::to_bf(x);                                                                      \
+        const fizmo::multiprecision::BigFloat b = bdetail::to_bf(y);                                                                      \
+        return bdetail::eval<bdetail::common_t<A, B>>([&](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, b, c); });   \
     }
 
 #define FIZMO_FW_TERNARY(NAME)                                                                                     \
     template <class A, class B, class C, bdetail::enable_fw_t<A, B, C> = 0>                                        \
     bdetail::common_t<A, B, C> NAME(const A& x, const B& y, const C& z) {                                          \
-        const BigFloat a = bdetail::to_bf(x);                                                                      \
-        const BigFloat b = bdetail::to_bf(y);                                                                      \
-        const BigFloat d = bdetail::to_bf(z);                                                                      \
-        return bdetail::eval<bdetail::common_t<A, B, C>>([&](const BigFloatContext& c) { return NAME(a, b, d, c); }); \
+        const fizmo::multiprecision::BigFloat a = bdetail::to_bf(x);                                                                      \
+        const fizmo::multiprecision::BigFloat b = bdetail::to_bf(y);                                                                      \
+        const fizmo::multiprecision::BigFloat d = bdetail::to_bf(z);                                                                      \
+        return bdetail::eval<bdetail::common_t<A, B, C>>([&](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, b, d, c); }); \
     }
 
 #define FIZMO_FW_QUATERNARY(NAME)                                                                                  \
     template <class A, class B, class C, class D, bdetail::enable_fw_t<A, B, C, D> = 0>                            \
     bdetail::common_t<A, B, C, D> NAME(const A& x, const B& y, const C& z, const D& w) {                           \
-        const BigFloat a = bdetail::to_bf(x);                                                                      \
-        const BigFloat b = bdetail::to_bf(y);                                                                      \
-        const BigFloat d = bdetail::to_bf(z);                                                                      \
-        const BigFloat e = bdetail::to_bf(w);                                                                      \
-        return bdetail::eval<bdetail::common_t<A, B, C, D>>([&](const BigFloatContext& c) { return NAME(a, b, d, e, c); }); \
+        const fizmo::multiprecision::BigFloat a = bdetail::to_bf(x);                                                                      \
+        const fizmo::multiprecision::BigFloat b = bdetail::to_bf(y);                                                                      \
+        const fizmo::multiprecision::BigFloat d = bdetail::to_bf(z);                                                                      \
+        const fizmo::multiprecision::BigFloat e = bdetail::to_bf(w);                                                                      \
+        return bdetail::eval<bdetail::common_t<A, B, C, D>>([&](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, b, d, e, c); }); \
     }
 
 #define FIZMO_FW_INDEXED(NAME, IT)                                                                                 \
-    template <std::size_t TB, std::size_t MB, sign S>                                                              \
-    floatmp<TB, MB, S> NAME(const floatmp<TB, MB, S>& x, IT n) {                                                   \
-        const BigFloat a(x);                                                                                       \
-        return bdetail::eval<floatmp<TB, MB, S>>([&](const BigFloatContext& c) { return NAME(a, n, c); });       \
+    template <std::size_t TB, std::size_t MB, fizmo::multiprecision::sign S>                                                              \
+    fizmo::multiprecision::floatmp<TB, MB, S> NAME(const fizmo::multiprecision::floatmp<TB, MB, S>& x, IT n) {                                                   \
+        const fizmo::multiprecision::BigFloat a(x);                                                                                       \
+        return bdetail::eval<fizmo::multiprecision::floatmp<TB, MB, S>>([&](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, n, c); });       \
     }
 
 #define FIZMO_FW_COUNTING(NAME)                                                                                    \
-    template <std::size_t TB, std::size_t MB, sign S, class I, typename std::enable_if<std::is_integral<I>::value, int>::type = 0> \
-    floatmp<TB, MB, S> NAME(const floatmp<TB, MB, S>& x, I n) {                                                    \
-        const BigFloat     a(x);                                                                                   \
+    template <std::size_t TB, std::size_t MB, fizmo::multiprecision::sign S, class I, typename std::enable_if<std::is_integral<I>::value, int>::type = 0> \
+    fizmo::multiprecision::floatmp<TB, MB, S> NAME(const fizmo::multiprecision::floatmp<TB, MB, S>& x, I n) {                                                    \
+        const fizmo::multiprecision::BigFloat     a(x);                                                                                   \
         const std::int64_t k = static_cast<std::int64_t>(n);                                                       \
-        return bdetail::eval<floatmp<TB, MB, S>>([&](const BigFloatContext& c) { return NAME(a, k, c); });       \
+        return bdetail::eval<fizmo::multiprecision::floatmp<TB, MB, S>>([&](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, k, c); });       \
     }                                                                                                              \
                                                                                                                    \
     template <class A, class B, typename std::enable_if<!std::is_integral<B>::value, int>::type = 0, bdetail::enable_fw_t<A, B> = 0> \
     bdetail::common_t<A, B> NAME(const A& x, const B& y) {                                                         \
-        const BigFloat a = bdetail::to_bf(x);                                                                      \
-        const BigFloat b = bdetail::to_bf(y);                                                                      \
-        return bdetail::eval<bdetail::common_t<A, B>>([&](const BigFloatContext& c) { return NAME(a, b, c); });   \
+        const fizmo::multiprecision::BigFloat a = bdetail::to_bf(x);                                                                      \
+        const fizmo::multiprecision::BigFloat b = bdetail::to_bf(y);                                                                      \
+        return bdetail::eval<bdetail::common_t<A, B>>([&](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, b, c); });   \
     }
 
 FIZMO_FW_UNARY(sinc)
