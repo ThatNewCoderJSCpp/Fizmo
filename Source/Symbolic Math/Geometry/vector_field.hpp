@@ -207,14 +207,14 @@ public:
     }
 
 public:
-    Vector2D<double, double> evaluate(double x, double y) const { 
+    linalg::Vector2D<double> evaluate(double x, double y) const { 
         return v_.evaluate({
             { xv_, x }, 
             { yv_, y }
         }); 
     }
 
-    Vector2D<double, double> evaluate(std::initializer_list<std::pair<std::string, double>> vals)  const { return   v_.evaluate(vals);                   }
+    linalg::Vector2D<double> evaluate(std::initializer_list<std::pair<std::string, double>> vals)  const { return   v_.evaluate(vals);                   }
     VectorField2D substitute(const std::string& var, double val)                                   const { return { v_.substitute(var, val), xv_, yv_ }; }
     VectorField2D substitute(const std::string& var, const cas::Expression& r)                     const { return { v_.substitute(var, r),   xv_, yv_ }; }
     VectorField2D substitute(std::initializer_list<std::pair<std::string, double>> pairs)          const { return { v_.substitute(pairs),    xv_, yv_ }; }
@@ -378,7 +378,7 @@ public:
     ) const;
 
 public:
-    Vector3D<double, double> evaluate(double x, double y, double z) const { 
+    linalg::Vector3D<double> evaluate(double x, double y, double z) const { 
         return v_.evaluate({
             { xv_, x }, 
             { yv_, y }, 
@@ -386,7 +386,7 @@ public:
         }); 
     }
 
-    Vector3D<double, double> evaluate(std::initializer_list<std::pair<std::string, double>> vals)  const { return   v_.evaluate(vals);                        }
+    linalg::Vector3D<double> evaluate(std::initializer_list<std::pair<std::string, double>> vals)  const { return   v_.evaluate(vals);                        }
     VectorField3D substitute(const std::string& var, double val)                                   const { return { v_.substitute(var, val), xv_, yv_, zv_ }; }
     VectorField3D substitute(const std::string& var, const cas::Expression& r)                     const { return { v_.substitute(var, r),   xv_, yv_, zv_ }; }
     VectorField3D substitute(std::initializer_list<std::pair<std::string, double>> pairs)          const { return { v_.substitute(pairs),    xv_, yv_, zv_ }; }
@@ -490,15 +490,15 @@ public:
     }
 
 public:
-    vector4d evaluate(const std::unordered_map<std::string, double>& vals) const {
+    linalg::vector4d evaluate(const std::unordered_map<std::string, double>& vals) const {
         return v_.evaluate(vals);
     }
 
-    vector4d evaluate(std::initializer_list<std::pair<std::string, double>> vals) const {
+    linalg::vector4d evaluate(std::initializer_list<std::pair<std::string, double>> vals) const {
         return v_.evaluate(vals);
     }
 
-    vector4d evaluate(double x_, double y_, double z_, double w_) const {
+    linalg::vector4d evaluate(double x_, double y_, double z_, double w_) const {
         return v_.evaluate({{ xv_, x_ }, { yv_, y_ }, { zv_, z_ }, { wv_, w_ }});
     }
 

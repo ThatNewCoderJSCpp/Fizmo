@@ -14,7 +14,7 @@ void Camera2D::zoom_at(double factor, double world_x, double world_y) noexcept {
     mark_dirty();
 }
 
-auto Camera2D::screen_to_world(double sx, double sy) const noexcept -> vector2d {
+auto Camera2D::screen_to_world(double sx, double sy) const noexcept -> linalg::vector2d {
     rebuild_if_dirty();
     const auto& m = m_inv_view;
     return {
@@ -23,7 +23,7 @@ auto Camera2D::screen_to_world(double sx, double sy) const noexcept -> vector2d 
     };
 }
 
-auto Camera2D::world_to_screen(double wx, double wy) const noexcept -> vector2d {
+auto Camera2D::world_to_screen(double wx, double wy) const noexcept -> linalg::vector2d {
     rebuild_if_dirty();
     const auto& m = m_view;
     return {
@@ -39,10 +39,10 @@ auto Camera2D::visible_bounds() const noexcept -> AABB {
     auto [x2, y2] = screen_to_world(m_vp_w, m_vp_h);
     auto [x3, y3] = screen_to_world(0.0,    m_vp_h);
     AABB b;
-    b.min_x = min_constexpr(x0, x1, x2, x3);
-    b.min_y = min_constexpr(y0, y1, y2, y3);
-    b.max_x = max_constexpr(x0, x1, x2, x3);
-    b.max_y = max_constexpr(y0, y1, y2, y3);
+    b.min_x = std::fmin(std::fmin(x0, x1), std::fmin(x2, x3));
+    b.min_y = std::fmin(std::fmin(y0, y1), std::fmin(y2, y3));
+    b.max_x = std::fmax(std::fmax(x0, x1), std::fmax(x2, x3));
+    b.max_y = std::fmax(std::fmax(y0, y1), std::fmax(y2, y3));
     return b;
 }
 
@@ -56,28 +56,28 @@ void Camera2D::rebuild_if_dirty() const noexcept {
     m_dirty = false;
     double cx = m_vp_w * 0.5;
     double cy = m_vp_h * 0.5;
-    auto t_neg_pos  = math::Matrix3d::translation_2d(-m_x, -m_y);
-    auto r_neg_rot  = math::Matrix3d::rotation_2d(-m_rotation, true);
+    auto t_neg_pos  = linalg::Matrix3d::translation_2d(-m_x, -m_y);
+    auto r_neg_rot  = linalg::Matrix3d::rotation_2d(-m_rotation, true);
 
-    auto s_zoom     = math::Matrix3d{
+    auto s_zoom     = linalg::Matrix3d{
         m_zoom, 0.0,    0.0,
         0.0,    m_zoom, 0.0,
         0.0,    0.0,    1.0
     };
 
-    auto t_center = math::Matrix3d::translation_2d(cx, cy);
+    auto t_center = linalg::Matrix3d::translation_2d(cx, cy);
     m_view = t_center * s_zoom * r_neg_rot * t_neg_pos;
     double inv_z = 1.0 / m_zoom;
-    auto t_pos       = math::Matrix3d::translation_2d(m_x, m_y);
-    auto r_pos_rot   = math::Matrix3d::rotation_2d(m_rotation, true);
+    auto t_pos       = linalg::Matrix3d::translation_2d(m_x, m_y);
+    auto r_pos_rot   = linalg::Matrix3d::rotation_2d(m_rotation, true);
 
-    auto s_inv_zoom  = math::Matrix3d{
+    auto s_inv_zoom  = linalg::Matrix3d{
         inv_z, 0.0,   0.0,
         0.0,   inv_z, 0.0,
         0.0,   0.0,   1.0
     };
 
-    auto t_neg_center = math::Matrix3d::translation_2d(-cx, -cy);
+    auto t_neg_center = linalg::Matrix3d::translation_2d(-cx, -cy);
     m_inv_view = t_pos * r_pos_rot * s_inv_zoom * t_neg_center;
 }
 

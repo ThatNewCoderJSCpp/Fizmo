@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace detail {
 
@@ -50,7 +49,7 @@ bool ef_tiny(const BigFloat& x, std::size_t prec) {
 
 BigFloat ef_just_under_one(const BigFloatContext& ctx) {
     if (ctx.rounding_mode == RoundingMode::toward_zero || ctx.rounding_mode == RoundingMode::toward_neg_inf) {
-        BigUInt u = constants::bfdetail::unit(ctx.precision);
+        BigUInt u = multiprecision::constants::bfdetail::unit(ctx.precision);
         u.sub_small_mutable(1);
         return BigFloat(std::move(u), false, -static_cast<std::int64_t>(ctx.precision));
     }
@@ -60,7 +59,7 @@ BigFloat ef_just_under_one(const BigFloatContext& ctx) {
 
 BigFloat ef_just_over_one(const BigFloatContext& ctx) {
     if (ctx.rounding_mode != RoundingMode::toward_pos_inf) return BigFloat::one();
-    BigUInt u = constants::bfdetail::unit(ctx.precision - 1);
+    BigUInt u = multiprecision::constants::bfdetail::unit(ctx.precision - 1);
     u.add_small_mutable(1);
     return BigFloat(std::move(u), false, -static_cast<std::int64_t>(ctx.precision - 1));
 }
@@ -85,7 +84,7 @@ BigFloat ef_erf_series(const BigFloat& ax, const BigFloatContext& wc, std::size_
 
     BigFloat r = BigFloat::mul(sum, ax, wc);
     r = BigFloat::mul(r, exp(-x2, wc), wc);
-    r = BigFloat::mul(r, constants::two_inv_sqrt_pi(wc), wc);
+    r = BigFloat::mul(r, multiprecision::constants::two_inv_sqrt_pi(wc), wc);
     lost = ef_bits_u64(4 * n + 64) + ef_x2_bits(ax) + 4;
     return r;
 }
@@ -112,7 +111,7 @@ BigFloat ef_erfcx_asym(const BigFloat& ax, const BigFloatContext& wc, std::size_
     const std::int64_t et  = term.get_exp_base2();
     const std::size_t  got = (et == BigFloat::exp_none) ? wc.precision : ((et < 0) ? static_cast<std::size_t>(-et) : 0);
     lost = ((got < wc.precision) ? (wc.precision - got) : 0) + ef_bits_u64(4 * n + 64) + 4;
-    BigFloat r = BigFloat::mul(sum, constants::inv_sqrt_pi(wc), wc);
+    BigFloat r = BigFloat::mul(sum, multiprecision::constants::inv_sqrt_pi(wc), wc);
     return BigFloat::div(r, ax, wc);
 }
 
@@ -138,7 +137,7 @@ BigFloat ef_erfix_asym(const BigFloat& ax, const BigFloatContext& wc, std::size_
     const std::int64_t et  = term.get_exp_base2();
     const std::size_t  got = (et == BigFloat::exp_none) ? wc.precision : ((et < 0) ? static_cast<std::size_t>(-et) : 0);
     lost = ((got < wc.precision) ? (wc.precision - got) : 0) + ef_bits_u64(4 * n + 64) + 6;
-    BigFloat r = BigFloat::mul(sum, constants::inv_sqrt_pi(wc), wc);
+    BigFloat r = BigFloat::mul(sum, multiprecision::constants::inv_sqrt_pi(wc), wc);
     return BigFloat::div(r, ax, wc);
 }
 
@@ -161,7 +160,7 @@ BigFloat ef_erfi_series(const BigFloat& ax, const BigFloatContext& wc, std::size
     }
 
     lost = ef_bits_u64(4 * n + 64) + 4;
-    return BigFloat::mul(sum, constants::two_inv_sqrt_pi(wc), wc);
+    return BigFloat::mul(sum, multiprecision::constants::two_inv_sqrt_pi(wc), wc);
 }
 
 BigFloat ef_erfc_pos(const BigFloat& ax, const BigFloatContext& wc, std::size_t& lost, bool& ok) {
@@ -216,7 +215,7 @@ BigFloat ef_dispatch(ef_kind k, const BigFloat& ax, const BigFloatContext& ctx) 
 
         if (!ok) return BigFloat::undefined();
         if (!v.is_finite() || v.is_zero()) return v;
-        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, ef_err_of(v, want, lost) + 2)) return v.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(v.significand(), ctx.precision, ef_err_of(v, want, lost) + 2)) return v.rounded(ctx);
         if (ef_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
         guard *= 2;
     }
@@ -224,11 +223,9 @@ BigFloat ef_dispatch(ef_kind k, const BigFloat& ax, const BigFloatContext& ctx) 
 
 } // namespace detail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat erf(const BigFloat& x, const BigFloatContext& ctx) {
@@ -269,17 +266,15 @@ BigFloat erfi(const BigFloat& x, const BigFloatContext& ctx) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace detail {
 
 BigFloat ef_newton_step(ef_solve k, const BigFloat& x, const BigFloat& target, const BigFloatContext& wc) {
     const BigFloat x2  = BigFloat::mul(x, x, wc);
-    const BigFloat hsp = constants::sqrt_pi(wc).scaled_pow2(-1);
+    const BigFloat hsp = multiprecision::constants::sqrt_pi(wc).scaled_pow2(-1);
     std::size_t    l   = 0;
     bool           ok  = true;
     BigFloat       f;
@@ -381,7 +376,7 @@ BigFloat ef_inv_dispatch(ef_solve k, const BigFloat& target, const BigFloat& see
     for (;;) {
         const BigFloat v = ef_newton(k, seed, target, ctx.precision + guard);
         if (!v.is_finite() || v.is_zero()) return v;
-        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, 8)) return v.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(v.significand(), ctx.precision, 8)) return v.rounded(ctx);
         if (ef_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
         guard *= 2;
     }
@@ -394,11 +389,9 @@ BigFloat ef_exact_sub(const BigFloat& a, const BigFloat& b) {
 
 } // namespace detail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat inv_erf(const BigFloat& y, const BigFloatContext& ctx) {
@@ -455,11 +448,9 @@ BigFloat inv_erfi(const BigFloat& y, const BigFloatContext& ctx) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace detail {
 
@@ -506,7 +497,7 @@ BigFloat ef_gen_diff(const BigFloat& x, const BigFloat& b, const BigFloatContext
             continue;
         }
 
-        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, ef_err_of(v, wc.precision, extra + 8) + 2)) return v.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(v.significand(), ctx.precision, ef_err_of(v, wc.precision, extra + 8) + 2)) return v.rounded(ctx);
         if (ef_guard_exhausted(ctx.precision, guard + extra)) return v.rounded(ctx);
         guard *= 2;
     }
@@ -514,11 +505,9 @@ BigFloat ef_gen_diff(const BigFloat& x, const BigFloat& b, const BigFloatContext
 
 } // namespace detail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat generalized_erf(const BigFloat& x, const BigFloat& base, const BigFloatContext& ctx) {
@@ -530,5 +519,4 @@ BigFloat generalized_erf(const BigFloat& x, const BigFloat& base, const BigFloat
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

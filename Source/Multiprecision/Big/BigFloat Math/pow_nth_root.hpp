@@ -6,7 +6,6 @@
 #include "sqrt_cbrt.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace detail {
@@ -118,7 +117,6 @@ FIZMO_MP_POW_FORWARD(nth_root)
 #undef FIZMO_MP_POW_FORWARD
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_POW_NTH_ROOT_HPP

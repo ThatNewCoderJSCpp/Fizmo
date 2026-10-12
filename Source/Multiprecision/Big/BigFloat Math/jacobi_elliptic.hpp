@@ -14,7 +14,6 @@
 #include <type_traits>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace jcdetail {
@@ -85,7 +84,6 @@ FIZMO_MP_JACOBI_FN(jacobi_dc, dc)
 #undef FIZMO_MP_JACOBI_FN
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_JACOBI_ELLIPTIC_HPP

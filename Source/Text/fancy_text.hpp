@@ -6,10 +6,15 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <utility>
 #include <vector>
 
 namespace fizmo {
+namespace images {
+class AnimatedImage;
+} // namespace images
+
 namespace text {
 
 inline constexpr std::uint32_t kNoFancyTag = 0xFFFFFFFFu;
@@ -44,6 +49,16 @@ struct FancyPath {
     std::uint32_t           tag = kNoFancyTag;
 };
 
+struct FancyImage {
+    float                                        x = 0.0f;
+    float                                        y = 0.0f;
+    float                                        w = 0.0f;
+    float                                        h = 0.0f;
+    std::shared_ptr<const images::AnimatedImage> image;
+    float                                        opacity = 1.0f;
+    std::uint32_t                                tag = kNoFancyTag;
+};
+
 struct FancyBounds {
     float x = 0.0f;
     float y = 0.0f;
@@ -68,6 +83,8 @@ public:
 
     FancyText& add_line(float x0, float y0, float x1, float y1, float thickness, const graphics::Color& color, std::uint32_t tag = kNoFancyTag) { return add_path({ FancyPoint{ x0, y0 }, FancyPoint{ x1, y1 } }, thickness, color, false, false, tag); }
 
+    FancyText& add_image(float x, float y, float w, float h, std::shared_ptr<const images::AnimatedImage> image, float opacity = 1.0f, std::uint32_t tag = kNoFancyTag);
+
     void set_box(float width, float ascent, float descent) noexcept {
         m_width = width;
         m_ascent = ascent;
@@ -84,16 +101,23 @@ public:
     const std::vector<FancyRun>&  runs() const noexcept { return m_runs; }
     const std::vector<FancyRect>& rects() const noexcept { return m_rects; }
     const std::vector<FancyPath>& paths() const noexcept { return m_paths; }
+    const std::vector<FancyImage>& images() const noexcept { return m_images; }
     std::vector<FancyRun>&        runs() noexcept { return m_runs; }
     std::vector<FancyRect>&       rects() noexcept { return m_rects; }
     std::vector<FancyPath>&       paths() noexcept { return m_paths; }
+    std::vector<FancyImage>&      images() noexcept { return m_images; }
 
-    bool empty() const noexcept { return m_runs.empty() && m_rects.empty() && m_paths.empty(); }
+    bool empty() const noexcept { return m_runs.empty() && m_rects.empty() && m_paths.empty() && m_images.empty(); }
+
+    bool animated() const noexcept;
+
+    std::uint32_t hit_test(float x, float y) const noexcept;
 
     void clear() noexcept {
         m_runs.clear();
         m_rects.clear();
         m_paths.clear();
+        m_images.clear();
         m_width = m_ascent = m_descent = 0.0f;
     }
 
@@ -111,6 +135,7 @@ private:
     std::vector<FancyRun>  m_runs;
     std::vector<FancyRect> m_rects;
     std::vector<FancyPath> m_paths;
+    std::vector<FancyImage> m_images;
     float                  m_width = 0.0f;
     float                  m_ascent = 0.0f;
     float                  m_descent = 0.0f;

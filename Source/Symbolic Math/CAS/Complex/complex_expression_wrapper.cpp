@@ -5,7 +5,7 @@ namespace math {
 namespace cas {
 
 ComplexExpression::ComplexExpression(const ComplexD& value, complex_symbols::ComplexMathExpressionManager& mgr) : mgr_(&mgr), vars_(&mgr.variables()) {
-    if (value.is_error()) {
+    if (value.is_nan()) {
         expr_ = mgr.nan_expr();
     } else if (value.is_infinite()) {
         expr_ = mgr.infinity();

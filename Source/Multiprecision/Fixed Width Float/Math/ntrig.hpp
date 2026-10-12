@@ -1,44 +1,46 @@
 #ifndef FIZMO_MULTIPRECISION_NORMAL_TRIG_HPP
 #define FIZMO_MULTIPRECISION_NORMAL_TRIG_HPP
 
-#include "Details/ntrig_detail.hpp"
+#include "Details/bigfloat_bridge.hpp"
+
+#include <cmath>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
-#define FIZMO_DEFINE_TRIG(name, run)                                                  \
-    template <class T>                                                                \
-    typename std::enable_if<std::is_integral<T>::value, double>::type                 \
-    name(T v) noexcept { return tdetail::native_##name(static_cast<double>(v)); }      \
-                                                                                      \
-    template <class T>                                                                \
-    typename std::enable_if<std::is_floating_point<T>::value, T>::type                \
-    name(T v) noexcept { return tdetail::native_##name(v); }                           \
-                                                                                      \
-    template <std::size_t B, sign S>                                                  \
-    fizmo_float_from_int_t<integer<B, S>> name(const integer<B, S>& n) noexcept {     \
-        using F = fizmo_float_from_int_t<integer<B, S>>;                               \
-        if (n.is_undefined()) return F::undefined();                                   \
-        return edetail::run(F(typename F::sstore_t(n)));                               \
-    }                                                                                 \
-                                                                                      \
-    template <std::size_t TB, std::size_t MB, sign S>                                 \
-    floatmp<TB, MB, S> name(const floatmp<TB, MB, S>& x) noexcept {                    \
-        return edetail::run(x);                                                        \
+#define FIZMO_DEFINE_TRIG(NAME, NATIVE)                                                                                      \
+    template <class T>                                                                                             \
+    typename std::enable_if<std::is_integral<T>::value, double>::type                                              \
+    NAME(T v) noexcept { const double d = static_cast<double>(v); return NATIVE; }                                 \
+                                                                                                                   \
+    template <class T>                                                                                             \
+    typename std::enable_if<std::is_floating_point<T>::value, T>::type                                             \
+    NAME(T v) noexcept { const T d = v; return NATIVE; }                                                           \
+                                                                                                                   \
+    template <std::size_t B, sign S>                                                                               \
+    fizmo_float_from_int_t<integer<B, S>> NAME(const integer<B, S>& n) {                                           \
+        const BigFloat a(n);                                                                                       \
+        return bdetail::eval<fizmo_float_from_int_t<integer<B, S>>>([&a](const BigFloatContext& c) { return NAME(a, c); }); \
+    }                                                                                                              \
+                                                                                                                   \
+    template <std::size_t TB, std::size_t MB, sign S>                                                              \
+    floatmp<TB, MB, S> NAME(const floatmp<TB, MB, S>& x) {                                                         \
+        if (x.is_undefined())                 return floatmp<TB, MB, S>::undefined();                              \
+        if (x.is_nan() || x.is_infinite())    return floatmp<TB, MB, S>::nan();                                    \
+        const BigFloat a(x);                                                                                       \
+        return bdetail::eval<floatmp<TB, MB, S>>([&a](const BigFloatContext& c) { return NAME(a, c); });          \
     }
 
-FIZMO_DEFINE_TRIG(sin, sin_run)
-FIZMO_DEFINE_TRIG(cos, cos_run)
-FIZMO_DEFINE_TRIG(tan, tan_run)
-FIZMO_DEFINE_TRIG(csc, csc_run)
-FIZMO_DEFINE_TRIG(sec, sec_run)
-FIZMO_DEFINE_TRIG(cot, cot_run)
+FIZMO_DEFINE_TRIG(sin, std::sin(d))
+FIZMO_DEFINE_TRIG(cos, std::cos(d))
+FIZMO_DEFINE_TRIG(tan, std::tan(d))
+FIZMO_DEFINE_TRIG(csc, 1 / std::sin(d))
+FIZMO_DEFINE_TRIG(sec, 1 / std::cos(d))
+FIZMO_DEFINE_TRIG(cot, 1 / std::tan(d))
 
 #undef FIZMO_DEFINE_TRIG
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_NORMAL_TRIG_HPP

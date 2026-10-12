@@ -51,7 +51,7 @@ public:
     cas::Expression volume_element() const { return ABS(jacobian_determinant()); }
 
 public:
-    Vector3D<double> evaluate(double u_val, double v_val, double w_val) const {
+    linalg::Vector3D<double> evaluate(double u_val, double v_val, double w_val) const {
         return r_.evaluate({{ u_, u_val }, { v_, v_val }, { w_, w_val }});
     }
 

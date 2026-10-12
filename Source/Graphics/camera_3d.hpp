@@ -7,10 +7,7 @@
 #include "../Basic/constants.hpp"
 #include "../Matrices/square_matrices.hpp"
 #include "../Quaternions/quaternion.hpp"
-#include "../Standard Overloads/abs.hpp"
-#include "../Standard Overloads/min_max.hpp"
-#include "../Standard Overloads/sqrt.hpp"
-#include "../Standard Overloads/trig.hpp"
+#include <cmath>
 #include "../Vectors/vectors.hpp"
 #include "ray.hpp"
 
@@ -22,26 +19,26 @@ enum class Projection3D : unsigned char { Perspective, Orthographic };
 enum class DepthRange : unsigned char { ZeroToOne, NegativeOneToOne };
 
 struct Plane3D {
-    vector3d normal{};
+    linalg::vector3d normal{};
     double   d = 0.0;
-    double signed_distance(const vector3d& p) const noexcept { return normal.dot(p) + d; }
+    double signed_distance(const linalg::vector3d& p) const noexcept { return normal.dot(p) + d; }
 };
 
 struct Frustum3D {
     enum Side : unsigned char { Left = 0, Right, Bottom, Top, Near, Far };
     std::array<Plane3D, 6> planes{};
 
-    bool contains(const vector3d& p) const noexcept {
+    bool contains(const linalg::vector3d& p) const noexcept {
         for (const auto& pl : planes) if (pl.signed_distance(p) < 0.0) return false;
         return true;
     }
 
-    bool intersects_sphere(const vector3d& center, double radius) const noexcept {
+    bool intersects_sphere(const linalg::vector3d& center, double radius) const noexcept {
         for (const auto& pl : planes) if (pl.signed_distance(center) < -radius) return false;
         return true;
     }
 
-    bool intersects_aabb(const vector3d& box_min, const vector3d& box_max) const noexcept;
+    bool intersects_aabb(const linalg::vector3d& box_min, const linalg::vector3d& box_max) const noexcept;
 };
 
 struct ScreenPoint3D {
@@ -61,11 +58,11 @@ public:
 
     Camera3D() noexcept = default;
 
-    Camera3D(const vector3d& position, unsigned int vp_w, unsigned int vp_h,
+    Camera3D(const linalg::vector3d& position, unsigned int vp_w, unsigned int vp_h,
              double fov_y_degrees = DEFAULT_FOV_Y, double near_plane = DEFAULT_NEAR, double far_plane = DEFAULT_FAR) noexcept
 ;
 
-    static constexpr vector3d world_up() noexcept { return vector3d{0.0, 1.0, 0.0}; }
+    static linalg::vector3d world_up() { return linalg::vector3d{0.0, 1.0, 0.0}; }
 
 public: 
     unsigned int viewport_width()  const noexcept { return m_vp_w; }
@@ -78,19 +75,19 @@ public:
     double aspect() const noexcept;
 
 public: 
-    const vector3d& position() const noexcept { return m_position; }
-    void set_position(const vector3d& p) noexcept { m_position = p; mark_view_dirty(); }
-    void set_position(double x, double y, double z) noexcept { set_position(vector3d{x, y, z}); }
-    void translate(const vector3d& delta) noexcept { m_position += delta; mark_view_dirty(); }
+    const linalg::vector3d& position() const noexcept { return m_position; }
+    void set_position(const linalg::vector3d& p) noexcept { m_position = p; mark_view_dirty(); }
+    void set_position(double x, double y, double z) noexcept { set_position(linalg::vector3d{x, y, z}); }
+    void translate(const linalg::vector3d& delta) noexcept { m_position += delta; mark_view_dirty(); }
 
     void move_local(double right_amount, double up_amount, double forward_amount) noexcept;
 
     void move_flat(double forward_amount, double right_amount, double up_amount = 0.0) noexcept;
 
 public: 
-    const QuatD& orientation() const noexcept { return m_orientation; }
+    const linalg::QuatD& orientation() const noexcept { return m_orientation; }
 
-    void set_orientation(const QuatD& q) noexcept {
+    void set_orientation(const linalg::QuatD& q) noexcept {
         if (q.magnitude_squared() <= EPS) return;
         m_orientation = q.normalized();
         mark_view_dirty();
@@ -99,8 +96,8 @@ public:
     void set_rotation(double yaw_degrees, double pitch_degrees, double roll_degrees = 0.0) noexcept;
 
     double yaw() const noexcept {
-        const vector3d ff = flat_forward();
-        return to_degrees(math::atan2_constexpr(-ff.x, -ff.z));
+        const linalg::vector3d ff = flat_forward();
+        return to_degrees(std::atan2(-ff.x, -ff.z));
     }
 
     double pitch() const noexcept;
@@ -112,21 +109,21 @@ public:
     double pitch_limit() const noexcept { return m_pitch_limit; }
     void set_pitch_limit(double degrees) noexcept { m_pitch_limit = clamp(degrees, 0.0, 90.0); }
 
-    void rotate(const vector3d& world_axis, double degrees) noexcept;
+    void rotate(const linalg::vector3d& world_axis, double degrees) noexcept;
 
-    void rotate_local(const vector3d& local_axis, double degrees) noexcept;
+    void rotate_local(const linalg::vector3d& local_axis, double degrees) noexcept;
 
-    void look_at(const vector3d& target, const vector3d& up_hint = world_up()) noexcept {
+    void look_at(const linalg::vector3d& target, const linalg::vector3d& up_hint = world_up()) noexcept {
         look_in(target - m_position, up_hint);
     }
 
-    void look_in(const vector3d& direction, const vector3d& up_hint = world_up()) noexcept;
+    void look_in(const linalg::vector3d& direction, const linalg::vector3d& up_hint = world_up()) noexcept;
 
-    const vector3d& forward() const noexcept { rebuild_view_if_dirty(); return m_forward; }
-    const vector3d& right()   const noexcept { rebuild_view_if_dirty(); return m_right; }
-    const vector3d& up()      const noexcept { rebuild_view_if_dirty(); return m_up; }
+    const linalg::vector3d& forward() const noexcept { rebuild_view_if_dirty(); return m_forward; }
+    const linalg::vector3d& right()   const noexcept { rebuild_view_if_dirty(); return m_right; }
+    const linalg::vector3d& up()      const noexcept { rebuild_view_if_dirty(); return m_up; }
 
-    vector3d flat_forward() const noexcept;
+    linalg::vector3d flat_forward() const noexcept;
 
 public: 
     Projection3D projection_type() const noexcept { return m_projection; }
@@ -157,18 +154,18 @@ public:
     void set_clip_planes(double near_plane, double far_plane) noexcept;
 
 public: 
-    const math::Matrix4d& view_matrix()                    const noexcept { rebuild_view_if_dirty(); return m_view; }
-    const math::Matrix4d& inverse_view_matrix()            const noexcept { rebuild_view_if_dirty(); return m_inv_view; }
-    const math::Matrix4d& projection_matrix()              const noexcept { rebuild_projection_if_dirty(); return m_proj; }
-    const math::Matrix4d& inverse_projection_matrix()      const noexcept { rebuild_projection_if_dirty(); return m_inv_proj; }
-    const math::Matrix4d& view_projection_matrix()         const noexcept { rebuild_combined_if_dirty(); return m_view_proj; }
-    const math::Matrix4d& inverse_view_projection_matrix() const noexcept { rebuild_combined_if_dirty(); return m_inv_view_proj; }
+    const linalg::Matrix4d& view_matrix()                    const noexcept { rebuild_view_if_dirty(); return m_view; }
+    const linalg::Matrix4d& inverse_view_matrix()            const noexcept { rebuild_view_if_dirty(); return m_inv_view; }
+    const linalg::Matrix4d& projection_matrix()              const noexcept { rebuild_projection_if_dirty(); return m_proj; }
+    const linalg::Matrix4d& inverse_projection_matrix()      const noexcept { rebuild_projection_if_dirty(); return m_inv_proj; }
+    const linalg::Matrix4d& view_projection_matrix()         const noexcept { rebuild_combined_if_dirty(); return m_view_proj; }
+    const linalg::Matrix4d& inverse_view_projection_matrix() const noexcept { rebuild_combined_if_dirty(); return m_inv_view_proj; }
     const Frustum3D&      frustum()                        const noexcept { rebuild_combined_if_dirty(); return m_frustum; }
 
 public:
-    ScreenPoint3D world_to_screen(const vector3d& p) const noexcept;
+    ScreenPoint3D world_to_screen(const linalg::vector3d& p) const noexcept;
 
-    ScreenPoint3D world_to_screen(double x, double y, double z) const noexcept { return world_to_screen(vector3d{x, y, z}); }
+    ScreenPoint3D world_to_screen(double x, double y, double z) const noexcept { return world_to_screen(linalg::vector3d{x, y, z}); }
 
     geometry::Ray3D screen_to_ray(double sx, double sy) const noexcept;
 
@@ -177,18 +174,18 @@ public:
         return { m_position, m_forward };
     }
 
-    vector3d screen_to_world(double sx, double sy, double ndc_depth) const noexcept;
+    linalg::vector3d screen_to_world(double sx, double sy, double ndc_depth) const noexcept;
 
 public: 
-    bool is_visible(const vector3d& p) const noexcept { return frustum().contains(p); }
-    bool is_visible(const vector3d& center, double radius) const noexcept { return frustum().intersects_sphere(center, radius); }
-    bool is_visible(const vector3d& box_min, const vector3d& box_max) const noexcept { return frustum().intersects_aabb(box_min, box_max); }
+    bool is_visible(const linalg::vector3d& p) const noexcept { return frustum().contains(p); }
+    bool is_visible(const linalg::vector3d& center, double radius) const noexcept { return frustum().intersects_sphere(center, radius); }
+    bool is_visible(const linalg::vector3d& box_min, const linalg::vector3d& box_max) const noexcept { return frustum().intersects_aabb(box_min, box_max); }
 
 private:
     static constexpr double EPS = 1e-12;
 
-    vector3d     m_position{};
-    QuatD        m_orientation{1.0, 0.0, 0.0, 0.0};
+    linalg::vector3d     m_position{};
+    linalg::QuatD        m_orientation{1.0, 0.0, 0.0, 0.0};
     double       m_pitch_limit = DEFAULT_PITCH_LIMIT;
 
     Projection3D m_projection   = Projection3D::Perspective;
@@ -200,16 +197,16 @@ private:
     unsigned int m_vp_w = 0;
     unsigned int m_vp_h = 0;
 
-    mutable vector3d m_forward{0.0, 0.0, -1.0};
-    mutable vector3d m_right{1.0, 0.0, 0.0};
-    mutable vector3d m_up{0.0, 1.0, 0.0};
+    mutable linalg::vector3d m_forward{0.0, 0.0, -1.0};
+    mutable linalg::vector3d m_right{1.0, 0.0, 0.0};
+    mutable linalg::vector3d m_up{0.0, 1.0, 0.0};
 
-    mutable math::Matrix4d m_view          = math::Matrix4d::identity();
-    mutable math::Matrix4d m_inv_view      = math::Matrix4d::identity();
-    mutable math::Matrix4d m_proj          = math::Matrix4d::identity();
-    mutable math::Matrix4d m_inv_proj      = math::Matrix4d::identity();
-    mutable math::Matrix4d m_view_proj     = math::Matrix4d::identity();
-    mutable math::Matrix4d m_inv_view_proj = math::Matrix4d::identity();
+    mutable linalg::Matrix4d m_view          = linalg::Matrix4d::identity();
+    mutable linalg::Matrix4d m_inv_view      = linalg::Matrix4d::identity();
+    mutable linalg::Matrix4d m_proj          = linalg::Matrix4d::identity();
+    mutable linalg::Matrix4d m_inv_proj      = linalg::Matrix4d::identity();
+    mutable linalg::Matrix4d m_view_proj     = linalg::Matrix4d::identity();
+    mutable linalg::Matrix4d m_inv_view_proj = linalg::Matrix4d::identity();
     mutable Frustum3D      m_frustum{};
 
     mutable bool m_view_dirty     = true;
@@ -226,14 +223,14 @@ private:
 
     static double to_radians(double degrees) noexcept { return degrees * constants::PI_180<double>; }
     static double to_degrees(double radians) noexcept { return radians / constants::PI_180<double>; }
-    static double tan_of(double radians) noexcept { return math::sin_constexpr(radians) / math::cos_constexpr(radians); }
-    static double clamp(double v, double lo, double hi) noexcept { return max_constexpr(lo, min_constexpr(v, hi)); }
+    static double tan_of(double radians) noexcept { return std::tan(radians); }
+    static double clamp(double v, double lo, double hi) noexcept { return std::max(lo, std::min(v, hi)); }
 
-    static QuatD axis_angle(const vector3d& axis, double degrees) noexcept {
-        return QuatD::from_axis_angle(axis.x, axis.y, axis.z, to_radians(degrees));
+    static linalg::QuatD axis_angle(const linalg::vector3d& axis, double degrees) noexcept {
+        return linalg::QuatD::from_axis_angle(axis.x, axis.y, axis.z, to_radians(degrees));
     }
 
-    static QuatD quat_from_basis(const vector3d& x, const vector3d& y, const vector3d& z) noexcept;
+    static linalg::QuatD quat_from_basis(const linalg::vector3d& x, const linalg::vector3d& y, const linalg::vector3d& z) noexcept;
 
     void rebuild_view_if_dirty() const noexcept;
 

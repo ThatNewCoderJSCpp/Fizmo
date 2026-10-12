@@ -5,7 +5,6 @@
 #include "big_float_consts.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace detail {
@@ -61,7 +60,6 @@ inline BigFloat exp(const BigInt& x) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_EXP_HPP

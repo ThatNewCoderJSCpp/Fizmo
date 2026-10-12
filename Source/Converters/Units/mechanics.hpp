@@ -11,7 +11,7 @@ namespace units {
 
 namespace momentum {
     constexpr MomentumUnit kilogram_meter_per_second = mass::kilogram * velocity::meters_per_second;
-    constexpr MomentumUnit gram_centimeter_per_second(1e-5L);
+    constexpr MomentumUnit gram_centimeter_per_second(exact("1e-5"));
 } // namespace momentum
 
 namespace impulse {

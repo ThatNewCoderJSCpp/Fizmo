@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace pgdetail {
 
@@ -17,17 +16,17 @@ std::size_t pg_cancel(const BigFloat& a, const BigFloat& b, const BigFloat& r, s
 }
 
 BigFloat pg_coeff(unsigned n, std::size_t j, const BigFloatContext& tc) {
-    if (j == 0 || j > constants::detail::bn_index_cap) return BigFloat::undefined();
+    if (j == 0 || j > multiprecision::constants::detail::bn_index_cap) return BigFloat::undefined();
     std::vector<pg_coef_t>& cache = pg_coef_cache(n);
     if (cache.size() <= j) cache.resize(j + 1);
     pg_coef_t& e = cache[j];
 
     if (e.prec < tc.precision + 8) {
         const BigFloatContext hc(BigFloatContext::clamp_precision(tc.precision + 32), RoundingMode::nearest_even);
-        BigUInt num = constants::tangent_number(j);
+        BigUInt num = multiprecision::constants::tangent_number(j);
         if (num.is_undefined()) return BigFloat::undefined();
         if (n > 0) num = num * fact_range(2 * static_cast<std::uint64_t>(j), 2 * static_cast<std::uint64_t>(j) + n);
-        BigUInt den = constants::bfdetail::unit(2 * j);
+        BigUInt den = multiprecision::constants::bfdetail::unit(2 * j);
         den.sub_small_mutable(1);
         e.v = BigFloat::div(BigFloat(num), BigFloat(den), hc).scaled_pow2(-2 * static_cast<std::int64_t>(j)).with_sign(j % 2 == 0);
         e.prec = hc.precision;
@@ -71,7 +70,7 @@ BigFloat pg_bsum(int n, std::size_t j0, const BigFloat& x, std::int64_t eh, cons
         if (p + 32 <= 2 * j * gm_zeta_kbits) { jz = j; break; }
     }
 
-    constants::detail::tangent_reserve(((jz <= jcap) ? jz : jcap) + 1);
+    multiprecision::constants::detail::tangent_reserve(((jz <= jcap) ? jz : jcap) + 1);
     BigFloat     S    = BigFloat::zero();
     BigFloat     a    = BigFloat::zero();
     BigFloat     c    = BigFloat::zero();
@@ -87,7 +86,7 @@ BigFloat pg_bsum(int n, std::size_t j0, const BigFloat& x, std::int64_t eh, cons
         BigFloat term;
 
         if (!zon && j >= jz) {
-            const BigFloat tp = constants::two_pi(tc);
+            const BigFloat tp = multiprecision::constants::two_pi(tc);
             const BigFloat f  = BigFloat(fact_range(1, v)).rounded(tc);
             a = BigFloat::div(BigFloat::mul(f, t, tc), gm_powi(tp, u2j, tc), tc).scaled_pow2(1);
             c = BigFloat::div(u2.rounded(tc), BigFloat::mul(tp, tp, tc), tc);
@@ -363,10 +362,10 @@ pg_val_t pg_exact(unsigned n, std::uint64_t N, bool half, const BigFloatContext&
 
     if (n == 0) {
         a = half ? s.scaled_pow2(1) : s;
-        b = constants::euler_mascheroni(wc);
-        if (half) b = BigFloat::add(b, constants::ln2(wc).scaled_pow2(1), wc);
+        b = multiprecision::constants::euler_mascheroni(wc);
+        if (half) b = BigFloat::add(b, multiprecision::constants::ln2(wc).scaled_pow2(1), wc);
     } else {
-        const BigFloat z2 = constants::zeta2(wc);
+        const BigFloat z2 = multiprecision::constants::zeta2(wc);
         a = half ? BigFloat::mul(z2, BigFloat(static_cast<std::uint64_t>(3)), wc) : z2;
         b = half ? s.scaled_pow2(2) : s;
     }
@@ -428,7 +427,7 @@ pg_val_t pg_eval(unsigned n, const BigFloat& z, const BigFloatContext& wc) {
     const auto     fh   = BigFloat::compare(f, half);
     const bool     flip = (fh == BigFloat::ordering::greater);
     const BigFloat g    = flip ? BigFloat::sub(BigFloat::one(), f, fc) : f;    
-    const BigFloat pi   = constants::pi(wc);
+    const BigFloat pi   = multiprecision::constants::pi(wc);
     const BigFloat pg   = BigFloat::mul(pi, g, wc);
 
     if (n == 0) {
@@ -486,7 +485,7 @@ BigFloat pg_drive(unsigned n, const BigFloat& z, const BigFloatContext& ctx) {
         const std::size_t acc = (wc.precision > extra + 8) ? (wc.precision - extra - 8) : 1;
         const std::size_t L   = g.v.significand().bit_length();
         const std::size_t err = (L > acc) ? (L - acc) : 0;
-        if (constants::bfdetail::round_is_safe(g.v.significand(), ctx.precision, err + 2)) return g.v.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(g.v.significand(), ctx.precision, err + 2)) return g.v.rounded(ctx);
         if (gm_guard_exhausted(ctx.precision, guard + extra)) return g.v.rounded(ctx);
         guard *= 2;
     }
@@ -496,7 +495,7 @@ BigFloat pg_bern(std::size_t j, const BigFloatContext& wc) {
     if (j == 0)     return BigFloat::one();
     if (j == 1)     return BigFloat::one().scaled_pow2(-1).with_sign(true);
     if (j % 2 == 1) return BigFloat::zero();
-    return constants::bernoulli_float(j, wc);
+    return multiprecision::constants::bernoulli_float(j, wc);
 }
 
 void hz_eprod(std::uint64_t lo, std::uint64_t hi, const BigFloat& a, unsigned k, const BigFloatContext& wc, std::vector<BigFloat>& E) {
@@ -721,7 +720,7 @@ BigFloat pg_neg_drive(unsigned M, const BigFloat& x, const BigFloatContext& ctx)
         const std::size_t acc = (wc.precision > extra + 8) ? (wc.precision - extra - 8) : 1;
         const std::size_t L   = g.v.significand().bit_length();
         const std::size_t err = (L > acc) ? (L - acc) : 0;
-        if (constants::bfdetail::round_is_safe(g.v.significand(), ctx.precision, err + 2)) return g.v.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(g.v.significand(), ctx.precision, err + 2)) return g.v.rounded(ctx);
         if (gm_guard_exhausted(ctx.precision, guard + extra)) return g.v.rounded(ctx);
         guard *= 2;
     }
@@ -729,11 +728,9 @@ BigFloat pg_neg_drive(unsigned M, const BigFloat& x, const BigFloatContext& ctx)
 
 } // namespace pgdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat digamma(const BigFloat& z, const BigFloatContext& ctx) {
@@ -768,5 +765,4 @@ BigFloat polygamma(const BigFloat& x, int n, const BigFloatContext& ctx) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

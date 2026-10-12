@@ -5,9 +5,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
-
-#ifdef OS_LINUX
-#endif
+#include <functional>
 
 namespace fizmo {
 namespace networking {
@@ -44,11 +42,23 @@ struct TLSConfig {
     TLSVersion               min_version = TLSVersion::TLS_1_2;
     TLSVersion               max_version = TLSVersion::TLS_1_3;
     std::vector<std::string> cipher_suites;
+    std::vector<unsigned>    native_algorithms;
     CertificateData          certificate;
     std::string              ca_store_path;
     VerifyMode               verify_mode = VerifyMode::Peer;
     ContextUse               use         = ContextUse::Client;
     bool                     check_revocation = true;
+    bool                     allow_insecure_versions = false;
+    std::vector<std::string> alpn_protocols;
+    std::vector<std::string> crl_paths;
+    bool                     session_tickets = true;
+    std::uint32_t            session_timeout_seconds = 7200;
+    bool                     request_ocsp = false;
+    std::vector<std::uint8_t> ocsp_staple;
+    bool                     post_handshake_auth = false;
+    bool                     allow_renegotiation = true;
+    std::string              keylog_path;
+    std::function<void(const std::string&)> keylog_callback;
 };
 
 struct KeyUsage {
@@ -91,7 +101,9 @@ enum class VerifyError : std::uint8_t {
     Revoked,
     SelfSigned,
     WeakSignature,
-    RevocationUnknown   
+    RevocationUnknown,
+    PinViolation,
+    Rejected
 };
 
 const char* verify_error_to_string(VerifyError e) noexcept;
@@ -111,6 +123,52 @@ struct VerifyResult {
     }
 
     std::string to_string() const;
+};
+
+struct AlertInfo {
+    bool          present     = false;
+    bool          received    = false;
+    std::uint8_t  level       = 0;
+    std::uint8_t  description = 0;
+};
+
+enum class OCSPCertStatus : std::uint8_t {
+    Unknown = 0,
+    Good,
+    Revoked,
+    Invalid,
+    Unsupported
+};
+
+struct OCSPResult {
+    OCSPCertStatus status            = OCSPCertStatus::Unknown;
+    std::int64_t   this_update       = 0;
+    std::int64_t   next_update       = 0;
+    std::int64_t   revocation_time   = 0;
+    int            revocation_reason = -1;
+    std::string    detail;
+
+    bool good() const noexcept { return status == OCSPCertStatus::Good; }
+};
+
+const char* ocsp_status_to_string(OCSPCertStatus s) noexcept;
+
+enum class KeyType : std::uint8_t {
+    None = 0,
+    RSA,
+    EC,
+    Ed25519,
+    Ed448,
+    DSA,
+    Other
+};
+
+const char* key_type_to_string(KeyType t) noexcept;
+
+enum class ChannelBindingType : std::uint8_t {
+    TlsUnique = 0,
+    TlsServerEndPoint,
+    TlsExporter
 };
 
 const char* tls_version_to_string(TLSVersion v) noexcept;

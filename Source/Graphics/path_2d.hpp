@@ -50,13 +50,13 @@ public:
     }
 
     struct Contour {
-        std::vector<vector2d> points;
+        std::vector<linalg::vector2d> points;
         bool closed = false;
     };
 
     std::vector<Contour> flatten(double tolerance = 0.5) const;
 
-    std::vector<vector2d> flatten_single(double tolerance = 0.5) const {
+    std::vector<linalg::vector2d> flatten_single(double tolerance = 0.5) const {
         auto c = flatten(tolerance);
         if (c.empty()) return {};
         return std::move(c[0].points);
@@ -91,9 +91,9 @@ public:
 
 private:
     std::vector<Verb>  m_verbs;
-    std::vector<vector2d> m_pts;
-    vector2d m_cursor{ 0, 0 };
-    vector2d m_subpath_start{ 0, 0 };
+    std::vector<linalg::vector2d> m_pts;
+    linalg::vector2d m_cursor{ 0, 0 };
+    linalg::vector2d m_subpath_start{ 0, 0 };
 
 private:
     void ensure_begun() { if (m_verbs.empty()) move_to(0, 0); }
@@ -106,18 +106,18 @@ private:
     );
 
     static void flatten_quad(
-        std::vector<vector2d>& out,
-        vector2d p0, vector2d p1, vector2d p2,
+        std::vector<linalg::vector2d>& out,
+        linalg::vector2d p0, linalg::vector2d p1, linalg::vector2d p2,
         double tol, int depth = 0
     );
 
     static void flatten_cubic(
-        std::vector<vector2d>& out,
-        vector2d p0, vector2d p1, vector2d p2, vector2d p3,
+        std::vector<linalg::vector2d>& out,
+        linalg::vector2d p0, linalg::vector2d p1, linalg::vector2d p2, linalg::vector2d p3,
         double tol, int depth = 0
     );
 
-    static vector2d mid(const vector2d& a, const vector2d& b) noexcept {
+    static linalg::vector2d mid(const linalg::vector2d& a, const linalg::vector2d& b) noexcept {
         return { (a.x + b.x) * 0.5, (a.y + b.y) * 0.5 };
     }
 };

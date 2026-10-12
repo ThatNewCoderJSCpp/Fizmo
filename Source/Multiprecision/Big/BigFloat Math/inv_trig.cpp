@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace detail {
 
@@ -58,10 +57,10 @@ BigFloat atan_raw(const BigFloat& x, const BigFloatContext& wc, std::size_t& los
     BigFloat r;
 
     if (c == BigFloat::ordering::equal) {
-        r    = constants::quarter_pi(wc);
+        r    = multiprecision::constants::quarter_pi(wc);
         lost = 2;
     } else if (c == BigFloat::ordering::greater) {          // result >= pi/4: no cancellation
-        r = BigFloat::sub(constants::half_pi(wc), atan_core(ax.reciprocal(wc), wc, lost), wc);
+        r = BigFloat::sub(multiprecision::constants::half_pi(wc), atan_core(ax.reciprocal(wc), wc, lost), wc);
         lost += 3;
     } else {
         r = atan_core(ax, wc, lost);
@@ -80,7 +79,7 @@ BigFloat iv_core(iv_sel sel, const BigFloat& x, const BigFloatContext& wc, std::
         case iv_sel::acot_v: {                            
             BigFloat r = atan_raw(x.reciprocal(wc), wc, lost);
             lost += 2;
-            if (x.signbit()) r = BigFloat::add(constants::pi(wc), r, wc);
+            if (x.signbit()) r = BigFloat::add(multiprecision::constants::pi(wc), r, wc);
             return r;
         }
 
@@ -96,7 +95,7 @@ BigFloat iv_core(iv_sel sel, const BigFloat& x, const BigFloatContext& wc, std::
             const BigFloat a = BigFloat::sub(one, x, wc);
             const BigFloat b = BigFloat::add(one, x, wc);
             const BigFloat d = math::sqrt(BigFloat::mul(a, b, wc), wc);
-            if (d.is_zero()) return constants::half_pi(wc).with_sign(x.signbit());
+            if (d.is_zero()) return multiprecision::constants::half_pi(wc).with_sign(x.signbit());
             BigFloat r = atan_raw(BigFloat::div(x, d, wc), wc, lost);
             lost += 3;
             return r;
@@ -105,7 +104,7 @@ BigFloat iv_core(iv_sel sel, const BigFloat& x, const BigFloatContext& wc, std::
         default: {                                          
             const BigFloat a = BigFloat::sub(one, x, wc);
             const BigFloat b = BigFloat::add(one, x, wc);
-            if (b.is_zero()) return constants::pi(wc);
+            if (b.is_zero()) return multiprecision::constants::pi(wc);
             const BigFloat t = math::sqrt(BigFloat::div(a, b, wc), wc);
             if (t.is_zero()) return BigFloat::zero();
             BigFloat r = atan_raw(t, wc, lost).scaled_pow2(1);
@@ -124,7 +123,7 @@ BigFloat iv_dispatch(iv_sel sel, const BigFloat& x, const BigFloatContext& ctx) 
         std::size_t lost = 0;
         const BigFloat v = iv_core(sel, x, wc, lost);
         if (!v.is_finite() || v.is_zero()) return v;
-        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, iv_err_of(v, want, lost) + 2)) return v.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(v.significand(), ctx.precision, iv_err_of(v, want, lost) + 2)) return v.rounded(ctx);
         if (iv_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
         guard *= 2;
     }
@@ -136,30 +135,28 @@ BigFloat at2_core(const BigFloat& y, const BigFloat& x, const BigFloatContext& w
 
     if (!r.is_finite()) {                                  
         lost = 2;
-        return constants::half_pi(wc).with_sign(y.signbit());
+        return multiprecision::constants::half_pi(wc).with_sign(y.signbit());
     }
 
     if (r.is_zero()) {                                     
         lost = 2;
         if (!x.signbit()) return BigFloat::zero(y.signbit());
-        return constants::pi(wc).with_sign(y.signbit());
+        return multiprecision::constants::pi(wc).with_sign(y.signbit());
     }
 
     BigFloat a = atan_raw(r, wc, lost);
     lost += 2;
     if (!x.signbit()) return a;                            
-    const BigFloat p = constants::pi(wc);                  
+    const BigFloat p = multiprecision::constants::pi(wc);                  
     lost += 2;
     return y.signbit() ? BigFloat::sub(a, p, wc) : BigFloat::add(a, p, wc);
 }
 
 } // namespace detail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat arcsin(const BigFloat& x, const BigFloatContext& ctx) {
@@ -169,7 +166,7 @@ BigFloat arcsin(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_zero())      return x;
     const BigFloat::ordering c = BigFloat::compare(x.abs(), BigFloat::one());
     if (c == BigFloat::ordering::greater) return BigFloat::nan();
-    if (c == BigFloat::ordering::equal)   return constants::half_pi(ctx).with_sign(x.signbit());
+    if (c == BigFloat::ordering::equal)   return multiprecision::constants::half_pi(ctx).with_sign(x.signbit());
     return detail::iv_dispatch(detail::iv_sel::asin_v, x, ctx);
 }
 
@@ -177,17 +174,17 @@ BigFloat arccos(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
     if (x.is_infinite())  return BigFloat::nan();
-    if (x.is_zero())      return constants::half_pi(ctx);
+    if (x.is_zero())      return multiprecision::constants::half_pi(ctx);
     const BigFloat::ordering c = BigFloat::compare(x.abs(), BigFloat::one());
     if (c == BigFloat::ordering::greater) return BigFloat::nan();
-    if (c == BigFloat::ordering::equal)   return x.signbit() ? constants::pi(ctx) : BigFloat::zero();
+    if (c == BigFloat::ordering::equal)   return x.signbit() ? multiprecision::constants::pi(ctx) : BigFloat::zero();
     return detail::iv_dispatch(detail::iv_sel::acos_v, x, ctx);
 }
 
 BigFloat arctan(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
-    if (x.is_infinite())  return constants::half_pi(ctx).with_sign(x.signbit());
+    if (x.is_infinite())  return multiprecision::constants::half_pi(ctx).with_sign(x.signbit());
     if (x.is_zero())      return x;
     return detail::iv_dispatch(detail::iv_sel::atan_v, x, ctx);
 }
@@ -195,19 +192,19 @@ BigFloat arctan(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat arccot(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
-    if (x.is_infinite())  return x.signbit() ? constants::pi(ctx) : BigFloat::zero();
-    if (x.is_zero())      return constants::half_pi(ctx);
+    if (x.is_infinite())  return x.signbit() ? multiprecision::constants::pi(ctx) : BigFloat::zero();
+    if (x.is_zero())      return multiprecision::constants::half_pi(ctx);
     return detail::iv_dispatch(detail::iv_sel::acot_v, x, ctx);
 }
 
 BigFloat arcsec(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
-    if (x.is_infinite())  return constants::half_pi(ctx);
+    if (x.is_infinite())  return multiprecision::constants::half_pi(ctx);
     if (x.is_zero())      return BigFloat::nan();
     const BigFloat::ordering c = BigFloat::compare(x.abs(), BigFloat::one());
     if (c == BigFloat::ordering::less)  return BigFloat::nan();
-    if (c == BigFloat::ordering::equal) return x.signbit() ? constants::pi(ctx) : BigFloat::zero();
+    if (c == BigFloat::ordering::equal) return x.signbit() ? multiprecision::constants::pi(ctx) : BigFloat::zero();
     return detail::iv_dispatch(detail::iv_sel::asec_v, x, ctx);
 }
 
@@ -218,7 +215,7 @@ BigFloat arccsc(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_zero())      return BigFloat::nan();
     const BigFloat::ordering c = BigFloat::compare(x.abs(), BigFloat::one());
     if (c == BigFloat::ordering::less)  return BigFloat::nan();
-    if (c == BigFloat::ordering::equal) return constants::half_pi(ctx).with_sign(x.signbit());
+    if (c == BigFloat::ordering::equal) return multiprecision::constants::half_pi(ctx).with_sign(x.signbit());
     return detail::iv_dispatch(detail::iv_sel::acsc_v, x, ctx);
 }
 
@@ -228,17 +225,17 @@ BigFloat atan2(const BigFloat& y, const BigFloat& x, const BigFloatContext& ctx)
 
     if (y.is_infinite()) {
         if (x.is_infinite()) return BigFloat::undefined();          
-        return constants::half_pi(ctx).with_sign(y.signbit());
+        return multiprecision::constants::half_pi(ctx).with_sign(y.signbit());
     }
 
-    if (x.is_infinite()) return x.signbit() ? constants::pi(ctx).with_sign(y.signbit()) : BigFloat::zero(y.signbit());
+    if (x.is_infinite()) return x.signbit() ? multiprecision::constants::pi(ctx).with_sign(y.signbit()) : BigFloat::zero(y.signbit());
 
     if (y.is_zero()) {
         if (x.is_zero()) return BigFloat::undefined();             
-        return x.signbit() ? constants::pi(ctx).with_sign(y.signbit()) : BigFloat::zero(y.signbit());
+        return x.signbit() ? multiprecision::constants::pi(ctx).with_sign(y.signbit()) : BigFloat::zero(y.signbit());
     }
 
-    if (x.is_zero()) return constants::half_pi(ctx).with_sign(y.signbit());
+    if (x.is_zero()) return multiprecision::constants::half_pi(ctx).with_sign(y.signbit());
     std::size_t guard = 32;
 
     for (;;) {
@@ -247,12 +244,11 @@ BigFloat atan2(const BigFloat& y, const BigFloat& x, const BigFloatContext& ctx)
         std::size_t lost = 0;
         const BigFloat v = detail::at2_core(y, x, wc, lost);
         if (!v.is_finite() || v.is_zero()) return v;
-        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, detail::iv_err_of(v, want, lost) + 2)) return v.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(v.significand(), ctx.precision, detail::iv_err_of(v, want, lost) + 2)) return v.rounded(ctx);
         if (detail::iv_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
         guard *= 2;
     }
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

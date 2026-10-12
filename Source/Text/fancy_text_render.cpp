@@ -1,6 +1,12 @@
 #include "fizmo_library.hpp"
 #include "../Windows/Renderer Impl/gpu_text.hpp"
 #include "../Windows/Renderer Impl/gpu_common.hpp"
+#include "../Images/Formats/image_formats.hpp"
+#include "emoji.hpp"
+#include "text.hpp"
+
+#include <map>
+#include <mutex>
 
 namespace fizmo {
 namespace text {
@@ -267,13 +273,97 @@ void draw_fancy_text(images::BitmapImage& img, const FancyText& ft, float x, flo
         else fancy_detail::stroke_path(img, pts, p.closed, p.thickness, p.color);
     }
     for (const FancyRun& run : ft.runs()) raster.draw(img, run.text, std::round(ox + run.x), std::round(oy + run.baseline));
+    if (!ft.images().empty()) {
+        const double t = animation_clock_ms();
+        for (const FancyImage& im : ft.images()) draw_animated_frame(img, im, ox, oy, t);
+    }
+}
+
+namespace {
+
+struct FrameTextureKey {
+    const void*  image;
+    std::size_t  frame;
+
+    bool operator<(const FrameTextureKey& o) const noexcept { return image != o.image ? image < o.image : frame < o.frame; }
+};
+
+struct FrameTextureEntry {
+    std::weak_ptr<const images::AnimatedImage> owner;
+    graphics::Texture                          texture;
+    std::uint64_t                              used = 0;
+};
+
+std::mutex& frame_texture_mutex() {
+    static std::mutex m;
+    return m;
+}
+
+std::map<FrameTextureKey, FrameTextureEntry>& frame_textures() {
+    static std::map<FrameTextureKey, FrameTextureEntry> m;
+    return m;
+}
+
+graphics::Texture frame_texture(const std::shared_ptr<const images::AnimatedImage>& image, std::size_t frame) {
+    static std::uint64_t tick = 0;
+    std::lock_guard<std::mutex> lock(frame_texture_mutex());
+    auto& cache = frame_textures();
+    const FrameTextureKey key{ image.get(), frame };
+    auto it = cache.find(key);
+    if (it != cache.end()) {
+        const auto owner = it->second.owner.lock();
+        if (owner && owner.get() == image.get()) {
+            it->second.used = ++tick;
+            return it->second.texture;
+        }
+        cache.erase(it);
+    }
+
+    if (cache.size() > 2048) {
+        for (auto i = cache.begin(); i != cache.end();) {
+            if (i->second.owner.expired() || tick - i->second.used > 1024) i = cache.erase(i);
+            else ++i;
+        }
+    }
+
+    FrameTextureEntry e;
+    e.owner = image;
+    e.texture = graphics::Texture(images::BitmapImage(image->frame(frame).image), graphics::SampleFilter::Bilinear);
+    e.used = ++tick;
+    graphics::Texture tex = e.texture;
+    cache.emplace(key, std::move(e));
+    return tex;
+}
+
+} // namespace
+
+void draw_fancy_images_native(windows::Renderer& r, const FancyText& ft, float x, float y, FancyAnchor anchor) {
+    if (ft.images().empty()) return;
+    const float ox = x;
+    const float oy = anchor == FancyAnchor::TopLeft ? y + ft.ascent() : y;
+    const double t = animation_clock_ms();
+    for (const FancyImage& im : ft.images()) {
+        if (!im.image || im.image->empty()) continue;
+        const std::size_t frame = im.image->frame_index_at(t < 0 ? 0 : static_cast<std::uint64_t>(t));
+        const graphics::Texture tex = frame_texture(im.image, frame);
+        if (!tex.valid()) continue;
+        const int dx = static_cast<int>(std::lround(ox + im.x));
+        const int dy = static_cast<int>(std::lround(oy + im.y));
+        const int dw = std::max(1, static_cast<int>(std::lround(ox + im.x + im.w)) - dx);
+        const int dh = std::max(1, static_cast<int>(std::lround(oy + im.y + im.h)) - dy);
+        r.draw_texture(tex, dx, dy, static_cast<unsigned>(dw), static_cast<unsigned>(dh), im.opacity);
+    }
+}
+
+void clear_fancy_image_cache() {
+    std::lock_guard<std::mutex> lock(frame_texture_mutex());
+    frame_textures().clear();
 }
 
 images::BitmapImage fancy_text_image(const FancyText& ft, TextRasterizer& raster, float padding, const graphics::Color& background) {
     const unsigned w = static_cast<unsigned>(std::max(1.0f, std::ceil(ft.width() + 2.0f * padding)));
     const unsigned h = static_cast<unsigned>(std::max(1.0f, std::ceil(ft.height() + 2.0f * padding)));
-    images::BitmapImage img(w, h);
-    for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w; ++x) img.set_pixel(x, y, background);
+    images::BitmapImage img(w, h, std::vector<graphics::Color>(static_cast<std::size_t>(w) * h, background));
     draw_fancy_text(img, ft, padding, padding, raster, FancyAnchor::TopLeft);
     return img;
 }
@@ -301,6 +391,7 @@ void draw_fancy_text_native(windows::Renderer& r, const FancyText& ft, float x, 
         const int ty = static_cast<int>(std::lround(oy + run.baseline)) - m.ascent;
         r.draw_rich_text(tx, ty, run.text);
     }
+    draw_fancy_images_native(r, ft, x, y, anchor);
 }
 
 FancyTexture fancy_text_texture(const FancyText& ft, TextRasterizer& raster, float padding) {
@@ -311,9 +402,10 @@ FancyTexture fancy_text_texture(const FancyText& ft, TextRasterizer& raster, flo
     t.descent = ft.descent();
     const unsigned w = static_cast<unsigned>(std::max(1.0f, std::ceil(ft.width() + 2.0f * t.padding)));
     const unsigned h = static_cast<unsigned>(std::max(1.0f, std::ceil(ft.ascent()) + std::ceil(ft.descent()) + 2.0f * t.padding));
-    images::BitmapImage img(w, h);
-    for (unsigned y = 0; y < h; ++y) for (unsigned x = 0; x < w; ++x) img.set_pixel(x, y, graphics::Color(255, 255, 255, 0));
-    draw_fancy_text(img, ft, t.padding, t.padding + std::ceil(ft.ascent()), raster, FancyAnchor::Baseline);
+    images::BitmapImage img(w, h, std::vector<graphics::Color>(static_cast<std::size_t>(w) * h, graphics::Color(255, 255, 255, 0)));
+    FancyText still = ft;
+    still.images().clear();
+    draw_fancy_text(img, still, t.padding, t.padding + std::ceil(ft.ascent()), raster, FancyAnchor::Baseline);
     t.texture = graphics::Texture(std::move(img), graphics::SampleFilter::Bilinear);
     return t;
 }
@@ -333,6 +425,7 @@ void draw_fancy_text(windows::Renderer& r, const FancyText& ft, float x, float y
         return;
     }
     draw_fancy_texture(r, fancy_text_texture(ft), x, y, anchor);
+    draw_fancy_images_native(r, ft, x, y, anchor);
 }
 
 } // namespace text

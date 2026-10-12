@@ -60,7 +60,7 @@ auto Path2D::arc_to(double cx, double cy, double rx, double ry, double start_deg
 auto Path2D::flatten(double tolerance) const -> std::vector<Contour> {
     std::vector<Contour> contours;
     Contour current;
-    vector2d pen{ 0, 0 };
+    linalg::vector2d pen{ 0, 0 };
     std::size_t pi = 0; 
 
     auto finish_contour = [&]() {
@@ -83,17 +83,17 @@ auto Path2D::flatten(double tolerance) const -> std::vector<Contour> {
             break;
 
         case Verb::Quad: {
-            vector2d cp  = m_pts[pi++];
-            vector2d end = m_pts[pi++];
+            linalg::vector2d cp  = m_pts[pi++];
+            linalg::vector2d end = m_pts[pi++];
             flatten_quad(current.points, pen, cp, end, tolerance);
             pen = end;
             break;
         }
 
         case Verb::Cubic: {
-            vector2d c1  = m_pts[pi++];
-            vector2d c2  = m_pts[pi++];
-            vector2d end = m_pts[pi++];
+            linalg::vector2d c1  = m_pts[pi++];
+            linalg::vector2d c2  = m_pts[pi++];
+            linalg::vector2d end = m_pts[pi++];
             flatten_cubic(current.points, pen, c1, c2, end, tolerance);
             pen = end;
             break;
@@ -169,8 +169,8 @@ void Path2D::arc_segment_cubic(
 }
 
 void Path2D::flatten_quad(
-    std::vector<vector2d>& out,
-    vector2d p0, vector2d p1, vector2d p2,
+    std::vector<linalg::vector2d>& out,
+    linalg::vector2d p0, linalg::vector2d p1, linalg::vector2d p2,
     double tol, int depth 
 ) {
     double dx = p2.x - p0.x;
@@ -183,16 +183,16 @@ void Path2D::flatten_quad(
         return;
     }
 
-    vector2d m01 = mid(p0, p1);
-    vector2d m12 = mid(p1, p2);
-    vector2d m   = mid(m01, m12);
+    linalg::vector2d m01 = mid(p0, p1);
+    linalg::vector2d m12 = mid(p1, p2);
+    linalg::vector2d m   = mid(m01, m12);
     flatten_quad(out, p0,  m01, m,  tol, depth + 1);
     flatten_quad(out, m,   m12, p2, tol, depth + 1);
 }
 
 void Path2D::flatten_cubic(
-    std::vector<vector2d>& out,
-    vector2d p0, vector2d p1, vector2d p2, vector2d p3,
+    std::vector<linalg::vector2d>& out,
+    linalg::vector2d p0, linalg::vector2d p1, linalg::vector2d p2, linalg::vector2d p3,
     double tol, int depth 
 ) {
     double dx = p3.x - p0.x;
@@ -207,12 +207,12 @@ void Path2D::flatten_cubic(
         return;
     }
 
-    vector2d m01  = mid(p0, p1);
-    vector2d m12  = mid(p1, p2);
-    vector2d m23  = mid(p2, p3);
-    vector2d m012 = mid(m01, m12);
-    vector2d m123 = mid(m12, m23);
-    vector2d m    = mid(m012, m123);
+    linalg::vector2d m01  = mid(p0, p1);
+    linalg::vector2d m12  = mid(p1, p2);
+    linalg::vector2d m23  = mid(p2, p3);
+    linalg::vector2d m012 = mid(m01, m12);
+    linalg::vector2d m123 = mid(m12, m23);
+    linalg::vector2d m    = mid(m012, m123);
     flatten_cubic(out, p0, m01,  m012, m,  tol, depth + 1);
     flatten_cubic(out, m,  m123, m23,  p3, tol, depth + 1);
 }

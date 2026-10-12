@@ -4,7 +4,6 @@
 #include "../big_complex.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace cxdetail {
@@ -54,7 +53,7 @@ inline bool rounding_is_safe(const BF& v, std::size_t w, std::size_t loss, std::
     if (L < w) { m.shift_left_mutable(w - L); len = w; }
     else       { err += L - w; }
     if (err + prec + 2 > len) return false;
-    return constants::bfdetail::round_is_safe(m, prec, err);
+    return multiprecision::constants::bfdetail::round_is_safe(m, prec, err);
 }
 
 inline bool near_zero(const BF& v, std::size_t w, std::size_t loss) noexcept {
@@ -248,7 +247,7 @@ inline BF real_log(const BF& x, log_base base, const BFC& c) {
 }
 
 inline BF log_scale(log_base base, const BFC& wc) {
-    return (base == log_base::two) ? constants::inv_ln2(wc) : constants::inv_ln10(wc);
+    return (base == log_base::two) ? multiprecision::constants::inv_ln2(wc) : multiprecision::constants::inv_ln10(wc);
 }
 
 inline BF scaled_argument(const BC& z, std::int64_t branch, log_base base, const BFC& ci) {
@@ -625,7 +624,7 @@ inline BC pow_complex_eval(const BC& z, const BC& w, std::int64_t branch, const 
 enum class hyp_kind : std::uint8_t { sinh_v, cosh_v, tanh_v };
 
 inline BF near_one(std::size_t w, bool above, bool neg) {
-    BigUInt u = constants::bfdetail::unit(w + 8);
+    BigUInt u = multiprecision::constants::bfdetail::unit(w + 8);
     if (above) u.add_small_mutable(1);
     else       u.sub_small_mutable(1);
     return BF(std::move(u), neg, -static_cast<std::int64_t>(w + 8));
@@ -899,7 +898,6 @@ FIZMO_CX_TRIG(coth, hyperbolic, tanh_v, true)
 #undef FIZMO_CX_CURRENT
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_COMPLEX_ELEMENTARY_HPP

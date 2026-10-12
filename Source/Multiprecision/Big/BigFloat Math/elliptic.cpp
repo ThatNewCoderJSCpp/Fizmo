@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace eldetail {
 
@@ -29,11 +28,11 @@ bool el_reduce(const BF& phi, std::size_t want, el_red& r) {
     if (e > 60) return false;
     const std::size_t eb = static_cast<std::size_t>(e > 0 ? e : 0);
     const BFC         qc = csdetail::cs_ctx(eb + 80);
-    const BF          q  = BF::mul(phi.abs(), constants::inv_pi(qc), qc);
+    const BF          q  = BF::mul(phi.abs(), multiprecision::constants::inv_pi(qc), qc);
     std::int64_t      j  = static_cast<std::int64_t>(BF::add(q, BF::one().scaled_pow2(-1), qc).get_integer_part().get_lowest_bits());
     if (phi.signbit()) j = -j;
     const BFC rc = csdetail::cs_ctx(want + eb + 28);
-    const BF  pi = constants::pi(rc);
+    const BF  pi = multiprecision::constants::pi(rc);
     const BF  hp = pi.scaled_pow2(-1);
     BF theta = BF::sub(phi, BF::mul(BF(j), pi, rc), rc);
 
@@ -170,11 +169,9 @@ cs_val el_incomplete_raw(el_kind kind, const BF& phi, const BF& n, const BF& m, 
 
 } // namespace eldetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat elliptic_f(const BigFloat& phi, const BigFloat& m, const BigFloatContext& ctx) {
@@ -210,7 +207,7 @@ BigFloat elliptic_k(const BigFloat& m, const BigFloatContext& ctx) {
     using namespace eldetail;
     if (el_bad(m))       return el_bad_of(m, m, m);
     if (m.is_infinite()) return m.signbit() ? BigFloat::zero() : BigFloat::nan();
-    if (m.is_zero())     return constants::half_pi(ctx);
+    if (m.is_zero())     return multiprecision::constants::half_pi(ctx);
     if (el_is(m, 1))     return BigFloat::infinity();
     if (el_gt_one(m))    return BigFloat::nan();
     return csdetail::cs_drive(ctx, [&](std::size_t want) { return el_complete_raw(el_kind::f, BigFloat::zero(), m, want); });
@@ -220,7 +217,7 @@ BigFloat elliptic_e(const BigFloat& m, const BigFloatContext& ctx) {
     using namespace eldetail;
     if (el_bad(m))       return el_bad_of(m, m, m);
     if (m.is_infinite()) return m.signbit() ? BigFloat::infinity() : BigFloat::nan();
-    if (m.is_zero())     return constants::half_pi(ctx);
+    if (m.is_zero())     return multiprecision::constants::half_pi(ctx);
     if (el_is(m, 1))     return BigFloat::one();
     if (el_gt_one(m))    return BigFloat::nan();
     return csdetail::cs_drive(ctx, [&](std::size_t want) { return el_complete_raw(el_kind::e, BigFloat::zero(), m, want); });
@@ -237,5 +234,4 @@ BigFloat elliptic_pi(const BigFloat& n, const BigFloat& m, const BigFloatContext
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

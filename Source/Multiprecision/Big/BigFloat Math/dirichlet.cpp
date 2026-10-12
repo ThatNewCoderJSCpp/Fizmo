@@ -1,12 +1,11 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace dldetail {
 
 BigFloat dl_omp2(const BigFloat& x, const BigFloatContext& wc) {
-    const BigFloat h = BigFloat::mul(x, constants::ln2(wc), wc).scaled_pow2(-1);
+    const BigFloat h = BigFloat::mul(x, multiprecision::constants::ln2(wc), wc).scaled_pow2(-1);
     return -BigFloat::mul(sinh(h, wc), exp(h, wc), wc).scaled_pow2(1);
 }
 
@@ -102,7 +101,7 @@ zt_val dl_lambda_neg(const BigFloat& s, const BigFloat& om, std::size_t want) {
     if (!c.v.is_finite() || c.v.is_zero()) return c;
     const zt_val e = dl_alt(om, false, want);
     const BigFloatContext wc(want, RoundingMode::nearest_even);
-    const BigFloat p = exp(-BigFloat::mul(s, constants::ln2(wc), wc), wc);
+    const BigFloat p = exp(-BigFloat::mul(s, multiprecision::constants::ln2(wc), wc), wc);
     BigFloat v = BigFloat::mul(p, c.v, wc);
     v = BigFloat::mul(v, e.v, wc);
     const double a = std::fabs(ztdetail::zt_to_double(s)) * 0.6931471805599453;
@@ -115,8 +114,8 @@ zt_val dl_beta_fe(const BigFloat& u, std::size_t want) {
     bool     flip = false;
     ztdetail::zt_reduce_half(u.scaled_pow2(-1), f, flip);
     if (f.is_zero()) return zt_val{BigFloat::zero(), 0.0};
-    const BigFloat sn = sin(BigFloat::mul(constants::pi(wc), f, wc), wc);
-    const BigFloat l  = BigFloat::sub(constants::ln2(wc), gmdetail::gm_ln_pi(wc), wc);    
+    const BigFloat sn = sin(BigFloat::mul(multiprecision::constants::pi(wc), f, wc), wc);
+    const BigFloat l  = BigFloat::sub(multiprecision::constants::ln2(wc), gmdetail::gm_ln_pi(wc), wc);    
     const BigFloat pw = exp(BigFloat::mul(u, l, wc), wc);
     const BigFloat g  = gamma(u, wc);
     if (!g.is_finite()) return zt_val{g, 0.0};
@@ -143,11 +142,9 @@ std::uint64_t dl_log3_threshold(std::size_t prec) {
 
 } // namespace dldetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat dirichlet_eta(const BigFloat& s, const BigFloatContext& ctx) {
@@ -165,15 +162,15 @@ BigFloat dirichlet_eta(const BigFloat& s, const BigFloatContext& ctx) {
         if (fits) {                                                  
             const std::uint64_t n = (m + 1) / 2;
 
-            if (n <= constants::detail::bn_index_cap) {
-                const BigUInt T = constants::tangent_number(n);
+            if (n <= multiprecision::constants::detail::bn_index_cap) {
+                const BigUInt T = multiprecision::constants::tangent_number(n);
                 if (!T.is_undefined()) return BigFloat(T, n % 2 == 0, -2 * static_cast<std::int64_t>(n)).rounded(ctx);
             }
         }
     }
 
-    if (BigFloat::compare(s, one) == BigFloat::ordering::equal) return constants::ln2(ctx);
-    if (BigFloat::compare(s, BigFloat(static_cast<std::uint64_t>(2))) == BigFloat::ordering::equal) return constants::zeta2(ctx).scaled_pow2(-1);
+    if (BigFloat::compare(s, one) == BigFloat::ordering::equal) return multiprecision::constants::ln2(ctx);
+    if (BigFloat::compare(s, BigFloat(static_cast<std::uint64_t>(2))) == BigFloat::ordering::equal) return multiprecision::constants::zeta2(ctx).scaled_pow2(-1);
 
     if (BigFloat::compare(s, BigFloat(static_cast<std::uint64_t>(ctx.precision + 2))) != BigFloat::ordering::less) {
         return ztdetail::zt_sticky(one, true, ctx.precision + 6, ctx);
@@ -205,13 +202,13 @@ BigFloat dirichlet_lambda(const BigFloat& s, const BigFloatContext& ctx) {
         if (fits) {                                                     
             const std::uint64_t n = (m + 1) / 2;
 
-            if (n <= constants::detail::bn_index_cap) {
-                const BigUInt T = constants::tangent_number(n);
+            if (n <= multiprecision::constants::detail::bn_index_cap) {
+                const BigUInt T = multiprecision::constants::tangent_number(n);
 
                 if (!T.is_undefined()) {
-                    BigUInt a = constants::bfdetail::unit(2 * n - 1);
+                    BigUInt a = multiprecision::constants::bfdetail::unit(2 * n - 1);
                     a.sub_small_mutable(1);
-                    BigUInt den = constants::bfdetail::unit(2 * n);
+                    BigUInt den = multiprecision::constants::bfdetail::unit(2 * n);
                     den.sub_small_mutable(1);
                     return BigFloat::div(BigFloat(a * T, n % 2 == 0, -2 * static_cast<std::int64_t>(n)), BigFloat(den), ctx);
                 }
@@ -231,7 +228,7 @@ BigFloat dirichlet_lambda(const BigFloat& s, const BigFloatContext& ctx) {
     return dldetail::dl_drive(s, ctx, [&](std::size_t want) -> dldetail::zt_val {
         if (s.get_exp_base2() < -static_cast<std::int64_t>(want) - 4) {                         
             const BigFloatContext wc(want, RoundingMode::nearest_even);
-            return dldetail::zt_val{(-BigFloat::mul(constants::ln2(wc), s, wc)).scaled_pow2(-1), 3.0};
+            return dldetail::zt_val{(-BigFloat::mul(multiprecision::constants::ln2(wc), s, wc)).scaled_pow2(-1), 3.0};
         }
 
         return pos ? dldetail::dl_lambda_pos(s, om, want) : dldetail::dl_lambda_neg(s, om, want);
@@ -252,12 +249,12 @@ BigFloat dirichlet_beta(const BigFloat& s, const BigFloatContext& ctx) {
 
         if (fits) {                                                     
             const std::uint64_t k = m / 2;
-            const BigUInt       S = constants::secant_number(k);
+            const BigUInt       S = multiprecision::constants::secant_number(k);
             if (!S.is_undefined()) return BigFloat(S, k % 2 == 1, -1).rounded(ctx);
         }
     }
 
-    if (BigFloat::compare(s, one) == BigFloat::ordering::equal) return constants::quarter_pi(ctx);
+    if (BigFloat::compare(s, one) == BigFloat::ordering::equal) return multiprecision::constants::quarter_pi(ctx);
 
     if (BigFloat::compare(s, BigFloat(dldetail::dl_log3_threshold(ctx.precision))) != BigFloat::ordering::less) {
         return ztdetail::zt_sticky(one, true, ctx.precision + 6, ctx);
@@ -276,5 +273,4 @@ BigFloat dirichlet_beta(const BigFloat& s, const BigFloatContext& ctx) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

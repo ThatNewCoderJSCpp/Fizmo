@@ -41,12 +41,12 @@ public:
         y = static_cast<Y>(p.y);
     }
 
-    template <typename OX, typename OY>
-    constexpr Point2D(const Vector2D<OX, OY>& v) noexcept : x(static_cast<X>(v.x)), y(static_cast<Y>(v.y)) {}
+    template <typename V>
+    Point2D(const linalg::Vector2D<V>& v) : x(static_cast<X>(v.x)), y(static_cast<Y>(v.y)) {}
 
 public:
-    constexpr explicit operator Vector2D<X, Y>() const noexcept { return Vector2D<X, Y>(x, y); }
-    constexpr explicit operator Vector3D<X, Y, common_t>() const noexcept { return Vector3D<X, Y, common_t>(x, y, static_cast<common_t>(0)); }
+    explicit operator linalg::Vector2D<common_t>() const { return linalg::Vector2D<common_t>(static_cast<common_t>(x), static_cast<common_t>(y)); }
+    explicit operator linalg::Vector3D<common_t>() const { return linalg::Vector3D<common_t>(static_cast<common_t>(x), static_cast<common_t>(y), static_cast<common_t>(0)); }
 
 public:
     constexpr bool operator==(const Point2D& p) const noexcept { return x == p.x && y == p.y; }
@@ -117,14 +117,14 @@ public:
     }
 
     template <typename OX, typename OY>
-    constexpr common_t distance_to(const Point2D<OX,OY>& p) const noexcept {
+    common_t distance_to(const Point2D<OX,OY>& p) const noexcept {
         common_t dx = static_cast<common_t>(x) - static_cast<common_t>(p.x);
         common_t dy = static_cast<common_t>(y) - static_cast<common_t>(p.y);
-        return math::sqrt_constexpr(dx*dx + dy*dy);
+        return std::sqrt(dx*dx + dy*dy);
     }
 
-    constexpr common_t length() const noexcept {
-        return math::sqrt_constexpr(static_cast<common_t>(x)*static_cast<common_t>(x) + static_cast<common_t>(y)*static_cast<common_t>(y));
+    common_t length() const noexcept {
+        return std::sqrt(static_cast<common_t>(x)*static_cast<common_t>(x) + static_cast<common_t>(y)*static_cast<common_t>(y));
     }
 
     template <typename A, typename B>
@@ -172,12 +172,12 @@ public:
         return *this;
     }
 
-    template <typename VX, typename VY>
-    constexpr Point3D(const Vector3D<VX, VY>& v) noexcept : x(static_cast<X>(v.x)), y(static_cast<Y>(v.y)), z(static_cast<Z>(v.z)) {}
+    template <typename V>
+    Point3D(const linalg::Vector3D<V>& v) : x(static_cast<X>(v.x)), y(static_cast<Y>(v.y)), z(static_cast<Z>(v.z)) {}
 
 public:
-    constexpr explicit operator Vector3D<X,Y>() const noexcept { return Vector3D<X,Y>(x, y, z); }
-    constexpr explicit operator Vector2D<X,Y>() const noexcept { return Vector2D<X,Y>(x, y); }
+    explicit operator linalg::Vector3D<common_t>() const { return linalg::Vector3D<common_t>(static_cast<common_t>(x), static_cast<common_t>(y), static_cast<common_t>(z)); }
+    explicit operator linalg::Vector2D<common_t>() const { return linalg::Vector2D<common_t>(static_cast<common_t>(x), static_cast<common_t>(y)); }
 
 public:
     constexpr bool operator==(const Point3D& p) const noexcept { return x == p.x && y == p.y && z == p.z; }
@@ -251,15 +251,15 @@ public:
 
 public:
     template <typename A, typename B, typename C>
-    constexpr common_t distance_to(const Point3D<A,B,C>& p) const noexcept {
+    common_t distance_to(const Point3D<A,B,C>& p) const noexcept {
         common_t dx = static_cast<common_t>(x) - static_cast<common_t>(p.x);
         common_t dy = static_cast<common_t>(y) - static_cast<common_t>(p.y);
         common_t dz = static_cast<common_t>(z) - static_cast<common_t>(p.z);
-        return math::sqrt_constexpr(dx*dx + dy*dy + dz*dz);
+        return std::sqrt(dx*dx + dy*dy + dz*dz);
     }
 
-    constexpr common_t length() const noexcept {
-        return math::sqrt_constexpr(
+    common_t length() const noexcept {
+        return std::sqrt(
             static_cast<common_t>(x)*static_cast<common_t>(x) +
             static_cast<common_t>(y)*static_cast<common_t>(y) +
             static_cast<common_t>(z)*static_cast<common_t>(z)
@@ -320,8 +320,8 @@ public:
     constexpr Point4D(const Point3D<A,B,C>& p, W w_ = W(0)) noexcept
         : x(static_cast<X>(p.x)), y(static_cast<Y>(p.y)), z(static_cast<Z>(p.z)), w(w_) {}
 
-    template <typename VX, typename VY>
-    constexpr Point4D(const Vector3D<VX, VY>& v, W w_ = W(0)) noexcept
+    template <typename V>
+    Point4D(const linalg::Vector3D<V>& v, W w_ = W(0))
         : x(static_cast<X>(v.x)), y(static_cast<Y>(v.y)), z(static_cast<Z>(v.z)), w(w_) {}
 
 public:
@@ -399,16 +399,16 @@ public:
 
 public:
     template <typename A, typename B, typename C, typename D>
-    constexpr common_t distance_to(const Point4D<A,B,C,D>& p) const noexcept {
+    common_t distance_to(const Point4D<A,B,C,D>& p) const noexcept {
         common_t dx = static_cast<common_t>(x) - static_cast<common_t>(p.x);
         common_t dy = static_cast<common_t>(y) - static_cast<common_t>(p.y);
         common_t dz = static_cast<common_t>(z) - static_cast<common_t>(p.z);
         common_t dw = static_cast<common_t>(w) - static_cast<common_t>(p.w);
-        return math::sqrt_constexpr(dx*dx + dy*dy + dz*dz + dw*dw);
+        return std::sqrt(dx*dx + dy*dy + dz*dz + dw*dw);
     }
 
-    constexpr common_t length() const noexcept {
-        return math::sqrt_constexpr(
+    common_t length() const noexcept {
+        return std::sqrt(
             static_cast<common_t>(x)*static_cast<common_t>(x) +
             static_cast<common_t>(y)*static_cast<common_t>(y) +
             static_cast<common_t>(z)*static_cast<common_t>(z) +
@@ -497,7 +497,7 @@ public:
     }
 
 public:
-    constexpr explicit operator VectorN<N,T>() const noexcept { return VectorN<N,T>(data); }
+    explicit operator linalg::VectorN<N,T>() const { return linalg::VectorN<N,T>(data); }
 
 public:
     constexpr T& operator[](std::size_t i) noexcept { return data[i]; }
@@ -568,19 +568,19 @@ public:
     }
 
 public:
-    constexpr common_t distance_to(const PointN& o) const noexcept {
+    common_t distance_to(const PointN& o) const noexcept {
         common_t sum = common_t(0);
         for (std::size_t i = 0; i < N; ++i) {
             T d = data[i] - o.data[i];
             sum += d * d;
         }
-        return math::sqrt_constexpr(sum);
+        return std::sqrt(sum);
     }
 
-    constexpr common_t length() const noexcept {
+    common_t length() const noexcept {
         common_t sum = common_t(0);
         for (std::size_t i = 0; i < N; ++i) sum += data[i] * data[i];
-        return math::sqrt_constexpr(sum);
+        return std::sqrt(sum);
     }
 
     template <std::size_t _N, typename _T>

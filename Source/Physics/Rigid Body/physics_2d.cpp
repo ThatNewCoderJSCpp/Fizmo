@@ -5,32 +5,32 @@ namespace fizmo {
 namespace physics {
 
 auto Sweep2D::get_transform(double t) const noexcept -> Transform2D { // t: unitless [0,1]
-    vector2d p = position0 * (1.0 - t) + position1 * t;
+    linalg::vector2d p = position0 * (1.0 - t) + position1 * t;
     double a   = angle0 * (1.0 - t) + angle1 * t;
     Transform2D xf(p, a);
     xf.position = p - xf.rotate(center_local);
     return xf;
 }
 
-void PolygonShape::set(const vector2d* pts, std::size_t n) {
+void PolygonShape::set(const linalg::vector2d* pts, std::size_t n) {
     assert(n >= 3 && n <= MAX_POLYGON_VERTICES);
     count = n;
     for (std::size_t i = 0; i < n; ++i) vertices[i] = pts[i];
 
     for (std::size_t i = 0; i < n; ++i) {
-        const vector2d& v0 = vertices[i];
-        const vector2d& v1 = vertices[(i + 1) % n];
-        vector2d edge = v1 - v0;
-        normals[i] = vector2d(edge.y, -edge.x).unit_vector();
+        const linalg::vector2d& v0 = vertices[i];
+        const linalg::vector2d& v1 = vertices[(i + 1) % n];
+        linalg::vector2d edge = v1 - v0;
+        normals[i] = fast::normalize(linalg::vector2d(edge.y, -edge.x));
     }
 
     double area_sum = 0.0; 
-    vector2d c{};
+    linalg::vector2d c{};
 
     for (std::size_t i = 0; i < n; ++i) {
-        const vector2d& v0 = vertices[i];
-        const vector2d& v1 = vertices[(i + 1) % n];
-        double cross = v0.perp_dot(v1); 
+        const linalg::vector2d& v0 = vertices[i];
+        const linalg::vector2d& v1 = vertices[(i + 1) % n];
+        double cross = fast::perp_dot(v0, v1); 
         area_sum += cross;
         c += (v0 + v1) * cross;
     }
@@ -41,12 +41,12 @@ void PolygonShape::set(const vector2d* pts, std::size_t n) {
 
 auto PolygonShape::make_box(double hx, double hy) -> PolygonShape { // hx, hy: meters (half-extents)
     PolygonShape s;
-    vector2d pts[4] = { {-hx, -hy}, { hx, -hy}, { hx,  hy}, {-hx,  hy} };
+    linalg::vector2d pts[4] = { {-hx, -hy}, { hx, -hy}, { hx,  hy}, {-hx,  hy} };
     s.set(pts, 4);
     return s;
 }
 
-auto PolygonShape::make_box(double hx, double hy, const vector2d& center, double angle_rad) -> PolygonShape {
+auto PolygonShape::make_box(double hx, double hy, const linalg::vector2d& center, double angle_rad) -> PolygonShape {
     PolygonShape s = make_box(hx, hy);
     Transform2D xf(center, angle_rad);
 
@@ -59,16 +59,16 @@ auto PolygonShape::make_box(double hx, double hy, const vector2d& center, double
     return s;
 }
 
-auto Shape2D::make_circle(const vector2d& center, double radius) -> Shape2D {
+auto Shape2D::make_circle(const linalg::vector2d& center, double radius) -> Shape2D {
     Shape2D s;
     s.type = ShapeType::Circle;
     s.circle = { center, radius };
-    s.bounding_radius = center.magnitude() + radius;
-    s.local_aabb = { center - vector2d(radius, radius), center + vector2d(radius, radius) };
+    s.bounding_radius = fast::length(center) + radius;
+    s.local_aabb = { center - linalg::vector2d(radius, radius), center + linalg::vector2d(radius, radius) };
     return s;
 }
 
-auto Shape2D::make_polygon(const vector2d* pts, std::size_t n) -> Shape2D {
+auto Shape2D::make_polygon(const linalg::vector2d* pts, std::size_t n) -> Shape2D {
     Shape2D s;
     s.type = ShapeType::Polygon;
     s.polygon.set(pts, n);
@@ -84,12 +84,12 @@ auto Shape2D::make_box(double hx, double hy) -> Shape2D { // meter half-extents
     return s;
 }
 
-auto Shape2D::make_capsule(const vector2d& p1, const vector2d& p2, double radius) -> Shape2D {
+auto Shape2D::make_capsule(const linalg::vector2d& p1, const linalg::vector2d& p2, double radius) -> Shape2D {
     Shape2D s;
     s.type = ShapeType::Capsule;
     s.capsule = { p1, p2, radius };
-    double r1 = p1.magnitude() + radius;
-    double r2 = p2.magnitude() + radius;
+    double r1 = fast::length(p1) + radius;
+    double r2 = fast::length(p2) + radius;
     s.bounding_radius = r1 > r2 ? r1 : r2;
     double minx = (p1.x < p2.x ? p1.x : p2.x) - radius;
     double miny = (p1.y < p2.y ? p1.y : p2.y) - radius;
@@ -99,11 +99,11 @@ auto Shape2D::make_capsule(const vector2d& p1, const vector2d& p2, double radius
     return s;
 }
 
-auto Shape2D::make_edge(const vector2d& v1, const vector2d& v2) -> Shape2D {
+auto Shape2D::make_edge(const linalg::vector2d& v1, const linalg::vector2d& v2) -> Shape2D {
     Shape2D s;
     s.type = ShapeType::Edge;
     s.edge = { v1, v2, {}, {}, false, false };
-    double r1 = v1.magnitude(), r2 = v2.magnitude();
+    double r1 = fast::length(v1), r2 = fast::length(v2);
     s.bounding_radius = r1 > r2 ? r1 : r2;
 
     s.local_aabb = {
@@ -117,12 +117,12 @@ auto Shape2D::make_edge(const vector2d& v1, const vector2d& v2) -> Shape2D {
 auto Shape2D::compute_aabb(const Transform2D& xf) const noexcept -> AABB {
     switch (type) {
         case ShapeType::Circle: {
-            vector2d c = xf.apply(circle.center);
+            linalg::vector2d c = xf.apply(circle.center);
             double r = circle.radius;
-            return { c - vector2d(r, r), c + vector2d(r, r) };
+            return { c - linalg::vector2d(r, r), c + linalg::vector2d(r, r) };
         }
         case ShapeType::Polygon: {
-            vector2d v = xf.apply(polygon.vertices[0]);
+            linalg::vector2d v = xf.apply(polygon.vertices[0]);
             AABB box = { v, v };
 
             for (std::size_t i = 1; i < polygon.count; ++i) {
@@ -136,8 +136,8 @@ auto Shape2D::compute_aabb(const Transform2D& xf) const noexcept -> AABB {
             return box;
         }
         case ShapeType::Capsule: {
-            vector2d p1 = xf.apply(capsule.point1);
-            vector2d p2 = xf.apply(capsule.point2);
+            linalg::vector2d p1 = xf.apply(capsule.point1);
+            linalg::vector2d p2 = xf.apply(capsule.point2);
             double r = capsule.radius;
 
             return {
@@ -152,8 +152,8 @@ auto Shape2D::compute_aabb(const Transform2D& xf) const noexcept -> AABB {
             };
         }
         case ShapeType::Edge: {
-            vector2d v1 = xf.apply(edge.v1);
-            vector2d v2 = xf.apply(edge.v2);
+            linalg::vector2d v1 = xf.apply(edge.v1);
+            linalg::vector2d v2 = xf.apply(edge.v2);
 
             return {
                 { v1.x < v2.x ? v1.x : v2.x, v1.y < v2.y ? v1.y : v2.y },
@@ -166,10 +166,10 @@ auto Shape2D::compute_aabb(const Transform2D& xf) const noexcept -> AABB {
 
 void Shape2D::compute_polygon_bounds() {
     bounding_radius = 0.0;
-    vector2d lo = polygon.vertices[0], hi = lo;
+    linalg::vector2d lo = polygon.vertices[0], hi = lo;
 
     for (std::size_t i = 0; i < polygon.count; ++i) {
-        double r = polygon.vertices[i].magnitude();
+        double r = fast::length(polygon.vertices[i]);
         if (r > bounding_radius) bounding_radius = r;
         if (polygon.vertices[i].x < lo.x) lo.x = polygon.vertices[i].x;
         if (polygon.vertices[i].y < lo.y) lo.y = polygon.vertices[i].y;
@@ -202,8 +202,8 @@ auto MassData::combine(const MassData* parts, std::size_t n) -> MassData {
     total.center = total.center / total.mass;
 
     for (std::size_t i = 0; i < n; ++i) {
-        vector2d d = parts[i].center - total.center;
-        total.inertia += parts[i].inertia + parts[i].mass * d.magnitude_squared();
+        linalg::vector2d d = parts[i].center - total.center;
+        total.inertia += parts[i].inertia + parts[i].mass * fast::length_squared(d);
     }
 
     return total;
@@ -220,9 +220,9 @@ double polygon_area(const PolygonShape& p) {
     double area = 0.0;
 
     for (std::size_t i = 0; i < p.count; ++i) {
-        const vector2d& v0 = p.vertices[i];
-        const vector2d& v1 = p.vertices[(i + 1) % p.count];
-        area += v0.perp_dot(v1);
+        const linalg::vector2d& v0 = p.vertices[i];
+        const linalg::vector2d& v1 = p.vertices[(i + 1) % p.count];
+        area += fast::perp_dot(v0, v1);
     }
 
     return std::abs(area) * 0.5;
@@ -230,7 +230,7 @@ double polygon_area(const PolygonShape& p) {
 
 double capsule_area(const CapsuleShape& c) {
     double r = c.radius;
-    double d = (c.point2 - c.point1).magnitude();
+    double d = fast::length(c.point2 - c.point1);
     return r * (2.0 * d + constants::pi() * r);
 }
 
@@ -268,15 +268,15 @@ MassData compute_circle_mass(const CircleShape& c, double density) {
 MassData compute_polygon_mass(const PolygonShape& p, double density) { 
     double area = 0.0;    // m2
     double inertia = 0.0; // kg*m2
-    vector2d center{};
+    linalg::vector2d center{};
 
     for (std::size_t i = 0; i < p.count; ++i) {
-        const vector2d& v0 = p.vertices[i];
-        const vector2d& v1 = p.vertices[(i + 1) % p.count];
-        double cross = v0.perp_dot(v1); // m2
+        const linalg::vector2d& v0 = p.vertices[i];
+        const linalg::vector2d& v1 = p.vertices[(i + 1) % p.count];
+        double cross = fast::perp_dot(v0, v1); // m2
         area += cross;
         center += (v0 + v1) * cross;
-        double tri_I = v0.dot(v0) + v0.dot(v1) + v1.dot(v1); // m2
+        double tri_I = fast::dot(v0, v0) + fast::dot(v0, v1) + fast::dot(v1, v1); // m2
         inertia += cross * tri_I;
     }
 
@@ -285,20 +285,20 @@ MassData compute_polygon_mass(const PolygonShape& p, double density) {
     double inv6A = 1.0 / (3.0 * area);
     center = center * inv6A;
     inertia = density * std::abs(inertia) / 12.0; // kg*m2
-    inertia -= mass * center.magnitude_squared();
+    inertia -= mass * fast::length_squared(center);
     return { mass, inertia, center };
 }
 
 MassData compute_capsule_mass(const CapsuleShape& c, double density) { 
     double r = c.radius; // m
-    double d = (c.point2 - c.point1).magnitude(); // m
+    double d = fast::length(c.point2 - c.point1); // m
     double rect_area = 2.0 * r * d; // m2
     double rect_mass = density * rect_area; // kg
     double rect_I = rect_mass * (d * d / 12.0 + r * r / 3.0); // kg*m2
     double circ_area = constants::pi() * r * r; // m2
     double circ_mass = density * circ_area; // kg
     double circ_I = 0.5 * circ_mass * r * r + circ_mass * (d * 0.5) * (d * 0.5); // kg*m2
-    vector2d center = c.center();
+    linalg::vector2d center = c.center();
     double total_mass = rect_mass + circ_mass; // kg
     double total_I = rect_I + circ_I; // kg*m2
     return { total_mass, total_I, center };
@@ -395,34 +395,34 @@ void RigidBody2D::set_mass(double kg) noexcept {
     m_mass_dirty = false;
 }
 
-void RigidBody2D::apply_force_at(const vector2d& f, const vector2d& world_point) {
+void RigidBody2D::apply_force_at(const linalg::vector2d& f, const linalg::vector2d& world_point) {
     if (!has(PhysicsFlags::LinearForces)) return;
     ensure_mass_uptodate();
     m_force += f;
 
     if (has(PhysicsFlags::Torque)) {
-        vector2d r = world_point - m_transform.apply(m_local_center);
-        m_torque += r.perp_dot(f);
+        linalg::vector2d r = world_point - m_transform.apply(m_local_center);
+        m_torque += fast::perp_dot(r, f);
     }
 
     wake();
 }
 
-void RigidBody2D::apply_linear_impulse(const vector2d& impulse) {
+void RigidBody2D::apply_linear_impulse(const linalg::vector2d& impulse) {
     if (!has(PhysicsFlags::LinearImpulses)) return;
     ensure_mass_uptodate();
     m_linear_velocity += impulse * m_inv_mass;
     wake();
 }
 
-void RigidBody2D::apply_impulse_at(const vector2d& impulse, const vector2d& world_point) {
+void RigidBody2D::apply_impulse_at(const linalg::vector2d& impulse, const linalg::vector2d& world_point) {
     if (!has(PhysicsFlags::LinearImpulses)) return;
     ensure_mass_uptodate();
     m_linear_velocity += impulse * m_inv_mass;
         
     if (has(PhysicsFlags::AngularImpulses)) {
-        vector2d r = world_point - m_transform.apply(m_local_center);
-        m_angular_velocity += m_inv_inertia * r.perp_dot(impulse);
+        linalg::vector2d r = world_point - m_transform.apply(m_local_center);
+        m_angular_velocity += m_inv_inertia * fast::perp_dot(r, impulse);
     }
         
     wake();
@@ -435,7 +435,7 @@ void RigidBody2D::apply_angular_impulse(double impulse) {
     wake();
 }
 
-void RigidBody2D::integrate_forces(double dt, const vector2d& gravity) {
+void RigidBody2D::integrate_forces(double dt, const linalg::vector2d& gravity) {
     ensure_mass_uptodate();
     if (has(PhysicsFlags::Gravity))        m_linear_velocity += gravity * m_gravity_scale * dt;
     if (has(PhysicsFlags::LinearForces))   m_linear_velocity += m_force * m_inv_mass * dt;
@@ -444,7 +444,7 @@ void RigidBody2D::integrate_forces(double dt, const vector2d& gravity) {
     if (has(PhysicsFlags::AngularDamping)) m_angular_velocity *= 1.0 / (1.0 + dt * m_angular_damping);
 
     if (has(PhysicsFlags::VelocityClamping)) {
-        double speed_sq = m_linear_velocity.magnitude_squared();
+        double speed_sq = fast::length_squared(m_linear_velocity);
         if (speed_sq > m_max_linear_speed * m_max_linear_speed) m_linear_velocity = m_linear_velocity * (m_max_linear_speed / std::sqrt(speed_sq));
     }
 
@@ -455,12 +455,12 @@ void RigidBody2D::integrate_forces(double dt, const vector2d& gravity) {
 
 void RigidBody2D::integrate_velocities(double dt) {
     ensure_mass_uptodate();
-    vector2d center = m_transform.apply(m_local_center);
+    linalg::vector2d center = m_transform.apply(m_local_center);
     m_sweep.position0 = center;
     m_sweep.angle0    = m_transform.angle;
 
     if (has(PhysicsFlags::LinearVelocity)) {
-        vector2d dv = m_linear_velocity * dt;
+        linalg::vector2d dv = m_linear_velocity * dt;
         if (has(PhysicsFlags::LockPositionX)) dv.x = 0.0;
         if (has(PhysicsFlags::LockPositionY)) dv.y = 0.0;
         center += dv;
@@ -472,13 +472,13 @@ void RigidBody2D::integrate_velocities(double dt) {
     m_sweep.angle1    = m_transform.angle;
 }
 
-void RigidBody2D::apply_position_correction(const vector2d& d_center, double d_angle) {
+void RigidBody2D::apply_position_correction(const linalg::vector2d& d_center, double d_angle) {
     if (d_center.x == 0.0 && d_center.y == 0.0 && d_angle == 0.0) return;
     ensure_mass_uptodate();
-    vector2d dc = d_center;
+    linalg::vector2d dc = d_center;
     if (has(PhysicsFlags::LockPositionX)) dc.x = 0.0;
     if (has(PhysicsFlags::LockPositionY)) dc.y = 0.0;
-    vector2d center = m_transform.apply(m_local_center) + dc;
+    linalg::vector2d center = m_transform.apply(m_local_center) + dc;
     if (d_angle != 0.0) m_transform.set_angle(m_transform.angle + d_angle);
     m_transform.position = center - m_transform.rotate(m_local_center);
 }
@@ -495,7 +495,7 @@ void RigidBody2D::put_to_sleep() {
 double RigidBody2D::advance_sleep_timer(double dt) {
     if (!has(PhysicsFlags::AllowSleep)) { m_sleep_timer = 0.0; return 0.0; }
 
-    if (m_linear_velocity.magnitude_squared() > LINEAR_SLEEP_TOLERANCE * LINEAR_SLEEP_TOLERANCE ||
+    if (fast::length_squared(m_linear_velocity) > LINEAR_SLEEP_TOLERANCE * LINEAR_SLEEP_TOLERANCE ||
         std::abs(m_angular_velocity) > ANGULAR_SLEEP_TOLERANCE) {
         m_sleep_timer = 0.0;
     } else {
@@ -517,15 +517,15 @@ auto RigidBody2D::compute_body_aabb() const -> AABB {
     return result;
 }
 
-auto RigidBody2D::get_velocity_at(const vector2d& world_point) const noexcept -> vector2d {
+auto RigidBody2D::get_velocity_at(const linalg::vector2d& world_point) const noexcept -> linalg::vector2d {
     ensure_mass_uptodate();
-    vector2d r = world_point - m_transform.apply(m_local_center);
-    return m_linear_velocity + vector2d(-m_angular_velocity * r.y, m_angular_velocity * r.x);
+    linalg::vector2d r = world_point - m_transform.apply(m_local_center);
+    return m_linear_velocity + linalg::vector2d(-m_angular_velocity * r.y, m_angular_velocity * r.x);
 }
 
 double RigidBody2D::kinetic_energy() const noexcept {
     ensure_mass_uptodate();
-    double lin = 0.5 * m_mass * m_linear_velocity.magnitude_squared();
+    double lin = 0.5 * m_mass * fast::length_squared(m_linear_velocity);
     double rot = 0.5 * m_inertia * m_angular_velocity * m_angular_velocity;
     return lin + rot;
 }
@@ -664,15 +664,15 @@ auto RigidBody2D::rebuild_shape_bounds(const Shape2D& src) noexcept -> Shape2D {
 
     switch (s.type) {
         case ShapeType::Circle:
-            s.bounding_radius = s.circle.center.magnitude() + s.circle.radius;
-            s.local_aabb = { s.circle.center - vector2d(s.circle.radius, s.circle.radius), s.circle.center + vector2d(s.circle.radius, s.circle.radius) };
+            s.bounding_radius = fast::length(s.circle.center) + s.circle.radius;
+            s.local_aabb = { s.circle.center - linalg::vector2d(s.circle.radius, s.circle.radius), s.circle.center + linalg::vector2d(s.circle.radius, s.circle.radius) };
             break;
         case ShapeType::Polygon: {
             s.bounding_radius = 0.0;
-            vector2d lo = s.polygon.vertices[0], hi = lo;
+            linalg::vector2d lo = s.polygon.vertices[0], hi = lo;
 
             for (std::size_t i = 0; i < s.polygon.count; ++i) {
-                double r = s.polygon.vertices[i].magnitude();
+                double r = fast::length(s.polygon.vertices[i]);
                 if (r > s.bounding_radius) s.bounding_radius = r;
                 if (s.polygon.vertices[i].x < lo.x) lo.x = s.polygon.vertices[i].x;
                 if (s.polygon.vertices[i].y < lo.y) lo.y = s.polygon.vertices[i].y;
@@ -685,8 +685,8 @@ auto RigidBody2D::rebuild_shape_bounds(const Shape2D& src) noexcept -> Shape2D {
         }
         case ShapeType::Capsule: {
             auto& c = s.capsule;
-            double r1 = c.point1.magnitude() + c.radius;
-            double r2 = c.point2.magnitude() + c.radius;
+            double r1 = fast::length(c.point1) + c.radius;
+            double r2 = fast::length(c.point2) + c.radius;
             s.bounding_radius = r1 > r2 ? r1 : r2;
 
             s.local_aabb = {
@@ -698,7 +698,7 @@ auto RigidBody2D::rebuild_shape_bounds(const Shape2D& src) noexcept -> Shape2D {
         }
         case ShapeType::Edge: {
             auto& e = s.edge;
-            double r1 = e.v1.magnitude(), r2 = e.v2.magnitude();
+            double r1 = fast::length(e.v1), r2 = fast::length(e.v2);
             s.bounding_radius = r1 > r2 ? r1 : r2;
 
             s.local_aabb = {

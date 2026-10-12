@@ -54,7 +54,7 @@ void CameraController2D::zoom_to_fit(const WorldRect& r, double padding) noexcep
 
 void CameraController2D::snap() noexcept {
     if (!m_camera) return;
-    if (m_target_fn) { const vector2d t = m_target_fn(); m_tx = t.x; m_ty = t.y; }
+    if (m_target_fn) { const linalg::vector2d t = m_target_fn(); m_tx = t.x; m_ty = t.y; }
     m_x = m_tx + m_offset_x;
     m_y = m_ty + m_offset_y;
     m_prev_tx = m_tx;
@@ -68,7 +68,7 @@ void CameraController2D::snap() noexcept {
 
 void CameraController2D::update(double dt) noexcept {
     if (!m_camera || dt <= 0.0) return;
-    if (m_target_fn) { const vector2d t = m_target_fn(); m_tx = t.x; m_ty = t.y; }
+    if (m_target_fn) { const linalg::vector2d t = m_target_fn(); m_tx = t.x; m_ty = t.y; }
     if (m_first && m_has_target) snap();
 
     const double z = m_camera->zoom() + (m_zoom_target - m_camera->zoom()) * blend(m_zoom_half_life, dt);

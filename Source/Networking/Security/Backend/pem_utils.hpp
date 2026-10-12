@@ -31,6 +31,15 @@ public:
 
     static bool base64_decode(const char* text, std::size_t len, std::vector<std::uint8_t>& out) noexcept;
 
+    struct Block {
+        std::string               label;
+        std::vector<std::uint8_t> der;
+        bool                      encrypted = false;
+    };
+
+    static std::vector<Block> decode_all(const std::string& text);
+    static std::string encode(const std::string& label, const std::uint8_t* der, std::size_t len);
+
 private:
     static int decode_char(char c) noexcept;
 };

@@ -11,12 +11,12 @@ namespace pressure {
 constexpr PressureUnit pascal_ = force::newton / area::square_meter;     
 FIZMO_SI_PREFIXED(pascal_, pascal_);                 
 
-constexpr PressureUnit bar(1e5L);
+constexpr PressureUnit bar(exact("1e5"));
 FIZMO_SI_PREFIXED(bar, bar);
 
-constexpr PressureUnit atmosphere(101325.0L);
-constexpr PressureUnit torr      (101325.0L / 760.0L);
-constexpr PressureUnit mmHg      (133.322387415L);
+constexpr PressureUnit atmosphere(exact("101325.0"));
+constexpr PressureUnit torr      (ratio(101325, 760));
+constexpr PressureUnit mmHg      (exact("133.322387415"));
 constexpr PressureUnit psi = force::pound_force / area::square_inch;  
 
 } // namespace pressure

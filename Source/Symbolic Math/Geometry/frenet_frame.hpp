@@ -12,9 +12,9 @@ namespace math {
 namespace geometry {
 
 struct EvaluatedFrenetFrame {
-    Vector3D<double, double> T;
-    Vector3D<double, double> N;
-    Vector3D<double, double> B;
+    linalg::Vector3D<double> T;
+    linalg::Vector3D<double> N;
+    linalg::Vector3D<double> B;
     double kappa;
     double tau;
 
@@ -45,9 +45,9 @@ public:
     const vectors::SymbolicVector3& B()     const { return B_;     }
     const cas::Expression&      kappa() const { return kappa_; }
     const cas::Expression&      tau()   const { return tau_;   }
-    Vector3D<double, double> T_at(double t)     const { return T_.evaluate({{param_, t}}); }
-    Vector3D<double, double> N_at(double t)     const { return N_.evaluate({{param_, t}}); }
-    Vector3D<double, double> B_at(double t)     const { return B_.evaluate({{param_, t}}); }
+    linalg::Vector3D<double> T_at(double t)     const { return T_.evaluate({{param_, t}}); }
+    linalg::Vector3D<double> N_at(double t)     const { return N_.evaluate({{param_, t}}); }
+    linalg::Vector3D<double> B_at(double t)     const { return B_.evaluate({{param_, t}}); }
     double kappa_at(double t) const { return kappa_.evaluate({{param_, t}}); }
     double tau_at(double t)   const { return tau_.evaluate({{param_, t}}); }
     EvaluatedFrenetFrame evaluate_at(double t) const { return { T_at(t), N_at(t), B_at(t), kappa_at(t), tau_at(t) }; }
@@ -75,10 +75,10 @@ private:
 };
 
 struct EvaluatedOsculatingCircle {
-    Vector3D<double, double> center;
+    linalg::Vector3D<double> center;
     double                   radius;
-    Vector3D<double, double> T;
-    Vector3D<double, double> N;
+    linalg::Vector3D<double> T;
+    linalg::Vector3D<double> N;
 
     friend std::ostream& operator<<(std::ostream& os, const EvaluatedOsculatingCircle& frame) {
         os << "Osculating Circle:\n"
@@ -105,7 +105,7 @@ public:
     const cas::Expression&      radius() const { return radius_; }
     const vectors::SymbolicVector3& T()      const { return T_; }
     const vectors::SymbolicVector3& N()      const { return N_; }
-    Vector3D<double, double> center_at(double t) const { return center_.evaluate({{param_, t}}); }
+    linalg::Vector3D<double> center_at(double t) const { return center_.evaluate({{param_, t}}); }
     double                   radius_at(double t) const { return radius_.evaluate({{param_, t}}); }
 
     EvaluatedOsculatingCircle evaluate_at(double t) const {
@@ -139,8 +139,8 @@ private:
 };
 
 struct EvaluatedFrenetFrame2D {
-    Vector2D<double, double> T;
-    Vector2D<double, double> N;
+    linalg::Vector2D<double> T;
+    linalg::Vector2D<double> N;
     double kappa;
 
     friend std::ostream& operator<<(std::ostream& os, const EvaluatedFrenetFrame2D& f) {
@@ -154,10 +154,10 @@ struct EvaluatedFrenetFrame2D {
 };
 
 struct EvaluatedOsculatingCircle2D {
-    Vector2D<double, double> center;
+    linalg::Vector2D<double> center;
     double                   radius;
-    Vector2D<double, double> T;
-    Vector2D<double, double> N;
+    linalg::Vector2D<double> T;
+    linalg::Vector2D<double> N;
 
     friend std::ostream& operator<<(std::ostream& os, const EvaluatedOsculatingCircle2D& c) {
         os << "Osculating Circle (2D):\n"
@@ -171,8 +171,8 @@ struct EvaluatedOsculatingCircle2D {
 };
 
 struct EvaluatedFrenetFrame4D {
-    vector4d T;
-    vector4d N;
+    linalg::vector4d T;
+    linalg::vector4d N;
     double   kappa;
 
     friend std::ostream& operator<<(std::ostream& os, const EvaluatedFrenetFrame4D& f) {
@@ -186,10 +186,10 @@ struct EvaluatedFrenetFrame4D {
 };
 
 struct EvaluatedOsculatingCircle4D {
-    vector4d center;
+    linalg::vector4d center;
     double   radius;
-    vector4d T;
-    vector4d N;
+    linalg::vector4d T;
+    linalg::vector4d N;
 
     friend std::ostream& operator<<(std::ostream& os, const EvaluatedOsculatingCircle4D& c) {
         os << "Osculating Circle (4D):\n"
@@ -246,8 +246,8 @@ public:
     const vectors::SymbolicVector2& N()     const { return N_;     }
     const cas::Expression&      kappa() const { return kappa_; }
 
-    Vector2D<double, double> T_at(double t)     const { return T_.evaluate({{param_, t}}); }
-    Vector2D<double, double> N_at(double t)     const { return N_.evaluate({{param_, t}}); }
+    linalg::Vector2D<double> T_at(double t)     const { return T_.evaluate({{param_, t}}); }
+    linalg::Vector2D<double> N_at(double t)     const { return N_.evaluate({{param_, t}}); }
     double                   kappa_at(double t) const { return kappa_.evaluate({{param_, t}}); }
 
     EvaluatedFrenetFrame2D evaluate_at(double t) const { return { T_at(t), N_at(t), kappa_at(t) }; }
@@ -276,7 +276,7 @@ public:
     const vectors::SymbolicVector2& T()      const { return T_; }
     const vectors::SymbolicVector2& N()      const { return N_; }
 
-    Vector2D<double, double> center_at(double t) const { return center_.evaluate({{param_, t}}); }
+    linalg::Vector2D<double> center_at(double t) const { return center_.evaluate({{param_, t}}); }
     double                   radius_at(double t) const { return radius_.evaluate({{param_, t}}); }
 
     EvaluatedOsculatingCircle2D evaluate_at(double t) const {
@@ -307,8 +307,8 @@ public:
     const vectors::SymbolicVector4& N()     const { return N_;     }
     const cas::Expression&      kappa() const { return kappa_; }
 
-    vector4d T_at(double t)     const { return T_.evaluate({{param_, t}}); }
-    vector4d N_at(double t)     const { return N_.evaluate({{param_, t}}); }
+    linalg::vector4d T_at(double t)     const { return T_.evaluate({{param_, t}}); }
+    linalg::vector4d N_at(double t)     const { return N_.evaluate({{param_, t}}); }
     double   kappa_at(double t) const { return kappa_.evaluate({{param_, t}}); }
 
     EvaluatedFrenetFrame4D evaluate_at(double t) const { return { T_at(t), N_at(t), kappa_at(t) }; }
@@ -339,7 +339,7 @@ public:
     const vectors::SymbolicVector4& T()      const { return T_; }
     const vectors::SymbolicVector4& N()      const { return N_; }
 
-    vector4d center_at(double t) const { return center_.evaluate({{param_, t}}); }
+    linalg::vector4d center_at(double t) const { return center_.evaluate({{param_, t}}); }
     double   radius_at(double t) const { return radius_.evaluate({{param_, t}}); }
 
     EvaluatedOsculatingCircle4D evaluate_at(double t) const {
@@ -466,11 +466,11 @@ public:
     FrenetFrame frenet_frame() const { return FrenetFrame(T(), N(), B(), curvature(), torsion(), param_); }
     OsculatingCircle osculating_circle() const { return OsculatingCircle(osculating_center(), inv_curvature(), T(), N(), param_); }
 
-    Vector3D<double, double> position_at(double t) const { return r_.evaluate({{param_, t}}); }
-    Vector3D<double, double> velocity_at(double t) const { return rp_->evaluate({{param_, t}}); }
+    linalg::Vector3D<double> position_at(double t) const { return r_.evaluate({{param_, t}}); }
+    linalg::Vector3D<double> velocity_at(double t) const { return rp_->evaluate({{param_, t}}); }
     double speed_at(double t) const { return velocity_at(t).magnitude(); }
-    Vector3D<double, double> acceleration_at(double t) const { return rpp_->evaluate({{param_, t}}); }
-    Vector3D<double, double> jerk_at(double t) const { return rppp_->evaluate({{param_, t}}); }
+    linalg::Vector3D<double> acceleration_at(double t) const { return rpp_->evaluate({{param_, t}}); }
+    linalg::Vector3D<double> jerk_at(double t) const { return rppp_->evaluate({{param_, t}}); }
 
     EvaluatedFrenetFrame frenet_frame_at(double t) const { return frenet_frame().evaluate_at(t); }
     EvaluatedOsculatingCircle osculating_circle_at(double t) const { return osculating_circle().evaluate_at(t); }
@@ -551,11 +551,11 @@ public:
     FrenetFrame2D frenet_frame() const { return FrenetFrame2D(T(), N(), signed_curvature(), param_); }
     OsculatingCircle2D osculating_circle() const { return OsculatingCircle2D(osculating_center(), inv_curvature(), T(), N(), param_); }
 
-    Vector2D<double, double> position_at(double t)     const { return r_.evaluate({{param_, t}}); }
-    Vector2D<double, double> velocity_at(double t)     const { return r_prime().evaluate({{param_, t}}); }
+    linalg::Vector2D<double> position_at(double t)     const { return r_.evaluate({{param_, t}}); }
+    linalg::Vector2D<double> velocity_at(double t)     const { return r_prime().evaluate({{param_, t}}); }
     double                   speed_at(double t)        const { return velocity_at(t).magnitude(); }
-    Vector2D<double, double> acceleration_at(double t) const { return r_double_prime().evaluate({{param_, t}}); }
-    Vector2D<double, double> jerk_at(double t)         const { return r_triple_prime().evaluate({{param_, t}}); }
+    linalg::Vector2D<double> acceleration_at(double t) const { return r_double_prime().evaluate({{param_, t}}); }
+    linalg::Vector2D<double> jerk_at(double t)         const { return r_triple_prime().evaluate({{param_, t}}); }
 
     EvaluatedFrenetFrame2D       frenet_frame_at(double t)       const { return frenet_frame().evaluate_at(t); }
     EvaluatedOsculatingCircle2D  osculating_circle_at(double t)  const { return osculating_circle().evaluate_at(t); }
@@ -563,7 +563,7 @@ public:
     struct ClosureResult {
         bool                     found     = false;
         double                   parameter = 0.0;
-        Vector2D<double, double> point     = { 0.0, 0.0 };
+        linalg::Vector2D<double> point     = { 0.0, 0.0 };
     };
 
     bool is_closed(double t0, double t1, double tol = constants::middle_epsilon()) const;
@@ -597,14 +597,14 @@ public:
     std::string to_string() const { std::stringstream ss; ss << *this; return ss.str(); }
 
 private:
-    static double dist_squared(const Vector2D<double, double>& a, const Vector2D<double, double>& b) noexcept {
+    static double dist_squared(const linalg::Vector2D<double>& a, const linalg::Vector2D<double>& b) noexcept {
         double dx = a.x - b.x;
         double dy = a.y - b.y;
         return dx * dx + dy * dy;
     }
 
     ClosureResult refine_closure(
-        const Vector2D<double, double>& p0,
+        const linalg::Vector2D<double>& p0,
         double a, double b,
         double tol_sq
     ) const;
@@ -660,10 +660,10 @@ public:
         return OsculatingCircle4D(osculating_center(), inv_curvature(), T(), N(), param_);
     }
 
-    vector4d position_at(double t)     const { return r_.evaluate({{param_, t}}); }
-    vector4d velocity_at(double t)     const { return r_prime().evaluate({{param_, t}}); }
-    vector4d acceleration_at(double t) const { return r_double_prime().evaluate({{param_, t}}); }
-    vector4d jerk_at(double t)         const { return r_triple_prime().evaluate({{param_, t}}); }
+    linalg::vector4d position_at(double t)     const { return r_.evaluate({{param_, t}}); }
+    linalg::vector4d velocity_at(double t)     const { return r_prime().evaluate({{param_, t}}); }
+    linalg::vector4d acceleration_at(double t) const { return r_double_prime().evaluate({{param_, t}}); }
+    linalg::vector4d jerk_at(double t)         const { return r_triple_prime().evaluate({{param_, t}}); }
 
     double speed_at(double t) const {
         auto v = velocity_at(t);

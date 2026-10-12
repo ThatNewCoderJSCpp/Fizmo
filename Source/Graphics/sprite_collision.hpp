@@ -39,14 +39,14 @@ inline physics::AABB sprite_aabb(const Sprite& s, double pad) noexcept {
     };
 }
 
-inline std::pair<vector2d, double> sprite_circle(const Sprite& s) noexcept {
+inline std::pair<linalg::vector2d, double> sprite_circle(const Sprite& s) noexcept {
     auto b = s.bounds();
-    vector2d c{ b.x + b.w * 0.5, b.y + b.h * 0.5 };
+    linalg::vector2d c{ b.x + b.w * 0.5, b.y + b.h * 0.5 };
     double r = std::max(b.w, b.h) * 0.5;
     return { c, r };
 }
 
-inline std::pair<vector2d, double> sprite_circle(const Sprite& s, double pad) noexcept {
+inline std::pair<linalg::vector2d, double> sprite_circle(const Sprite& s, double pad) noexcept {
     auto [c, r] = sprite_circle(s);
     return { c, r + pad };
 }
@@ -62,7 +62,7 @@ inline physics::AABB sprite_collision_aabb(
             return sprite_aabb(s, def.padding);
         case SpriteCollisionKind::AutoCircle: {
             auto [c, r] = sprite_circle(s, def.padding);
-            return { c - vector2d(r, r), c + vector2d(r, r) };
+            return { c - linalg::vector2d(r, r), c + linalg::vector2d(r, r) };
         }
         case SpriteCollisionKind::Custom:
             return def.custom_shape.compute_aabb(physics::Transform2D({ s.x(), s.y() }, 0.0));

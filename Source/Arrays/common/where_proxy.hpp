@@ -5,6 +5,8 @@
 
 namespace fizmo {
 
+namespace collections {
+
 template <typename Container>
 class BasicWhereProxy {
 public:
@@ -13,35 +15,8 @@ public:
     using element_type = typename std::conditional<std::is_const<Container>::value, const value_type, value_type>::type;
     using index_list = DynamicArray<std::size_t>;
 
-    class iterator {
-        element_type*      m_base;
-        const std::size_t* m_idx;
-
-    public:
-        using difference_type = std::ptrdiff_t;
-        using value_type = typename BasicWhereProxy::value_type;
-        using reference = element_type&;
-        using pointer = element_type*;
-        using iterator_category = std::random_access_iterator_tag;
-
-        iterator(element_type* base, const std::size_t* idx) noexcept : m_base(base), m_idx(idx) {}
-        reference operator*() const noexcept { return m_base[*m_idx]; }
-        pointer operator->() const noexcept { return m_base + *m_idx; }
-        reference operator[](difference_type n) const noexcept { return m_base[m_idx[n]]; }
-        iterator& operator++() noexcept { ++m_idx; return *this; }
-        iterator operator++(int) noexcept { iterator t(*this); ++m_idx; return t; }
-        iterator& operator--() noexcept { --m_idx; return *this; }
-        iterator operator--(int) noexcept { iterator t(*this); --m_idx; return t; }
-        iterator& operator+=(difference_type n) noexcept { m_idx += n; return *this; }
-        iterator& operator-=(difference_type n) noexcept { m_idx -= n; return *this; }
-        friend iterator operator+(iterator it, difference_type n) noexcept { it += n; return it; }
-        friend iterator operator-(iterator it, difference_type n) noexcept { it -= n; return it; }
-        friend difference_type operator-(const iterator& a, const iterator& b) noexcept { return a.m_idx - b.m_idx; }
-        friend bool operator==(const iterator& a, const iterator& b) noexcept { return a.m_idx == b.m_idx; }
-        friend bool operator!=(const iterator& a, const iterator& b) noexcept { return a.m_idx != b.m_idx; }
-        friend bool operator<(const iterator& a, const iterator& b) noexcept { return a.m_idx < b.m_idx; }
-        std::size_t index() const noexcept { return *m_idx; }
-    };
+    using iterator = IndexIterator<const BasicWhereProxy, false>;
+    using const_iterator = iterator;
 
 private:
     Container& m_arr;
@@ -84,8 +59,8 @@ public:
 
     Container& array() const noexcept { return m_arr; }
 
-    iterator begin() const noexcept { return iterator(base(), m_indices.data()); }
-    iterator end() const noexcept { return iterator(base(), m_indices.data() + m_indices.size()); }
+    iterator begin() const noexcept { return iterator(this, 0); }
+    iterator end() const noexcept { return iterator(this, m_indices.size()); }
 
     std::size_t count() const noexcept { return m_indices.size(); }
     std::size_t size() const noexcept { return m_indices.size(); }
@@ -446,38 +421,42 @@ private:
     }
 };
 
+} // namespace collections
+
 namespace arrays {
 namespace detail {
 
 template <typename Derived, typename T, typename Base>
-inline BasicWhereProxy<Derived> FunctionalOps<Derived, T, Base>::where(const T& value) {
-    return BasicWhereProxy<Derived>(self(), this->find_indices(value));
+inline collections::BasicWhereProxy<Derived> FunctionalOps<Derived, T, Base>::where(const T& value) {
+    return collections::BasicWhereProxy<Derived>(self(), this->find_indices(value));
 }
 
 template <typename Derived, typename T, typename Base>
 template <typename Pred>
-inline BasicWhereProxy<Derived> FunctionalOps<Derived, T, Base>::where(Pred pred) {
-    return BasicWhereProxy<Derived>(self(), this->find_indices_if(pred));
+inline collections::BasicWhereProxy<Derived> FunctionalOps<Derived, T, Base>::where(Pred pred) {
+    return collections::BasicWhereProxy<Derived>(self(), this->find_indices_if(pred));
 }
 
 template <typename Derived, typename T, typename Base>
-inline BasicWhereProxy<Derived> FunctionalOps<Derived, T, Base>::where_indices(index_array_t<T> indices) {
-    return BasicWhereProxy<Derived>(self(), static_cast<index_array_t<T>&&>(indices));
+inline collections::BasicWhereProxy<Derived> FunctionalOps<Derived, T, Base>::where_indices(index_array_t<T> indices) {
+    return collections::BasicWhereProxy<Derived>(self(), static_cast<index_array_t<T>&&>(indices));
 }
 
 template <typename Derived, typename T, typename Base>
-inline BasicWhereProxy<const Derived> FunctionalOps<Derived, T, Base>::where(const T& value) const {
-    return BasicWhereProxy<const Derived>(cself(), this->find_indices(value));
+inline collections::BasicWhereProxy<const Derived> FunctionalOps<Derived, T, Base>::where(const T& value) const {
+    return collections::BasicWhereProxy<const Derived>(cself(), this->find_indices(value));
 }
 
 template <typename Derived, typename T, typename Base>
 template <typename Pred>
-inline BasicWhereProxy<const Derived> FunctionalOps<Derived, T, Base>::where(Pred pred) const {
-    return BasicWhereProxy<const Derived>(cself(), this->find_indices_if(pred));
+inline collections::BasicWhereProxy<const Derived> FunctionalOps<Derived, T, Base>::where(Pred pred) const {
+    return collections::BasicWhereProxy<const Derived>(cself(), this->find_indices_if(pred));
 }
 
 } // namespace detail
 } // namespace arrays
+
+namespace collections {
 
 template <typename T>
 using WhereProxy = BasicWhereProxy<DynamicArray<T>>;
@@ -485,6 +464,7 @@ using WhereProxy = BasicWhereProxy<DynamicArray<T>>;
 template <typename T, std::size_t N>
 using SmallVectorWhereProxy = BasicWhereProxy<SmallVector<T, N>>;
 
+} // namespace collections
 } // namespace fizmo
 
 #endif // FIZMO_ARRAYS_WHERE_PROXY_HPP

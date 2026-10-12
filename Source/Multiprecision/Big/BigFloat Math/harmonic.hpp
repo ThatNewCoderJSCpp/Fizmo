@@ -9,7 +9,6 @@
 #include <type_traits>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace hmdetail {
@@ -49,7 +48,6 @@ template <typename T, typename std::enable_if<std::is_arithmetic<T>::value, int>
 inline BigFloat harmonic(T x) { return harmonic(BigFloat(x), BigFloatContext::current()); }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_HARMONIC_HPP

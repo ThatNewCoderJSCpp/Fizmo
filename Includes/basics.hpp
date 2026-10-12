@@ -5,10 +5,10 @@
 #include "../Source/Symbolic Math/Common/points.hpp"
 #include "../Source/Multiprecision/include.hpp"
 #include "../Source/Random/random_std_int.hpp"
+#include "../Source/Random/random_mp.hpp"
 
 #if defined(FIZMO_BASIC) || defined(FIZMO_BASICS)
     #include "std_overloads.hpp"
-    #include "misc_math.hpp"
 #endif
 
 #ifdef FIZMO_CONSTANTS
@@ -16,7 +16,6 @@
 #endif 
 
 #if defined(FIZMO_MISC) || defined(FIZMO_MISCELLANEOUS)
-    #include "misc_math.hpp"
     #include "../Source/Basic/endianess.hpp"
 #endif
 

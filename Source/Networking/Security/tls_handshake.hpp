@@ -6,6 +6,8 @@
 #include "certificate_verifier.hpp"
 #include "certificate_chain.hpp"
 #include "Backend/native_backend.hpp"
+#include "client_hello.hpp"
+#include "tls_metrics.hpp"
 #include "../Core/socket_error.hpp"
 #include <vector>
 #include <string>
@@ -67,8 +69,7 @@ struct HandshakeResult {
 
 class TLSHandshake {
 public:
-    TLSHandshake(TLSContext& ctx, HandshakeRole role, const std::string& hostname = {}) noexcept : m_ctx(ctx), m_role(role), m_hostname(hostname), m_state(HandshakeState::NotStarted) {}
-
+    TLSHandshake(TLSContext& ctx, HandshakeRole role, const std::string& hostname = {}) noexcept;
     ~TLSHandshake() noexcept { m_session.close_session(); }
 
     TLSHandshake(const TLSHandshake&)            = delete;
@@ -80,27 +81,32 @@ public:
     void set_on_complete(std::function<void()> cb) { m_on_complete = std::move(cb); }
     void set_on_failed(std::function<void(HandshakeError, const std::string&)> cb) { m_on_failed = std::move(cb); }
     void set_verifier(std::shared_ptr<CertificateVerifier> v) { m_verifier = std::move(v); }
+    void set_session_key(const std::string& key) { m_session_key = key; }
 
     HandshakeState     state()    const noexcept { return m_state; }
     HandshakeRole      role()     const noexcept { return m_role; }
     bool               is_complete() const noexcept { return m_state == HandshakeState::Complete; }
     bool               has_failed()  const noexcept { return m_state == HandshakeState::Failed; }
     const std::string& hostname() const noexcept { return m_hostname; }
+    const std::string& requested_server_name() const noexcept { return m_sni; }
+    const ClientHelloInfo& client_hello() const noexcept { return m_hello; }
+    TLSContext&        active_context() const noexcept { return *m_active; }
+    const VerifyResult& verify_result() const noexcept { return m_verify; }
+    TLSMetrics&        metrics() noexcept { return m_metrics; }
+    const TLSMetrics&  metrics() const noexcept { return m_metrics; }
 
     detail::NativeSession&       session()       noexcept { return m_session; }
     const detail::NativeSession& session() const noexcept { return m_session; }
 
 public:
     HandshakeResult start() noexcept;
-
     HandshakeResult step(const std::uint8_t* data, std::size_t len) noexcept;
-
     HandshakeResult step(const std::vector<std::uint8_t>& data) noexcept {
         return step(data.data(), data.size());
     }
-
     HandshakeResult renegotiate(const std::uint8_t* data, std::size_t len) noexcept {
         m_state = HandshakeState::Renegotiating;
+        ++m_metrics.renegotiations;
         return drive(data, len);
     }
 
@@ -109,28 +115,31 @@ public:
 
 private:
     TLSContext&                          m_ctx;
+    TLSContext*                          m_active;
     HandshakeRole                        m_role;
     std::string                          m_hostname;
     HandshakeState                       m_state;
     detail::NativeSession                m_session;
-
+    bool                                 m_deferred = false;
+    std::vector<std::uint8_t>            m_hello_buf;
+    ClientHelloInfo                      m_hello;
+    std::string                          m_sni;
+    std::string                          m_session_key;
+    VerifyResult                         m_verify;
+    TLSMetrics                           m_metrics;
     std::function<void()>                                  m_on_complete;
     std::function<void(HandshakeError, const std::string&)> m_on_failed;
     std::shared_ptr<CertificateVerifier>                   m_verifier;
 
 private:
+    bool open_session(TLSContext& ctx) noexcept;
     HandshakeResult drive(const std::uint8_t* data, std::size_t len) noexcept;
-
     static HandshakeError classify(const detail::HandshakeIO& io) noexcept;
-
     HandshakeResult verify_peer() noexcept;
-
     std::string verification_hostname() const {
         return (m_role == HandshakeRole::Server) ? std::string() : m_hostname;
     }
-
     HandshakeResult apply(const VerifyResult& vr) noexcept;
-
     HandshakeResult fail(HandshakeError err, const std::string& msg = {}) noexcept;
 };
 

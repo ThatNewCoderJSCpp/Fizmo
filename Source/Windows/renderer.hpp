@@ -85,8 +85,8 @@ private:
     };
 
     struct TargetFrame {
-        math::Matrix3d              xform;
-        std::vector<math::Matrix3d> stack;
+        linalg::Matrix3d              xform;
+        std::vector<linalg::Matrix3d> stack;
         int                         kind = 0;
         unsigned int                width = 0;
         unsigned int                height = 0;
@@ -213,23 +213,23 @@ public:
 
     void pop_transform() noexcept;
 
-    void set_transform(const math::Matrix3d& m) noexcept { m_xform = m; classify_transform(); }
-    void reset_transform() noexcept { m_xform = math::Matrix3d::identity(); m_xform_kind = XformKind::Identity; }
-    void transform(const math::Matrix3d& m) noexcept { m_xform = m_xform * m; classify_transform(); }
-    void translate(double dx, double dy) noexcept { transform(math::Matrix3d::translation_2d(dx, dy)); }
-    void rotate(double angle, bool degrees = true) noexcept { transform(math::Matrix3d::rotation_2d(angle, degrees)); }
-    void scale(double sx, double sy) noexcept { transform(math::Matrix3d{ sx, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, 1.0 }); }
+    void set_transform(const linalg::Matrix3d& m) noexcept { m_xform = m; classify_transform(); }
+    void reset_transform() noexcept { m_xform = linalg::Matrix3d::identity(); m_xform_kind = XformKind::Identity; }
+    void transform(const linalg::Matrix3d& m) noexcept { m_xform = m_xform * m; classify_transform(); }
+    void translate(double dx, double dy) noexcept { transform(linalg::Matrix3d::translation_2d(dx, dy)); }
+    void rotate(double angle, bool degrees = true) noexcept { transform(linalg::Matrix3d::rotation_2d(angle, degrees)); }
+    void scale(double sx, double sy) noexcept { transform(linalg::Matrix3d{ sx, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, 1.0 }); }
     void scale(double s) noexcept { scale(s, s); }
 
-    const math::Matrix3d& current_transform() const noexcept { return m_xform; }
+    const linalg::Matrix3d& current_transform() const noexcept { return m_xform; }
     std::size_t transform_depth() const noexcept { return m_xform_stack.size(); }
 
-    vector2d map_point(double x, double y) const noexcept {
+    linalg::vector2d map_point(double x, double y) const noexcept {
         const auto& m = m_xform.data;
         return { m[0] * x + m[1] * y + m[2], m[3] * x + m[4] * y + m[5] };
     }
 
-    vector2d inverse_map_point(double sx, double sy) const noexcept;
+    linalg::vector2d inverse_map_point(double sx, double sy) const noexcept;
 
     void begin_2d(const graphics::Camera2D& camera) { push_transform(); transform(camera.view_matrix()); }
     void end_2d() noexcept { pop_transform(); }
@@ -397,19 +397,20 @@ public:
 
     void draw_text(int x, int y, unsigned int w, unsigned int h, const std::string& text, const text::TextStyle& style) noexcept;
 
+    void draw_text(float x, float y, const text::Text& text, text::FancyAnchor anchor = text::FancyAnchor::TopLeft);
+
+    void draw_text(const text::Text& text);
+
+    void draw_text(int x, int y, unsigned int w, unsigned int h, const text::Text& text);
+
+    text::FancyText layout_text(const text::Text& text);
+
+    void set_text_cache_capacity(std::size_t entries);
+    void clear_text_cache() noexcept { m_fancy_cache.reset(); }
+
     void draw_fancy_text(const text::FancyText& ft, float x, float y, text::FancyAnchor anchor = text::FancyAnchor::TopLeft, text::FancyDrawMode mode = text::FancyDrawMode::Auto);
     void draw_fancy_texture(const text::FancyTexture& texture, float x, float y, text::FancyAnchor anchor = text::FancyAnchor::TopLeft);
     text::FancyTexture make_fancy_texture(const text::FancyText& ft, float padding = 2.0f) const;
-    void draw_math(std::string_view source, float x, float y, const text::MathRenderOptions& options, text::FancyAnchor anchor = text::FancyAnchor::TopLeft);
-    void draw_math(std::string_view source, float x, float y, float font_size = 24.0f, const graphics::Color& color = graphics::Color(20, 20, 20, 255), text::FancyAnchor anchor = text::FancyAnchor::TopLeft);
-    text::FancyText math_text(std::string_view source, const text::MathRenderOptions& options);
-    text::FancyText math_text(std::string_view source, float font_size = 24.0f, const graphics::Color& color = graphics::Color(20, 20, 20, 255));
-    void set_math_cache_capacity(std::size_t entries);
-    void clear_math_cache() noexcept { m_fancy_cache.reset(); }
-
-    void draw_rich_text(int x, int y, const text::RichText& rt) noexcept { draw_rich_text(x, y, 0, 0, rt); }
-
-    void draw_rich_text(int x, int y, unsigned int w, unsigned int h, const text::RichText& rt) noexcept;
 
     bool begin_3d(const graphics::Camera3D& camera) noexcept {
         return m_window ? begin_3d(camera, 0, 0, m_window->width(), m_window->height()) : false;
@@ -429,36 +430,36 @@ public:
         return m_impl ? m_impl->scene_lighting() : none;
     }
 
-    const vector3d& render_origin() const noexcept { return m_origin_3d; }
+    const linalg::vector3d& render_origin() const noexcept { return m_origin_3d; }
 
     void draw_mesh(const graphics::Mesh3D& mesh, const graphics::Material3D& material = {}) noexcept {
-        draw_mesh(mesh, math::Matrix4d::identity(), material);
+        draw_mesh(mesh, linalg::Matrix4d::identity(), material);
     }
 
-    void draw_mesh(const graphics::Mesh3D& mesh, const math::Matrix4d& model, const graphics::Material3D& material = {}) noexcept;
+    void draw_mesh(const graphics::Mesh3D& mesh, const linalg::Matrix4d& model, const graphics::Material3D& material = {}) noexcept;
 
-    void draw_mesh_at(const graphics::Mesh3D& mesh, const vector3d& offset, const graphics::Material3D& material = {}) noexcept {
+    void draw_mesh_at(const graphics::Mesh3D& mesh, const linalg::vector3d& offset, const graphics::Material3D& material = {}) noexcept {
         draw_mesh(mesh, translation(offset), material);
     }
 
-    void draw_quads(const graphics::QuadMesh3D& quads, const math::Matrix4d& model, const graphics::Material3D& material = {}) noexcept;
+    void draw_quads(const graphics::QuadMesh3D& quads, const linalg::Matrix4d& model, const graphics::Material3D& material = {}) noexcept;
 
-    void draw_quads_at(const graphics::QuadMesh3D& quads, const vector3d& offset, const graphics::Material3D& material = {}) noexcept;
+    void draw_quads_at(const graphics::QuadMesh3D& quads, const linalg::vector3d& offset, const graphics::Material3D& material = {}) noexcept;
 
     graphics::MeshHandle3D upload_mesh(graphics::Mesh3D mesh, bool keep_cpu_copy = false);
 
     graphics::MeshHandle3D upload_quads(graphics::QuadMesh3D quads, bool keep_cpu_copy = false);
 
-    void draw_mesh(const graphics::MeshHandle3D& mesh, const math::Matrix4d& model, const graphics::Material3D& material = {}) noexcept;
+    void draw_mesh(const graphics::MeshHandle3D& mesh, const linalg::Matrix4d& model, const graphics::Material3D& material = {}) noexcept;
 
-    void draw_mesh_at(const graphics::MeshHandle3D& mesh, const vector3d& offset, const graphics::Material3D& material = {}) noexcept;
+    void draw_mesh_at(const graphics::MeshHandle3D& mesh, const linalg::vector3d& offset, const graphics::Material3D& material = {}) noexcept;
 
     void draw_quad_batch(const graphics::QuadBatch3D& batch, const graphics::Material3D& material = {}) noexcept;
 
-    void draw_instances(const graphics::Mesh3D& mesh, const vector3d& origin, const graphics::Instance3D* instances,
+    void draw_instances(const graphics::Mesh3D& mesh, const linalg::vector3d& origin, const graphics::Instance3D* instances,
                         std::size_t count, const graphics::Material3D& material = {}) noexcept;
 
-    void draw_instances(const graphics::Mesh3D& mesh, const vector3d& origin, const std::vector<graphics::Instance3D>& instances,
+    void draw_instances(const graphics::Mesh3D& mesh, const linalg::vector3d& origin, const std::vector<graphics::Instance3D>& instances,
                         const graphics::Material3D& material = {}) noexcept {
         draw_instances(mesh, origin, instances.data(), instances.size(), material);
     }
@@ -471,22 +472,19 @@ public:
         draw_triangles_3d(vertices.data(), vertices.size(), material);
     }
 
-    void draw_triangles_3d(const graphics::Vertex3D* vertices, std::size_t count, const math::Matrix4d& model, const graphics::Material3D& material = {}) noexcept;
+    void draw_triangles_3d(const graphics::Vertex3D* vertices, std::size_t count, const linalg::Matrix4d& model, const graphics::Material3D& material = {}) noexcept;
 
-    void draw_triangles_at(const std::vector<graphics::Vertex3D>& vertices, const vector3d& offset, const graphics::Material3D& material = {}) noexcept {
+    void draw_triangles_at(const std::vector<graphics::Vertex3D>& vertices, const linalg::vector3d& offset, const graphics::Material3D& material = {}) noexcept {
         draw_triangles_3d(vertices.data(), vertices.size(), translation(offset), material);
     }
 
-    void draw_line_3d(const vector3d& a, const vector3d& b, const graphics::Color& color, float width = 1.0f, bool depth_test = true) noexcept;
+    void draw_line_3d(const linalg::vector3d& a, const linalg::vector3d& b, const graphics::Color& color, float width = 1.0f, bool depth_test = true) noexcept;
 
-    void draw_lines_3d(const std::vector<vector3d>& points, const graphics::Color& color, float width = 1.0f, bool depth_test = true) noexcept;
+    void draw_lines_3d(const std::vector<linalg::vector3d>& points, const graphics::Color& color, float width = 1.0f, bool depth_test = true) noexcept;
 
-    void draw_box_3d(const vector3d& lo, const vector3d& hi, const graphics::Color& color, float width = 1.0f, bool depth_test = true) noexcept;
+    void draw_box_3d(const linalg::vector3d& lo, const linalg::vector3d& hi, const graphics::Color& color, float width = 1.0f, bool depth_test = true) noexcept;
 
-    text::TextMetrics measure_rich_text(const text::RichText& rt, unsigned int max_width = 0) noexcept {
-        if (m_impl) return m_impl->measure_rich_text(rt, max_width);
-        return {};
-    }
+    text::TextMetrics measure_text(const text::Text& text, unsigned int max_width = 0);
 
     text::TextMetrics measure_text(const std::string& text, const text::TextStyle& style, unsigned int max_width) noexcept;
 
@@ -509,15 +507,26 @@ public:
     text::TextMetrics measure_text(const std::wstring& text, const text::TextStyle& style) noexcept;
 
 private:
-    static math::Matrix4d translation(const vector3d& t) noexcept;
+    friend void text::draw_fancy_text_native(Renderer& r, const text::FancyText& ft, float x, float y, text::FancyAnchor anchor);
 
-    static double axis(const vector3d& v, int a) noexcept { return a == 0 ? v.x : (a == 1 ? v.y : v.z); }
+    void draw_rich_text(int x, int y, const text::RichText& rt) noexcept { draw_rich_text(x, y, 0, 0, rt); }
+
+    void draw_rich_text(int x, int y, unsigned int w, unsigned int h, const text::RichText& rt) noexcept;
+
+    text::TextMetrics measure_rich_text(const text::RichText& rt, unsigned int max_width = 0) noexcept {
+        if (m_impl) return m_impl->measure_rich_text(rt, max_width);
+        return {};
+    }
+
+    static linalg::Matrix4d translation(const linalg::vector3d& t) noexcept;
+
+    static double axis(const linalg::vector3d& v, int a) noexcept { return a == 0 ? v.x : (a == 1 ? v.y : v.z); }
 
     static std::int32_t clamp_i32(std::int64_t v) noexcept;
 
-    static void cell_origin(const vector3d& offset, std::int32_t* out) noexcept;
+    static void cell_origin(const linalg::vector3d& offset, std::int32_t* out) noexcept;
 
-    void to_origin_relative(const math::Matrix4d& model, float* out) const noexcept;
+    void to_origin_relative(const linalg::Matrix4d& model, float* out) const noexcept;
 
     bool open_target(const graphics::RenderTarget& target, const graphics::Color* clear_color) noexcept;
 
@@ -546,7 +555,7 @@ private:
     static unsigned int scale_len(unsigned int len, double s) noexcept;
 
     RenderPoint mapped(double x, double y) const noexcept {
-        const vector2d p = map_point(x, y);
+        const linalg::vector2d p = map_point(x, y);
         return { p.x, p.y };
     }
 
@@ -564,8 +573,8 @@ private:
 
     void emit_texture(const graphics::Texture& tex, int dx, int dy, unsigned int dw, unsigned int dh, float opacity, const graphics::TextureRect& src) noexcept;
 
-    math::Matrix3d              m_xform = math::Matrix3d::identity();
-    std::vector<math::Matrix3d> m_xform_stack;
+    linalg::Matrix3d              m_xform = linalg::Matrix3d::identity();
+    std::vector<linalg::Matrix3d> m_xform_stack;
     XformKind                   m_xform_kind = XformKind::Identity;
     std::vector<RenderPoint>    m_points;
     std::vector<detail::SpriteInstance>   m_sprite_scratch;
@@ -577,8 +586,8 @@ private:
     std::vector<graphics::SliceQuad>      m_slice_scratch;
     graphics::BlendMode                   m_blend = graphics::BlendMode::Normal;
 
-    vector3d              m_origin_3d{};
-    std::vector<vector3d> m_line_scratch;
+    linalg::vector3d              m_origin_3d{};
+    std::vector<linalg::vector3d> m_line_scratch;
     std::vector<detail::QuadBatchDraw> m_batch_scratch;
 
     struct ResolvedRect { int x; int y; unsigned int w; unsigned int h; };

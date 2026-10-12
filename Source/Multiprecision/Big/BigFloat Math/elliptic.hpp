@@ -11,7 +11,6 @@
 #include <type_traits>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace eldetail {
@@ -83,7 +82,6 @@ template <typename A, typename B, typename std::enable_if<std::is_arithmetic<A>:
 inline BigFloat elliptic_pi(A n, B m, const BigFloatContext& c = BigFloatContext::current()) { return elliptic_pi(BigFloat(n), BigFloat(m), c); }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_ELLIPTIC_HPP

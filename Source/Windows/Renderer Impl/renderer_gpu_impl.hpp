@@ -639,9 +639,9 @@ private:
     std::unique_ptr<ShadowMap>                               m_sun_map;
     std::unique_ptr<ShadowMap>                               m_sun_map_b;
     std::array<ReflectionTarget, kMaxPlanes>                 m_reflections;
-    mutable vector3d                                         m_sun_a{ 0.0, 0.0, -1.0 };
-    mutable vector3d                                         m_sun_b{ 0.0, 0.0, -1.0 };
-    mutable vector3d                                         m_sun_prev{ 0.0, 0.0, -1.0 };
+    mutable linalg::vector3d                                         m_sun_a{ 0.0, 0.0, -1.0 };
+    mutable linalg::vector3d                                         m_sun_b{ 0.0, 0.0, -1.0 };
+    mutable linalg::vector3d                                         m_sun_prev{ 0.0, 0.0, -1.0 };
     mutable bool                                             m_sun_anchored = false;
     std::array<std::unique_ptr<ShadowMap>, kPointShadowMaps> m_point_maps;
     std::unique_ptr<ShadowMap>                               m_dummy_sun;
@@ -1608,7 +1608,7 @@ public:
         } catch (...) {}
     }
 
-    void draw_lines_3d(const vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test) noexcept override {
+    void draw_lines_3d(const linalg::vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test) noexcept override {
         if (m_ready && !m_has_3d) { RendererImplBase::draw_lines_3d(pts, count, color, width, depth_test); return; }
         if (!m_ready || !m_in_3d || !pts || count < 2 || color.alpha() == 0) return;
 
@@ -1622,9 +1622,9 @@ public:
             d.state = kLines | (1u << 2) | (depth_test ? kDepthTest : 0u);
 
             for (std::size_t i = 0; i + 1 < count; i += 2) {
-                vector3d a = pts[i], b = pts[i + 1];
+                linalg::vector3d a = pts[i], b = pts[i + 1];
                 if (!clip_to_near(sc.scene.view_proj, a, b)) continue;
-                auto corner = [&](const vector3d& p, const vector3d& o, float side) {
+                auto corner = [&](const linalg::vector3d& p, const linalg::vector3d& o, float side) {
                     m_lines3d.push_back({ float(p.x), float(p.y), float(p.z), float(o.x), float(o.y), float(o.z), rgba, side, w });
                 };
                 corner(a, b, 1.0f); corner(a, b, -1.0f); corner(b, a, 1.0f);
@@ -1900,15 +1900,15 @@ private:
         u.legacy[3] = m_light3d.ambient;
     }
 
-    static void set_row(Mat4f& m, int row, const vector3d& axis, double constant) noexcept {
+    static void set_row(Mat4f& m, int row, const linalg::vector3d& axis, double constant) noexcept {
         m[static_cast<std::size_t>(row * 4 + 0)] = static_cast<float>(axis.x);
         m[static_cast<std::size_t>(row * 4 + 1)] = static_cast<float>(axis.y);
         m[static_cast<std::size_t>(row * 4 + 2)] = static_cast<float>(axis.z);
         m[static_cast<std::size_t>(row * 4 + 3)] = static_cast<float>(constant);
     }
 
-    static vector3d quantized_direction(const vector3d& direction, double step_degrees) noexcept {
-        const vector3d d = direction / direction.magnitude();
+    static linalg::vector3d quantized_direction(const linalg::vector3d& direction, double step_degrees) noexcept {
+        const linalg::vector3d d = direction / direction.magnitude();
         if (step_degrees <= 0.0) return d;
         const double step = step_degrees * kRadiansPerDegree;
         const double azimuth = std::round(std::atan2(d.y, d.x) / step) * step;
@@ -1918,34 +1918,34 @@ private:
     }
 
     struct SunAnchors {
-        vector3d a, b;
+        linalg::vector3d a, b;
         double   t     = 0.0;
         bool     blend = false;
     };
 
-    SunAnchors sun_anchors(const vector3d& d, double step_degrees) const noexcept {
+    SunAnchors sun_anchors(const linalg::vector3d& d, double step_degrees) const noexcept {
         const double step = step_degrees * kRadiansPerDegree;
         auto reset = [&]() { m_sun_a = m_sun_b = m_sun_prev = d; m_sun_anchored = true; };
         if (!m_sun_anchored || step <= 0.0) reset();
-        const vector3d ab = m_sun_b - m_sun_a;
+        const linalg::vector3d ab = m_sun_b - m_sun_a;
         const double span = ab.dot(ab);
 
         if (span <= 0.0) {
-            const vector3d ad = d - m_sun_a;
+            const linalg::vector3d ad = d - m_sun_a;
             const double moved = ad.magnitude();
 
             if (moved > step * kAnchorStart) {
-                const vector3d b = m_sun_a + ad * (step / moved);
+                const linalg::vector3d b = m_sun_a + ad * (step / moved);
                 m_sun_b = b / b.magnitude();
             }
         }
 
         for (int guard = 0; guard < kAnchorAdvance; ++guard) {
-            const vector3d seg = m_sun_b - m_sun_a;
+            const linalg::vector3d seg = m_sun_b - m_sun_a;
             const double len2 = seg.dot(seg);
             if (len2 <= 0.0) break;
             const double t = (d - m_sun_a).dot(seg) / len2;
-            const vector3d off = d - (m_sun_a + seg * t);
+            const linalg::vector3d off = d - (m_sun_a + seg * t);
 
             if (t < -kAnchorBackTrack || off.magnitude() > step * kAnchorDrift) {
                 reset();
@@ -1955,14 +1955,14 @@ private:
             if (t < 1.0) break;
             m_sun_prev = m_sun_a;
             m_sun_a = m_sun_b;
-            const vector3d next = m_sun_a * 2.0 - m_sun_prev;
+            const linalg::vector3d next = m_sun_a * 2.0 - m_sun_prev;
             m_sun_b = next / next.magnitude();
         }
 
         SunAnchors out;
         out.a = m_sun_a;
         out.b = m_sun_b;
-        const vector3d seg = m_sun_b - m_sun_a;
+        const linalg::vector3d seg = m_sun_b - m_sun_a;
         const double len2 = seg.dot(seg);
         out.blend = len2 > 0.0;
         out.t = out.blend ? std::max(0.0, std::min(1.0, (d - m_sun_a).dot(seg) / len2)) : 0.0;
@@ -1994,17 +1994,17 @@ private:
     }
 
     static Mat4f sun_matrix(
-        const vector3d& direction, 
-        const vector3d& origin, 
+        const linalg::vector3d& direction, 
+        const linalg::vector3d& origin, 
         const graphics::SunShadow3D& s, 
         double step_degrees, 
         std::uint64_t* key = nullptr
     ) noexcept {
-        const vector3d f = quantized_direction(direction, step_degrees);
-        const vector3d up = std::fabs(f.z) > kSunUpLimit ? vector3d{ 0.0, 1.0, 0.0 } : vector3d{ 0.0, 0.0, 1.0 };
-        vector3d r = f.cross(up);
+        const linalg::vector3d f = quantized_direction(direction, step_degrees);
+        const linalg::vector3d up = std::fabs(f.z) > kSunUpLimit ? linalg::vector3d{ 0.0, 1.0, 0.0 } : linalg::vector3d{ 0.0, 0.0, 1.0 };
+        linalg::vector3d r = f.cross(up);
         r = r / r.magnitude();
-        const vector3d u = r.cross(f);
+        const linalg::vector3d u = r.cross(f);
         const double cell = sun_cell(s), extent = sun_extent(s);
         const double ox = origin.dot(r), oy = origin.dot(u), oz = origin.dot(f);
         const double cx = (std::floor(ox / cell) + 0.5) * cell, cy = (std::floor(oy / cell) + 0.5) * cell;
@@ -2033,7 +2033,7 @@ private:
         const double outer = std::cos(p.cone * kRadiansPerDegree);
         const double inner = std::cos(p.cone * (1.0 - std::clamp(static_cast<double>(p.cone_softness), 0.0, 1.0)) * kRadiansPerDegree);
         const double sharp = 1.0 / std::max(inner - outer, kMinConeGap);
-        const vector3d dir = p.direction / len * sharp;
+        const linalg::vector3d dir = p.direction / len * sharp;
         out[0] = static_cast<float>(dir.x); out[1] = static_cast<float>(dir.y); out[2] = static_cast<float>(dir.z);
         out[3] = static_cast<float>(outer);
     }
@@ -2041,7 +2041,7 @@ private:
     static std::uint8_t cone_faces(const graphics::PointLight3D& p) noexcept {
         const double len = p.direction.magnitude();
         if (!p.is_spot() || len <= 0.0) return kAllCubeFaces;
-        const vector3d dir = p.direction / len;
+        const linalg::vector3d dir = p.direction / len;
         const double reach = std::min(p.cone * kRadiansPerDegree + kCubeFaceSpread + kConeMargin, constants::pi());
         const double limit = std::cos(reach);
         const double along[kCubeFaces] = { dir.x, -dir.x, dir.y, -dir.y, dir.z, -dir.z };
@@ -2050,7 +2050,7 @@ private:
         return mask == 0 ? kAllCubeFaces : mask;
     }
 
-    static Mat4f cube_face_matrix(int face, const vector3d& light) noexcept {
+    static Mat4f cube_face_matrix(int face, const linalg::vector3d& light) noexcept {
         static const double axes[kCubeFaces][3][3] = {
             { {  0,  0, -1 }, {  0, -1,  0 }, {  1,  0,  0 } },
             { {  0,  0,  1 }, {  0, -1,  0 }, { -1,  0,  0 } },
@@ -2061,7 +2061,7 @@ private:
         };
 
         const double (*a)[3] = axes[face];
-        const vector3d sc{ a[0][0], a[0][1], a[0][2] }, tc{ a[1][0], a[1][1], a[1][2] }, ma{ a[2][0], a[2][1], a[2][2] };
+        const linalg::vector3d sc{ a[0][0], a[0][1], a[0][2] }, tc{ a[1][0], a[1][1], a[1][2] }, ma{ a[2][0], a[2][1], a[2][2] };
         Mat4f m{};
         set_row(m, 0, sc, -sc.dot(light));
         set_row(m, 1, tc, -tc.dot(light));
@@ -2070,7 +2070,7 @@ private:
         return m;
     }
 
-    void capsule_uniforms(SceneUniforms& u, const graphics::CapsuleShadows3D& c, const vector3d& origin) const {
+    void capsule_uniforms(SceneUniforms& u, const graphics::CapsuleShadows3D& c, const linalg::vector3d& origin) const {
         if (!c.enabled || c.strength <= 0.0f) return;
         std::vector<std::pair<double, std::size_t>>& order = m_capsule_order;
         order.clear();
@@ -2078,7 +2078,7 @@ private:
         for (std::size_t i = 0; i < c.capsules.size(); ++i) {
             const graphics::CapsuleOccluder3D& o = c.capsules[i];
             if (o.radius <= 0.0f) continue;
-            const vector3d mid = (o.start + o.end) * 0.5 - origin;
+            const linalg::vector3d mid = (o.start + o.end) * 0.5 - origin;
             order.emplace_back(mid.dot(mid), i);
         }
 
@@ -2087,7 +2087,7 @@ private:
 
         for (std::size_t k = 0; k < n; ++k) {
             const graphics::CapsuleOccluder3D& o = c.capsules[order[k].second];
-            const vector3d a = o.start - origin, b = o.end - origin;
+            const linalg::vector3d a = o.start - origin, b = o.end - origin;
             u.capsule_a[k][0] = static_cast<float>(a.x); u.capsule_a[k][1] = static_cast<float>(a.y); u.capsule_a[k][2] = static_cast<float>(a.z); u.capsule_a[k][3] = o.radius;
             u.capsule_b[k][0] = static_cast<float>(b.x); u.capsule_b[k][1] = static_cast<float>(b.y); u.capsule_b[k][2] = static_cast<float>(b.z);
         }
@@ -2104,10 +2104,10 @@ private:
         legacy_uniforms(u);
         const graphics::SceneLighting3D& l = m_scene_lighting;
         if (!l.enabled) return rec;
-        const vector3d origin{ scene.origin[0], scene.origin[1], scene.origin[2] };
+        const linalg::vector3d origin{ scene.origin[0], scene.origin[1], scene.origin[2] };
         std::int32_t flags = kSceneEnabled;
         const double sun_len = l.sun_direction.magnitude();
-        const vector3d sun = sun_len > 0.0 ? l.sun_direction / sun_len : vector3d{ 0.0, 0.0, -1.0 };
+        const linalg::vector3d sun = sun_len > 0.0 ? l.sun_direction / sun_len : linalg::vector3d{ 0.0, 0.0, -1.0 };
         u.sun_dir[0] = static_cast<float>(sun.x); u.sun_dir[1] = static_cast<float>(sun.y); u.sun_dir[2] = static_cast<float>(sun.z);
         rgb_into(u.sun_color, l.sun_color, std::max(l.sun_intensity, 0.0f));
         u.sun_color[3] = l.sun_exposure;
@@ -2124,7 +2124,7 @@ private:
         for (std::size_t i = 0; i < l.point_lights.size(); ++i) {
             const graphics::PointLight3D& p = l.point_lights[i];
             if (p.radius <= 0.0f || p.intensity <= 0.0f) continue;
-            const vector3d d = p.position - origin;
+            const linalg::vector3d d = p.position - origin;
             all.emplace_back(d.dot(d), i);
         }
 
@@ -2147,7 +2147,7 @@ private:
 
         for (std::size_t k = 0; k < count; ++k) {
             const graphics::PointLight3D& p = l.point_lights[all[k].second];
-            const vector3d rel = p.position - origin;
+            const linalg::vector3d rel = p.position - origin;
             float* pos = u.point_pos[k];
             float* col = u.point_color[k];
             pos[0] = static_cast<float>(rel.x); pos[1] = static_cast<float>(rel.y); pos[2] = static_cast<float>(rel.z); pos[3] = p.radius;
@@ -2166,7 +2166,7 @@ private:
             if (p.casts_shadows && rec.point_count < shadow_limit) {
                 PointShadowRec& ps = rec.points[rec.point_count];
                 ps.light[0] = pos[0]; ps.light[1] = pos[1]; ps.light[2] = pos[2]; ps.light[3] = p.radius;
-                const vector3d at{ pos[0], pos[1], pos[2] };
+                const linalg::vector3d at{ pos[0], pos[1], pos[2] };
                 for (int f = 0; f < kCubeFaces; ++f) ps.faces[static_cast<std::size_t>(f)] = cube_face_matrix(f, at);
                 ps.key = kHashSeed;
                 for (double v : { p.position.x, p.position.y, p.position.z }) mix_hash(ps.key, grid_key(v));
@@ -2204,7 +2204,7 @@ private:
 
         if (s.enabled && l.sun_intensity > 0.0f && s.resolution > 0 && s.distance > 0.0 && sun_len > 0.0) {
             const SunAnchors anchors = s.crossfade ? sun_anchors(sun, s.angle_step) : SunAnchors{};
-            const vector3d dir_a = s.crossfade ? anchors.a : quantized_direction(sun, s.angle_step);
+            const linalg::vector3d dir_a = s.crossfade ? anchors.a : quantized_direction(sun, s.angle_step);
             const Mat4f m = sun_matrix(dir_a, origin, s, 0.0, &rec.sun_key_a);
             std::copy(m.begin(), m.end(), u.sun_matrix);
             rec.sun_dir_a[0] = static_cast<float>(dir_a.x); rec.sun_dir_a[1] = static_cast<float>(dir_a.y); rec.sun_dir_a[2] = static_cast<float>(dir_a.z);
@@ -2246,7 +2246,7 @@ private:
                 if (rec.plane_count >= limit) break;
                 const double len = plane.normal.magnitude();
                 if (len <= 0.0) continue;
-                const vector3d n = plane.normal / len;
+                const linalg::vector3d n = plane.normal / len;
                 const double d = n.dot(plane.point - origin);
                 if (d >= -kPlaneFacing) continue;
                 int* rect = rec.plane_rects[rec.plane_count];
@@ -2275,7 +2275,7 @@ private:
 
     static bool plane_rect(
         const graphics::ReflectionPlane3D& plane, 
-        const vector3d& origin, 
+        const linalg::vector3d& origin, 
         const Scene3D& scene, 
         float distortion, 
         int* rect
@@ -2289,8 +2289,8 @@ private:
         const Mat4f& m = scene.view_proj;
 
         for (int k = 0; k < kBoxCorners; ++k) {
-            const vector3d c{ (k & 1) ? plane.hi.x : plane.lo.x, (k & 2) ? plane.hi.y : plane.lo.y, (k & 4) ? plane.hi.z : plane.lo.z };
-            const vector3d r = c - origin;
+            const linalg::vector3d c{ (k & 1) ? plane.hi.x : plane.lo.x, (k & 2) ? plane.hi.y : plane.lo.y, (k & 4) ? plane.hi.z : plane.lo.z };
+            const linalg::vector3d r = c - origin;
             double clip[4];
 
             for (int row = 0; row < 4; ++row)
@@ -2322,9 +2322,9 @@ private:
         rec.volume = true;
     }
 
-    static void unit_into(float* out, const vector3d& v) noexcept {
+    static void unit_into(float* out, const linalg::vector3d& v) noexcept {
         const double len = v.magnitude();
-        const vector3d n = len > 0.0 ? v / len : vector3d{ 0.0, 0.0, 1.0 };
+        const linalg::vector3d n = len > 0.0 ? v / len : linalg::vector3d{ 0.0, 0.0, 1.0 };
         out[0] = static_cast<float>(n.x); out[1] = static_cast<float>(n.y); out[2] = static_cast<float>(n.z);
     }
 
@@ -2764,8 +2764,8 @@ private:
         put_bits(d.push[31], mat.pbr ? gfx::pack_rgba(mat.emissive.red(), mat.emissive.green(), mat.emissive.blue(), 255) : 0u);
     }
 
-    static bool clip_to_near(const Mat4f& vp, vector3d& a, vector3d& b) noexcept {
-        auto z_of = [&vp](const vector3d& p) { return vp[8] * p.x + vp[9] * p.y + vp[10] * p.z + vp[11]; };
+    static bool clip_to_near(const Mat4f& vp, linalg::vector3d& a, linalg::vector3d& b) noexcept {
+        auto z_of = [&vp](const linalg::vector3d& p) { return vp[8] * p.x + vp[9] * p.y + vp[10] * p.z + vp[11]; };
         const double za = z_of(a), zb = z_of(b);
         if (za < 0.0 && zb < 0.0) return false;
         if (za < 0.0) a = a + (b - a) * (za / (za - zb));
@@ -4676,7 +4676,7 @@ private:
 
             if (c.kind == Caster::Kind::Quads && c.axis_aligned) {
                 if (point) {
-                    const vector3d eye{ light[0], light[1], light[2] };
+                    const linalg::vector3d eye{ light[0], light[1], light[2] };
                     faces &= graphics::facing_faces(eye, { c.lo[0], c.lo[1], c.lo[2] }, { c.hi[0], c.hi[1], c.hi[2] });
                 } else {
                     faces &= toward_sun;

@@ -9,7 +9,7 @@ namespace constants {
 
 namespace acdetail {
 
-enum class ac_kind : std::uint8_t { ratio, mean, beraha };
+enum class ac_kind : std::uint8_t { ratio, mean, beraha, inv_ratio, inv_mean, phi_plus };
 
 BigFloat ac_once(ac_kind k, std::uint64_t n, std::size_t wp, std::size_t& lost);
 

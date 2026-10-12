@@ -522,7 +522,7 @@ auto MathExpressionSimplifier::simplify_erf_erfc(MathExpressionNode* n) -> MathE
     if (is_neg_inf(child.get()))  return n->type == NodeType::Erf ? konst(-1.0) : konst(2.0);
     if (is_const(child.get())) {
         double v = child.get()->constant;
-        return n->type == NodeType::Erf ? konst(std::erf(v)) : konst(std::erfc(v));
+        return n->type == NodeType::Erf ? konst(numeric::erf(v)) : konst(numeric::erfc(v));
     }
     if (child.get()->type == NodeType::InverseErf && n->type == NodeType::Erf) { return MathExpression(child.get()->unary.child); }
     if (child.get()->type == NodeType::InverseErfc && n->type == NodeType::Erfc) { return MathExpression(child.get()->unary.child); }
@@ -537,7 +537,7 @@ auto MathExpressionSimplifier::simplify_erfi(MathExpressionNode* n) -> MathExpre
     if (is_const(child.get())) {
         double v = child.get()->constant;
         if (v == 0.0) return konst(0.0);
-        return konst(fizmo::math::erfi(v));
+        return konst(numeric::erfi(v));
     }
     if (child.get()->type == NodeType::InverseErfi) { return MathExpression(child.get()->unary.child); }
     return mgr_.unary(NodeType::Erfi, child);
@@ -563,7 +563,7 @@ auto MathExpressionSimplifier::simplify_inverse_erf_family(MathExpressionNode* n
                 if (v == -1.0) return neg_inf();
                 if (v ==  1.0) return pos_inf();
                 if (v ==  0.0) return konst(0.0);
-                return konst(fizmo::math::inverse_erf(v));
+                return konst(numeric::inverse_erf(v));
             }
 
             case NodeType::InverseErfc: {
@@ -571,12 +571,12 @@ auto MathExpressionSimplifier::simplify_inverse_erf_family(MathExpressionNode* n
                 if (v == 0.0) return pos_inf();  
                 if (v == 2.0) return neg_inf(); 
                 if (v == 1.0) return konst(0.0); 
-                return konst(fizmo::math::inverse_erfc(v));
+                return konst(numeric::inverse_erfc(v));
             }
 
             case NodeType::InverseErfi: {
                 if (v == 0.0) return konst(0.0);
-                return konst(fizmo::math::inverse_erfi(v));
+                return konst(numeric::inverse_erfi(v));
             }
 
             default:
@@ -597,7 +597,7 @@ auto MathExpressionSimplifier::simplify_erf_generalized(MathExpressionNode* n) -
     if (l.get() == r.get()) return konst(0.0);   
     if (is_const(l.get()) && is_const(r.get())) {
         double a = l.get()->constant, b = r.get()->constant;
-        return n->type == NodeType::ErfGeneralized ? konst(std::erf(a)  - std::erf(b)) : konst(std::erfc(a) - std::erfc(b));
+        return n->type == NodeType::ErfGeneralized ? konst(numeric::erf_difference(a, b)) : konst(numeric::erfc_difference(a, b));
     }
     return mgr_.binary(n->type, l, r);
 }
@@ -611,7 +611,7 @@ auto MathExpressionSimplifier::simplify_gamma_factorial(MathExpressionNode* n) -
         if (is_const(child.get())) {
             double v = child.get()->constant;
             if (v <= 0.0 && v == std::floor(v)) return nan_node();
-            return konst(std::tgamma(v));
+            return konst(numeric::gamma(v));
         }
     } else { 
         if (is_pos_inf(child.get())) return pos_inf();
@@ -619,7 +619,7 @@ auto MathExpressionSimplifier::simplify_gamma_factorial(MathExpressionNode* n) -
         if (is_const(child.get())) {
             double v = child.get()->constant;
             if (v < 0.0 && v == std::floor(v)) return nan_node();
-            return konst(std::tgamma(v + 1.0));
+            return konst(numeric::factorial(v));
         }
     }
     return mgr_.unary(n->type, child);
@@ -633,7 +633,7 @@ auto MathExpressionSimplifier::simplify_digamma_trigamma(MathExpressionNode* n) 
     if (is_const(child.get())) {
         double v = child.get()->constant;
         if (v <= 0.0 && v == std::floor(v)) return nan_node();
-        return n->type == NodeType::Digamma ? konst(digamma(v)) : konst(trigamma(v));
+        return n->type == NodeType::Digamma ? konst(numeric::digamma(v)) : konst(numeric::trigamma(v));
     }
     return mgr_.unary(n->type, child);
 }
@@ -651,7 +651,7 @@ auto MathExpressionSimplifier::simplify_beta(MathExpressionNode* n) -> MathExpre
         double rv = rchild.get()->constant; 
         double lrv = lv + rv;
         if ((lv <= 0.0 && lv == std::floor(lv)) || (rv <= 0.0 && rv == std::floor(rv)) || (lrv <= 0.0 && lrv == std::floor(lrv))) return nan_node();
-        return konst(beta_function(lv, rv));
+        return konst(numeric::beta(lv, rv));
     } else {
         return mgr_.binary(NodeType::BetaFunction, lchild, rchild);
     }
@@ -723,7 +723,7 @@ auto MathExpressionSimplifier::simplify_exp_integral(MathExpressionNode* n) -> M
     if (is_const(child.get())) {
         double v = child.get()->constant;
         if (v == 0.0) return neg_inf();
-        double r = fizmo::math::exp_integral(v);
+        double r = numeric::exp_integral(v);
         if (std::isnan(r)) return nan_node();
         if (std::isinf(r)) return r > 0 ? pos_inf() : neg_inf();
         return konst(r);
@@ -740,7 +740,7 @@ auto MathExpressionSimplifier::simplify_log_integral(MathExpressionNode* n) -> M
         if (v < 0.0)  return nan_node();
         if (v == 0.0) return konst(0.0);
         if (v == 1.0) return neg_inf();
-        double r = fizmo::math::log_integral(v);
+        double r = numeric::log_integral(v);
         if (std::isnan(r)) return nan_node();
         if (std::isinf(r)) return r > 0 ? pos_inf() : neg_inf();
         return konst(r);
@@ -767,7 +767,7 @@ auto MathExpressionSimplifier::simplify_exp_integral_gen(MathExpressionNode* n) 
     }
 
     if (is_const(x.get()) && is_const(nn.get())) {
-        double r = fizmo::math::exp_integral(x.get()->constant, nn.get()->constant);
+        double r = numeric::exp_integral(x.get()->constant, nn.get()->constant);
         if (std::isnan(r)) return nan_node();
         if (std::isinf(r)) return r > 0 ? pos_inf() : neg_inf();
         return konst(r);
@@ -784,7 +784,7 @@ auto MathExpressionSimplifier::simplify_log_integral_gen(MathExpressionNode* n) 
     if (is_const(x.get()) && is_const(nn.get())) {
         double xv = x.get()->constant;
         if (xv < 0.0) return nan_node();
-        double r = fizmo::math::log_integral(xv, nn.get()->constant);
+        double r = numeric::log_integral(xv, nn.get()->constant);
         if (std::isnan(r)) return nan_node();
         if (std::isinf(r)) return r > 0 ? pos_inf() : neg_inf();
         return konst(r);
@@ -823,10 +823,10 @@ auto MathExpressionSimplifier::simplify_sin_cos_integral(MathExpressionNode* n) 
 
     if (is_const(child.get())) {
         double x = child.get()->constant;
-        if (is_sin)  return konst(sin_integral(x));
-        if (is_cos)  return konst(cos_integral(x));
-        if (is_sinh) return konst(sinh_integral(x));
-        if (is_cosh) return konst(std::cosh(x));
+        if (is_sin)  return konst(numeric::sin_integral(x));
+        if (is_cos)  return konst(numeric::cos_integral(x));
+        if (is_sinh) return konst(numeric::sinh_integral(x));
+        if (is_cosh) return konst(numeric::cosh_integral(x));
     }
 
     return mgr_.unary(n->type, child);
@@ -840,8 +840,8 @@ auto MathExpressionSimplifier::simplify_fresnel(MathExpressionNode* n) -> MathEx
 
     if (is_const(child.get())) {
         double x = child.get()->constant;
-        if (is_sin)  return konst(fresnel_s(x));
-        if (is_cos)  return konst(fresnel_c(x));
+        if (is_sin)  return konst(numeric::fresnel_s(x));
+        if (is_cos)  return konst(numeric::fresnel_c(x));
     }
 
     return mgr_.unary(n->type, child);
@@ -854,7 +854,7 @@ auto MathExpressionSimplifier::simplify_riemann(MathExpressionNode* n) -> MathEx
 
     if (is_const(child.get())) {
         double x = child.get()->constant;
-        if (is_rz) return konst(riemann_zeta(x));
+        if (is_rz) return konst(numeric::riemann_zeta(x));
     }
 
     return mgr_.unary(n->type, child);
@@ -868,8 +868,8 @@ auto MathExpressionSimplifier::simplify_di_tri_log(MathExpressionNode* n) -> Mat
 
     if (is_const(child.get())) {
         double x = child.get()->constant;
-        if (is_di)  return konst(dilogarithm(x));
-        if (is_tri) return konst(trilogarithm(x));
+        if (is_di)  return konst(numeric::dilogarithm(x));
+        if (is_tri) return konst(numeric::trilogarithm(x));
     }
 
     return mgr_.unary(n->type, child);
@@ -883,7 +883,7 @@ auto MathExpressionSimplifier::simplify_polylog(MathExpressionNode* n) -> MathEx
     if (is_const(idx.get()) && is_const(arg.get())) {
         double nv = idx.get()->constant;
         double xv = arg.get()->constant;
-        return konst(polylog(xv, nv));
+        return konst(numeric::polylog(xv, nv));
     }
 
     return mgr_.binary(NodeType::Polylog, arg, idx);
@@ -897,8 +897,8 @@ auto MathExpressionSimplifier::simplify_spence(MathExpressionNode* n) -> MathExp
 
     if (is_const(child.get())) {
         double x = child.get()->constant;
-        if (is_f) return konst(spence_function(x));
-        if (is_i) return konst(spence_integral(x));
+        if (is_f) return konst(numeric::spence_function(x));
+        if (is_i) return konst(numeric::spence_integral(x));
     }
 
     return mgr_.unary(n->type, child);
@@ -912,8 +912,8 @@ auto MathExpressionSimplifier::simplify_rogers(MathExpressionNode* n) -> MathExp
 
     if (is_const(child.get())) {
         double x = child.get()->constant;
-        if (is_l) return konst(rogers_function(x));
-        if (is_r) return konst(rogers_dilogarithm(x));
+        if (is_l) return konst(numeric::rogers_l_normalized(x));
+        if (is_r) return konst(numeric::rogers_l(x));
     }
 
     return mgr_.unary(n->type, child);
@@ -927,8 +927,8 @@ auto MathExpressionSimplifier::simplify_gudermannian(MathExpressionNode* n) -> M
 
     if (is_const(child.get())) {
         double x = child.get()->constant;
-        if (is_g) return konst(gudermannian(x));
-        if (is_i) return konst(inverse_gudermannian(x));
+        if (is_g) return konst(numeric::gudermannian(x));
+        if (is_i) return konst(numeric::inverse_gudermannian(x));
     }
 
     return mgr_.unary(n->type, child);
@@ -983,7 +983,7 @@ auto MathExpressionSimplifier::simplify_fib_lucas_sequence(MathExpressionNode* n
 
     if (is_const(child.get())) {
         double v = child.get()->constant;
-        return konst(n->type == NodeType::FibonacciSequence ? fibonacci(v) : lucas(v));
+        return konst(n->type == NodeType::FibonacciSequence ? numeric::fibonacci(v) : numeric::lucas(v));
     }
         
     return mgr_.unary(n->type, child);
@@ -998,7 +998,7 @@ auto MathExpressionSimplifier::simplify_fib_lucas_poly(MathExpressionNode* n) ->
         bool is_fib = n->type == NodeType::FibonacciPolynomial;
         double nv = idx.get()->constant;
         double xv = arg.get()->constant;
-        return konst(is_fib ? fibonacci_polynomial(xv, nv) : lucas_polynomial(xv, nv));
+        return konst(is_fib ? numeric::fibonacci_polynomial(xv, nv) : numeric::lucas_polynomial(xv, nv));
     }
 
     return mgr_.binary(n->type, arg, idx);

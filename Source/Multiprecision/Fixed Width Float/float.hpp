@@ -27,6 +27,10 @@ struct common {
 } // namespace fdetail
 
 } // namespace multiprecision
+
+namespace math {
+using multiprecision::floatmp;
+} // namespace math
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_FLOAT_HPP

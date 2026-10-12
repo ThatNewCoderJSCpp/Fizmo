@@ -181,7 +181,7 @@ bool ParametricCurve2D::has_closure(
 }
 
 auto ParametricCurve2D::refine_closure(
-    const Vector2D<double, double>& p0,
+    const linalg::Vector2D<double>& p0,
     double a, double b,
     double tol_sq
 ) const -> ClosureResult {

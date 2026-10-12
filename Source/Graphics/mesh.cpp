@@ -4,9 +4,9 @@
 namespace fizmo {
 namespace graphics {
 
-Vertex3D::Vertex3D(const vector3d& p, const Color& c) noexcept : x(static_cast<float>(p.x)), y(static_cast<float>(p.y)), z(static_cast<float>(p.z)), rgba(pack(c)) {}
+Vertex3D::Vertex3D(const linalg::vector3d& p, const Color& c) noexcept : x(static_cast<float>(p.x)), y(static_cast<float>(p.y)), z(static_cast<float>(p.z)), rgba(pack(c)) {}
 
-Vertex3D::Vertex3D(const vector3d& p, const vector3d& n, const Color& c, float tu, float tv) noexcept : x(static_cast<float>(p.x)), y(static_cast<float>(p.y)), z(static_cast<float>(p.z)),
+Vertex3D::Vertex3D(const linalg::vector3d& p, const linalg::vector3d& n, const Color& c, float tu, float tv) noexcept : x(static_cast<float>(p.x)), y(static_cast<float>(p.y)), z(static_cast<float>(p.z)),
           nx(static_cast<float>(n.x)), ny(static_cast<float>(n.y)), nz(static_cast<float>(n.z)),
           u(tu), v(tv), rgba(pack(c)) {}
 
@@ -39,11 +39,11 @@ Color cell_tinted(const Color& base, int delta, std::uint8_t shade) noexcept {
     return Color(ch(base.red()), ch(base.green()), ch(base.blue()), base.alpha());
 }
 
-CompactVertex3D::CompactVertex3D(const vector3d& p, const Color& c, CellFace f, std::uint8_t shade_level,
+CompactVertex3D::CompactVertex3D(const linalg::vector3d& p, const Color& c, CellFace f, std::uint8_t shade_level,
                     std::uint8_t variation_amount, std::uint8_t flag_bits, BakedLight baked) noexcept : x(static_cast<float>(p.x)), y(static_cast<float>(p.y)), z(static_cast<float>(p.z)),
           rgba(Vertex3D::pack(c)), variation(variation_amount), face(f), flags(flag_bits), shade(shade_level), light(baked.packed()) {}
 
-auto CompactVertex3D::normal() const noexcept -> vector3d {
+auto CompactVertex3D::normal() const noexcept -> linalg::vector3d {
     switch (face) {
         case CellFace::NegX: return { -1.0, 0.0, 0.0 };
         case CellFace::PosX: return {  1.0, 0.0, 0.0 };
@@ -55,7 +55,7 @@ auto CompactVertex3D::normal() const noexcept -> vector3d {
     }
 }
 
-FaceMask facing_faces(const vector3d& eye, const vector3d& lo, const vector3d& hi) noexcept {
+FaceMask facing_faces(const linalg::vector3d& eye, const linalg::vector3d& lo, const linalg::vector3d& hi) noexcept {
     FaceMask m = face_bit(CellFace::None);
     if (eye.x < hi.x) m |= face_bit(CellFace::NegX);
     if (eye.x > lo.x) m |= face_bit(CellFace::PosX);
@@ -166,7 +166,7 @@ auto MeshHandle3D::from(QuadMesh3D quads, bool keep_cpu_copy) -> MeshHandle3D {
     return h;
 }
 
-void QuadBatch3D::add(const MeshHandle3D& mesh, const vector3d& offset, FaceMask faces) {
+void QuadBatch3D::add(const MeshHandle3D& mesh, const linalg::vector3d& offset, FaceMask faces) {
     if (!mesh.valid() || !mesh.is_quads() || faces == 0) return;
     m_items.push_back({ mesh.slot().get(), offset, faces });
 }

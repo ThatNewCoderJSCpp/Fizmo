@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace hzdetail {
 
@@ -63,19 +62,19 @@ BigFloat hz_pow_neg(const BigFloat& a, const BigFloat& s, const BigFloatContext&
 
 bool hz_neg_int_exact(std::uint64_t m, const BigFloat& a, const BigFloatContext& ctx, BigFloat& out) {
     const std::uint64_t n  = m + 1;
-    if (n / 2 > constants::detail::bn_index_cap) return false;
+    if (n / 2 > multiprecision::constants::detail::bn_index_cap) return false;
     const double La   = static_cast<double>(a.significand().bit_length()) + std::fabs(static_cast<double>(a.exponent()));
     const double bits = static_cast<double>(n) * (La + 2.0 * std::log2(static_cast<double>(n) + 1.0));
     if (bits > 16.0 * static_cast<double>(ctx.precision) + 65536.0) return false;
-    std::vector<constants::BigBernoulliNumber> B(static_cast<std::size_t>(n) + 1);
+    std::vector<multiprecision::constants::BigBernoulliNumber> B(static_cast<std::size_t>(n) + 1);
     BigUInt L = BigUInt::one();
 
     for (std::uint64_t k = 0; k <= n; ++k) {
         if (k > 1 && (k & 1u)) continue;
-        B[k] = constants::bernoulli_number(k);
+        B[k] = multiprecision::constants::bernoulli_number(k);
         if (!B[k].is_valid()) return false;
         const BigUInt& d = B[k].denominator();
-        L = (L / constants::detail::bn_gcd(L, d)) * d;
+        L = (L / multiprecision::constants::detail::bn_gcd(L, d)) * d;
     }
 
     BigFloat acc = BigFloat::zero();
@@ -123,7 +122,7 @@ hz_plan hz_choose(const hz_sinfo& si, double la, std::size_t want) {
     const double        l2pi = 2.651496129472319;
     const double        sd   = si.sd;
     const double        wd   = static_cast<double>(want);
-    const std::uint64_t Mcap = std::min<std::uint64_t>(constants::detail::bn_index_cap, 4 * want + 64 + ((sd < 0.0) ? static_cast<std::uint64_t>(-sd) : 0));
+    const std::uint64_t Mcap = std::min<std::uint64_t>(multiprecision::constants::detail::bn_index_cap, 4 * want + 64 + ((sd < 0.0) ? static_cast<std::uint64_t>(-sd) : 0));
     hz_plan       best;
     double        best_cost = std::numeric_limits<double>::infinity();
     double        lpoch     = 0.0;
@@ -186,7 +185,7 @@ zt_val hz_em(const BigFloat& s, const BigFloat& om, const BigFloat& a, const hz_
     const BigFloat P  = BigFloat::mul(Q, u, wc);                                      
     const BigFloat H  = P.scaled_pow2(-1);
     const BigFloat u2 = BigFloat::mul(u, u, wc);
-    const BigFloat tp = constants::two_pi(wc);
+    const BigFloat tp = multiprecision::constants::two_pi(wc);
     const BigFloat cz = BigFloat::div(u2, BigFloat::mul(tp, tp, wc), wc);             
     const double   lXd = hz_l2(X) * hz_ln2;
     const double   eQ  = 2.0 + 3.0 * std::fabs(1.0 - sd) * std::fabs(lXd);
@@ -210,7 +209,7 @@ zt_val hz_em(const BigFloat& s, const BigFloat& om, const BigFloat& a, const hz_
     }
 
     prec[M + 1] = prec[M];
-    constants::detail::tangent_reserve(static_cast<std::size_t>(std::min(jz, M)) + 1);
+    multiprecision::constants::detail::tangent_reserve(static_cast<std::size_t>(std::min(jz, M)) + 1);
 
     BigFloat  r     = BigFloat::mul(BigFloat::mul(s, P, wc), u, wc).scaled_pow2(-1);  
     BigFloat  g     = BigFloat::zero();                                               
@@ -231,7 +230,7 @@ zt_val hz_em(const BigFloat& s, const BigFloat& om, const BigFloat& a, const hz_
             if (r.is_zero()) break;
             const std::uint64_t u2j = 2 * j;
             const BigFloat      f   = BigFloat(gmdetail::fact_range(1, u2j + 1)).rounded(tc);                   // (2j)!
-            g    = BigFloat::div(BigFloat::mul(r, f, tc).scaled_pow2(1), gmdetail::gm_powi(constants::two_pi(tc), u2j, tc), tc);
+            g    = BigFloat::div(BigFloat::mul(r, f, tc).scaled_pow2(1), gmdetail::gm_powi(multiprecision::constants::two_pi(tc), u2j, tc), tc);
             lrel = hz_lsum(lrel, std::log2(static_cast<double>(u2j) + 2.0 * std::log2(static_cast<double>(u2j)) + 4.0) + lp);
             gmdetail::gm_zeta_init(zs, j, pj + 32);
             zon  = true;
@@ -243,7 +242,7 @@ zt_val hz_em(const BigFloat& s, const BigFloat& om, const BigFloat& a, const hz_
             if (j % 2 == 0) term = -term;                                               
         } else {
             if (r.is_zero()) break;
-            term = BigFloat::mul(constants::bernoulli_float(static_cast<std::size_t>(2 * j), tc), r, tc);
+            term = BigFloat::mul(multiprecision::constants::bernoulli_float(static_cast<std::size_t>(2 * j), tc), r, tc);
         }
 
         T     = BigFloat::add(T, term, ac);
@@ -381,9 +380,18 @@ zt_val lp_direct(const BigFloat& L, bool neg, const BigFloat& s, const BigFloat&
     const BigFloatContext wc(want, RoundingMode::nearest_even);
     const BigFloatContext ac(BigFloatContext::clamp_precision(want + ztdetail::zt_bitlen(p.N) + 8), RoundingMode::nearest_even);
     BigFloat S = BigFloat::zero();
+    const bool            unit = BigFloat::compare(a, BigFloat::one()) == BigFloat::ordering::equal;
+    const BigFloatContext tc(BigFloatContext::clamp_precision(want + ztdetail::zt_bitlen(p.N) + 8), RoundingMode::nearest_even);
+    std::vector<BigFloat> pw;
+    BigFloat              eL, en = BigFloat::one();
+    if (unit) {
+        pw = ztdetail::zt_powers(s, p.N, tc);
+        eL = exp(L, tc);
+    }
 
     for (std::uint64_t n = 0; n < p.N; ++n) {
-        const BigFloat t = lp_term(L, s, a, n, wc);
+        const BigFloat t = unit ? BigFloat::mul(en, pw[n + 1], wc) : lp_term(L, s, a, n, wc);
+        if (unit) en = BigFloat::mul(en, eL, tc);
         S = (neg && (n & 1u)) ? BigFloat::sub(S, t, ac) : BigFloat::add(S, t, ac);
     }
 
@@ -416,9 +424,18 @@ zt_val lp_alt(const BigFloat& L, const BigFloat& s, const BigFloat& a, std::size
     BigUInt dk = BigUInt::one();
     double  bs = 0.0;
     c = BigUInt::one();
+    const bool            unit = BigFloat::compare(a, BigFloat::one()) == BigFloat::ordering::equal;
+    const BigFloatContext tc(BigFloatContext::clamp_precision(want + ztdetail::zt_bitlen(n) + 8), RoundingMode::nearest_even);
+    std::vector<BigFloat> pw;
+    BigFloat              eL, en = BigFloat::one();
+    if (unit) {
+        pw = ztdetail::zt_powers(s, n, tc);
+        eL = exp(L, tc);
+    }
 
     for (std::uint64_t k = 0; k < n; ++k) {
-        const BigFloat t = (k == 0) ? t0 : lp_term(L, s, a, k, wc);
+        const BigFloat t = (k == 0) ? t0 : (unit ? BigFloat::mul(en, pw[k + 1], wc) : lp_term(L, s, a, k, wc));
+        if (unit) en = BigFloat::mul(en, eL, tc);
         BigUInt e = dn;
         e.sub_mutable(dk);
         const BigInt q = BigFloat::mul(BigFloat(e), t, wc).scaled_pow2(F).get_integer_part();
@@ -437,7 +454,7 @@ zt_val lp_halving(const BigFloat& L, const BigFloat& s, const BigFloat& om, cons
     const BigFloatContext wc(want, RoundingMode::nearest_even);
     const BigFloatContext ac(BigFloatContext::clamp_precision(want + 8), RoundingMode::nearest_even);
     const double          sd = ztdetail::zt_to_double(s);
-    const BigFloat        lc = BigFloat::mul(om, constants::ln2(wc), wc);
+    const BigFloat        lc = BigFloat::mul(om, multiprecision::constants::ln2(wc), wc);
     auto coef  = [&](std::uint64_t i) { return exp(BigFloat::mul(BigFloat(i), lc, wc), wc); };
     auto ecoef = [&](std::uint64_t i) { return 4.0 + 3.0 * static_cast<double>(i) * std::fabs(1.0 - sd) * hz_ln2; };
     std::vector<double> lp, up;
@@ -467,11 +484,9 @@ zt_val lp_halving(const BigFloat& L, const BigFloat& s, const BigFloat& om, cons
 
 } // namespace hzdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat hurwitz_zeta(const BigFloat& s, const BigFloat& a, const BigFloatContext& ctx) {
@@ -550,7 +565,7 @@ BigFloat lerch_transcendent(const BigFloat& z, const BigFloat& s, const BigFloat
             if (!z2.v.is_finite()) return z2;
             const BigFloatContext wc(want, RoundingMode::nearest_even);
             const BigFloat d = BigFloat::sub(z1.v, z2.v, wc);
-            const BigFloat v = BigFloat::mul(exp(-BigFloat::mul(s, constants::ln2(wc), wc), wc), d, wc);
+            const BigFloat v = BigFloat::mul(exp(-BigFloat::mul(s, multiprecision::constants::ln2(wc), wc), wc), d, wc);
             if (v.is_zero()) return zt_val{v, 1.0e9};
             const double ld    = hz_l2(d);
             const double units = std::exp2(hz_l2(z1.v) - ld + z1.lost) + std::exp2(hz_l2(z2.v) - ld + z2.lost) + 4.0 + 3.0 * std::fabs(sd) * hz_ln2;
@@ -588,5 +603,4 @@ BigFloat lerch_transcendent(const BigFloat& z, const BigFloat& s, const BigFloat
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

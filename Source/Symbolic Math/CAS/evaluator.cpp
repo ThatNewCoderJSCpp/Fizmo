@@ -285,90 +285,81 @@ double eval_node(const MathExpressionNode* n, const EvalContext& ctx) {
             return std::atanh(1.0 / v);
         }
 
-        case NodeType::Erf:  return std::erf (eval_node(n->unary.child, ctx));
-        case NodeType::Erfc: return std::erfc(eval_node(n->unary.child, ctx));
+        case NodeType::Erf:  return numeric::erf(eval_node(n->unary.child, ctx));
+        case NodeType::Erfc: return numeric::erfc(eval_node(n->unary.child, ctx));
 
         case NodeType::ErfGeneralized: {
             double a = eval_node(n->binary.left,  ctx);
             double b = eval_node(n->binary.right, ctx);
-            return std::erf(a) - std::erf(b);
+            return numeric::erf_difference(a, b);
         }
         
         case NodeType::ErfcGeneralized: {
             double a = eval_node(n->binary.left,  ctx);
             double b = eval_node(n->binary.right, ctx);
-            return std::erfc(a) - std::erfc(b);
+            return numeric::erfc_difference(a, b);
         }
 
-        case NodeType::Erfi:        return erfi(eval_node(n->unary.child, ctx));
-        case NodeType::InverseErf:  return inverse_erf(eval_node(n->unary.child, ctx));
-        case NodeType::InverseErfc: return inverse_erfc(eval_node(n->unary.child, ctx));
-        case NodeType::InverseErfi: return inverse_erfi(eval_node(n->unary.child, ctx));
+        case NodeType::Erfi:        return numeric::erfi(eval_node(n->unary.child, ctx));
+        case NodeType::InverseErf:  return numeric::inverse_erf(eval_node(n->unary.child, ctx));
+        case NodeType::InverseErfc: return numeric::inverse_erfc(eval_node(n->unary.child, ctx));
+        case NodeType::InverseErfi: return numeric::inverse_erfi(eval_node(n->unary.child, ctx));
 
-        case NodeType::Gamma: return std::tgamma(eval_node(n->unary.child, ctx)); 
-        case NodeType::Factorial: return std::tgamma(eval_node(n->unary.child, ctx) + 1.0); 
-        case NodeType::Digamma: return digamma(eval_node(n->unary.child, ctx));
-        case NodeType::Trigamma: return trigamma(eval_node(n->unary.child, ctx));
-        case NodeType::BetaFunction: return beta_function(eval_node(n->binary.left, ctx), eval_node(n->binary.right, ctx));
-        case NodeType::Polygamma: return polygamma(eval_node(n->binary.left, ctx), static_cast<int>(eval_node(n->binary.right, ctx)));
+        case NodeType::Gamma: return numeric::gamma(eval_node(n->unary.child, ctx));
+        case NodeType::Factorial: return numeric::factorial(eval_node(n->unary.child, ctx));
+        case NodeType::Digamma: return numeric::digamma(eval_node(n->unary.child, ctx));
+        case NodeType::Trigamma: return numeric::trigamma(eval_node(n->unary.child, ctx));
+        case NodeType::BetaFunction: return numeric::beta(eval_node(n->binary.left, ctx), eval_node(n->binary.right, ctx));
+        case NodeType::Polygamma: return numeric::polygamma(eval_node(n->binary.left, ctx), eval_node(n->binary.right, ctx));
 
         case NodeType::LambertW: {
             double z = eval_node(n->binary.left,  ctx);   
             double k = eval_node(n->binary.right, ctx);  
-            int branch = static_cast<int>(k);
-
-            if (branch == 0)
-                return lambert_w0(z);
-            else if (branch == -1)
-                return lambert_wn1(z);
-            else
-                return std::numeric_limits<double>::quiet_NaN();
+            return numeric::lambert_w(z, k);
         }
 
-        case NodeType::ChebyshevU: return chebyshev_u(eval_node(n->binary.left, ctx), eval_node(n->binary.right, ctx));
-        case NodeType::ChebyshevT: return chebyshev_u(eval_node(n->binary.left, ctx), eval_node(n->binary.right, ctx));
+        case NodeType::ChebyshevU: return numeric::chebyshev_u(eval_node(n->binary.left, ctx), eval_node(n->binary.right, ctx));
+        case NodeType::ChebyshevT: return numeric::chebyshev_t(eval_node(n->binary.left, ctx), eval_node(n->binary.right, ctx));
 
-        case NodeType::ExponentialIntegral: return exp_integral(eval_node(n->unary.child, ctx));
-        case NodeType::LogarithmicIntegral: return log_integral(eval_node(n->unary.child, ctx));
-        case NodeType::ExponentialIntegralGeneralized: return exp_integral(eval_node(n->binary.left, ctx), eval_node(n->binary.left, ctx)); 
-        case NodeType::LogarithmicIntegralGeneralized: return log_integral(eval_node(n->binary.left, ctx), eval_node(n->binary.left, ctx)); 
+        case NodeType::ExponentialIntegral: return numeric::exp_integral(eval_node(n->unary.child, ctx));
+        case NodeType::LogarithmicIntegral: return numeric::log_integral(eval_node(n->unary.child, ctx));
+        case NodeType::ExponentialIntegralGeneralized: return numeric::exp_integral(eval_node(n->binary.left, ctx), eval_node(n->binary.right, ctx));
+        case NodeType::LogarithmicIntegralGeneralized: return numeric::log_integral(eval_node(n->binary.left, ctx), eval_node(n->binary.right, ctx));
 
-        case NodeType::SinIntegral:  return sin_integral (eval_node(n->unary.child, ctx));
-        case NodeType::CosIntegral:  return cos_integral (eval_node(n->unary.child, ctx));
-        case NodeType::SinhIntegral: return sinh_integral(eval_node(n->unary.child, ctx));
-        case NodeType::CoshIntegral: return cosh_integral(eval_node(n->unary.child, ctx));
+        case NodeType::SinIntegral:  return numeric::sin_integral(eval_node(n->unary.child, ctx));
+        case NodeType::CosIntegral:  return numeric::cos_integral(eval_node(n->unary.child, ctx));
+        case NodeType::SinhIntegral: return numeric::sinh_integral(eval_node(n->unary.child, ctx));
+        case NodeType::CoshIntegral: return numeric::cosh_integral(eval_node(n->unary.child, ctx));
 
-        case NodeType::FresnelS: return fresnel_s(eval_node(n->unary.child, ctx));
-        case NodeType::FresnelC: return fresnel_c(eval_node(n->unary.child, ctx));
+        case NodeType::FresnelS: return numeric::fresnel_s(eval_node(n->unary.child, ctx));
+        case NodeType::FresnelC: return numeric::fresnel_c(eval_node(n->unary.child, ctx));
 
-        case NodeType::RiemannZeta: return riemann_zeta(eval_node(n->unary.child, ctx));
+        case NodeType::RiemannZeta: return numeric::riemann_zeta(eval_node(n->unary.child, ctx));
 
-        case NodeType::Dilogarithm:  return dilogarithm(eval_node(n->unary.child, ctx));
-        case NodeType::Trilogarithm: return trilogarithm(eval_node(n->unary.child, ctx));
-        case NodeType::Polylog:      return polylog(eval_node(n->binary.left, ctx), eval_node(n->binary.right, ctx));
+        case NodeType::Dilogarithm:  return numeric::dilogarithm(eval_node(n->unary.child, ctx));
+        case NodeType::Trilogarithm: return numeric::trilogarithm(eval_node(n->unary.child, ctx));
+        case NodeType::Polylog:      return numeric::polylog(eval_node(n->binary.left, ctx), eval_node(n->binary.right, ctx));
 
-        case NodeType::SpenceFunction: return spence_function(eval_node(n->unary.child, ctx));
-        case NodeType::SpenceIntegral: return spence_integral(eval_node(n->unary.child, ctx));
+        case NodeType::SpenceFunction: return numeric::spence_function(eval_node(n->unary.child, ctx));
+        case NodeType::SpenceIntegral: return numeric::spence_integral(eval_node(n->unary.child, ctx));
         
-        case NodeType::RogersL:  return rogers_function(eval_node(n->unary.child, ctx));
-        case NodeType::RogersLR: return rogers_dilogarithm(eval_node(n->unary.child, ctx));
+        case NodeType::RogersL:  return numeric::rogers_l_normalized(eval_node(n->unary.child, ctx));
+        case NodeType::RogersLR: return numeric::rogers_l(eval_node(n->unary.child, ctx));
 
-        case NodeType::Gudermannian:        return gudermannian(eval_node(n->unary.child, ctx));
-        case NodeType::InverseGudermannian: return inverse_gudermannian(eval_node(n->unary.child, ctx)); 
+        case NodeType::Gudermannian:        return numeric::gudermannian(eval_node(n->unary.child, ctx));
+        case NodeType::InverseGudermannian: return numeric::inverse_gudermannian(eval_node(n->unary.child, ctx));
 
-        case NodeType::FibonacciSequence:   return fibonacci(eval_node(n->unary.child, ctx));
-        case NodeType::LucasSequence:       return lucas(eval_node(n->unary.child, ctx));
+        case NodeType::FibonacciSequence:   return numeric::fibonacci(eval_node(n->unary.child, ctx));
+        case NodeType::LucasSequence:       return numeric::lucas(eval_node(n->unary.child, ctx));
 
         case NodeType::FibonacciPolynomial: {
-            double n_ = eval_node(n->binary.right, ctx);  
-            int branch = static_cast<int>(n_);
-            return fibonacci_polynomial(eval_node(n->binary.left, ctx), n_);
+            double n_ = eval_node(n->binary.right, ctx);
+            return numeric::fibonacci_polynomial(eval_node(n->binary.left, ctx), n_);
         }
 
         case NodeType::LucasPolynomial: {
-            double n_ = eval_node(n->binary.right, ctx);  
-            int branch = static_cast<int>(n_);
-            return lucas_polynomial(eval_node(n->binary.left, ctx), n_);
+            double n_ = eval_node(n->binary.right, ctx);
+            return numeric::lucas_polynomial(eval_node(n->binary.left, ctx), n_);
         }
 
         default:

@@ -14,9 +14,9 @@ constexpr AreaUnit square_inch = distance::inch.pow<2>();
 constexpr AreaUnit square_yard = distance::yard.pow<2>();
 constexpr AreaUnit square_mile = distance::mile.pow<2>();
 
-constexpr AreaUnit are    (100.0L);
-constexpr AreaUnit hectare(1e4L);
-constexpr AreaUnit barn   (1e-28L);
+constexpr AreaUnit are    (exact("100.0"));
+constexpr AreaUnit hectare(exact("1e4"));
+constexpr AreaUnit barn   (exact("1e-28"));
 constexpr AreaUnit acre  = distance::chain * distance::furlong;     
 
 } // namespace area

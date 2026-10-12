@@ -118,7 +118,7 @@ public:
 
     float size_at(const Particle& p) const;
 
-    vector2d world_position(const Particle& p) const noexcept;
+    linalg::vector2d world_position(const Particle& p) const noexcept;
 
     static const Texture& default_texture();
 

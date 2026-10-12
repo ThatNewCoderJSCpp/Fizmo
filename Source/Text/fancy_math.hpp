@@ -111,24 +111,6 @@ inline MathRenderOptions simple_math_options(float font_size, const graphics::Co
 } // namespace detail
 
 } // namespace text
-
-namespace windows {
-
-
-
-inline void Renderer::draw_math(std::string_view source, float x, float y, float font_size, const graphics::Color& color, text::FancyAnchor anchor) {
-    draw_math(source, x, y, text::detail::simple_math_options(font_size, color), anchor);
-}
-
-
-
-inline text::FancyText Renderer::math_text(std::string_view source, float font_size, const graphics::Color& color) {
-    return math_text(source, text::detail::simple_math_options(font_size, color));
-}
-
-
-
-} // namespace windows
 } // namespace fizmo
 
 #endif // FIZMO_FANCY_MATH_HPP

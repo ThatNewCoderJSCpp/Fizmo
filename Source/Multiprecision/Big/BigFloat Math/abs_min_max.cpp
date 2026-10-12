@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat min(const BigFloat& a, const BigFloat& b) {
@@ -75,5 +74,4 @@ BigFloat clamp(
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

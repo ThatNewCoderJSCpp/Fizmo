@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace lgdetail {
 
@@ -138,11 +137,9 @@ bool lc_neg_int(std::uint64_t m, const BigFloat& x, const BigFloatContext& ctx, 
 
 } // namespace lgdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat legendre_p(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx) {
@@ -264,5 +261,4 @@ BigFloat legendre_chi(const BigFloat& x, const BigFloat& s, const BigFloatContex
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

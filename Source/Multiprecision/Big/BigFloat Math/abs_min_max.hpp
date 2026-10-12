@@ -6,7 +6,6 @@
 #include <initializer_list>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 inline BigFloat abs(const BigFloat& x) { return x.abs(); }
@@ -49,7 +48,6 @@ BigFloat clamp(
 );
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_ABS_MIN_MAX_HPP

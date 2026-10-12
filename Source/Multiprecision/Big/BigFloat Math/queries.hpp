@@ -4,7 +4,6 @@
 #include "../big_float.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 inline BigInt integer_part(const BigFloat& x) { return x.get_integer_part(); }
@@ -81,7 +80,6 @@ inline bool is_finite(const BigInt& x)   { return !(x.is_nan() || x.is_undefined
 inline bool is_finite(const BigFloat& x) { return x.is_finite(); }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_QUERIES_HPP

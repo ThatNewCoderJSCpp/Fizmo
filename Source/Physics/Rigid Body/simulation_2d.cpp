@@ -5,32 +5,32 @@ namespace fizmo {
 namespace physics {
 namespace narrowphase {
 
-void project_polygon(const PolygonShape& poly, const Transform2D& xf, const vector2d& axis, double& lo, double& hi) {
-    vector2d v = xf.apply(poly.vertices[0]);
-    lo = hi = axis.dot(v);
+void project_polygon(const PolygonShape& poly, const Transform2D& xf, const linalg::vector2d& axis, double& lo, double& hi) {
+    linalg::vector2d v = xf.apply(poly.vertices[0]);
+    lo = hi = fast::dot(axis, v);
 
     for (std::size_t i = 1; i < poly.count; ++i) {
         v = xf.apply(poly.vertices[i]);
-        double d = axis.dot(v);
+        double d = fast::dot(axis, v);
         if (d < lo) lo = d;
         if (d > hi) hi = d;
     }
 }
 
-void project_capsule(const CapsuleShape& cap, const Transform2D& xf, const vector2d& axis, double& lo, double& hi) {
-    vector2d p1 = xf.apply(cap.point1);
-    vector2d p2 = xf.apply(cap.point2);
-    double d1 = axis.dot(p1);
-    double d2 = axis.dot(p2);
+void project_capsule(const CapsuleShape& cap, const Transform2D& xf, const linalg::vector2d& axis, double& lo, double& hi) {
+    linalg::vector2d p1 = xf.apply(cap.point1);
+    linalg::vector2d p2 = xf.apply(cap.point2);
+    double d1 = fast::dot(axis, p1);
+    double d2 = fast::dot(axis, p2);
     lo = std::min(d1, d2) - cap.radius;
     hi = std::max(d1, d2) + cap.radius;
 }
 
-vector2d closest_point_on_segment(const vector2d& p, const vector2d& a, const vector2d& b) {
-    vector2d ab = b - a;
-    double t = ab.magnitude_squared();
+linalg::vector2d closest_point_on_segment(const linalg::vector2d& p, const linalg::vector2d& a, const linalg::vector2d& b) {
+    linalg::vector2d ab = b - a;
+    double t = fast::length_squared(ab);
     if (t <= constants::middle_epsilon()) return a;
-    t = std::clamp((p - a).dot(ab) / t, 0.0, 1.0);
+    t = std::clamp(fast::dot(p - a, ab) / t, 0.0, 1.0);
     return a + ab * t;
 }
 
@@ -39,14 +39,14 @@ bool collide_circle_circle(
     const CircleShape& cb, const Transform2D& xb,
     ContactManifold& m
 ) {
-    vector2d cA = xa.apply(ca.center);
-    vector2d cB = xb.apply(cb.center);
-    vector2d d = cB - cA;
-    double dist_sq = d.magnitude_squared();
+    linalg::vector2d cA = xa.apply(ca.center);
+    linalg::vector2d cB = xb.apply(cb.center);
+    linalg::vector2d d = cB - cA;
+    double dist_sq = fast::length_squared(d);
     double r_sum = ca.radius + cb.radius;
     if (dist_sq >= r_sum * r_sum) return false;
     double dist = std::sqrt(dist_sq);
-    m.normal = (dist >= constants::middle_epsilon()) ? d * (1.0 / dist) : vector2d{0.0, 1.0};
+    m.normal = (dist >= constants::middle_epsilon()) ? d * (1.0 / dist) : linalg::vector2d{0.0, 1.0};
     double pen = r_sum - dist;
     m.point_count = 1;
     m.points[0].position = cA + m.normal * (ca.radius - pen * 0.5);
@@ -59,24 +59,24 @@ bool collide_circle_polygon(
     const PolygonShape& poly, const Transform2D& xp,
     ContactManifold& m, bool flip
 ) {
-    vector2d c_world = xc.apply(circ.center);
-    vector2d c_local = xp.apply_inverse(c_world);
+    linalg::vector2d c_world = xc.apply(circ.center);
+    linalg::vector2d c_local = xp.apply_inverse(c_world);
     double best_sep = -std::numeric_limits<double>::max();
     std::size_t best_i = 0;
 
     for (std::size_t i = 0; i < poly.count; ++i) {
-        double sep = poly.normals[i].dot(c_local - poly.vertices[i]);
+        double sep = fast::dot(poly.normals[i], c_local - poly.vertices[i]);
         if (sep > circ.radius) return false;
         if (sep > best_sep) { best_sep = sep; best_i = i; }
     }
 
     std::size_t i1 = best_i;
     std::size_t i2 = (i1 + 1) % poly.count;
-    const vector2d& v1 = poly.vertices[i1];
-    const vector2d& v2 = poly.vertices[i2];
-    vector2d closest;
-    double u1 = (c_local - v1).dot(v2 - v1);
-    double u2 = (c_local - v2).dot(v1 - v2);
+    const linalg::vector2d& v1 = poly.vertices[i1];
+    const linalg::vector2d& v2 = poly.vertices[i2];
+    linalg::vector2d closest;
+    double u1 = fast::dot(c_local - v1, v2 - v1);
+    double u2 = fast::dot(c_local - v2, v1 - v2);
 
     if (u1 <= 0.0) {
         closest = v1;
@@ -86,10 +86,10 @@ bool collide_circle_polygon(
         closest = v1 + (v2 - v1) * (u1 / (u1 + u2));
     }
 
-    vector2d delta = c_local - closest;
-    double dist_sq = delta.magnitude_squared();
+    linalg::vector2d delta = c_local - closest;
+    double dist_sq = fast::length_squared(delta);
     if (dist_sq > circ.radius * circ.radius && best_sep > 0.0) return false;
-    vector2d n_local; 
+    linalg::vector2d n_local; 
     double dist;      
 
     if (best_sep <= constants::middle_epsilon()) {
@@ -100,8 +100,8 @@ bool collide_circle_polygon(
         n_local = delta * (1.0 / dist);
     }
 
-    vector2d n_out = xp.rotate(n_local);
-    vector2d n = n_out * -1.0; 
+    linalg::vector2d n_out = xp.rotate(n_local);
+    linalg::vector2d n = n_out * -1.0; 
     m.normal = flip ? n * -1.0 : n;
     m.point_count = 1;
     m.points[0].position = c_world - n_out * ((circ.radius + dist) * 0.5);
@@ -130,15 +130,15 @@ RoundPolygon make_round_polygon(const PolygonShape& p, const Transform2D& xf) {
     return r;
 }
 
-RoundPolygon make_round_segment(const vector2d& a, const vector2d& b, double radius) {
+RoundPolygon make_round_segment(const linalg::vector2d& a, const linalg::vector2d& b, double radius) {
     RoundPolygon r;
     r.count = 2;
     r.radius = radius;
     r.vertices[0] = a;
     r.vertices[1] = b;
-    vector2d e = b - a;
-    double len = e.magnitude();
-    vector2d n = (len > constants::middle_epsilon()) ? vector2d(e.y / len, -e.x / len) : vector2d(0.0, 1.0);
+    linalg::vector2d e = b - a;
+    double len = fast::length(e);
+    linalg::vector2d n = (len > constants::middle_epsilon()) ? linalg::vector2d(e.y / len, -e.x / len) : linalg::vector2d(0.0, 1.0);
     r.normals[0] = n;
     r.normals[1] = n * -1.0;
     return r;
@@ -148,12 +148,12 @@ AxisResult find_max_separation(const RoundPolygon& a, const RoundPolygon& b) {
     AxisResult best{-std::numeric_limits<double>::max(), 0};
 
     for (std::size_t i = 0; i < a.count; ++i) {
-        const vector2d& n = a.normals[i];
-        const vector2d& v = a.vertices[i];
+        const linalg::vector2d& n = a.normals[i];
+        const linalg::vector2d& v = a.vertices[i];
         double si = std::numeric_limits<double>::max();
 
         for (std::size_t j = 0; j < b.count; ++j) {
-            double d = n.dot(b.vertices[j] - v);
+            double d = fast::dot(n, b.vertices[j] - v);
             if (d < si) si = d;
         }
 
@@ -163,9 +163,9 @@ AxisResult find_max_separation(const RoundPolygon& a, const RoundPolygon& b) {
     return best;
 }
 
-SegmentDistance segment_distance(const vector2d& p1, const vector2d& q1, const vector2d& p2, const vector2d& q2) {
-    vector2d d1 = q1 - p1, d2 = q2 - p2, r = p1 - p2;
-    double a = d1.dot(d1), e = d2.dot(d2), f = d2.dot(r);
+SegmentDistance segment_distance(const linalg::vector2d& p1, const linalg::vector2d& q1, const linalg::vector2d& p2, const linalg::vector2d& q2) {
+    linalg::vector2d d1 = q1 - p1, d2 = q2 - p2, r = p1 - p2;
+    double a = fast::dot(d1, d1), e = fast::dot(d2, d2), f = fast::dot(d2, r);
     double s, t;
     const double eps = constants::middle_epsilon();
 
@@ -174,12 +174,12 @@ SegmentDistance segment_distance(const vector2d& p1, const vector2d& q1, const v
     } else if (a <= eps) {
         s = 0.0; t = std::clamp(f / e, 0.0, 1.0);
     } else {
-        double c = d1.dot(r);
+        double c = fast::dot(d1, r);
 
         if (e <= eps) {
             t = 0.0; s = std::clamp(-c / a, 0.0, 1.0);
         } else {
-            double b = d1.dot(d2);
+            double b = fast::dot(d1, d2);
             double denom = a * e - b * b;
             s = (denom > eps) ? std::clamp((b * f - c * e) / denom, 0.0, 1.0) : 0.0;
             t = (b * s + f) / e;
@@ -193,7 +193,7 @@ SegmentDistance segment_distance(const vector2d& p1, const vector2d& q1, const v
     out.closest2 = p2 + d2 * t;
     out.fraction1 = s;
     out.fraction2 = t;
-    out.distance_squared = (out.closest2 - out.closest1).magnitude_squared();
+    out.distance_squared = fast::length_squared(out.closest2 - out.closest1);
     return out;
 }
 
@@ -209,18 +209,18 @@ bool collide_round_polygons(const RoundPolygon& a, const RoundPolygon& b, Contac
     const RoundPolygon& inc = flip ? a : b;
     const std::size_t i11 = flip ? sep_b.edge_index : sep_a.edge_index;
     const std::size_t i12 = (i11 + 1) % ref.count;
-    const vector2d normal = ref.normals[i11];
+    const linalg::vector2d normal = ref.normals[i11];
     std::size_t i21 = 0;
     double min_dot = std::numeric_limits<double>::max();
 
     for (std::size_t i = 0; i < inc.count; ++i) {
-        double d = normal.dot(inc.normals[i]);
+        double d = fast::dot(normal, inc.normals[i]);
         if (d < min_dot) { min_dot = d; i21 = i; }
     }
 
     const std::size_t i22 = (i21 + 1) % inc.count;
-    const vector2d v11 = ref.vertices[i11], v12 = ref.vertices[i12];
-    const vector2d v21 = inc.vertices[i21], v22 = inc.vertices[i22];
+    const linalg::vector2d v11 = ref.vertices[i11], v12 = ref.vertices[i12];
+    const linalg::vector2d v21 = inc.vertices[i21], v22 = inc.vertices[i22];
     const double r1 = ref.radius, r2 = inc.radius;
     m.point_count = 0;
 
@@ -233,9 +233,9 @@ bool collide_round_polygons(const RoundPolygon& a, const RoundPolygon& b, Contac
             if (sd.distance_squared > radius * radius) return false;
             double dist = std::sqrt(sd.distance_squared);
             if (dist <= constants::middle_epsilon()) return false;
-            vector2d n = (sd.closest2 - sd.closest1) * (1.0 / dist); 
-            vector2d p_ref = sd.closest1 + n * r1;
-            vector2d p_inc = sd.closest2 - n * r2;
+            linalg::vector2d n = (sd.closest2 - sd.closest1) * (1.0 / dist); 
+            linalg::vector2d p_ref = sd.closest1 + n * r1;
+            linalg::vector2d p_inc = sd.closest2 - n * r2;
             m.normal = flip ? n * -1.0 : n;
             m.point_count = 1;
             m.points[0].position = (p_ref + p_inc) * 0.5;
@@ -244,17 +244,17 @@ bool collide_round_polygons(const RoundPolygon& a, const RoundPolygon& b, Contac
         }
     }
 
-    const vector2d tangent(-normal.y, normal.x); 
+    const linalg::vector2d tangent(-normal.y, normal.x); 
     const double lower1 = 0.0;
-    const double upper1 = (v12 - v11).dot(tangent);
-    const double upper2 = (v21 - v11).dot(tangent);
-    const double lower2 = (v22 - v11).dot(tangent);
+    const double upper1 = fast::dot(v12 - v11, tangent);
+    const double upper2 = fast::dot(v21 - v11, tangent);
+    const double lower2 = fast::dot(v22 - v11, tangent);
     const double span = upper2 - lower2;
-    vector2d v_lower = v22, v_upper = v21;
+    linalg::vector2d v_lower = v22, v_upper = v21;
     if (lower2 < lower1 && span > constants::middle_epsilon()) v_lower = v22 + (v21 - v22) * ((lower1 - lower2) / span);
     if (upper2 > upper1 && span > constants::middle_epsilon()) v_upper = v22 + (v21 - v22) * ((upper1 - lower2) / span);
-    const double sep_lower = (v_lower - v11).dot(normal);
-    const double sep_upper = (v_upper - v11).dot(normal);
+    const double sep_lower = fast::dot(v_lower - v11, normal);
+    const double sep_upper = fast::dot(v_upper - v11, normal);
     v_lower = v_lower + normal * (0.5 * (r1 - r2 - sep_lower));
     v_upper = v_upper + normal * (0.5 * (r1 - r2 - sep_upper));
 
@@ -296,10 +296,10 @@ bool collide_circle_capsule(
     const CapsuleShape& cap, const Transform2D& xk,
     ContactManifold& m, bool flip
 ) {
-    vector2d cc = xc.apply(circ.center);
-    vector2d p1 = xk.apply(cap.point1);
-    vector2d p2 = xk.apply(cap.point2);
-    vector2d closest = closest_point_on_segment(cc, p1, p2);
+    linalg::vector2d cc = xc.apply(circ.center);
+    linalg::vector2d p1 = xk.apply(cap.point1);
+    linalg::vector2d p2 = xk.apply(cap.point2);
+    linalg::vector2d closest = closest_point_on_segment(cc, p1, p2);
     CircleShape phantom;
     phantom.center = {};
     phantom.radius = cap.radius;
@@ -343,16 +343,16 @@ bool collide_edge_circle(
     const CircleShape& circ, const Transform2D& xc,
     ContactManifold& m, bool flip
 ) {
-    vector2d c = xc.apply(circ.center);
-    vector2d v1 = xe.apply(edge.v1);
-    vector2d v2 = xe.apply(edge.v2);
-    vector2d closest = closest_point_on_segment(c, v1, v2);
-    vector2d d = c - closest;
-    double dist_sq = d.magnitude_squared();
+    linalg::vector2d c = xc.apply(circ.center);
+    linalg::vector2d v1 = xe.apply(edge.v1);
+    linalg::vector2d v2 = xe.apply(edge.v2);
+    linalg::vector2d closest = closest_point_on_segment(c, v1, v2);
+    linalg::vector2d d = c - closest;
+    double dist_sq = fast::length_squared(d);
     double r = circ.radius;
     if (dist_sq > r * r) return false;
     double dist = std::sqrt(dist_sq);
-    vector2d n = (dist >= constants::middle_epsilon()) ? d * (1.0 / dist) : xe.rotate(edge.normal());
+    linalg::vector2d n = (dist >= constants::middle_epsilon()) ? d * (1.0 / dist) : xe.rotate(edge.normal());
     m.normal = flip ? n * -1.0 : n;
     m.point_count = 1;
     m.points[0].position = (closest + (c - n * r)) * 0.5;
@@ -538,7 +538,7 @@ auto Simulation2D::query_aabb(const AABB& region) -> std::vector<RigidBody2D*> {
     return m_tree.query(region);
 }
 
-auto Simulation2D::point_query(const vector2d& point) -> RigidBody2D* {
+auto Simulation2D::point_query(const linalg::vector2d& point) -> RigidBody2D* {
     AABB tiny = {{point.x - 0.001, point.y - 0.001}, {point.x + 0.001, point.y + 0.001}};
     auto results = query_aabb(tiny);
 
@@ -553,7 +553,7 @@ auto Simulation2D::point_query(const vector2d& point) -> RigidBody2D* {
 bool Simulation2D::is_active(const RigidBody2D& b) noexcept {
     if (!b.is_awake()) return false;
     if (b.inv_mass() > 0.0) return true;
-    vector2d v = b.linear_velocity();
+    linalg::vector2d v = b.linear_velocity();
     return v.x != 0.0 || v.y != 0.0 || b.angular_velocity() != 0.0;
 }
 
@@ -642,7 +642,7 @@ void Simulation2D::generate_contacts(RigidBody2D* a, RigidBody2D* b) {
 
             for (int p = 0; p < mf.point_count; ++p) {
                 ContactPoint& cp = mf.points[p];
-                vector2d half = mf.normal * (cp.separation * 0.5);
+                linalg::vector2d half = mf.normal * (cp.separation * 0.5);
                 cp.local_anchor_a = a->transform().apply_inverse(cp.position - half);
                 cp.local_anchor_b = b->transform().apply_inverse(cp.position + half);
             }
@@ -752,9 +752,9 @@ void Simulation2D::build_velocity_constraints() {
         double inv_mB = b->inv_mass();
         double inv_IA = a->inv_inertia();
         double inv_IB = b->inv_inertia();
-        vector2d cA = a->world_center();
-        vector2d cB = b->world_center();
-        vector2d tangent = {-mf.normal.y, mf.normal.x};
+        linalg::vector2d cA = a->world_center();
+        linalg::vector2d cB = b->world_center();
+        linalg::vector2d tangent = {-mf.normal.y, mf.normal.x};
         const CachedContact* old = nullptr;
 
         if (m_cfg.warm_starting) {
@@ -766,17 +766,17 @@ void Simulation2D::build_velocity_constraints() {
             auto& vcp = vc.points[p];
             vcp.rA = mf.points[p].position - cA;
             vcp.rB = mf.points[p].position - cB;
-            double rnA = vcp.rA.perp_dot(mf.normal);
-            double rnB = vcp.rB.perp_dot(mf.normal);
+            double rnA = fast::perp_dot(vcp.rA, mf.normal);
+            double rnB = fast::perp_dot(vcp.rB, mf.normal);
             double k_normal = inv_mA + inv_mB + inv_IA * rnA * rnA + inv_IB * rnB * rnB;
             vcp.normal_mass = (k_normal > 0.0) ? 1.0 / k_normal : 0.0;
-            double rtA = vcp.rA.perp_dot(tangent);
-            double rtB = vcp.rB.perp_dot(tangent);
+            double rtA = fast::perp_dot(vcp.rA, tangent);
+            double rtB = fast::perp_dot(vcp.rB, tangent);
             double k_tangent = inv_mA + inv_mB + inv_IA * rtA * rtA + inv_IB * rtB * rtB;
             vcp.tangent_mass = (k_tangent > 0.0) ? 1.0 / k_tangent : 0.0;
-            vector2d vA = a->linear_velocity() + vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
-            vector2d vB = b->linear_velocity() + vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
-            double vn_rel = (vB - vA).dot(mf.normal);
+            linalg::vector2d vA = a->linear_velocity() + linalg::vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
+            linalg::vector2d vB = b->linear_velocity() + linalg::vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
+            double vn_rel = fast::dot(vB - vA, mf.normal);
             vcp.velocity_bias = 0.0;
             if (vn_rel < -vc.restitution_threshold) { vcp.velocity_bias = -vc.restitution * vn_rel; }
 
@@ -784,7 +784,7 @@ void Simulation2D::build_velocity_constraints() {
                 double best = match_sq;
 
                 for (int q = 0; q < old->point_count; ++q) {
-                    double d = (old->local_anchor_a[q] - mf.points[p].local_anchor_a).magnitude_squared();
+                    double d = fast::length_squared(old->local_anchor_a[q] - mf.points[p].local_anchor_a);
 
                     if (d <= best) {
                         best = d;
@@ -810,12 +810,12 @@ void Simulation2D::warm_start() {
 
         for (int p = 0; p < vc.point_count; ++p) {
             auto& vcp = vc.points[p];
-            vector2d tangent = {-vc.normal.y, vc.normal.x};
-            vector2d P = vc.normal * vcp.normal_impulse + tangent * vcp.tangent_impulse;
+            linalg::vector2d tangent = {-vc.normal.y, vc.normal.x};
+            linalg::vector2d P = vc.normal * vcp.normal_impulse + tangent * vcp.tangent_impulse;
             a->set_linear_velocity(a->linear_velocity() - P * inv_mA);
-            a->set_angular_velocity(a->angular_velocity() - inv_IA * vcp.rA.perp_dot(P));
+            a->set_angular_velocity(a->angular_velocity() - inv_IA * fast::perp_dot(vcp.rA, P));
             b->set_linear_velocity(b->linear_velocity() + P * inv_mB);
-            b->set_angular_velocity(b->angular_velocity() + inv_IB * vcp.rB.perp_dot(P));
+            b->set_angular_velocity(b->angular_velocity() + inv_IB * fast::perp_dot(vcp.rB, P));
         }
     }
 }
@@ -831,11 +831,11 @@ void Simulation2D::solve_velocity_constraints() {
 
         for (int p = 0; p < vc.point_count; ++p) {
             auto& vcp = vc.points[p];
-            vector2d vA = a->linear_velocity() + vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
-            vector2d vB = b->linear_velocity() + vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
-            vector2d dv = vB - vA;
-            vector2d tangent = {-vc.normal.y, vc.normal.x};
-            double vt = dv.dot(tangent);
+            linalg::vector2d vA = a->linear_velocity() + linalg::vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
+            linalg::vector2d vB = b->linear_velocity() + linalg::vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
+            linalg::vector2d dv = vB - vA;
+            linalg::vector2d tangent = {-vc.normal.y, vc.normal.x};
+            double vt = fast::dot(dv, tangent);
             double lambda_t = -vt * vcp.tangent_mass;
             double max_friction = vc.friction * vcp.normal_impulse;
 
@@ -846,30 +846,30 @@ void Simulation2D::solve_velocity_constraints() {
 
             lambda_t = new_impulse_t - vcp.tangent_impulse;
             vcp.tangent_impulse = new_impulse_t;
-            vector2d Pt = tangent * lambda_t;
+            linalg::vector2d Pt = tangent * lambda_t;
             a->set_linear_velocity(a->linear_velocity() - Pt * inv_mA);
-            a->set_angular_velocity(a->angular_velocity() - inv_IA * vcp.rA.perp_dot(Pt));
+            a->set_angular_velocity(a->angular_velocity() - inv_IA * fast::perp_dot(vcp.rA, Pt));
             b->set_linear_velocity(b->linear_velocity() + Pt * inv_mB);
-            b->set_angular_velocity(b->angular_velocity() + inv_IB * vcp.rB.perp_dot(Pt));
+            b->set_angular_velocity(b->angular_velocity() + inv_IB * fast::perp_dot(vcp.rB, Pt));
         }
 
         if (vc.point_count == 2 && solve_block(vc)) continue;
 
         for (int p = 0; p < vc.point_count; ++p) {
             auto& vcp = vc.points[p];
-            vector2d vA = a->linear_velocity() + vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
-            vector2d vB = b->linear_velocity() + vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
-            vector2d dv = vB - vA;
-            double vn = dv.dot(vc.normal);
+            linalg::vector2d vA = a->linear_velocity() + linalg::vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
+            linalg::vector2d vB = b->linear_velocity() + linalg::vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
+            linalg::vector2d dv = vB - vA;
+            double vn = fast::dot(dv, vc.normal);
             double lambda_n = -(vn - vcp.velocity_bias) * vcp.normal_mass;
             double new_impulse_n = std::max(vcp.normal_impulse + lambda_n, 0.0);
             lambda_n = new_impulse_n - vcp.normal_impulse;
             vcp.normal_impulse = new_impulse_n;
-            vector2d Pn = vc.normal * lambda_n;
+            linalg::vector2d Pn = vc.normal * lambda_n;
             a->set_linear_velocity(a->linear_velocity() - Pn * inv_mA);
-            a->set_angular_velocity(a->angular_velocity() - inv_IA * vcp.rA.perp_dot(Pn));
+            a->set_angular_velocity(a->angular_velocity() - inv_IA * fast::perp_dot(vcp.rA, Pn));
             b->set_linear_velocity(b->linear_velocity() + Pn * inv_mB);
-            b->set_angular_velocity(b->angular_velocity() + inv_IB * vcp.rB.perp_dot(Pn));
+            b->set_angular_velocity(b->angular_velocity() + inv_IB * fast::perp_dot(vcp.rB, Pn));
         }
     }
 }
@@ -881,9 +881,9 @@ bool Simulation2D::solve_block(VelocityConstraint& vc) {
     const double inv_IA = a->inv_inertia(), inv_IB = b->inv_inertia();
     VelocityConstraintPoint& c1 = vc.points[0];
     VelocityConstraintPoint& c2 = vc.points[1];
-    const vector2d& n = vc.normal;
-    const double rn1A = c1.rA.perp_dot(n), rn1B = c1.rB.perp_dot(n);
-    const double rn2A = c2.rA.perp_dot(n), rn2B = c2.rB.perp_dot(n);
+    const linalg::vector2d& n = vc.normal;
+    const double rn1A = fast::perp_dot(c1.rA, n), rn1B = fast::perp_dot(c1.rB, n);
+    const double rn2A = fast::perp_dot(c2.rA, n), rn2B = fast::perp_dot(c2.rB, n);
     const double k11 = inv_mA + inv_mB + inv_IA * rn1A * rn1A + inv_IB * rn1B * rn1B;
     const double k22 = inv_mA + inv_mB + inv_IA * rn2A * rn2A + inv_IB * rn2B * rn2B;
     const double k12 = inv_mA + inv_mB + inv_IA * rn1A * rn2A + inv_IB * rn1B * rn2B;
@@ -892,9 +892,9 @@ bool Simulation2D::solve_block(VelocityConstraint& vc) {
     if (!(k11 * k11 < max_condition * det)) return false;
 
     auto normal_velocity = [&](const VelocityConstraintPoint& c) {
-        vector2d vA = a->linear_velocity() + vector2d(-a->angular_velocity() * c.rA.y, a->angular_velocity() * c.rA.x);
-        vector2d vB = b->linear_velocity() + vector2d(-b->angular_velocity() * c.rB.y, b->angular_velocity() * c.rB.x);
-        return (vB - vA).dot(n);
+        linalg::vector2d vA = a->linear_velocity() + linalg::vector2d(-a->angular_velocity() * c.rA.y, a->angular_velocity() * c.rA.x);
+        linalg::vector2d vB = b->linear_velocity() + linalg::vector2d(-b->angular_velocity() * c.rB.y, b->angular_velocity() * c.rB.x);
+        return fast::dot(vB - vA, n);
     };
 
     const double a1 = c1.normal_impulse, a2 = c2.normal_impulse;
@@ -915,13 +915,13 @@ bool Simulation2D::solve_block(VelocityConstraint& vc) {
         return false; 
     }
 
-    const vector2d P1 = n * (x1 - a1);
-    const vector2d P2 = n * (x2 - a2);
-    const vector2d P = P1 + P2;
+    const linalg::vector2d P1 = n * (x1 - a1);
+    const linalg::vector2d P2 = n * (x2 - a2);
+    const linalg::vector2d P = P1 + P2;
     a->set_linear_velocity(a->linear_velocity() - P * inv_mA);
-    a->set_angular_velocity(a->angular_velocity() - inv_IA * (c1.rA.perp_dot(P1) + c2.rA.perp_dot(P2)));
+    a->set_angular_velocity(a->angular_velocity() - inv_IA * (fast::perp_dot(c1.rA, P1) + fast::perp_dot(c2.rA, P2)));
     b->set_linear_velocity(b->linear_velocity() + P * inv_mB);
-    b->set_angular_velocity(b->angular_velocity() + inv_IB * (c1.rB.perp_dot(P1) + c2.rB.perp_dot(P2)));
+    b->set_angular_velocity(b->angular_velocity() + inv_IB * (fast::perp_dot(c1.rB, P1) + fast::perp_dot(c2.rB, P2)));
     c1.normal_impulse = x1;
     c2.normal_impulse = x2;
     return true;
@@ -950,9 +950,9 @@ bool Simulation2D::solve_position_constraints() {
         double inv_IB = b->inv_inertia();
 
         for (int p = 0; p < mf.point_count; ++p) {
-            vector2d pA = a->transform().apply(mf.points[p].local_anchor_a);
-            vector2d pB = b->transform().apply(mf.points[p].local_anchor_b);
-            double separation = (pB - pA).dot(mf.normal);
+            linalg::vector2d pA = a->transform().apply(mf.points[p].local_anchor_a);
+            linalg::vector2d pB = b->transform().apply(mf.points[p].local_anchor_b);
+            double separation = fast::dot(pB - pA, mf.normal);
             min_separation = std::min(min_separation, separation);
 
             double C = std::clamp(
@@ -960,16 +960,16 @@ bool Simulation2D::solve_position_constraints() {
                 -m_cfg.max_correction, 0.0
             );
 
-            vector2d point = (pA + pB) * 0.5;
-            vector2d rA = point - a->world_center();
-            vector2d rB = point - b->world_center();
-            double rnA = rA.perp_dot(mf.normal);
-            double rnB = rB.perp_dot(mf.normal);
+            linalg::vector2d point = (pA + pB) * 0.5;
+            linalg::vector2d rA = point - a->world_center();
+            linalg::vector2d rB = point - b->world_center();
+            double rnA = fast::perp_dot(rA, mf.normal);
+            double rnB = fast::perp_dot(rB, mf.normal);
             double K = inv_mA + inv_mB + inv_IA * rnA * rnA + inv_IB * rnB * rnB;
             double impulse = (K > 0.0) ? -C / K : 0.0;
-            vector2d P = mf.normal * impulse;
-            a->apply_position_correction(P * -inv_mA, -inv_IA * rA.perp_dot(P));
-            b->apply_position_correction(P *  inv_mB,  inv_IB * rB.perp_dot(P));
+            linalg::vector2d P = mf.normal * impulse;
+            a->apply_position_correction(P * -inv_mA, -inv_IA * fast::perp_dot(rA, P));
+            b->apply_position_correction(P *  inv_mB,  inv_IB * fast::perp_dot(rB, P));
         }
     }
 

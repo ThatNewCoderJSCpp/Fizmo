@@ -7,44 +7,59 @@
 
 namespace fizmo {
 namespace time {
+namespace detail {
+
+template <typename Y>
+constexpr bool is_calendar_int_v = is_integer_like_v<Y> || (std::is_integral<Y>::value && !std::is_same<Y, bool>::value);
+
+template <typename A, typename B, bool = std::is_integral<A>::value && std::is_integral<B>::value>
+struct calendar_wide { using type = wider_t<A, B>; };
+
+template <typename A, typename B>
+struct calendar_wide<A, B, true> { using type = typename std::common_type<A, B, std::int64_t>::type; };
+
+template <typename A, typename B>
+using calendar_wide_t = typename calendar_wide<A, B>::type;
+
+} // namespace detail
 
 class Calendar {
 public:
-    template<typename Y, typename = typename std::enable_if<detail::is_integer_like_v<Y>>::type>
+    template<typename Y, typename = typename std::enable_if<detail::is_calendar_int_v<Y>>::type>
     static constexpr bool is_leap_year(const Y& year) noexcept {
-        using W = detail::wider_t<Y, int>;
+        using W = detail::calendar_wide_t<Y, int>;
         const W y = static_cast<W>(year);
         return (y % W(4) == W(0)) && ((y % W(100) != W(0)) || (y % W(400) == W(0)));
     }
 
-    template<typename Y, typename = typename std::enable_if<detail::is_integer_like_v<Y>>::type>
-    static constexpr std::uint8_t days_in_month(Month m, const Y& year) noexcept {
+    template<typename Y, typename = typename std::enable_if<detail::is_calendar_int_v<Y>>::type>
+    static constexpr std::uint8_t days_in_month(Month m, const Y& year) noexcept { return days_in_month(m, is_leap_year(year)); }
+
+    static constexpr std::uint8_t days_in_month(Month m, bool leap) noexcept {
         constexpr std::uint8_t base_days[] = {
             31, 28, 31, 30, 31, 30,
             31, 31, 30, 31, 30, 31
         };
         const std::uint8_t idx = static_cast<std::uint8_t>(m.value());
-        if (idx == 1) { return is_leap_year(year) ? 29 : 28; }
+        if (idx == 1) { return leap ? 29 : 28; }
         return base_days[idx];
     }
 
-    static constexpr std::uint8_t days_in_month(Month m, bool leap) noexcept { return days_in_month(m, (leap ? 1600u : 1601u)); }
-
-    template<typename Y, typename = typename std::enable_if<detail::is_integer_like_v<Y>>::type>
+    template<typename Y, typename = typename std::enable_if<detail::is_calendar_int_v<Y>>::type>
     static constexpr std::uint16_t days_in_year(const Y& year) noexcept { return is_leap_year(year) ? 366 : 365; }
 
-    template<typename Y, typename = typename std::enable_if<detail::is_integer_like_v<Y>>::type>
+    template<typename Y, typename = typename std::enable_if<detail::is_calendar_int_v<Y>>::type>
     static constexpr double exact_days_in_year(const Y& year) noexcept { return is_leap_year(year) ? 366.2422 : 365.2422; }
 
-    template<typename Y, typename D, typename = typename std::enable_if<detail::is_integer_like_v<Y> && detail::is_integer_like_v<D>>::type>
+    template<typename Y, typename D, typename = typename std::enable_if<detail::is_calendar_int_v<Y> && detail::is_calendar_int_v<D>>::type>
     static constexpr Weekday get_weekday(
         const Y& year,
         Month month,
         const D& day,
         bool is_ad_year = true
     ) noexcept {
-        using W = detail::wider_t<Y, D>;
-        using WW = detail::wider_t<W, int>;
+        using W = detail::calendar_wide_t<Y, D>;
+        using WW = detail::calendar_wide_t<W, int>;
         WW y = is_ad_year ? WW(year) : -WW(year - 1);
         WW m = WW(static_cast<std::uint8_t>(month.value())) + 1;
         WW d = WW(day);

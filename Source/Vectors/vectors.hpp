@@ -1,539 +1,424 @@
 #ifndef FIZMO_VECTORS_FLOATING_HPP
 #define FIZMO_VECTORS_FLOATING_HPP
 
-#include <cmath>
-#include <string>
-#include <sstream>
+#include <array>
+#include <cstddef>
 #include <ostream>
+#include <string>
 #include <type_traits>
 
-#include "../Standard Overloads/abs.hpp"
-#include "../Basic/constants.hpp"
-#include "../Standard Overloads/sqrt.hpp"
-#include "../Standard Overloads/trig.hpp"
-#include "../Matrices/matrix.hpp"
+#include "vector_ops.hpp"
 
 namespace fizmo {
+namespace linalg {
 
-template <std::size_t K, std::size_t N, typename T = double, typename = typename std::enable_if<std::is_floating_point<T>::value && (K <= N)>::type>
-struct KVector;
-
-template <std::size_t N, typename T = double>
+template <std::size_t N, class T = double>
 using Bivector = KVector<2, N, T>;
 
-template <std::size_t N, typename T = double>
+template <std::size_t N, class T = double>
 using Trivector = KVector<3, N, T>;
 
-template <typename TX = double, typename TY = double, typename TZ = double, typename = typename std::enable_if<std::is_floating_point<TX>::value && std::is_floating_point<TY>::value && std::is_floating_point<TZ>::value>::type>
-struct Vector3D;
+template <std::size_t N>
+using BigBivector = BigKVector<2, N>;
 
-template <typename TX = double, typename TY = double, typename TZ = double, typename TW = double, typename = typename std::enable_if<std::is_floating_point<TX>::value && std::is_floating_point<TY>::value && std::is_floating_point<TZ>::value && std::is_floating_point<TW>::value>::type>
-struct Vector4D;
+template <std::size_t N>
+using BigTrivector = BigKVector<3, N>;
 
-template <typename TX = double, typename TY = double, typename = typename std::enable_if<std::is_floating_point<TX>::value && std::is_floating_point<TY>::value>::type>
-struct Vector2D {
+namespace detail {
+
+template <class Derived, class S>
+struct Vector2DImpl : VectorOps<Derived, 2, S> {
+private:
+    using Base = VectorOps<Derived, 2, S>;
+    using F    = scalar::field<S>;
+    using Fam  = family<S>;
+
 public:
-    TX x;
-    TY y;
+    using context_type = typename Base::context_type;
 
-public:
-    constexpr Vector2D() noexcept : x(TX(0)), y(TY(0)) {}
-    constexpr Vector2D(const TX& x_, const TY& y_) noexcept : x(x_), y(y_) {}
-    constexpr Vector2D(const Vector2D& v) noexcept = default;
-    constexpr Vector2D(Vector2D&& v) noexcept = default;
-    OPTIONAL_CPP14_CONSTEXPR Vector2D& operator=(const Vector2D&) noexcept = default;
-    OPTIONAL_CPP14_CONSTEXPR Vector2D& operator=(Vector2D&&) noexcept = default;
-    constexpr explicit operator Vector3D<TX, TY>() const noexcept;
-    constexpr explicit operator Vector4D<TX, TY>() const noexcept;
+    S x;
+    S y;
 
-    constexpr static Vector2D from_magnitude_angle(
-        const double magnitude,
-        const double angle,
-        const bool angle_in_degrees = true,
-        const bool angle_counterclockwise = true) noexcept
-    {
-        double rad = angle;
-        if (angle_in_degrees) rad *= constants::pi_180();
-        if (!angle_counterclockwise) rad = -rad;
-        return Vector2D(static_cast<TX>(magnitude * math::cos_constexpr(rad)), static_cast<TY>(magnitude * math::sin_constexpr(rad)));
+    Vector2DImpl() : x(F::zero()), y(F::zero()) {}
+    Vector2DImpl(const S& x_, const S& y_) : x(x_), y(y_) {}
+
+    template <class U, class V, typename std::enable_if<is_scalar_operand<S, U>::value && is_scalar_operand<S, V>::value && !(std::is_same<U, S>::value && std::is_same<V, S>::value), int>::type = 0>
+    Vector2DImpl(const U& x_, const V& y_) : x(F::from(x_)), y(F::from(y_)) {}
+
+    S&       component(std::size_t i) { return i == 0 ? x : y; }
+    const S& component(std::size_t i) const { return i == 0 ? x : y; }
+
+    static Derived zero() { return Derived(); }
+
+    static Derived from_magnitude_angle(const S& magnitude, const S& angle, bool angle_in_degrees = true, bool angle_counterclockwise = true, const context_type& c = F::default_context()) {
+        if constexpr (scalar::dd::eligible<S>::value) {
+            S fx, fy;
+            if (scalar::dd::fast_scaled_cos_sin(magnitude, angle_counterclockwise ? angle : -angle, angle_in_degrees, fx, fy)) return Derived(fx, fy);
+        }
+
+        const BigFloat m = to_bigfloat(magnitude);
+        BigFloat a = to_bigfloat(angle);
+        if (!angle_counterclockwise) a = -a;
+
+        const std::array<S, 2> r = F::template eval_n<2>(c, [&](const BigFloatContext& w) {
+            const scalar::kernel::CosSin cs = scalar::kernel::cos_sin(a, angle_in_degrees, w);
+            return std::array<BigFloat, 2>{ BigFloat::mul(m, cs.cos, w), BigFloat::mul(m, cs.sin, w) };
+        });
+
+        return Derived(r[0], r[1]);
     }
 
-    constexpr auto magnitude_squared() const noexcept { return x * x + y * y; }
-    constexpr auto magnitude() const noexcept { return math::sqrt_constexpr(magnitude_squared()); }
+    S perp_dot(const Derived& v, const context_type& c = F::default_context()) const { return F::diff_of_products(x, v.y, y, v.x, c); }
 
-    constexpr auto angle_between(const Vector2D& v, const bool return_in_degrees = true) const noexcept {
-        const auto rad = math::acos_constexpr(dot(v) / (magnitude() * v.magnitude()));
-        return return_in_degrees ? rad * constants::reciprocal_pi_180() : rad;
-    }
+    typename Fam::V3 cross(const Derived& v, const context_type& c = F::default_context()) const { return typename Fam::V3(F::zero(), F::zero(), perp_dot(v, c)); }
 
-    constexpr auto dot(const Vector2D& v) const noexcept { return x * v.x + y * v.y; }
-    constexpr auto perp_dot(const Vector2D& v) const noexcept { return x * v.y - y * v.x; }
-    constexpr Vector3D<TX, TY> cross(const Vector2D& v) const noexcept;
-    constexpr Bivector<2, typename std::common_type<TX, TY>::type> wedge(const Vector2D& o) const noexcept;
+    typename Fam::template KV<2, 2> wedge(const Derived& v, const context_type& c = F::default_context()) const;
 
-    constexpr auto scalar_project(const Vector2D& v) const noexcept {
-        const auto mag = v.magnitude();
-        if (mag == 0) return decltype(dot(v) / mag)(0);
-        return dot(v) / mag;
-    }
+    Derived perpendicular() const { return Derived(F::neg(y), x); }
 
-    constexpr Vector2D unit_vector() const noexcept {
-        const auto mag = magnitude();
-        if (mag == 0) return *this;
-        return Vector2D(static_cast<TX>(x / mag), static_cast<TY>(y / mag));
-    }
-
-    constexpr Vector2D direction() const noexcept { return unit_vector(); }
-    constexpr Vector2D hadamard(const Vector2D& v) const noexcept { return Vector2D(x * v.x, y * v.y); }
-
-    constexpr Vector2D project_onto(const Vector2D& v) const noexcept {
-        const auto denom = v.magnitude_squared();
-        if (denom == 0) return *this;
-        const auto scale = dot(v) / denom;
-        return Vector2D(static_cast<TX>(v.x * scale), static_cast<TY>(v.y * scale));
-    }
-
-    constexpr bool is_orthogonal(const Vector2D& v, const double eps = constants::middle_epsilon()) const noexcept { return abs_constexpr(dot(v)) <= eps; }
-    constexpr bool is_parallel(const Vector2D& v, const double eps = constants::middle_epsilon()) const noexcept { return abs_constexpr(perp_dot(v)) <= eps; }
-    constexpr bool is_antiparallel(const Vector2D& v, const double eps = constants::middle_epsilon()) const noexcept { return is_parallel(v, eps) && dot(v) < 0; }
-    constexpr Vector2D operator*(const double s) const noexcept { return Vector2D(static_cast<TX>(x * s), static_cast<TY>(y * s)); }
-    constexpr Vector2D operator/(const double s) const noexcept { return Vector2D(static_cast<TX>(x / s), static_cast<TY>(y / s)); }
-    constexpr Vector2D operator+(const Vector2D& v) const noexcept { return Vector2D(x + v.x, y + v.y); }
-    constexpr Vector2D operator-(const Vector2D& v) const noexcept { return Vector2D(x - v.x, y - v.y); }
-    constexpr Vector2D operator-() const noexcept { return Vector2D(-x, -y); }
-    OPTIONAL_CPP14_CONSTEXPR Vector2D& operator+=(const Vector2D& v) noexcept { x += v.x; y += v.y; return *this; }
-    OPTIONAL_CPP14_CONSTEXPR Vector2D& operator-=(const Vector2D& v) noexcept { x -= v.x; y -= v.y; return *this; }
-    OPTIONAL_CPP14_CONSTEXPR Vector2D& operator*=(const double s) noexcept { x = static_cast<TX>(x * s); y = static_cast<TY>(y * s); return *this; }
-    OPTIONAL_CPP14_CONSTEXPR Vector2D& operator/=(const double s) noexcept { x = static_cast<TX>(x / s); y = static_cast<TY>(y / s); return *this; }
-    constexpr bool operator==(const Vector2D& v) const noexcept { return x == v.x && y == v.y; }
-    constexpr bool operator!=(const Vector2D& v) const noexcept { return !(*this == v); }
-
-    friend std::ostream& operator<<(std::ostream& os, const Vector2D& v) {
-        os << "<\n    " << v.x << ",\n    " << v.y << "\n>";
-        return os;
-    }
-
-    std::string to_string() const {
-        std::ostringstream os;
-        os << *this;
-        return os.str();
-    }
+    explicit operator typename Fam::V3() const { return typename Fam::V3(x, y, F::zero()); }
+    explicit operator typename Fam::V4() const { return typename Fam::V4(x, y, F::zero(), F::zero()); }
 };
 
-template <typename TX, typename TY, typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value>::type>
-constexpr Vector2D<TX, TY> operator*(const T s, const Vector2D<TX, TY>& v) noexcept { return v * s; }
-
-template <typename TX, typename TY, typename TZ, typename>
-struct Vector3D {
-public:
-    TX x;
-    TY y;
-    TZ z;
+template <class Derived, class S>
+struct Vector3DImpl : VectorOps<Derived, 3, S> {
+private:
+    using Base = VectorOps<Derived, 3, S>;
+    using F    = scalar::field<S>;
+    using Fam  = family<S>;
 
 public:
-    constexpr Vector3D() noexcept : x(TX(0)), y(TY(0)), z(TZ(0)) {}
-    constexpr Vector3D(const TX& x_, const TY& y_, const double z_) noexcept : x(x_), y(y_), z(z_) {}
-    constexpr Vector3D(const Vector3D& v) noexcept = default;
-    constexpr Vector3D(Vector3D&& v) noexcept = default;
-    constexpr Vector3D(const Vector2D<TX, TY>& v) noexcept : x(v.x), y(v.y), z(0.0) {}
-    OPTIONAL_CPP14_CONSTEXPR Vector3D& operator=(const Vector3D&) noexcept = default;
-    OPTIONAL_CPP14_CONSTEXPR Vector3D& operator=(Vector3D&&) noexcept = default;
-    OPTIONAL_CPP14_CONSTEXPR Vector3D& operator=(const Vector2D<TX, TY>& v) noexcept { x = v.x; y = v.y; z = 0.0; return *this; }
-    constexpr explicit operator Vector4D<TX, TY, TZ>() const noexcept;
+    using context_type = typename Base::context_type;
 
-    constexpr auto magnitude_squared() const noexcept { return x * x + y * y + z * z; }
-    constexpr auto magnitude() const noexcept { return math::sqrt_constexpr(magnitude_squared()); }
-    constexpr auto dot(const Vector3D& v) const noexcept { return x * v.x + y * v.y + z * v.z; }
-    constexpr Bivector<3, typename std::common_type<TX, TY, TZ>::type> wedge(const Vector3D& o) const noexcept;
+    S x;
+    S y;
+    S z;
 
-    constexpr auto angle_between(const Vector3D& v, const bool return_in_degrees = true) const noexcept {
-        const auto rad = math::acos_constexpr(dot(v) / (magnitude() * v.magnitude()));
-        return return_in_degrees ? rad * (constants::reciprocal_pi_180()) : rad;
+    Vector3DImpl() : x(F::zero()), y(F::zero()), z(F::zero()) {}
+    Vector3DImpl(const S& x_, const S& y_, const S& z_) : x(x_), y(y_), z(z_) {}
+    Vector3DImpl(const typename Fam::V2& v) : x(v.x), y(v.y), z(F::zero()) {}
+
+    template <class U, class V, class W, typename std::enable_if<is_scalar_operand<S, U>::value && is_scalar_operand<S, V>::value && is_scalar_operand<S, W>::value && !(std::is_same<U, S>::value && std::is_same<V, S>::value && std::is_same<W, S>::value), int>::type = 0>
+    Vector3DImpl(const U& x_, const V& y_, const W& z_) : x(F::from(x_)), y(F::from(y_)), z(F::from(z_)) {}
+
+    S&       component(std::size_t i) { return i == 0 ? x : (i == 1 ? y : z); }
+    const S& component(std::size_t i) const { return i == 0 ? x : (i == 1 ? y : z); }
+
+    static Derived zero() { return Derived(); }
+
+    Derived cross(const Derived& v, const context_type& c = F::default_context()) const {
+        return Derived(F::diff_of_products(y, v.z, z, v.y, c), F::diff_of_products(z, v.x, x, v.z, c), F::diff_of_products(x, v.y, y, v.x, c));
     }
 
-    constexpr Vector3D cross(const Vector3D& v) const noexcept {
-        return Vector3D(
-            static_cast<TX>(y * v.z - z * v.y),
-            static_cast<TY>(z * v.x - x * v.z),
-            static_cast<double>(x * v.y - y * v.x)
-        );
+    S triple_product(const Derived& b, const Derived& cc, const context_type& c = F::default_context()) const {
+        const scalar::kernel::Vec a = this->big();
+        const scalar::kernel::Vec p = b.big();
+        const scalar::kernel::Vec q = cc.big();
+        if (!this->all_finite() || !b.all_finite() || !cc.all_finite()) return this->dot(b.cross(cc, c), c);
+        const BigFloat v = scalar::kernel::det({ a[0], a[1], a[2], p[0], p[1], p[2], q[0], q[1], q[2] }, 3);
+        return F::round(c, v);
     }
 
-    constexpr auto scalar_project(const Vector3D& v) const noexcept {
-        const auto mag = v.magnitude();
-        if (mag == 0) return decltype(dot(v) / mag)(0);
-        return dot(v) / mag;
-    }
+    typename Fam::template KV<2, 3> wedge(const Derived& v, const context_type& c = F::default_context()) const;
 
-    constexpr Vector3D unit_vector() const noexcept {
-        const auto mag = magnitude();
-        if (mag == 0) return *this;
-        return Vector3D(static_cast<TX>(x / mag), static_cast<TY>(y / mag), z / mag);
-    }
-
-    constexpr Vector3D direction() const noexcept { return unit_vector(); }
-    constexpr Vector3D hadamard(const Vector3D& v) const noexcept { return Vector3D(x * v.x, y * v.y, z * v.z); }
-
-    constexpr Vector3D project_onto(const Vector3D& v) const noexcept {
-        const auto denom = v.magnitude_squared();
-        if (denom == 0) return *this;
-        const auto scale = dot(v) / denom;
-        return Vector3D(static_cast<TX>(v.x * scale), static_cast<TY>(v.y * scale), v.z * scale);
-    }
-
-    constexpr bool is_orthogonal(const Vector3D& v, const double eps = constants::middle_epsilon()) const noexcept { return abs_constexpr(dot(v)) <= eps; }
-
-    constexpr bool is_parallel(const Vector3D& v, const double eps = constants::middle_epsilon()) const noexcept {
-        const Vector3D c = cross(v);
-        return abs_constexpr(c.x) <= eps && abs_constexpr(c.y) <= eps && abs_constexpr(c.z) <= eps;
-    }
-
-    constexpr bool is_antiparallel(const Vector3D& v, const double eps = 1e-9) const noexcept { return is_parallel(v, eps) && dot(v) < 0; }
-    constexpr Vector3D operator*(const double s) const noexcept { return Vector3D(static_cast<TX>(x * s), static_cast<TY>(y * s), z * s); }
-    constexpr Vector3D operator/(const double s) const noexcept { return Vector3D(static_cast<TX>(x / s), static_cast<TY>(y / s), z / s); }
-    constexpr Vector3D operator+(const Vector3D& v) const noexcept { return Vector3D(x + v.x, y + v.y, z + v.z); }
-    constexpr Vector3D operator-(const Vector3D& v) const noexcept { return Vector3D(x - v.x, y - v.y, z - v.z); }
-    constexpr Vector3D operator-() const noexcept { return Vector3D(-x, -y, -z); }
-    OPTIONAL_CPP14_CONSTEXPR Vector3D& operator+=(const Vector3D& v) noexcept { x += v.x; y += v.y; z += v.z; return *this; }
-    OPTIONAL_CPP14_CONSTEXPR Vector3D& operator-=(const Vector3D& v) noexcept { x -= v.x; y -= v.y; z -= v.z; return *this; }
-    OPTIONAL_CPP14_CONSTEXPR Vector3D& operator*=(const double s) noexcept { x = static_cast<TX>(x * s); y = static_cast<TY>(y * s); z *= s; return *this; }
-    OPTIONAL_CPP14_CONSTEXPR Vector3D& operator/=(const double s) noexcept { x = static_cast<TX>(x / s); y = static_cast<TY>(y / s); z /= s; return *this; }
-    constexpr bool operator==(const Vector3D& v) const noexcept { return x == v.x && y == v.y && z == v.z; }
-    constexpr bool operator!=(const Vector3D& v) const noexcept { return !(*this == v); }
-
-    friend std::ostream& operator<<(std::ostream& os, const Vector3D& v) {
-        os << "<\n    " << v.x << ",\n    " << v.y << ",\n    " << v.z << "\n>";
-        return os;
-    }
-
-    std::string to_string() const {
-        std::ostringstream os;
-        os << *this;
-        return os.str();
-    }
+    explicit operator typename Fam::V2() const { return typename Fam::V2(x, y); }
+    explicit operator typename Fam::V4() const { return typename Fam::V4(x, y, z, F::zero()); }
 };
 
-template <typename TX, typename TY, typename TZ, typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value>::type>
-constexpr Vector3D<TX, TY, TZ> operator*(const T s, const Vector3D<TX, TY, TZ>& v) noexcept { return v * s; }
-
-template <typename TX, typename TY, typename E>
-constexpr Vector2D<TX, TY, E>::operator Vector3D<TX, TY>() const noexcept { return Vector3D<TX, TY>(x, y, 0.0); }
-
-template <typename TX, typename TY, typename E>
-constexpr Vector3D<TX, TY> Vector2D<TX, TY, E>::cross(const Vector2D<TX, TY, E>& v) const noexcept {
-    return Vector3D<TX, TY>(TX(0), TY(0), perp_dot(v));
-}
-
-template <typename TX, typename TY, typename TZ, typename TW, typename>
-struct Vector4D {
-public:
-    TX x;
-    TY y;
-    TZ z;
-    TW w;
+template <class Derived, class S>
+struct Vector4DImpl : VectorOps<Derived, 4, S> {
+private:
+    using Base = VectorOps<Derived, 4, S>;
+    using F    = scalar::field<S>;
+    using Fam  = family<S>;
 
 public:
-    constexpr Vector4D() noexcept : x(TX(0)), y(TY(0)), z(TZ(0)), w(TW(0)) {}
-    constexpr Vector4D(const TX& x_, const TY& y_, const double z_, const double w_) noexcept : x(x_), y(y_), z(z_), w(w_) {}
-    constexpr Vector4D(const Vector4D& v) noexcept = default;
-    constexpr Vector4D(Vector4D&& v) noexcept = default;
-    constexpr Vector4D(const Vector3D<TX, TY>& v) noexcept : x(v.x), y(v.y), z(v.z), w(0.0) {}
-    constexpr Vector4D(const Vector2D<TX, TY>& v) noexcept : x(v.x), y(v.y), z(0.0), w(0.0) {}
-    OPTIONAL_CPP14_CONSTEXPR Vector4D& operator=(const Vector4D&) noexcept = default;
-    OPTIONAL_CPP14_CONSTEXPR Vector4D& operator=(Vector4D&&) noexcept = default;
+    using context_type = typename Base::context_type;
 
-    constexpr auto magnitude_squared() const noexcept { return x * x + y * y + z * z + w * w; }
-    constexpr auto magnitude() const noexcept { return math::sqrt_constexpr(magnitude_squared()); }
-    constexpr auto dot(const Vector4D& v) const noexcept { return x * v.x + y * v.y + z * v.z + w * v.w; }
-    constexpr Bivector<4, typename std::common_type<TX, TY, TZ, TW>::type> wedge(const Vector4D& o) const noexcept;
+    S x;
+    S y;
+    S z;
+    S w;
 
-    constexpr auto angle_between(const Vector4D& v, const bool return_in_degrees = true) const noexcept {
-        const auto rad = math::acos_constexpr(dot(v) / (magnitude() * v.magnitude()));
-        return return_in_degrees ? rad * constants::reciprocal_pi_180() : rad;
-    }
+    Vector4DImpl() : x(F::zero()), y(F::zero()), z(F::zero()), w(F::zero()) {}
+    Vector4DImpl(const S& x_, const S& y_, const S& z_, const S& w_) : x(x_), y(y_), z(z_), w(w_) {}
+    Vector4DImpl(const typename Fam::V3& v) : x(v.x), y(v.y), z(v.z), w(F::zero()) {}
+    Vector4DImpl(const typename Fam::V2& v) : x(v.x), y(v.y), z(F::zero()), w(F::zero()) {}
 
-    constexpr auto scalar_project(const Vector4D& v) const noexcept {
-        const auto mag = v.magnitude();
-        if (mag == 0) return decltype(dot(v) / mag)(0);
-        return dot(v) / mag;
-    }
+    template <class A, class B, class C, class D, typename std::enable_if<is_scalar_operand<S, A>::value && is_scalar_operand<S, B>::value && is_scalar_operand<S, C>::value && is_scalar_operand<S, D>::value && !(std::is_same<A, S>::value && std::is_same<B, S>::value && std::is_same<C, S>::value && std::is_same<D, S>::value), int>::type = 0>
+    Vector4DImpl(const A& x_, const B& y_, const C& z_, const D& w_) : x(F::from(x_)), y(F::from(y_)), z(F::from(z_)), w(F::from(w_)) {}
 
-    constexpr Vector4D unit_vector() const noexcept {
-        const auto mag = magnitude();
-        if (mag == 0) return *this;
-        return Vector4D(static_cast<TX>(x / mag), static_cast<TY>(y / mag), z / mag, w / mag);
-    }
+    S&       component(std::size_t i) { return i == 0 ? x : (i == 1 ? y : (i == 2 ? z : w)); }
+    const S& component(std::size_t i) const { return i == 0 ? x : (i == 1 ? y : (i == 2 ? z : w)); }
 
-    constexpr Vector4D direction() const noexcept { return unit_vector(); }
-    constexpr Vector4D hadamard(const Vector4D& v) const noexcept { return Vector4D(x * v.x, y * v.y, z * v.z, w * v.w); }
+    static Derived zero() { return Derived(); }
 
-    constexpr Vector4D project_onto(const Vector4D& v) const noexcept {
-        const auto denom = v.magnitude_squared();
-        if (denom == 0) return *this;
-        const auto scale = dot(v) / denom;
-        return Vector4D(static_cast<TX>(v.x * scale), static_cast<TY>(v.y * scale), v.z * scale, v.w * scale);
-    }
+    typename Fam::template KV<2, 4> wedge(const Derived& v, const context_type& c = F::default_context()) const;
 
-    constexpr bool is_orthogonal(const Vector4D& v, const double eps = constants::middle_epsilon()) const noexcept { return abs_constexpr(dot(v)) <= eps; }
-
-    constexpr bool is_parallel(const Vector4D& v, const double eps = constants::middle_epsilon()) const noexcept {
-        const auto d = dot(v);
-        return abs_constexpr(magnitude_squared() * v.magnitude_squared() - d * d) <= eps;
-    }
-
-    constexpr bool is_antiparallel(const Vector4D& v, const double eps = constants::middle_epsilon()) const noexcept { return is_parallel(v, eps) && dot(v) < 0; }
-
-    constexpr Vector4D operator*(const double s) const noexcept { return Vector4D(static_cast<TX>(x * s), static_cast<TY>(y * s), z * s, w * s); }
-    constexpr Vector4D operator/(const double s) const noexcept { return Vector4D(static_cast<TX>(x / s), static_cast<TY>(y / s), z / s, w / s); }
-    constexpr Vector4D operator+(const Vector4D& v) const noexcept { return Vector4D(x + v.x, y + v.y, z + v.z, w + v.w); }
-    constexpr Vector4D operator-(const Vector4D& v) const noexcept { return Vector4D(x - v.x, y - v.y, z - v.z, w - v.w); }
-    constexpr Vector4D operator-() const noexcept { return Vector4D(-x, -y, -z, -w); }
-    OPTIONAL_CPP14_CONSTEXPR Vector4D& operator+=(const Vector4D& v) noexcept { x += v.x; y += v.y; z += v.z; w += v.w; return *this; }
-    OPTIONAL_CPP14_CONSTEXPR Vector4D& operator-=(const Vector4D& v) noexcept { x -= v.x; y -= v.y; z -= v.z; w -= v.w; return *this; }
-    OPTIONAL_CPP14_CONSTEXPR Vector4D& operator*=(const double s) noexcept { x = static_cast<TX>(x * s); y = static_cast<TY>(y * s); z *= s; w *= s; return *this; }
-    OPTIONAL_CPP14_CONSTEXPR Vector4D& operator/=(const double s) noexcept { x = static_cast<TX>(x / s); y = static_cast<TY>(y / s); z /= s; w /= s; return *this; }
-    constexpr bool operator==(const Vector4D& v) const noexcept { return x == v.x && y == v.y && z == v.z && w == v.w; }
-    constexpr bool operator!=(const Vector4D& v) const noexcept { return !(*this == v); }
-
-    friend std::ostream& operator<<(std::ostream& os, const Vector4D& v) {
-        os << "<\n    " << v.x << ",\n    " << v.y << ",\n    " << v.z << ",\n    " << v.w << "\n>";
-        return os;
-    }
-
-    std::string to_string() const {
-        std::ostringstream os;
-        os << *this;
-        return os.str();
-    }
+    explicit operator typename Fam::V2() const { return typename Fam::V2(x, y); }
+    explicit operator typename Fam::V3() const { return typename Fam::V3(x, y, z); }
 };
 
-template <typename TX, typename TY, typename E>
-constexpr Vector2D<TX, TY, E>::operator Vector4D<TX, TY>() const noexcept {
-    return Vector4D<TX, TY>(x, y, 0.0, 0.0);
+inline const std::array<std::array<std::array<int, 3>, 6>, 7>& cross7_terms() {
+    static const std::array<std::array<std::array<int, 3>, 6>, 7> table = [] {
+        const int triples[7][3] = { {0, 1, 3}, {1, 2, 4}, {2, 3, 5}, {3, 4, 6}, {4, 5, 0}, {5, 6, 1}, {6, 0, 2} };
+        std::array<std::array<std::array<int, 3>, 6>, 7> t{};
+        std::array<std::size_t, 7> fill{};
+
+        for (const auto& tr : triples) {
+            for (int rot = 0; rot < 3; ++rot) {
+                const int i = tr[rot % 3];
+                const int j = tr[(rot + 1) % 3];
+                const int k = tr[(rot + 2) % 3];
+                t[k][fill[k]++] = { i, j, 1 };
+                t[k][fill[k]++] = { j, i, -1 };
+            }
+        }
+
+        return t;
+    }();
+
+    return table;
 }
 
-template <typename TX, typename TY, typename TZ, typename E>
-constexpr Vector3D<TX, TY, TZ, E>::operator Vector4D<TX, TY, TZ>() const noexcept {
-    return Vector4D<TX, TY, TZ>(x, y, z, 0.0);
-}
-
-template <typename TX, typename TY, typename TZ, typename TW, typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value>::type>
-constexpr Vector4D<TX, TY, TZ, TW> operator*(const T s, const Vector4D<TX, TY, TZ, TW>& v) noexcept { return v * s; }
-
-template <std::size_t N, typename T = double, typename = typename std::enable_if<std::is_floating_point<T>::value>::type>
-struct VectorN {
-public:
-    std::array<T, N> data{};
+template <class Derived, std::size_t N, class S>
+struct VectorNImpl : VectorOps<Derived, N, S> {
+private:
+    using Base = VectorOps<Derived, N, S>;
+    using F    = scalar::field<S>;
+    using Fam  = family<S>;
 
 public:
-    constexpr VectorN() noexcept = default;
-    constexpr explicit VectorN(const std::array<T, N>& arr) noexcept : data(arr) {}
-    template <typename... Args, typename = typename std::enable_if<sizeof...(Args) == N>::type>
-    constexpr VectorN(Args&&... args) noexcept : data{ static_cast<T>(args)... } {}
-    constexpr VectorN(const VectorN&) noexcept = default;
-    constexpr VectorN(VectorN&&) noexcept = default;
-    OPTIONAL_CPP14_CONSTEXPR VectorN& operator=(const VectorN&) noexcept = default;
-    OPTIONAL_CPP14_CONSTEXPR VectorN& operator=(VectorN&&) noexcept = default;
-    constexpr T& operator[](std::size_t i) noexcept { return data[i]; }
-    constexpr const T& operator[](std::size_t i) const noexcept { return data[i]; }
-    constexpr T& at(std::size_t i) noexcept { return data[i]; }
-    constexpr const T& at(std::size_t i) const noexcept { return data[i]; }
-    constexpr T& x() noexcept { static_assert(N >= 1, "No x component"); return data[0]; }
-    constexpr const T& x() const noexcept { static_assert(N >= 1, "No x component"); return data[0]; }
-    constexpr T& y() noexcept { static_assert(N >= 2, "No y component"); return data[1]; }
-    constexpr const T& y() const noexcept { static_assert(N >= 2, "No y component"); return data[1]; }
-    constexpr T& z() noexcept { static_assert(N >= 3, "No z component"); return data[2]; }
-    constexpr const T& z() const noexcept { static_assert(N >= 3, "No z component"); return data[2]; }
-    constexpr T& w() noexcept { static_assert(N >= 4, "No w component"); return data[3]; }
-    constexpr const T& w() const noexcept { static_assert(N >= 4, "No w component"); return data[3]; }
-    constexpr auto begin() noexcept { return data.begin(); }
-    constexpr auto end() noexcept { return data.end(); }
-    constexpr auto begin() const noexcept { return data.begin(); }
-    constexpr auto end() const noexcept { return data.end(); }
-    static constexpr VectorN zero() noexcept { return VectorN{}; }
-    static constexpr VectorN filled(T val) noexcept {
-        VectorN v;
-        for (std::size_t i = 0; i < N; ++i) v.data[i] = val;
-        return v;
+    using context_type = typename Base::context_type;
+
+    std::array<S, N> data;
+
+    VectorNImpl() { data.fill(F::zero()); }
+    explicit VectorNImpl(const std::array<S, N>& arr) : data(arr) {}
+
+    template <class... Args, typename std::enable_if<sizeof...(Args) == N && std::conjunction<is_scalar_operand<S, typename std::decay<Args>::type>...>::value, int>::type = 0>
+    VectorNImpl(const Args&... args) : data{ { F::from(args)... } } {}
+
+    S&       component(std::size_t i) { return data[i]; }
+    const S& component(std::size_t i) const { return data[i]; }
+
+    S&       at(std::size_t i) { return data.at(i); }
+    const S& at(std::size_t i) const { return data.at(i); }
+
+    S&       x() { static_assert(N >= 1, "No x component"); return data[0]; }
+    const S& x() const { static_assert(N >= 1, "No x component"); return data[0]; }
+    S&       y() { static_assert(N >= 2, "No y component"); return data[1]; }
+    const S& y() const { static_assert(N >= 2, "No y component"); return data[1]; }
+    S&       z() { static_assert(N >= 3, "No z component"); return data[2]; }
+    const S& z() const { static_assert(N >= 3, "No z component"); return data[2]; }
+    S&       w() { static_assert(N >= 4, "No w component"); return data[3]; }
+    const S& w() const { static_assert(N >= 4, "No w component"); return data[3]; }
+
+    auto begin() { return data.begin(); }
+    auto end() { return data.end(); }
+    auto begin() const { return data.begin(); }
+    auto end() const { return data.end(); }
+
+    static Derived zero() { return Derived(); }
+
+    static Derived filled(const S& v) {
+        Derived d;
+        d.data.fill(v);
+        return d;
     }
-    static constexpr VectorN basis(std::size_t axis) noexcept {
-        VectorN v;
-        if (axis < N) v.data[axis] = T(1);
-        return v;
+
+    static Derived basis(std::size_t axis) {
+        Derived d;
+        if (axis < N) d.data[axis] = F::one();
+        return d;
     }
-    constexpr VectorN operator+(const VectorN& o) const noexcept {
-        VectorN v;
-        for (std::size_t i = 0; i < N; ++i) v.data[i] = data[i] + o.data[i];
-        return v;
+
+    template <std::size_t M = N, typename std::enable_if<M == 3, int>::type = 0>
+    Derived cross(const Derived& o, const context_type& c = F::default_context()) const {
+        return Derived(std::array<S, 3>{ {
+            F::diff_of_products(data[1], o.data[2], data[2], o.data[1], c),
+            F::diff_of_products(data[2], o.data[0], data[0], o.data[2], c),
+            F::diff_of_products(data[0], o.data[1], data[1], o.data[0], c)
+        } });
     }
-    constexpr VectorN operator-(const VectorN& o) const noexcept {
-        VectorN v;
-        for (std::size_t i = 0; i < N; ++i) v.data[i] = data[i] - o.data[i];
-        return v;
+
+    template <std::size_t M = N, typename std::enable_if<M == 7, int>::type = 0>
+    Derived cross(const Derived& o, const context_type& c = F::default_context()) const {
+        std::array<S, 7> out;
+
+        for (std::size_t k = 0; k < 7; ++k) {
+            S a[6];
+            S b[6];
+
+            for (std::size_t t = 0; t < 6; ++t) {
+                const auto& term = cross7_terms()[k][t];
+                a[t] = term[2] > 0 ? data[static_cast<std::size_t>(term[0])] : F::neg(data[static_cast<std::size_t>(term[0])]);
+                b[t] = o.data[static_cast<std::size_t>(term[1])];
+            }
+
+            out[k] = F::dot(a, b, 6, c);
+        }
+
+        return Derived(out);
     }
-    constexpr VectorN operator-() const noexcept {
-        VectorN v;
-        for (std::size_t i = 0; i < N; ++i) v.data[i] = -data[i];
-        return v;
-    }
-    OPTIONAL_CPP14_CONSTEXPR VectorN& operator+=(const VectorN& o) noexcept { return *this = *this + o; }
-    OPTIONAL_CPP14_CONSTEXPR VectorN& operator-=(const VectorN& o) noexcept { return *this = *this - o; }
-    constexpr VectorN operator*(T s) const noexcept {
-        VectorN v;
-        for (std::size_t i = 0; i < N; ++i) v.data[i] = data[i] * s;
-        return v;
-    }
-    constexpr VectorN operator/(T s) const noexcept {
-        VectorN v;
-        for (std::size_t i = 0; i < N; ++i) v.data[i] = data[i] / s;
-        return v;
-    }
-    OPTIONAL_CPP14_CONSTEXPR VectorN& operator*=(T s) noexcept { return *this = *this * s; }
-    OPTIONAL_CPP14_CONSTEXPR VectorN& operator/=(T s) noexcept { return *this = *this / s; }
-    constexpr bool operator==(const VectorN& o) const noexcept { return data == o.data; }
-    constexpr bool operator!=(const VectorN& o) const noexcept { return !(*this == o); }
-    constexpr bool approx_equal(const VectorN& o, T eps = constants::epsilon<T>()) const noexcept {
-        for (std::size_t i = 0; i < N; ++i) if (abs_constexpr(data[i] - o.data[i]) > eps) return false;
-        return true;
-    }
-    constexpr T dot(const VectorN& o) const noexcept {
-        T s = T(0);
-        for (std::size_t i = 0; i < N; ++i) s += data[i] * o.data[i];
-        return s;
-    }
-    constexpr Bivector<N, T> wedge(const VectorN& o) const noexcept;
-    constexpr T magnitude_squared() const noexcept { return dot(*this); }
-    constexpr T magnitude() const noexcept { return math::sqrt_constexpr(magnitude_squared()); }
-    constexpr T length() const noexcept { return magnitude(); }
-    constexpr VectorN unit_vector() const noexcept {
-        const T mag = magnitude();
-        if (mag == T(0)) return *this;
-        return *this / mag;
-    }
-    constexpr VectorN direction() const noexcept { return unit_vector(); }
-    constexpr VectorN normalized() const noexcept { return unit_vector(); }
-    constexpr VectorN hadamard(const VectorN& o) const noexcept {
-        VectorN v;
-        for (std::size_t i = 0; i < N; ++i) v.data[i] = data[i] * o.data[i];
-        return v;
-    }
-    constexpr T scalar_project(const VectorN& onto) const noexcept {
-        const T mag = onto.magnitude();
-        return mag == T(0) ? T(0) : dot(onto) / mag;
-    }
-    constexpr VectorN project_onto(const VectorN& onto) const noexcept {
-        const T denom = onto.magnitude_squared();
-        if (denom == T(0)) return *this;
-        return onto * (dot(onto) / denom);
-    }
-    constexpr VectorN project_from(const VectorN& onto) const noexcept { return *this - project_onto(onto); }
-    constexpr VectorN reflect(const VectorN& n) const noexcept { return *this - n * (T(2) * dot(n)); }
-    constexpr T angle_between(const VectorN& o, bool degrees = true) const noexcept {
-        const T denom = magnitude() * o.magnitude();
-        if (denom == T(0)) return T(0);
-        const T cosine = abs_constexpr(dot(o) / denom) <= T(1) ? dot(o) / denom : (dot(o) > T(0) ? T(1) : T(-1));
-        const T rad = math::acos_constexpr(cosine);
-        return degrees ? rad * constants::reciprocal_pi_180() : rad;
-    }
-    constexpr bool is_zero(T eps = constants::epsilon<T>()) const noexcept {
-        for (std::size_t i = 0; i < N; ++i) if (abs_constexpr(data[i]) > eps) return false;
-        return true;
-    }
-    constexpr bool is_orthogonal(const VectorN& o, T eps = constants::middle_epsilon()) const noexcept { return abs_constexpr(dot(o)) <= eps; }
-    constexpr bool is_parallel(const VectorN& o, T eps = constants::middle_epsilon()) const noexcept {
-        const T d = dot(o);
-        return abs_constexpr(magnitude_squared() * o.magnitude_squared() - d * d) <= eps;
-    }
-    constexpr bool is_antiparallel(const VectorN& o, T eps = constants::middle_epsilon()) const noexcept { return is_parallel(o, eps) && dot(o) < T(0); }
-    template <std::size_t M = N>
-    constexpr typename std::enable_if<M == 3, VectorN>::type
-    cross(const VectorN& o) const noexcept {
-        return VectorN(
-            data[1] * o.data[2] - data[2] * o.data[1],
-            data[2] * o.data[0] - data[0] * o.data[2],
-            data[0] * o.data[1] - data[1] * o.data[0]
-        );
-    }
-    template <std::size_t M = N>
-    constexpr typename std::enable_if<M == 7, VectorN>::type
-    cross(const VectorN& o) const noexcept {
-        const auto& a = data;
-        const auto& b = o.data;
-        return VectorN(
-            a[1]*b[2] - a[2]*b[1] + a[3]*b[4] - a[4]*b[3] + a[6]*b[5] - a[5]*b[6],
-            a[2]*b[0] - a[0]*b[2] + a[3]*b[5] - a[5]*b[3] + a[4]*b[6] - a[6]*b[4],
-            a[0]*b[1] - a[1]*b[0] + a[3]*b[6] - a[6]*b[3] + a[5]*b[4] - a[4]*b[5],
-            a[0]*b[4] - a[4]*b[0] + a[1]*b[5] - a[5]*b[1] + a[2]*b[6] - a[6]*b[2],
-            a[4]*b[0] - a[0]*b[3] + a[2]*b[5] - a[5]*b[2] + a[6]*b[1] - a[1]*b[6],  
-            a[0]*b[6] - a[6]*b[0] + a[4]*b[2] - a[2]*b[4] + a[3]*b[5] - a[5]*b[3],  
-            a[5]*b[0] - a[0]*b[5] + a[1]*b[3] - a[3]*b[1] + a[4]*b[2] - a[2]*b[4]   
-        );
-    }
-    constexpr T sum() const noexcept {
-        T s = T(0);
-        for (std::size_t i = 0; i < N; ++i) s += data[i];
-        return s;
-    }
-    constexpr T product() const noexcept {
-        T p = T(1);
-        for (std::size_t i = 0; i < N; ++i) p *= data[i];
-        return p;
-    }
+
+    typename Fam::template KV<2, N> wedge(const Derived& o, const context_type& c = F::default_context()) const;
+
     static constexpr std::size_t size = N;
     static constexpr std::size_t dims() noexcept { return N; }
-    friend std::ostream& operator<<(std::ostream& os, const VectorN& v) {
-        os << "<";
-        for (std::size_t i = 0; i < N; ++i) {
-            os << "\n    " << v.data[i];
-            if (i + 1 < N) os << ",";
-        }
-        os << "\n>";
-        return os;
+};
+
+} // namespace detail
+
+template <class T>
+struct Vector2D : detail::Vector2DImpl<Vector2D<T>, T> {
+    static_assert(scalar::is_real<T>::value, "Vector2D requires a standard or fixed-width floating-point type");
+    using detail::Vector2DImpl<Vector2D<T>, T>::Vector2DImpl;
+
+    Vector2D() = default;
+
+    template <class U, typename std::enable_if<!std::is_same<U, T>::value, int>::type = 0>
+    explicit Vector2D(const Vector2D<U>& o) : Vector2D(scalar::field<T>::from(o.x), scalar::field<T>::from(o.y)) {}
+};
+
+template <class T>
+struct Vector3D : detail::Vector3DImpl<Vector3D<T>, T> {
+    static_assert(scalar::is_real<T>::value, "Vector3D requires a standard or fixed-width floating-point type");
+    using detail::Vector3DImpl<Vector3D<T>, T>::Vector3DImpl;
+
+    Vector3D() = default;
+
+    template <class U, typename std::enable_if<!std::is_same<U, T>::value, int>::type = 0>
+    explicit Vector3D(const Vector3D<U>& o) : Vector3D(scalar::field<T>::from(o.x), scalar::field<T>::from(o.y), scalar::field<T>::from(o.z)) {}
+};
+
+template <class T>
+struct Vector4D : detail::Vector4DImpl<Vector4D<T>, T> {
+    static_assert(scalar::is_real<T>::value, "Vector4D requires a standard or fixed-width floating-point type");
+    using detail::Vector4DImpl<Vector4D<T>, T>::Vector4DImpl;
+
+    Vector4D() = default;
+
+    template <class U, typename std::enable_if<!std::is_same<U, T>::value, int>::type = 0>
+    explicit Vector4D(const Vector4D<U>& o) : Vector4D(scalar::field<T>::from(o.x), scalar::field<T>::from(o.y), scalar::field<T>::from(o.z), scalar::field<T>::from(o.w)) {}
+};
+
+template <std::size_t N, class T>
+struct VectorN : detail::VectorNImpl<VectorN<N, T>, N, T> {
+    static_assert(scalar::is_real<T>::value, "VectorN requires a standard or fixed-width floating-point type");
+    using detail::VectorNImpl<VectorN<N, T>, N, T>::VectorNImpl;
+
+    VectorN() = default;
+};
+
+struct BigVector2D : detail::Vector2DImpl<BigVector2D, scalar::BigFloat> {
+    using detail::Vector2DImpl<BigVector2D, scalar::BigFloat>::Vector2DImpl;
+
+    BigVector2D() = default;
+
+    template <class T, typename std::enable_if<scalar::is_real<T>::value, int>::type = 0>
+    explicit BigVector2D(const Vector2D<T>& v) : BigVector2D(scalar::BigFloat(v.x), scalar::BigFloat(v.y)) {}
+
+    template <class T, typename std::enable_if<scalar::is_real<T>::value, int>::type = 0>
+    Vector2D<T> to() const { return Vector2D<T>(scalar::from_big<T>(x), scalar::from_big<T>(y)); }
+
+    BigVector2D rounded(const scalar::BigFloatContext& c) const { return BigVector2D(x.rounded(c), y.rounded(c)); }
+};
+
+struct BigVector3D : detail::Vector3DImpl<BigVector3D, scalar::BigFloat> {
+    using detail::Vector3DImpl<BigVector3D, scalar::BigFloat>::Vector3DImpl;
+
+    BigVector3D() = default;
+
+    template <class T, typename std::enable_if<scalar::is_real<T>::value, int>::type = 0>
+    explicit BigVector3D(const Vector3D<T>& v) : BigVector3D(scalar::BigFloat(v.x), scalar::BigFloat(v.y), scalar::BigFloat(v.z)) {}
+
+    template <class T, typename std::enable_if<scalar::is_real<T>::value, int>::type = 0>
+    Vector3D<T> to() const { return Vector3D<T>(scalar::from_big<T>(x), scalar::from_big<T>(y), scalar::from_big<T>(z)); }
+
+    BigVector3D rounded(const scalar::BigFloatContext& c) const { return BigVector3D(x.rounded(c), y.rounded(c), z.rounded(c)); }
+};
+
+struct BigVector4D : detail::Vector4DImpl<BigVector4D, scalar::BigFloat> {
+    using detail::Vector4DImpl<BigVector4D, scalar::BigFloat>::Vector4DImpl;
+
+    BigVector4D() = default;
+
+    template <class T, typename std::enable_if<scalar::is_real<T>::value, int>::type = 0>
+    explicit BigVector4D(const Vector4D<T>& v) : BigVector4D(scalar::BigFloat(v.x), scalar::BigFloat(v.y), scalar::BigFloat(v.z), scalar::BigFloat(v.w)) {}
+
+    template <class T, typename std::enable_if<scalar::is_real<T>::value, int>::type = 0>
+    Vector4D<T> to() const { return Vector4D<T>(scalar::from_big<T>(x), scalar::from_big<T>(y), scalar::from_big<T>(z), scalar::from_big<T>(w)); }
+
+    BigVector4D rounded(const scalar::BigFloatContext& c) const { return BigVector4D(x.rounded(c), y.rounded(c), z.rounded(c), w.rounded(c)); }
+};
+
+template <std::size_t N>
+struct BigVectorN : detail::VectorNImpl<BigVectorN<N>, N, scalar::BigFloat> {
+    using detail::VectorNImpl<BigVectorN<N>, N, scalar::BigFloat>::VectorNImpl;
+
+    BigVectorN() = default;
+
+    template <class T, typename std::enable_if<scalar::is_real<T>::value, int>::type = 0>
+    explicit BigVectorN(const VectorN<N, T>& v) {
+        for (std::size_t i = 0; i < N; ++i) this->data[i] = scalar::BigFloat(v.data[i]);
     }
-    std::string to_string() const {
-        std::ostringstream os;
-        os << *this;
-        return os.str();
+
+    template <class T, typename std::enable_if<scalar::is_real<T>::value, int>::type = 0>
+    VectorN<N, T> to() const {
+        VectorN<N, T> out;
+        for (std::size_t i = 0; i < N; ++i) out.data[i] = scalar::from_big<T>(this->data[i]);
+        return out;
+    }
+
+    BigVectorN rounded(const scalar::BigFloatContext& c) const {
+        BigVectorN out;
+        for (std::size_t i = 0; i < N; ++i) out.data[i] = this->data[i].rounded(c);
+        return out;
     }
 };
 
-template <typename T>
+template <class T>
 struct is_math_vector : std::false_type {};
 
-template <typename T>
+template <class T>
 struct is_real_math_vector : std::false_type {};
 
-template <typename TX, typename TY>
-struct is_math_vector<Vector2D<TX, TY>> : std::true_type {};
+template <class T> struct is_math_vector<Vector2D<T>> : std::true_type {};
+template <class T> struct is_math_vector<Vector3D<T>> : std::true_type {};
+template <class T> struct is_math_vector<Vector4D<T>> : std::true_type {};
+template <std::size_t N, class T> struct is_math_vector<VectorN<N, T>> : std::true_type {};
+template <> struct is_math_vector<BigVector2D> : std::true_type {};
+template <> struct is_math_vector<BigVector3D> : std::true_type {};
+template <> struct is_math_vector<BigVector4D> : std::true_type {};
+template <std::size_t N> struct is_math_vector<BigVectorN<N>> : std::true_type {};
 
-template <typename TX, typename TY>
-struct is_real_math_vector<Vector2D<TX, TY>> : std::true_type {};
+template <class T> struct is_real_math_vector<Vector2D<T>> : std::true_type {};
+template <class T> struct is_real_math_vector<Vector3D<T>> : std::true_type {};
+template <class T> struct is_real_math_vector<Vector4D<T>> : std::true_type {};
+template <std::size_t N, class T> struct is_real_math_vector<VectorN<N, T>> : std::true_type {};
+template <> struct is_real_math_vector<BigVector2D> : std::true_type {};
+template <> struct is_real_math_vector<BigVector3D> : std::true_type {};
+template <> struct is_real_math_vector<BigVector4D> : std::true_type {};
+template <std::size_t N> struct is_real_math_vector<BigVectorN<N>> : std::true_type {};
 
-template <typename TX, typename TY, typename TZ>
-struct is_math_vector<Vector3D<TX, TY, TZ>> : std::true_type {};
-
-template <typename TX, typename TY, typename TZ>
-struct is_real_math_vector<Vector3D<TX, TY, TZ>> : std::true_type {};
-
-template <typename TX, typename TY, typename TZ, typename TW>
-struct is_math_vector<Vector4D<TX, TY, TZ, TW>> : std::true_type {};
-
-template <typename TX, typename TY, typename TZ, typename TW>
-struct is_real_math_vector<Vector4D<TX, TY, TZ, TW>> : std::true_type {};
-
-template <typename T>
+template <class T>
 inline constexpr bool is_real_math_vector_v = is_real_math_vector<T>::value;
 
-template <typename T>
+template <class T>
 inline constexpr bool is_math_vector_v = is_math_vector<T>::value;
 
-using vector2f = Vector2D<float, float>;
-using vector3f = Vector3D<float, float, float>;
-using vector4f = Vector4D<float, float, float, float>;
+using vector2f = Vector2D<float>;
+using vector3f = Vector3D<float>;
+using vector4f = Vector4D<float>;
 using vector2d = Vector2D<double>;
 using vector3d = Vector3D<double>;
 using vector4d = Vector4D<double>;
+using vector2l = Vector2D<long double>;
+using vector3l = Vector3D<long double>;
+using vector4l = Vector4D<long double>;
 
+} // namespace linalg
 } // namespace fizmo
 
 #endif // FIZMO_VECTORS_FLOATING_HPP

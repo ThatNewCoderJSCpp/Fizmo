@@ -5,7 +5,6 @@
 #include "../basic_constants.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace mmdetail {
 
@@ -120,7 +119,6 @@ max2(T a, T b) noexcept {
 
 } // namespace mmdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_ABS_MIN_MAX_DETAIL_HPP

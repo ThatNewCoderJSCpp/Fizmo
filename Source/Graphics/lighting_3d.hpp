@@ -46,22 +46,22 @@ constexpr std::uint32_t LIGHT_FULL_SKY = BakedLight::full_sky().packed();
 struct PointLight3D {
     static constexpr float FULL_CONE = 180.0f;
 
-    vector3d      position{};
+    linalg::vector3d      position{};
     Color         color         = Color(255, 255, 255);
     float         intensity     = 1.0f;
     float         radius        = 8.0f;
     bool          casts_shadows = false;
-    vector3d      direction{ 0.0, 0.0, -1.0 };
+    linalg::vector3d      direction{ 0.0, 0.0, -1.0 };
     float         cone          = 0.0f;
     float         cone_softness = 0.2f;
     bool          moving        = false;
     std::uint64_t id            = 0;
 
     PointLight3D() = default;
-    PointLight3D(const vector3d& at, const Color& c, float strength, float reach, bool shadows = false) noexcept
+    PointLight3D(const linalg::vector3d& at, const Color& c, float strength, float reach, bool shadows = false) noexcept
         : position(at), color(c), intensity(strength), radius(reach), casts_shadows(shadows) {}
 
-    static PointLight3D spot(const vector3d& at, const vector3d& facing, const Color& c, float strength, float reach, float half_angle, bool shadows = false) noexcept;
+    static PointLight3D spot(const linalg::vector3d& at, const linalg::vector3d& facing, const Color& c, float strength, float reach, float half_angle, bool shadows = false) noexcept;
 
     bool is_spot() const noexcept { return cone > 0.0f && cone < FULL_CONE; }
 };
@@ -132,14 +132,14 @@ struct PointShadows3D {
 };
 
 struct CapsuleOccluder3D {
-    vector3d start{};
-    vector3d end{};
+    linalg::vector3d start{};
+    linalg::vector3d end{};
     float    radius = 0.3f;
 
     CapsuleOccluder3D() = default;
-    CapsuleOccluder3D(const vector3d& a, const vector3d& b, float r) noexcept : start(a), end(b), radius(r) {}
+    CapsuleOccluder3D(const linalg::vector3d& a, const linalg::vector3d& b, float r) noexcept : start(a), end(b), radius(r) {}
 
-    static CapsuleOccluder3D standing(const vector3d& feet, double height, double radius) noexcept;
+    static CapsuleOccluder3D standing(const linalg::vector3d& feet, double height, double radius) noexcept;
 };
 
 struct CapsuleShadows3D {
@@ -155,8 +155,8 @@ struct CapsuleShadows3D {
 
 struct Atmosphere3D {
     bool     enabled       = false;
-    vector3d sun_position  { 0.35, 0.2, 1.0 };
-    vector3d moon_position { -0.35, -0.2, -1.0 };
+    linalg::vector3d sun_position  { 0.35, 0.2, 1.0 };
+    linalg::vector3d moon_position { -0.35, -0.2, -1.0 };
     Color    zenith        = Color(70, 130, 235);
     Color    horizon       = Color(175, 210, 250);
     Color    glow          = Color(255, 214, 160);
@@ -228,16 +228,16 @@ struct Surfaces3D {
 };
 
 struct ReflectionPlane3D {
-    vector3d point{};
-    vector3d normal{ 0.0, 0.0, 1.0 };
-    vector3d lo{};
-    vector3d hi{};
+    linalg::vector3d point{};
+    linalg::vector3d normal{ 0.0, 0.0, 1.0 };
+    linalg::vector3d lo{};
+    linalg::vector3d hi{};
     bool     bounded    = false;
     float    resolution = 0.0f;
 
     ReflectionPlane3D() = default;
-    ReflectionPlane3D(const vector3d& at, const vector3d& facing) noexcept : point(at), normal(facing) {}
-    ReflectionPlane3D(const vector3d& at, const vector3d& facing, const vector3d& min_corner, const vector3d& max_corner) noexcept
+    ReflectionPlane3D(const linalg::vector3d& at, const linalg::vector3d& facing) noexcept : point(at), normal(facing) {}
+    ReflectionPlane3D(const linalg::vector3d& at, const linalg::vector3d& facing, const linalg::vector3d& min_corner, const linalg::vector3d& max_corner) noexcept
         : point(at), normal(facing), lo(min_corner), hi(max_corner), bounded(true) {}
 };
 
@@ -268,7 +268,7 @@ struct SceneLighting3D {
 
     bool     enabled = false;
 
-    vector3d sun_direction{ 0.35, 0.2, -1.0 };
+    linalg::vector3d sun_direction{ 0.35, 0.2, -1.0 };
     Color    sun_color     = Color(255, 244, 222);
     float    sun_intensity = 0.0f;
     float    sun_exposure  = 4.0f;

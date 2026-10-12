@@ -53,8 +53,8 @@ public:
     SymbolicMatrix2x2 rewrite(const cas::RewriterConfig& cfg = {})        const;
     SymbolicMatrix2x2 simplify()                                          const;
     SymbolicMatrix2x2 full_simplify(const cas::RewriterConfig& cfg = {})  const;
-    Matrix2d evaluate(const std::unordered_map<std::string, double>& vals) const;
-    Matrix2d evaluate(std::initializer_list<std::pair<std::string, double>> vals) const;
+    linalg::Matrix2d evaluate(const std::unordered_map<std::string, double>& vals) const;
+    linalg::Matrix2d evaluate(std::initializer_list<std::pair<std::string, double>> vals) const;
     friend std::ostream& operator<<(std::ostream& os, const SymbolicMatrix2x2& m) {
         os << "[\n  [ " << m.data[0][0].full_simplify() << ",  " << m.data[0][1].full_simplify() << " ]\n  [ " << m.data[1][0].full_simplify() << ",  " << m.data[1][1].full_simplify() << " ]\n]";
         return os;
@@ -119,8 +119,8 @@ public:
     SymbolicMatrix3x3 rewrite(const cas::RewriterConfig& cfg = {})       const;
     SymbolicMatrix3x3 simplify()                                                              const;
     SymbolicMatrix3x3 full_simplify(const cas::RewriterConfig& cfg = {}) const;
-    Matrix3d evaluate(const std::unordered_map<std::string, double>& vals) const;
-    Matrix3d evaluate(std::initializer_list<std::pair<std::string, double>> vals) const;
+    linalg::Matrix3d evaluate(const std::unordered_map<std::string, double>& vals) const;
+    linalg::Matrix3d evaluate(std::initializer_list<std::pair<std::string, double>> vals) const;
     friend std::ostream& operator<<(std::ostream& os, const SymbolicMatrix3x3& m) {
         os << "[\n";
         for (int r=0;r<3;++r) { os << "  [ " << m.data[r][0].full_simplify() << ",  " << m.data[r][1].full_simplify() << ",  " << m.data[r][2].full_simplify() << " ]"; if(r<2) os << "\n"; }

@@ -10,11 +10,9 @@ find_dependency(Threads)                      # -lpthread
 list(APPEND FIZMO_DEPENDENCY_TARGETS ZLIB::ZLIB JPEG::JPEG Threads::Threads)
 
 if(WIN32)
-    # Windows: system libraries that ship with every Windows / MinGW 
-    # These don't need to be "found"; the linker already knows where they are
     list(APPEND FIZMO_DEPENDENCY_TARGETS
         gdi32 user32 kernel32 ole32 oleaut32 uuid comdlg32 shell32
-        winmm wsock32 ws2_32 bcrypt secur32 crypt32 dwrite msimg32
+        winmm wsock32 ws2_32 bcrypt secur32 crypt32 ncrypt dwrite msimg32
         iphlpapi advapi32)
 
 elseif(UNIX)

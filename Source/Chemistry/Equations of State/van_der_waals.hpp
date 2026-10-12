@@ -156,16 +156,16 @@ class VanDerWaalsEOS {
 private:
     const VDWConstants m_constants;
 
-    static constexpr double estimate_Vm_bounds(
+    static double estimate_Vm_bounds(
         double T_K, double P_Pa, double a, double b,
         double& lower_bound, double& upper_bound, std::size_t& scan_points
     ) noexcept {
         const double R = constants::ideal_gas_joules();
         lower_bound = b * 0.995 - constants::epsilon();
         const double Vm_ideal = R * T_K / P_Pa;
-        upper_bound = fizmo::max_constexpr(2.0 * Vm_ideal, 10.0 * b);
+        upper_bound = std::max(2.0 * Vm_ideal, 10.0 * b);
         const double ratio = upper_bound / lower_bound;
-        const double log_ratio = fizmo::math::log10_constexpr(ratio);
+        const double log_ratio = std::log10(ratio);
 
         scan_points = static_cast<std::size_t>(
             fizmo::clamp(log_ratio * 200.0, 5e2, 1e6)

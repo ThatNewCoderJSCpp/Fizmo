@@ -6,67 +6,88 @@
 namespace fizmo {
 namespace relativity {
 namespace special {
+namespace rdetail {
 
-template <typename V, typename T, class RU = units::TimeUnit>
-constexpr typename std::enable_if<std::is_arithmetic<V>::value && std::is_arithmetic<T>::value && is_fizmo_unit_v<RU> && RU::dimension() == units::DIMENSION_TIME, typename std::common_type<V, T, double>::type>::type
-dilated_time(const V object_velocity, const T object_observed_time, const RU return_unit = units::time::second) noexcept {
-    using CT = typename std::common_type<V, T, double>::type;
-    if (object_observed_time < 0) { return constants::QUIET_NAN<CT>; }
-    const CT lorentz = lorentz_factor(object_velocity);
-    const CT value = lorentz * static_cast<CT>(object_observed_time);
-    return static_cast<CT>(units::convert(static_cast<long double>(value), units::time::second, return_unit));
+template <class N>
+constexpr N dilated_time_(const N& beta, const N& t) {
+    if (neg_(t)) return nan_<N>();
+    return gamma_(beta) * t;
 }
 
-template <typename V, typename T, class VU, class TU, class RU = units::TimeUnit>
-constexpr typename std::enable_if<std::is_arithmetic<V>::value && std::is_arithmetic<T>::value && is_fizmo_unit_v<VU> && is_fizmo_unit_v<TU> && is_fizmo_unit_v<RU> && VU::dimension() == units::DIMENSION_VELOCITY && TU::dimension() == units::DIMENSION_TIME && RU::dimension() == units::DIMENSION_TIME, typename std::common_type<V, T, double>::type>::type
-dilated_time(const V object_velocity, const T object_observed_time, const VU velocity_unit, const TU time_unit, const RU return_unit = units::time::second) noexcept {
-    using CT = typename std::common_type<V, T, double>::type;
-    const CT v = static_cast<CT>(units::convert(static_cast<long double>(object_velocity), velocity_unit, units::velocity::light_speed));
-    const CT t = static_cast<CT>(units::convert(static_cast<long double>(object_observed_time), time_unit, units::time::second));
-    return dilated_time(v, t, return_unit);
+template <class N>
+constexpr N proper_time_(const N& beta, const N& t) {
+    if (neg_(t)) return nan_<N>();
+    return s_(beta) * t;
 }
 
-template <typename V, typename T, class RU = units::TimeUnit>
-constexpr typename std::enable_if<std::is_arithmetic<V>::value && std::is_arithmetic<T>::value && is_fizmo_unit_v<RU> && RU::dimension() == units::DIMENSION_TIME, typename std::common_type<V, T, double>::type>::type
-proper_time(const V object_velocity, const T stationary_observed_time, const RU return_unit = units::time::second) noexcept {
-    using CT = typename std::common_type<V, T, double>::type;
-    if (stationary_observed_time < 0) { return constants::QUIET_NAN<CT>; }
-    const CT lorentz = lorentz_factor(object_velocity);
-    if (lorentz == CT(0)) { return constants::QUIET_NAN<CT>; }
-    const CT value = static_cast<CT>(stationary_observed_time) / lorentz;
-    return static_cast<CT>(units::convert(static_cast<long double>(value), units::time::second, return_unit));
+template <class N>
+constexpr N time_dilation_velocity_(const N& stationary, const N& object) {
+    if (!(stationary > N(0)) || !(object > N(0))) return nan_<N>();
+    const N r = object / stationary;
+    if (r > N(1)) return nan_<N>();
+    return sqrt_((N(1) - r) * (N(1) + r));
 }
 
-template <typename V, typename T, class VU, class TU, class RU = units::TimeUnit>
-constexpr typename std::enable_if<std::is_arithmetic<V>::value && std::is_arithmetic<T>::value && is_fizmo_unit_v<VU> && is_fizmo_unit_v<TU> && is_fizmo_unit_v<RU> && VU::dimension() == units::DIMENSION_VELOCITY && TU::dimension() == units::DIMENSION_TIME && RU::dimension() == units::DIMENSION_TIME, typename std::common_type<V, T, double>::type>::type
-proper_time(const V object_velocity, const T stationary_observed_time, const VU velocity_unit, const TU time_unit, const RU return_unit = units::time::second) noexcept {
-    using CT = typename std::common_type<V, T, double>::type;
-    const CT v = static_cast<CT>(units::convert(static_cast<long double>(object_velocity), velocity_unit, units::velocity::light_speed));
-    const CT t = static_cast<CT>(units::convert(static_cast<long double>(stationary_observed_time), time_unit, units::time::second));
-    return proper_time(v, t, return_unit);
+} // namespace rdetail
+
+template <typename V, typename T, class RU = units::TimeUnit,
+          rdetail::enable_t<rdetail::all_values<V, T>::value && rdetail::has_dim<RU>(units::DIMENSION_TIME)> = 0>
+constexpr rdetail::result_t<V, T> dilated_time(const V& object_velocity, const T& object_observed_time, const RU return_unit = units::time::second) {
+    return rdetail::run<rdetail::result_t<V, T>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        return rdetail::conv(rdetail::dilated_time_(rdetail::to_<N>(object_velocity), rdetail::to_<N>(object_observed_time)), units::time::second, return_unit);
+    });
 }
 
-template <typename S, typename O, class RU = units::VelocityUnit>
-constexpr typename std::enable_if<std::is_arithmetic<S>::value && std::is_arithmetic<O>::value && is_fizmo_unit_v<RU> && RU::dimension() == units::DIMENSION_VELOCITY, typename std::common_type<S, O, double>::type>::type
-time_dilation_velocity(const S stationary_observed_time, const O object_observed_time, const RU return_unit = units::velocity::light_speed) noexcept {
-    using CT = typename std::common_type<S, O, double>::type;
-    if (stationary_observed_time <= 0 || object_observed_time <= 0) { return constants::QUIET_NAN<CT>; }
-    const CT T = static_cast<CT>(stationary_observed_time);
-    const CT T_prime = static_cast<CT>(object_observed_time);
-    const CT arg1 = CT(1) - T / T_prime;
-    const CT arg2 = CT(1) + T / T_prime;
-    if (arg1 < 0 || arg2 < 0) { return constants::QUIET_NAN<CT>; }
-    const CT velocity = fizmo::math::sqrt_constexpr(arg1) * fizmo::math::sqrt_constexpr(arg2);
-    return static_cast<CT>(units::convert(static_cast<long double>(velocity), units::velocity::light_speed, return_unit));
+template <typename V, typename T, class VU, class TU, class RU = units::TimeUnit,
+          rdetail::enable_t<rdetail::all_values<V, T>::value && rdetail::has_dim<VU>(units::DIMENSION_VELOCITY) && rdetail::has_dim<TU>(units::DIMENSION_TIME) && rdetail::has_dim<RU>(units::DIMENSION_TIME)> = 0>
+constexpr rdetail::result_t<V, T> dilated_time(const V& object_velocity, const T& object_observed_time, const VU velocity_unit, const TU time_unit, const RU return_unit = units::time::second) {
+    return rdetail::run<rdetail::result_t<V, T>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        const N v  = rdetail::in_<N>(object_velocity, velocity_unit, units::velocity::light_speed);
+        const N tt = rdetail::in_<N>(object_observed_time, time_unit, units::time::second);
+        return rdetail::conv(rdetail::dilated_time_(v, tt), units::time::second, return_unit);
+    });
 }
 
-template <typename S, typename O, class STU, class OTU, class RU = units::VelocityUnit>
-constexpr typename std::enable_if<std::is_arithmetic<S>::value && std::is_arithmetic<O>::value && is_fizmo_unit_v<STU> && is_fizmo_unit_v<OTU> && is_fizmo_unit_v<RU> && STU::dimension() == units::DIMENSION_TIME && OTU::dimension() == units::DIMENSION_TIME && RU::dimension() == units::DIMENSION_VELOCITY, typename std::common_type<S, O, double>::type>::type
-time_dilation_velocity(const S stationary_observed_time, const O object_observed_time, const STU stationary_time_unit, const OTU object_time_unit, const RU return_unit = units::velocity::light_speed) noexcept {
-    using CT = typename std::common_type<S, O, double>::type;
-    const CT t_s = static_cast<CT>(units::convert(static_cast<long double>(stationary_observed_time), stationary_time_unit, units::time::second));
-    const CT t_o = static_cast<CT>(units::convert(static_cast<long double>(object_observed_time), object_time_unit, units::time::second));
-    return time_dilation_velocity(t_s, t_o, return_unit);
+template <typename V, typename T, class RU = units::TimeUnit,
+          rdetail::enable_t<rdetail::all_values<V, T>::value && rdetail::has_dim<RU>(units::DIMENSION_TIME)> = 0>
+constexpr rdetail::result_t<V, T> proper_time(const V& object_velocity, const T& stationary_observed_time, const RU return_unit = units::time::second) {
+    return rdetail::run<rdetail::result_t<V, T>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        return rdetail::conv(rdetail::proper_time_(rdetail::to_<N>(object_velocity), rdetail::to_<N>(stationary_observed_time)), units::time::second, return_unit);
+    });
+}
+
+template <typename V, typename T, class VU, class TU, class RU = units::TimeUnit,
+          rdetail::enable_t<rdetail::all_values<V, T>::value && rdetail::has_dim<VU>(units::DIMENSION_VELOCITY) && rdetail::has_dim<TU>(units::DIMENSION_TIME) && rdetail::has_dim<RU>(units::DIMENSION_TIME)> = 0>
+constexpr rdetail::result_t<V, T> proper_time(const V& object_velocity, const T& stationary_observed_time, const VU velocity_unit, const TU time_unit, const RU return_unit = units::time::second) {
+    return rdetail::run<rdetail::result_t<V, T>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        const N v  = rdetail::in_<N>(object_velocity, velocity_unit, units::velocity::light_speed);
+        const N tt = rdetail::in_<N>(stationary_observed_time, time_unit, units::time::second);
+        return rdetail::conv(rdetail::proper_time_(v, tt), units::time::second, return_unit);
+    });
+}
+
+template <typename S, typename O, class RU = units::VelocityUnit,
+          rdetail::enable_t<rdetail::all_values<S, O>::value && rdetail::has_dim<RU>(units::DIMENSION_VELOCITY)> = 0>
+constexpr rdetail::result_t<S, O> time_dilation_velocity(const S& stationary_observed_time, const O& object_observed_time, const RU return_unit = units::velocity::light_speed) {
+    return rdetail::run<rdetail::result_t<S, O>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        return rdetail::conv(rdetail::time_dilation_velocity_(rdetail::to_<N>(stationary_observed_time), rdetail::to_<N>(object_observed_time)), units::velocity::light_speed, return_unit);
+    });
+}
+
+template <typename S, typename O, class STU, class OTU, class RU = units::VelocityUnit,
+          rdetail::enable_t<rdetail::all_values<S, O>::value && rdetail::has_dim<STU>(units::DIMENSION_TIME) && rdetail::has_dim<OTU>(units::DIMENSION_TIME) && rdetail::has_dim<RU>(units::DIMENSION_VELOCITY)> = 0>
+constexpr rdetail::result_t<S, O> time_dilation_velocity(const S& stationary_observed_time, const O& object_observed_time, const STU stationary_time_unit, const OTU object_time_unit, const RU return_unit = units::velocity::light_speed) {
+    return rdetail::run<rdetail::result_t<S, O>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        const N ts = rdetail::in_<N>(stationary_observed_time, stationary_time_unit, units::time::second);
+        const N to = rdetail::in_<N>(object_observed_time, object_time_unit, units::time::second);
+        return rdetail::conv(rdetail::time_dilation_velocity_(ts, to), units::velocity::light_speed, return_unit);
+    });
 }
 
 } // namespace special

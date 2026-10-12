@@ -11,13 +11,13 @@ namespace force {
 constexpr ForceUnit newton      = mass::kilogram * acceleration::meters_per_second_squared;  
 FIZMO_SI_PREFIXED(newton, newton);
 
-constexpr ForceUnit dyne(1e-5L);
+constexpr ForceUnit dyne(exact("1e-5"));
 constexpr ForceUnit gram_force  = mass::gram * acceleration::standard_gravity;
 FIZMO_SI_PREFIXED(gram_force, gram_force);
 
 constexpr ForceUnit pound_force = mass::pound * acceleration::standard_gravity;
-constexpr ForceUnit poundal(0.138254954376L);
-constexpr ForceUnit sthene (1e3L);
+constexpr ForceUnit poundal(exact("0.138254954376"));
+constexpr ForceUnit sthene (exact("1e3"));
 constexpr ForceUnit ton_force   = mass::tonne * acceleration::standard_gravity;
 
 } // namespace force

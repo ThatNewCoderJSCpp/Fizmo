@@ -5,6 +5,8 @@
 
 #include <chrono>
 #include <cstddef>
+#include <iterator>
+#include <utility>
 #include <cstdint>
 #include <limits>
 #include <random>
@@ -92,6 +94,61 @@ T random_int_nothrow(T a = T(0), T b = std::numeric_limits<T>::max(), T fallback
 template <typename T, typename = typename std::enable_if<std::is_integral<T>::value && !std::is_same<typename std::remove_cv<T>::type, bool>::value>::type>
 T unsecure_random_int(T a = T(0), T b = std::numeric_limits<T>::max()) noexcept {
     return detail::thread_rng().template random_int<T>(a, b);
+}
+
+class SecureRandomEngine {
+public:
+    using result_type = std::uint64_t;
+
+    static constexpr result_type min() noexcept { return std::numeric_limits<result_type>::min(); }
+    static constexpr result_type max() noexcept { return std::numeric_limits<result_type>::max(); }
+
+    result_type operator()() {
+        result_type v;
+        random_bytes(&v, sizeof(v));
+        return v;
+    }
+
+    void discard(unsigned long long n) {
+        while (n-- > 0) (*this)();
+    }
+
+    friend bool operator==(const SecureRandomEngine&, const SecureRandomEngine&) noexcept { return true; }
+    friend bool operator!=(const SecureRandomEngine&, const SecureRandomEngine&) noexcept { return false; }
+};
+
+inline bool random_bool() {
+    unsigned char b;
+    random_bytes(&b, 1);
+    return (b & 1u) != 0;
+}
+
+inline void random_bits(void* buffer, std::size_t bit_count) {
+    if (bit_count == 0) return;
+    const std::size_t bytes = (bit_count + 7) / 8;
+    random_bytes(buffer, bytes);
+    const std::size_t extra = bytes * 8 - bit_count;
+    if (extra > 0) static_cast<unsigned char*>(buffer)[bytes - 1] &= static_cast<unsigned char>(0xFFu >> extra);
+}
+
+template <typename RandomIt>
+void secure_shuffle(RandomIt first, RandomIt last) {
+    using diff_t = typename std::iterator_traits<RandomIt>::difference_type;
+    const diff_t n = last - first;
+
+    for (diff_t i = n - 1; i > 0; --i) {
+        const diff_t j = static_cast<diff_t>(random_int<unsigned long long>(0, static_cast<unsigned long long>(i)));
+        if (j != i) { using std::swap; swap(first[i], first[j]); }
+    }
+}
+
+template <typename Container>
+auto random_element(Container& c) -> decltype(*std::begin(c)) {
+    const auto n = static_cast<unsigned long long>(std::distance(std::begin(c), std::end(c)));
+    if (n == 0) throw std::out_of_range("random_element: empty container");
+    auto it = std::begin(c);
+    std::advance(it, static_cast<typename std::iterator_traits<decltype(it)>::difference_type>(random_int<unsigned long long>(0, n - 1)));
+    return *it;
 }
 
 } // namespace fizmo

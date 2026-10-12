@@ -12,11 +12,11 @@ constexpr AccelerationUnit meters_per_second_squared = distance::meter / time::s
 FIZMO_SI_PREFIXED(meters_per_second_squared, meters_per_second_squared);
 
 constexpr AccelerationUnit feet_per_second_squared   = distance::foot / time::second.pow<2>();
-constexpr AccelerationUnit gal(1e-2L);  
-constexpr AccelerationUnit standard_gravity(constants::GRAVITY<long double>);
+constexpr AccelerationUnit gal(exact("1e-2"));  
+constexpr AccelerationUnit standard_gravity(exact_constants::standard_gravity);
 
 constexpr AccelerationUnit g_force(long double n) noexcept {
-    return AccelerationUnit(constants::GRAVITY<long double> * n);
+    return AccelerationUnit(exact_constants::standard_gravity * ExactScale::from_long_double(n));
 }
 
 } // namespace acceleration

@@ -9,7 +9,6 @@
 #include <type_traits>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace rgdetail {
@@ -62,7 +61,6 @@ FIZMO_MP_DILOGF_ARITH_FORWARD(spence_integral)
 #undef FIZMO_MP_DILOGF_ARITH_FORWARD
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_DILOG_FAMILY_HPP

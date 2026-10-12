@@ -33,6 +33,7 @@
 #include "BigFloat Math/lambert_w.hpp"
 #include "BigFloat Math/special_integrals.hpp"
 #include "BigFloat Math/combinatorics.hpp"
+#include "BigFloat Math/incomplete.hpp"
 
 namespace fizmo {
 namespace multiprecision {
@@ -109,8 +110,6 @@ inline context_state& context_tls() noexcept {
 
 } // namespace bcdetail
 
-
-
 inline void BigComplexContext::set_current(const BigComplexContext& c) noexcept {
     bcdetail::context_state& s = bcdetail::context_tls();
     s.overridden = true;
@@ -126,17 +125,10 @@ private:
 
 public:
     explicit ScopedComplexContext(const BigComplexContext& c) noexcept : m_saved(bcdetail::context_tls()) { BigComplexContext::set_current(c); }
-
-    explicit ScopedComplexContext(std::size_t prec) noexcept
-;
-
+    explicit ScopedComplexContext(std::size_t prec) noexcept;
     ScopedComplexContext(std::size_t prec, RoundingMode rnd) noexcept : ScopedComplexContext(BigComplexContext(prec, rnd)) {}
-
-    ScopedComplexContext(std::size_t p_re, std::size_t p_im) noexcept
-;
-
+    ScopedComplexContext(std::size_t p_re, std::size_t p_im) noexcept;
     ~ScopedComplexContext() noexcept { bcdetail::context_tls() = m_saved; }
-
     ScopedComplexContext(const ScopedComplexContext&)            = delete;
     ScopedComplexContext& operator=(const ScopedComplexContext&) = delete;
 };
@@ -162,29 +154,17 @@ inline std::int64_t dy_len (const dyadic& d) noexcept { return static_cast<std::
 inline std::int64_t dy_top (const dyadic& d) noexcept { return d.exp + dy_len(d); }
 
 inline dyadic dy_bad_value() { return dyadic(BigUInt::undefined(), 0, false); }
-
 dyadic dy_of(const BF& x);
-
 inline dyadic dy_neg(dyadic d) { d.neg = !d.neg; return d; }
-
 dyadic dy_mul(const BF& x, const BF& y);
-
 dyadic dy_square(const BF& x);
-
 inline dyadic dy_twice(dyadic d) { if (!dy_zero(d)) ++d.exp; return d; }
-
 inline BF dy_unit(const dyadic& d) { return BF(d.mag, d.neg, -dy_len(d)); }
-
 BF dy_round(const dyadic& d, const BFC& ctx);
-
 BF dy_exact(const dyadic& d);
-
 dyadic dy_add_exact(const dyadic& a, const dyadic& b);
-
 dyadic dy_sum(const dyadic& a, const dyadic& b, std::size_t K, RoundingMode mode, bool& exact);
-
 dyadic dy_truncate(const dyadic& d, std::size_t K, bool& exact);
-
 BF dy_divide(const dyadic& n, const dyadic& d, const BFC& ctx);
 
 template <typename Num, typename Den>
@@ -263,6 +243,9 @@ BigFloat::ordering to_ordering(int c) noexcept;
 } // namespace bcdetail
 
 class BigComplex;
+
+template <>
+struct is_big_complex_mp<BigComplex> : std::true_type {};
 
 namespace bcdetail {
 template <typename T>
@@ -625,7 +608,12 @@ FIZMO_BIGCOMPLEX_BINOP(/, div)
 
 #undef FIZMO_BIGCOMPLEX_BINOP
 
+} // namespace multiprecision
+
 namespace math {
+using multiprecision::BigComplexContext;
+using multiprecision::BigComplex;
+
 namespace bcdetail_fn {
 template <typename C> using if_complex = typename std::enable_if<std::is_same<C, BigComplex>::value, int>::type;
 } // namespace bcdetail_fn
@@ -686,8 +674,6 @@ inline BigFloat::ordering compare_argument(const BigComplex& a, const BigComplex
 inline BigFloat::ordering compare_argument(const BigComplex& a, const BigFloat& t)    { return BigComplex::compare_argument(a, t); }
 
 } // namespace math
-
-} // namespace multiprecision
 
 template <class>  struct is_fizmo_big_complex : std::false_type {};
 template <> struct is_fizmo_big_complex<multiprecision::BigComplex> : std::true_type {};

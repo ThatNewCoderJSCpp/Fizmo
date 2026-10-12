@@ -75,10 +75,10 @@ struct SymbolicVector2 {
     SymbolicVector2 rewrite(const cas::RewriterConfig& cfg = {}) const { return { REWRITE(x, cfg),       REWRITE(y, cfg)       }; }
     SymbolicVector2 simplify()                                                        const { return { SIMPLIFY(x),           SIMPLIFY(y)           }; }
     SymbolicVector2 full_simplify(const cas::RewriterConfig& cfg = {}) const { return { FULL_SIMPLIFY(x, cfg), FULL_SIMPLIFY(y, cfg) }; }
-    Vector2D<double, double> evaluate(const std::unordered_map<std::string, double>& vals) const {
+    linalg::Vector2D<double> evaluate(const std::unordered_map<std::string, double>& vals) const {
         return { x.evaluate(vals), y.evaluate(vals) };
     }
-    Vector2D<double, double> evaluate(std::initializer_list<std::pair<std::string, double>> vals) const {
+    linalg::Vector2D<double> evaluate(std::initializer_list<std::pair<std::string, double>> vals) const {
         return { x.evaluate(vals), y.evaluate(vals) };
     }
     friend std::ostream& operator<<(std::ostream& os, const SymbolicVector2& v) {
@@ -143,10 +143,10 @@ struct SymbolicVector3 {
     SymbolicVector3 rewrite(const cas::RewriterConfig& cfg = {})      const { return { REWRITE(x, cfg),       REWRITE(y, cfg),       REWRITE(z, cfg)       }; }
     SymbolicVector3 simplify()                                                             const { return { SIMPLIFY(x),           SIMPLIFY(y),           SIMPLIFY(z)           }; }
     SymbolicVector3 full_simplify(const cas::RewriterConfig& cfg = {}) const { return { FULL_SIMPLIFY(x, cfg), FULL_SIMPLIFY(y, cfg), FULL_SIMPLIFY(z, cfg) }; }
-    Vector3D<double, double> evaluate(const std::unordered_map<std::string, double>& vals) const {
+    linalg::Vector3D<double> evaluate(const std::unordered_map<std::string, double>& vals) const {
         return { x.evaluate(vals), y.evaluate(vals), z.evaluate(vals) };
     }
-    Vector3D<double, double> evaluate(std::initializer_list<std::pair<std::string, double>> vals) const {
+    linalg::Vector3D<double> evaluate(std::initializer_list<std::pair<std::string, double>> vals) const {
         return { x.evaluate(vals), y.evaluate(vals), z.evaluate(vals) };
     }
     friend std::ostream& operator<<(std::ostream& os, const SymbolicVector3& v) {
@@ -238,11 +238,11 @@ struct SymbolicVector4 {
         return { REWRITE(x, cfg), REWRITE(y, cfg), REWRITE(z, cfg), REWRITE(w, cfg) };
     }
 
-    vector4d evaluate(const std::unordered_map<std::string, double>& vals) const {
+    linalg::vector4d evaluate(const std::unordered_map<std::string, double>& vals) const {
         return { x.evaluate(vals), y.evaluate(vals), z.evaluate(vals), w.evaluate(vals) };
     }
 
-    vector4d evaluate(std::initializer_list<std::pair<std::string, double>> vals) const {
+    linalg::vector4d evaluate(std::initializer_list<std::pair<std::string, double>> vals) const {
         return { x.evaluate(vals), y.evaluate(vals), z.evaluate(vals), w.evaluate(vals) };
     }
 

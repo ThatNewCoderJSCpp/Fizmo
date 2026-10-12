@@ -29,17 +29,17 @@ struct Vertex3D {
 
     constexpr Vertex3D() noexcept = default;
 
-    Vertex3D(const vector3d& p, const Color& c) noexcept
+    Vertex3D(const linalg::vector3d& p, const Color& c) noexcept
 ;
 
-    Vertex3D(const vector3d& p, const vector3d& n, const Color& c, float tu = 0.0f, float tv = 0.0f) noexcept
+    Vertex3D(const linalg::vector3d& p, const linalg::vector3d& n, const Color& c, float tu = 0.0f, float tv = 0.0f) noexcept
 ;
 
     Color color() const noexcept;
 
     void set_color(const Color& c) noexcept { rgba = pack(c); }
-    vector3d position() const noexcept { return { double(x), double(y), double(z) }; }
-    vector3d normal()   const noexcept { return { double(nx), double(ny), double(nz) }; }
+    linalg::vector3d position() const noexcept { return { double(x), double(y), double(z) }; }
+    linalg::vector3d normal()   const noexcept { return { double(nx), double(ny), double(nz) }; }
 
     static constexpr std::uint32_t pack(const Color& c) noexcept {
         return static_cast<std::uint32_t>(c.red()) | (static_cast<std::uint32_t>(c.green()) << 8)
@@ -79,16 +79,16 @@ struct CompactVertex3D {
 
     constexpr CompactVertex3D() noexcept = default;
 
-    CompactVertex3D(const vector3d& p, const Color& c, CellFace f = CellFace::None, std::uint8_t shade_level = 255,
+    CompactVertex3D(const linalg::vector3d& p, const Color& c, CellFace f = CellFace::None, std::uint8_t shade_level = 255,
                     std::uint8_t variation_amount = 0, std::uint8_t flag_bits = 0, BakedLight baked = BakedLight::full_sky()) noexcept
 ;
 
     BakedLight baked_light() const noexcept { return BakedLight::unpack(light); }
 
-    vector3d position() const noexcept { return { double(x), double(y), double(z) }; }
+    linalg::vector3d position() const noexcept { return { double(x), double(y), double(z) }; }
     Color    color()    const noexcept { Vertex3D v; v.rgba = rgba; return v.color(); }
 
-    vector3d normal() const noexcept;
+    linalg::vector3d normal() const noexcept;
 };
 
 static_assert(sizeof(CompactVertex3D) == 24, "CompactVertex3D layout is shared with the GPU pipeline");
@@ -100,7 +100,7 @@ constexpr FaceMask ALL_FACE_GROUPS = static_cast<FaceMask>((1u << CELL_FACE_GROU
 
 constexpr FaceMask face_bit(CellFace f) noexcept { return static_cast<FaceMask>(1u << static_cast<unsigned>(f)); }
 
-FaceMask facing_faces(const vector3d& eye, const vector3d& lo, const vector3d& hi) noexcept;
+FaceMask facing_faces(const linalg::vector3d& eye, const linalg::vector3d& lo, const linalg::vector3d& hi) noexcept;
 
 struct QuadRange {
     std::uint32_t first = 0;
@@ -233,12 +233,12 @@ struct Material3D {
 };
 
 struct Light3D {
-    vector3d direction{ -0.35, -1.0, -0.55 };  
+    linalg::vector3d direction{ -0.35, -1.0, -0.55 };  
     float    ambient = 1.0f;
     float    diffuse = 0.0f;
 
     static Light3D none() noexcept { return {}; }
-    static Light3D sun(const vector3d& dir, float ambient_level = 0.45f, float diffuse_level = 0.55f) noexcept {
+    static Light3D sun(const linalg::vector3d& dir, float ambient_level = 0.45f, float diffuse_level = 0.55f) noexcept {
         Light3D l; l.direction = dir; l.ambient = ambient_level; l.diffuse = diffuse_level; return l;
     }
 };
@@ -391,14 +391,14 @@ class QuadBatch3D {
 public:
     struct Item {
         detail::MeshSlot3D* slot;
-        vector3d            offset;
+        linalg::vector3d            offset;
         FaceMask            faces;
     };
 
     void clear() noexcept { m_items.clear(); }
     void reserve(std::size_t n) { m_items.reserve(n); }
 
-    void add(const MeshHandle3D& mesh, const vector3d& offset, FaceMask faces = ALL_FACE_GROUPS);
+    void add(const MeshHandle3D& mesh, const linalg::vector3d& offset, FaceMask faces = ALL_FACE_GROUPS);
 
     const std::vector<Item>& items() const noexcept { return m_items; }
     std::size_t size()  const noexcept { return m_items.size(); }

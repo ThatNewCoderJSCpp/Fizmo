@@ -6,10 +6,10 @@ namespace physics {
 
 bool overlap_aabb_sphere(
     const AABB3D& box,
-    const vector3d& center,
+    const linalg::vector3d& center,
     double radius
 ) noexcept {
-    vector3d closest = vec3::max(box.min, vec3::min(center, box.max));
+    linalg::vector3d closest = vec3::max(box.min, vec3::min(center, box.max));
     return vec3::length_squared(center - closest) <= radius * radius;
 }
 
@@ -33,10 +33,10 @@ OverlapResult3D overlap_aabb_mtv(const AABB3D& a, const AABB3D& b) noexcept {
 }
 
 OverlapResult3D overlap_spheres_mtv(
-    const vector3d& c1, double r1,
-    const vector3d& c2, double r2
+    const linalg::vector3d& c1, double r1,
+    const linalg::vector3d& c2, double r2
 ) noexcept {
-    vector3d d = c1 - c2;
+    linalg::vector3d d = c1 - c2;
     double dist_sq = vec3::length_squared(d);
     double r_sum = r1 + r2;
     if (dist_sq >= r_sum * r_sum) return {};
@@ -57,11 +57,11 @@ OverlapResult3D overlap_spheres_mtv(
 
 OverlapResult3D overlap_aabb_sphere_mtv(
     const AABB3D& box,
-    const vector3d& center,
+    const linalg::vector3d& center,
     double radius
 ) noexcept {
-    vector3d closest = vec3::max(box.min, vec3::min(center, box.max));
-    vector3d d = center - closest;
+    linalg::vector3d closest = vec3::max(box.min, vec3::min(center, box.max));
+    linalg::vector3d d = center - closest;
     double dist_sq = vec3::length_squared(d);
     if (dist_sq > radius * radius) return {};
     OverlapResult3D r;

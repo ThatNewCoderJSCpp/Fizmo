@@ -79,11 +79,11 @@ public:
     }
 
 public:
-    Vector3D<double> evaluate(double u_val, double v_val) const {
+    linalg::Vector3D<double> evaluate(double u_val, double v_val) const {
         return r_.evaluate({{ u_, u_val }, { v_, v_val }});
     }
 
-    Vector3D<double> normal_at(double u_val, double v_val) const {
+    linalg::Vector3D<double> normal_at(double u_val, double v_val) const {
         return normal().evaluate({{ u_, u_val }, { v_, v_val }});
     }
 

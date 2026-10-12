@@ -6,8 +6,8 @@
 #include <ostream>
 #include <istream>
 #include <cstdint>
-#include "../Standard Overloads/num_theory.hpp"
-#include "../Standard Overloads/sqrt.hpp"
+#include <algorithm>
+#include <cmath>
 #include "../Basic/fizmo_defines.hpp"
 #include "../Random/random_std_int.hpp"
 
@@ -32,7 +32,7 @@ public:
         other.m_alpha = 255;
     }
 
-    constexpr Color(const HSLColor& other, const std::uint8_t a = 255) noexcept;
+    Color(const HSLColor& other, const std::uint8_t a = 255) noexcept;
 
     OPTIONAL_CPP14_CONSTEXPR Color& operator=(const Color& other) noexcept {
         if (this != &other) {
@@ -58,7 +58,7 @@ public:
         return *this;
     }
 
-    OPTIONAL_CPP14_CONSTEXPR Color& operator=(const HSLColor& other) noexcept;
+    Color& operator=(const HSLColor& other) noexcept;
 
 public:
     std::string to_string() const {
@@ -82,10 +82,10 @@ public:
             && m_blue == other.m_blue && m_alpha == other.m_alpha;
     }
     constexpr bool operator!=(const Color& other) const noexcept { return !(*this == other); }
-    constexpr bool operator<(const Color& other) const noexcept { return magnitude() < other.magnitude(); }
-    constexpr bool operator>(const Color& other) const noexcept { return !(*this < other); }
-    constexpr bool operator<=(const Color& other) const noexcept { return (*this < other) || (*this == other); }
-    constexpr bool operator>=(const Color& other) const noexcept { return (*this > other) || (*this == other); }
+    bool operator<(const Color& other) const noexcept { return magnitude() < other.magnitude(); }
+    bool operator>(const Color& other) const noexcept { return !(*this < other); }
+    bool operator<=(const Color& other) const noexcept { return (*this < other) || (*this == other); }
+    bool operator>=(const Color& other) const noexcept { return (*this > other) || (*this == other); }
 
 public:
     constexpr Color operator+(const Color& other) const noexcept {
@@ -182,15 +182,15 @@ public:
         const std::uint8_t c2 = 255 - other.m_red;
         const std::uint8_t m2 = 255 - other.m_green;
         const std::uint8_t y2 = 255 - other.m_blue;
-        const std::uint8_t c_result = fizmo::min_constexpr(static_cast<std::uint16_t>(c1) + c2, 255);
-        const std::uint8_t m_result = fizmo::min_constexpr(static_cast<std::uint16_t>(m1) + m2, 255);
-        const std::uint8_t y_result = fizmo::min_constexpr(static_cast<std::uint16_t>(y1) + y2, 255);
+        const std::uint8_t c_result = std::min(static_cast<int>(c1) + c2, 255);
+        const std::uint8_t m_result = std::min(static_cast<int>(m1) + m2, 255);
+        const std::uint8_t y_result = std::min(static_cast<int>(y1) + y2, 255);
 
         return Color(
             255 - c_result,
             255 - m_result,
             255 - y_result,
-            fizmo::min_constexpr(m_alpha, other.m_alpha)
+            std::min(m_alpha, other.m_alpha)
         );
     }
 
@@ -261,8 +261,8 @@ private:
         return fizmo::clamp(value, static_cast<std::uint8_t>(0), static_cast<std::uint8_t>(255));
     }
 
-    constexpr double magnitude() const noexcept {
-        return fizmo::math::sqrt_constexpr(m_red * m_red + m_green * m_green + m_blue * m_blue);
+    double magnitude() const noexcept {
+        return std::sqrt(m_red * m_red + m_green * m_green + m_blue * m_blue);
     }
 
 private:
@@ -272,8 +272,8 @@ private:
         std::uint8_t b;
     };
 
-    static constexpr RGBInitializer init_rgb(const HSLColor& hsl) noexcept;
-    static constexpr RGBInitializer init_rgb(HSLColor&& hsl) noexcept;
+    static RGBInitializer init_rgb(const HSLColor& hsl) noexcept;
+    static RGBInitializer init_rgb(HSLColor&& hsl) noexcept;
 
     static constexpr double hue_to_rgb(const double p, const double q, double t) noexcept {
         if (t < 0) t += 1;

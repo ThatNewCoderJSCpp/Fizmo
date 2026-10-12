@@ -7,12 +7,12 @@ namespace fizmo {
 namespace units {
 namespace angle {
 
-constexpr AngleUnit radian   (1.0L);
-constexpr AngleUnit degree   (constants::PI_180<long double>);
-constexpr AngleUnit gradian  (constants::PI<long double> / 200.0L);
-constexpr AngleUnit arcminute(constants::PI_180<long double> / 60.0L);
-constexpr AngleUnit arcsecond(constants::PI_180<long double> / 3600.0L);
-constexpr AngleUnit turn     (2.0L * constants::PI<long double>);
+constexpr AngleUnit radian   (exact("1.0"));
+constexpr AngleUnit degree   (ExactScale::pi() / ratio(180));
+constexpr AngleUnit gradian  (ExactScale::pi() / ratio(200));
+constexpr AngleUnit arcminute(ExactScale::pi() / ratio(10800));
+constexpr AngleUnit arcsecond(ExactScale::pi() / ratio(648000));
+constexpr AngleUnit turn     (ExactScale::pi() * ratio(2));
 constexpr AngleUnit revolution = turn;
 
 } // namespace angle

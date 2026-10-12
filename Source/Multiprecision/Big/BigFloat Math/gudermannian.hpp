@@ -5,7 +5,6 @@
 #include "inv_htrig.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace gddetail {
@@ -28,7 +27,6 @@ FIZMO_MP_TRIG_FORWARD(gudermannian)
 FIZMO_MP_TRIG_FORWARD(inv_gudermannian)
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_GUDERMANNIAN_HPP

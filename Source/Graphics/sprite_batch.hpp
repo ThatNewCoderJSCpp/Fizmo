@@ -131,7 +131,7 @@ public:
 
     bool add_quad(
         const Texture& tex, const TextureRect& src,
-        const vector2d& top_left, const vector2d& top_right, const vector2d& bottom_right, const vector2d& bottom_left,
+        const linalg::vector2d& top_left, const linalg::vector2d& top_right, const linalg::vector2d& bottom_right, const linalg::vector2d& bottom_left,
         const Color& tint = Color(255, 255, 255, 255), float depth = 0.0f, float opacity = 1.0f
     );
 

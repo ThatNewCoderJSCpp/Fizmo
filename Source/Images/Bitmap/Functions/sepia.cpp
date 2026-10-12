@@ -48,9 +48,9 @@ BitmapImage apply_sepia(
 ) noexcept {
     if (x1 > x2) { std::swap(x1, x2); }
     if (y1 > y2) { std::swap(y1, y2); }
-    const unsigned int x_1 = fizmo::min_constexpr(x1, source.width());
+    const unsigned int x_1 = std::min<unsigned int>(x1, source.width());
     const unsigned int x_2 = fizmo::clamp(x2, x_1, source.width());
-    const unsigned int y_1 = fizmo::min_constexpr(y1, source.height());
+    const unsigned int y_1 = std::min<unsigned int>(y1, source.height());
     const unsigned int y_2 = fizmo::clamp(y2, y_1, source.height());
     const double intensity = fizmo::clamp(intensity_percent, 0.0, 100.0) / 100.0;
     BitmapImage result(source);
@@ -129,9 +129,9 @@ BitmapImage apply_custom_sepia(
 ) noexcept {
     if (x1 > x2) { std::swap(x1, x2); }
     if (y1 > y2) { std::swap(y1, y2); }
-    const unsigned int x_1 = fizmo::min_constexpr(x1, source.width());
+    const unsigned int x_1 = std::min<unsigned int>(x1, source.width());
     const unsigned int x_2 = fizmo::clamp(x2, x_1, source.width());
-    const unsigned int y_1 = fizmo::min_constexpr(y1, source.height());
+    const unsigned int y_1 = std::min<unsigned int>(y1, source.height());
     const unsigned int y_2 = fizmo::clamp(y2, y_1, source.height());
     const double intensity = fizmo::clamp(intensity_percent, 0.0, 100.0) / 100.0;
     BitmapImage result(source);

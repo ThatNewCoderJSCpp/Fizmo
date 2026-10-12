@@ -63,5 +63,7 @@
 #include "../Source/Text/fancy_text_render.hpp"
 #include "../Source/Text/fancy_math.hpp"
 #include "../Source/Text/math_files.hpp"
+#include "../Source/Text/emoji.hpp"
+#include "../Source/Text/text.hpp"
 
 #endif //CUSTOM_GRAPHICS_HPP

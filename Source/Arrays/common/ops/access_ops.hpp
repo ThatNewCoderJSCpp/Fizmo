@@ -3,7 +3,7 @@
 
 #include "../traits.hpp"
 #include "../memory/allocator.hpp"
-#include "../../array_iterators.hpp"
+#include "../../../Collections/iterator.hpp"
 #include <stdexcept>
 #include <string>
 
@@ -21,10 +21,10 @@ public:
     using const_reference = const T&;
     using pointer = T*;
     using const_pointer = const T*;
-    using iterator = ArrayIterator<T>;
-    using const_iterator = ConstArrayIterator<T>;
-    using reverse_iterator = ReverseArrayIterator<T>;
-    using const_reverse_iterator = ConstReverseArrayIterator<T>;
+    using iterator = collections::ArrayIterator<T>;
+    using const_iterator = collections::ConstArrayIterator<T>;
+    using reverse_iterator = collections::ReverseArrayIterator<T>;
+    using const_reverse_iterator = collections::ConstReverseArrayIterator<T>;
 
     std::size_t size() const noexcept { return this->m_size; }
     std::size_t capacity() const noexcept { return this->m_capacity; }
@@ -65,18 +65,18 @@ public:
     T& back() noexcept { return this->m_data[this->m_size - 1]; }
     const T& back() const noexcept { return this->m_data[this->m_size - 1]; }
 
-    ArrayIterator<T> begin() noexcept { return ArrayIterator<T>(this->m_data); }
-    ArrayIterator<T> end() noexcept { return ArrayIterator<T>(this->m_data + this->m_size); }
-    ConstArrayIterator<T> begin() const noexcept { return ConstArrayIterator<T>(this->m_data); }
-    ConstArrayIterator<T> end() const noexcept { return ConstArrayIterator<T>(this->m_data + this->m_size); }
-    ConstArrayIterator<T> cbegin() const noexcept { return ConstArrayIterator<T>(this->m_data); }
-    ConstArrayIterator<T> cend() const noexcept { return ConstArrayIterator<T>(this->m_data + this->m_size); }
-    ReverseArrayIterator<T> rbegin() noexcept { return ReverseArrayIterator<T>(this->m_data + this->m_size); }
-    ReverseArrayIterator<T> rend() noexcept { return ReverseArrayIterator<T>(this->m_data); }
-    ConstReverseArrayIterator<T> rbegin() const noexcept { return ConstReverseArrayIterator<T>(this->m_data + this->m_size); }
-    ConstReverseArrayIterator<T> rend() const noexcept { return ConstReverseArrayIterator<T>(this->m_data); }
-    ConstReverseArrayIterator<T> crbegin() const noexcept { return ConstReverseArrayIterator<T>(this->m_data + this->m_size); }
-    ConstReverseArrayIterator<T> crend() const noexcept { return ConstReverseArrayIterator<T>(this->m_data); }
+    collections::ArrayIterator<T> begin() noexcept { return collections::ArrayIterator<T>(this->m_data); }
+    collections::ArrayIterator<T> end() noexcept { return collections::ArrayIterator<T>(this->m_data + this->m_size); }
+    collections::ConstArrayIterator<T> begin() const noexcept { return collections::ConstArrayIterator<T>(this->m_data); }
+    collections::ConstArrayIterator<T> end() const noexcept { return collections::ConstArrayIterator<T>(this->m_data + this->m_size); }
+    collections::ConstArrayIterator<T> cbegin() const noexcept { return collections::ConstArrayIterator<T>(this->m_data); }
+    collections::ConstArrayIterator<T> cend() const noexcept { return collections::ConstArrayIterator<T>(this->m_data + this->m_size); }
+    collections::ReverseArrayIterator<T> rbegin() noexcept { return collections::ReverseArrayIterator<T>(this->m_data + this->m_size); }
+    collections::ReverseArrayIterator<T> rend() noexcept { return collections::ReverseArrayIterator<T>(this->m_data); }
+    collections::ConstReverseArrayIterator<T> rbegin() const noexcept { return collections::ConstReverseArrayIterator<T>(this->m_data + this->m_size); }
+    collections::ConstReverseArrayIterator<T> rend() const noexcept { return collections::ConstReverseArrayIterator<T>(this->m_data); }
+    collections::ConstReverseArrayIterator<T> crbegin() const noexcept { return collections::ConstReverseArrayIterator<T>(this->m_data + this->m_size); }
+    collections::ConstReverseArrayIterator<T> crend() const noexcept { return collections::ConstReverseArrayIterator<T>(this->m_data); }
 
 protected:
     T* fz_ptr() noexcept { return this->m_data; }

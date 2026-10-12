@@ -6,7 +6,6 @@
 #include "Details/gcd_lcm_detail.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 template <class A>
@@ -70,7 +69,6 @@ lcm(std::initializer_list<T> xs) noexcept {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_GCD_LCM_HPP

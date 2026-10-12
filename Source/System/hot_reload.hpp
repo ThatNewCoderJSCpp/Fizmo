@@ -8,6 +8,7 @@
 #include "../Images/Normal/jpg.hpp"
 #include "../Images/Normal/png_codec.hpp"
 #include "../Images/Normal/jpeg_codec.hpp"
+#include "../Images/Formats/image_formats.hpp"
 #include <cstring>
 #include <exception>
 #include <functional>
@@ -19,7 +20,7 @@
 namespace fizmo {
 namespace system {
 
-enum class ImageFormat : std::uint8_t { Unknown = 0, Bmp, Png, Jpeg };
+using ImageFormat = images::ImageFormat;
 
 ImageFormat detect_image_format(const std::vector<std::uint8_t>& bytes) noexcept;
 
@@ -29,7 +30,11 @@ std::optional<images::BitmapImage> load_image_memory(const std::uint8_t* data, s
 
 std::optional<images::BitmapImage> load_image(const std::filesystem::path& path, std::string* error = nullptr);
 
+std::optional<images::AnimatedImage> load_animation(const std::filesystem::path& path, std::string* error = nullptr);
+
 bool save_image_png(const images::BitmapImage& img, const std::filesystem::path& path, bool alpha = true);
+
+bool save_image(const images::BitmapImage& img, const std::filesystem::path& path, images::ImageFormat format = images::ImageFormat::Unknown, const images::EncodeOptions& options = images::EncodeOptions(), std::string* error = nullptr);
 
 struct ReloadEvent {
     std::filesystem::path path;

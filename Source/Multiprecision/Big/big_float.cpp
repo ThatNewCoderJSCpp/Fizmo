@@ -335,6 +335,21 @@ auto BigFloat::add_signed_impl(const BigFloat& a, const BigFloat& b, bool flip_b
         return a.is_infinite() ? infinity(a.m_neg) : infinity(bneg);
     }
 
+    const bool az = a.m_mag.is_zero();
+    const bool bz = b.m_mag.is_zero();
+
+    if (az && bz) {
+        if (a.m_neg == bneg) return zero(a.m_neg);
+        return zero(ctx.rounding_mode == RoundingMode::toward_neg_inf);
+    }
+
+    if (az) {
+        BigFloat t = b;
+        t.m_neg = bneg;
+        return t.rounded(ctx);
+    }
+
+    if (bz) return a.rounded(ctx);
     return add_finite(a.m_mag, a.m_neg, a.m_exp, b.m_mag, bneg, b.m_exp, ctx);
 }
 
@@ -759,6 +774,49 @@ bool operator>=(const BigFloat& a, const BigFloat& b) noexcept {
     const BigFloat::ordering o = BigFloat::compare(a, b);
     return o == BigFloat::ordering::greater || o == BigFloat::ordering::equal;
 }
+
+template <class F>
+F BigFloat::to_std_float() const {
+    if (m_cls == fpclass::nan || m_cls == fpclass::undefined) return std::numeric_limits<F>::quiet_NaN();
+    if (m_cls == fpclass::infinite) return m_neg ? -std::numeric_limits<F>::infinity() : std::numeric_limits<F>::infinity();
+    if (m_mag.is_zero()) return m_neg ? -F(0) : F(0);
+    const std::int64_t digits = std::numeric_limits<F>::digits;
+    const std::int64_t emin   = std::numeric_limits<F>::min_exponent - 1;
+    const std::int64_t emax   = std::numeric_limits<F>::max_exponent;
+    const std::int64_t L      = static_cast<std::int64_t>(m_mag.bit_length());
+    const std::int64_t top    = m_exp + (L - 1);
+    if (top > emax) return m_neg ? -std::numeric_limits<F>::infinity() : std::numeric_limits<F>::infinity();
+    if (top < emin - digits - 1) return m_neg ? -F(0) : F(0);
+    const std::int64_t p   = (top >= emin) ? digits : digits - (emin - top);
+    std::int64_t       lsb = top - p + 1;
+    BigUInt            q   = m_mag;
+    const std::int64_t drop = lsb - m_exp;
+
+    if (drop > 0) {
+        const std::size_t d     = static_cast<std::size_t>(drop);
+        const bool        half  = q.get_bit(d - 1);
+        const long long   tz    = q.count_trailing_zeros();
+        const bool        stick = tz >= 0 && static_cast<std::uint64_t>(tz) < static_cast<std::uint64_t>(d - 1);
+        q.shift_right_mutable(d);
+        if (half && (stick || q.get_bit(0))) q.add_small_mutable(1);
+    } else {
+        lsb = m_exp;
+    }
+
+    if (q.is_zero()) return m_neg ? -F(0) : F(0);
+
+    while (q.bit_length() > 64) {
+        q.shift_right_mutable(1);
+        ++lsb;
+    }
+
+    const F r = std::ldexp(static_cast<F>(q.limbs()[0]), static_cast<int>(lsb));
+    return m_neg ? -r : r;
+}
+
+template float       BigFloat::to_std_float<float>() const;
+template double      BigFloat::to_std_float<double>() const;
+template long double BigFloat::to_std_float<long double>() const;
 
 } // namespace multiprecision
 } // namespace fizmo

@@ -14,7 +14,6 @@
 #include <vector>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace spdetail {
@@ -196,7 +195,6 @@ FIZMO_MP_SPI_FWD2(debye_tail)
 #undef FIZMO_MP_SPI_FWD2
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_SPECIAL_INTEGRALS_HPP

@@ -55,6 +55,14 @@ public:
 
     BitmapImage(const std::string& filename);
 
+    BitmapImage(const unsigned int width, const unsigned int height, std::vector<fizmo::graphics::Color> pixels);
+
+    static BitmapImage from_rgba(const unsigned int width, const unsigned int height, const std::uint8_t* rgba);
+
+    std::vector<std::uint8_t> to_rgba() const;
+
+    std::vector<fizmo::graphics::Color>& mutable_pixels() { m_version.touch(); return m_pixels; }
+
     void set_pixel(const unsigned int x, const unsigned int y, const fizmo::graphics::Color& color) { if (is_valid_range(x, y)) { m_pixels[y * m_width + x] = color; m_version.touch(); } }
     
     fizmo::graphics::Color get_pixel(const unsigned int x, const unsigned int y) const { 

@@ -73,7 +73,7 @@ void GameLoop::set_logical_size(unsigned int w, unsigned int h, bool integer_sca
     set_view_layout(l);
 }
 
-auto GameLoop::window_to_view(double wx, double wy) const noexcept -> vector2d {
+auto GameLoop::window_to_view(double wx, double wy) const noexcept -> linalg::vector2d {
     if (m_rect.w == 0 || m_rect.h == 0) return { wx, wy };
     return {
         (wx - m_rect.x) * static_cast<double>(view_width())  / m_rect.w,
@@ -81,7 +81,7 @@ auto GameLoop::window_to_view(double wx, double wy) const noexcept -> vector2d {
     };
 }
 
-auto GameLoop::view_to_window(double vx, double vy) const noexcept -> vector2d {
+auto GameLoop::view_to_window(double vx, double vy) const noexcept -> linalg::vector2d {
     if (view_width() == 0 || view_height() == 0) return { vx, vy };
     return {
         m_rect.x + vx * static_cast<double>(m_rect.w) / view_width(),

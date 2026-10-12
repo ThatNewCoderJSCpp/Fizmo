@@ -11,7 +11,7 @@
 #include <cstring>
 
 #include "../arena.hpp"
-#include "../../../Complex/complex_class.hpp"
+#include "../../../Complex/complex.hpp"
 
 namespace fizmo {
 namespace math {
@@ -211,7 +211,7 @@ public:
 
     ComplexMathExpression constant(double r, double i = 0.0);
 
-    ComplexMathExpression constant(const BasicComplex<double>& c) { return constant(c.real(), c.imaginary()); }
+    ComplexMathExpression constant(const ComplexD& c) { return constant(c.real(), c.imaginary()); }
 
     ComplexMathExpression variable(const std::string& name);
 
@@ -260,12 +260,12 @@ enum class ComplexMissingVariablePolicy : std::uint8_t {
 struct ComplexEvaluationPolicy {
     ComplexMissingVariablePolicy missing_in_table = ComplexMissingVariablePolicy::UseDefaultValue;
     ComplexMissingVariablePolicy missing_in_input = ComplexMissingVariablePolicy::UseDefaultValue;
-    BasicComplex<double> default_value = BasicComplex<double>(0.0, 0.0);
+    ComplexD default_value = ComplexD(0.0, 0.0);
     int branch = 0; 
 };
 
 struct ComplexEvalContext {
-    std::vector<BasicComplex<double>> values;
+    std::vector<ComplexD> values;
     std::vector<bool>                 assigned;
     ComplexEvaluationPolicy           policy;
 

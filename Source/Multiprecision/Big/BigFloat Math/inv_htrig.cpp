@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace detail {
 
@@ -60,7 +59,7 @@ BigFloat asinh_raw(const BigFloat& x, const BigFloatContext& wc, std::size_t& lo
     BigFloat r;
 
     if (E > static_cast<std::int64_t>(wc.precision / 2 + 4)) {      
-        r    = BigFloat::add(ln(ax, wc), constants::ln2(wc), wc);
+        r    = BigFloat::add(ln(ax, wc), multiprecision::constants::ln2(wc), wc);
         lost = 4;
     } else if (E >= 0) {                                            
         BigFloat t = BigFloat::mul(ax, ax, wc);
@@ -106,7 +105,7 @@ BigFloat ih_dispatch(ih_sel sel, const BigFloat& x, const BigFloatContext& ctx) 
         std::size_t lost = 0;
         const BigFloat v = ih_core(sel, x, wc, lost);
         if (!v.is_finite() || v.is_zero()) return v;
-        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, iv_err_of(v, want, lost) + 2)) return v.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(v.significand(), ctx.precision, iv_err_of(v, want, lost) + 2)) return v.rounded(ctx);
         if (iv_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
         guard *= 2;
     }
@@ -114,11 +113,9 @@ BigFloat ih_dispatch(ih_sel sel, const BigFloat& x, const BigFloatContext& ctx) 
 
 } // namespace detail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat arcsinh(const BigFloat& x, const BigFloatContext& ctx) {
@@ -182,5 +179,4 @@ BigFloat arccsch(const BigFloat& x, const BigFloatContext& ctx) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

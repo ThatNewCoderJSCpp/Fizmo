@@ -87,6 +87,30 @@ public:
     const BigFloatContext& saved() const noexcept { return m_saved; }
 };
 
+template <class T>
+struct is_fixed_width_mp : std::false_type {};
+
+template <std::size_t TB, std::size_t MB, sign S>
+struct is_fixed_width_mp<floatmp<TB, MB, S>> : std::true_type {};
+
+template <std::size_t B, sign S>
+struct is_fixed_width_mp<integer<B, S>> : std::true_type {};
+
+template <class... T>
+struct any_fixed_width_mp : std::false_type {};
+
+template <class T, class... R>
+struct any_fixed_width_mp<T, R...> : std::integral_constant<bool, is_fixed_width_mp<typename std::decay<T>::type>::value || any_fixed_width_mp<R...>::value> {};
+
+template <class T>
+struct is_big_complex_mp : std::false_type {};
+
+template <class... T>
+struct any_big_complex_mp : std::false_type {};
+
+template <class T, class... R>
+struct any_big_complex_mp<T, R...> : std::integral_constant<bool, is_big_complex_mp<typename std::decay<T>::type>::value || any_big_complex_mp<R...>::value> {};
+
 class BigFloat {
 public:
     enum class fpclass : std::uint8_t { finite = 0, infinite, nan, undefined };
@@ -283,6 +307,64 @@ public:
     template <std::size_t TB, std::size_t MB, multiprecision::sign S>
     BigFloat& operator=(const floatmp<TB, MB, S>& v) { return *this = BigFloat(v); }
 
+    template <class F>
+    F to_floatmp() const {
+        using store_t  = typename F::store_t;
+        using sstore_t = typename F::sstore_t;
+        if (m_cls == fpclass::nan)       return F::nan();
+        if (m_cls == fpclass::undefined) return F::undefined();
+        if (m_neg && !is_fizmo_signed_v<F>) return F::zero();
+        if (m_cls == fpclass::infinite)  return F::infinity(m_neg);
+        if (m_mag.is_zero())             return F::zero(m_neg);
+        const std::int64_t eb   = static_cast<std::int64_t>(F::exponent_bits);
+        const std::int64_t bias = (eb >= 62) ? (std::numeric_limits<std::int64_t>::max() / 4) : ((std::int64_t(1) << (eb - 1)) - 1);
+        const std::int64_t mb   = static_cast<std::int64_t>(F::mantissa_bits);
+        const std::int64_t L    = static_cast<std::int64_t>(m_mag.bit_length());
+        const std::int64_t top  = m_exp + (L - 1);
+        if (top > bias) return F::infinity(m_neg);
+        const std::int64_t lsb  = (top - mb > (1 - bias) - mb) ? (top - mb) : ((1 - bias) - mb);
+        if (top < lsb - 1) return F::zero(m_neg);
+        BigUInt q = m_mag;
+        const std::int64_t shift = lsb - m_exp;
+
+        if (shift > 0) {
+            const std::size_t s      = static_cast<std::size_t>(shift);
+            const bool        half   = q.get_bit(s - 1);
+            const long long   tz     = q.count_trailing_zeros();
+            const bool        sticky = tz >= 0 && static_cast<std::uint64_t>(tz) < static_cast<std::uint64_t>(s - 1);
+            q.shift_right_mutable(s);
+            if (half && (sticky || q.is_odd())) q.add_small_mutable(1);
+        } else if (shift < 0) {
+            q.shift_left_mutable(static_cast<std::size_t>(-shift));
+        }
+
+        if (q.is_zero()) return F::zero(m_neg);
+        const std::uint64_t* p = q.limbs();
+        const std::size_t    n = q.limb_count();
+        store_t m(p[n - 1]);
+
+        for (std::size_t i = n - 1; i-- > 0;) {
+            m = m << 64;
+            m = m | store_t(p[i]);
+        }
+
+        return F::ldexp(m, sstore_t(lsb + mb), m_neg);
+    }
+
+    template <std::size_t TB, std::size_t MB, multiprecision::sign S>
+    explicit operator floatmp<TB, MB, S>() const { return to_floatmp<floatmp<TB, MB, S>>(); }
+
+    template <class F>
+    F to_std_float() const;
+
+    float       to_float()       const { return to_std_float<float>(); }
+    double      to_double()      const { return to_std_float<double>(); }
+    long double to_long_double() const { return to_std_float<long double>(); }
+
+    explicit operator float()       const { return to_float(); }
+    explicit operator double()      const { return to_double(); }
+    explicit operator long double() const { return to_long_double(); }
+
     BigFloat& operator=(const std::string& s) { if (!parse_string(s.c_str())) *this = undefined(); return *this; }
     BigFloat& operator=(const char* s)        { if (!parse_string(s))         *this = undefined(); return *this; }
 
@@ -477,6 +559,21 @@ inline BigFloat& operator--(BigFloat& a) { return a.sub_mutable(BigFloat::one())
 inline BigFloat  operator++(BigFloat& a, int) { BigFloat t(a); ++a; return t; }
 inline BigFloat  operator--(BigFloat& a, int) { BigFloat t(a); --a; return t; }
 
+} // namespace multiprecision
+
+namespace math {
+using multiprecision::RoundingMode;
+using multiprecision::BigFloatContext;
+using multiprecision::ScopedContext;
+using multiprecision::BigFloat;
+using multiprecision::is_fixed_width_mp;
+using multiprecision::any_fixed_width_mp;
+using multiprecision::is_big_complex_mp;
+using multiprecision::any_big_complex_mp;
+} // namespace math
+
+namespace multiprecision {
+namespace math = ::fizmo::math;
 } // namespace multiprecision
 } // namespace fizmo
 

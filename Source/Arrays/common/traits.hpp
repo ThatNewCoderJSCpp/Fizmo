@@ -7,6 +7,7 @@
 #include <utility>
 
 namespace fizmo {
+namespace collections {
 
 template <typename T>
 class DynamicArray;
@@ -14,14 +15,16 @@ class DynamicArray;
 template <typename T, std::size_t N>
 class SmallVector;
 
+} // namespace collections
+
 template <typename T>
 struct is_custom_array : std::false_type {};
 
 template <typename T>
-struct is_custom_array<DynamicArray<T>> : std::true_type {};
+struct is_custom_array<collections::DynamicArray<T>> : std::true_type {};
 
 template <typename T, std::size_t N>
-struct is_custom_array<SmallVector<T, N>> : std::true_type {};
+struct is_custom_array<collections::SmallVector<T, N>> : std::true_type {};
 
 template <typename T>
 constexpr bool is_custom_array_v = is_custom_array<T>::value;
@@ -33,16 +36,16 @@ template <typename T>
 struct is_trivially_relocatable : std::integral_constant<bool, std::is_trivially_copyable<T>::value && std::is_trivially_destructible<T>::value> {};
 
 template <typename T>
-struct is_trivially_relocatable<DynamicArray<T>> : std::true_type {};
+struct is_trivially_relocatable<collections::DynamicArray<T>> : std::true_type {};
 
 template <typename C, typename U>
 struct rebind_array;
 
 template <typename T, typename U>
-struct rebind_array<DynamicArray<T>, U> { using type = DynamicArray<U>; };
+struct rebind_array<collections::DynamicArray<T>, U> { using type = collections::DynamicArray<U>; };
 
 template <typename T, std::size_t N, typename U>
-struct rebind_array<SmallVector<T, N>, U> { using type = SmallVector<U, N>; };
+struct rebind_array<collections::SmallVector<T, N>, U> { using type = collections::SmallVector<U, N>; };
 
 template <typename T>
 constexpr bool is_trivially_relocatable_v = is_trivially_relocatable<T>::value;

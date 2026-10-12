@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace gmdetail {
 
@@ -71,7 +70,7 @@ std::size_t gm_term_prec(std::size_t wprec, std::int64_t eh, double lt, std::siz
 void gm_zeta_init(gm_zeta_t& zs, std::uint64_t j, std::size_t W) {
     zs.p.clear();
     zs.W = W;
-    const BigUInt top = constants::bfdetail::unit(W);
+    const BigUInt top = multiprecision::constants::bfdetail::unit(W);
 
     for (std::uint64_t k = 2; ; ++k) {
         const BigUInt d = gm_powi_u(k, 2 * j);
@@ -115,16 +114,16 @@ BigFloat gm_cached_const(gm_const_cache_t& c, const BigFloatContext& wc, BigFloa
 }
 
 BigFloat gm_stirling_coeff(std::size_t j, const BigFloatContext& tc) {
-    if (j == 0 || j > constants::detail::bn_index_cap) return BigFloat::undefined();
+    if (j == 0 || j > multiprecision::constants::detail::bn_index_cap) return BigFloat::undefined();
     std::vector<gm_bcoef_t>& cache = gm_bcoef_cache();
     if (cache.size() <= j) cache.resize(j + 1);
     gm_bcoef_t& e = cache[j];
 
     if (e.prec < tc.precision + 8) {
         const BigFloatContext hc(BigFloatContext::clamp_precision(tc.precision + 32), RoundingMode::nearest_even);
-        const BigUInt num = constants::tangent_number(j);
+        const BigUInt num = multiprecision::constants::tangent_number(j);
         if (num.is_undefined()) return BigFloat::undefined();
-        BigUInt den = constants::bfdetail::unit(2 * j);
+        BigUInt den = multiprecision::constants::bfdetail::unit(2 * j);
         den.sub_small_mutable(1);
         den.mul_small_mutable(static_cast<std::uint64_t>(2 * j - 1));
         e.v = BigFloat::div(BigFloat(num), BigFloat(den), hc).scaled_pow2(-2 * static_cast<std::int64_t>(j)).with_sign(j % 2 == 0);
@@ -281,7 +280,7 @@ BigFloat gm_stirling(const BigFloat& x, const BigFloatContext& wc, std::size_t j
         if (p + 32 <= 2 * j * gm_zeta_kbits) { jz = j; break; }
     }
 
-    constants::detail::tangent_reserve(((jz <= jcap) ? jz : jcap) + 1);
+    multiprecision::constants::detail::tangent_reserve(((jz <= jcap) ? jz : jcap) + 1);
     BigFloat     S    = BigFloat::zero();
     BigFloat     t    = u;
     BigFloat     a    = BigFloat::zero();
@@ -297,7 +296,7 @@ BigFloat gm_stirling(const BigFloat& x, const BigFloatContext& wc, std::size_t j
         BigFloat term;
 
         if (!zon && j >= jz) {
-            const BigFloat tp = constants::two_pi(tc);
+            const BigFloat tp = multiprecision::constants::two_pi(tc);
             const BigFloat f  = BigFloat(fact_range(1, u2j - 1)).rounded(tc);
             a = BigFloat::div(BigFloat::mul(f, t, tc), gm_powi(tp, u2j, tc), tc).scaled_pow2(1);
             c = BigFloat::div(u2.rounded(tc), BigFloat::mul(tp, tp, tc), tc);
@@ -381,7 +380,7 @@ BigFloat gm_gamma_pos(const BigFloat& z, const BigFloatContext& wc) {
     std::uint64_t hn = 0;
 
     if (gm_half_odd(z, hn) && hn <= wc.precision && 2 * hn <= fact_n_cap()) {   // Gamma(n+1/2) = (n+1)...(2n) / 4^n * sqrt(pi)
-        const BigFloat sp = constants::sqrt_pi(wc);
+        const BigFloat sp = multiprecision::constants::sqrt_pi(wc);
         if (hn == 0) return sp;
         const BigFloat q = BigFloat(fact_range(hn + 1, 2 * hn + 1)).rounded(wc).scaled_pow2(-2 * static_cast<std::int64_t>(hn));
         return BigFloat::mul(q, sp, wc);
@@ -458,7 +457,7 @@ gm_log_t gm_log_abs(const BigFloat& z, const BigFloatContext& wc) {
     }
 
     const BigFloat g = (fh == BigFloat::ordering::greater) ? BigFloat::sub(BigFloat::one(), f, fc) : f;   // exact
-    const BigFloat s = sin(BigFloat::mul(constants::pi(wc), g, wc), wc);                                 // s > 0
+    const BigFloat s = sin(BigFloat::mul(multiprecision::constants::pi(wc), g, wc), wc);                                 // s > 0
     if (!s.is_finite() || s.is_zero()) { r.v = BigFloat::undefined(); return r; }
     r.v = BigFloat::sub(BigFloat::sub(lpi, ln(s, wc), wc), lg, wc);
     r.cancelled = c1 + 4;
@@ -482,11 +481,11 @@ BigFloat gm_gamma_abs(const BigFloat& z, const BigFloatContext& wc) {
 
     if (fh != BigFloat::ordering::equal) {
         const BigFloat r = (fh == BigFloat::ordering::greater) ? BigFloat::sub(BigFloat::one(), f, fc) : f;
-        s = sin(BigFloat::mul(constants::pi(wc), r, wc), wc);
+        s = sin(BigFloat::mul(multiprecision::constants::pi(wc), r, wc), wc);
         if (!s.is_finite() || s.is_zero()) return BigFloat::undefined();
     }
 
-    return BigFloat::div(constants::pi(wc), BigFloat::mul(s, g, wc), wc);   // pi / (sin(pi z) Gamma(1 - z))
+    return BigFloat::div(multiprecision::constants::pi(wc), BigFloat::mul(s, g, wc), wc);   // pi / (sin(pi z) Gamma(1 - z))
 }
 
 BigFloat gm_drive(const BigFloat& z, const BigFloatContext& ctx, bool& neg, bool& pole) {
@@ -515,7 +514,7 @@ BigFloat gm_drive(const BigFloat& z, const BigFloatContext& ctx, bool& neg, bool
         const std::size_t acc  = (want > extra + 16) ? (want - extra - 16) : 1;
         const std::size_t L    = g.v.significand().bit_length();
         const std::size_t err  = (L > acc) ? (L - acc) : 0;
-        if (constants::bfdetail::round_is_safe(g.v.significand(), ctx.precision, err + 2)) return g.v.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(g.v.significand(), ctx.precision, err + 2)) return g.v.rounded(ctx);
         if (gm_guard_exhausted(ctx.precision, guard + extra)) return g.v.rounded(ctx);
         guard *= 2;
     }
@@ -534,7 +533,7 @@ BigFloat gm_gamma_drive(const BigFloat& z, const BigFloatContext& ctx, bool neg)
         const std::size_t acc = (wc.precision > extra + 16) ? (wc.precision - extra - 16) : 1;
         const std::size_t L   = v.significand().bit_length();
         const std::size_t err = (L > acc) ? (L - acc) : 0;
-        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err + 2)) return v.with_sign(neg).rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err + 2)) return v.with_sign(neg).rounded(ctx);
         if (gm_guard_exhausted(ctx.precision, guard + extra)) return v.with_sign(neg).rounded(ctx);
         guard *= 2;
     }
@@ -561,11 +560,9 @@ BigFloat gm_exp_of_log(const BigFloat& z, const BigFloatContext& ctx, bool, bool
 
 } // namespace gmdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigUInt factorial(std::uint64_t n) {
@@ -594,7 +591,7 @@ BigFloat log_abs_gamma(const BigFloat& z, const BigFloatContext& ctx) {
     if (z.is_infinite())  return z.signbit() ? BigFloat::undefined() : z;
     std::uint64_t k = 0;
 
-    if (gmdetail::gm_exact_u64(z, k) && k >= 1 && k - 1 <= gmdetail::fact_n_cap()) {
+    if (gmdetail::gm_exact_u64(z, k) && k >= 1 && gmdetail::gm_fact_cheap(k - 1, ctx.precision)) {
         const BigUInt f = factorial(k - 1);  
 
         if (!f.is_undefined()) {
@@ -623,7 +620,7 @@ BigFloat gamma(const BigFloat& z, const BigFloatContext& ctx) {
     if (gmdetail::gm_exact_u64(z, k)) {
         if (k == 0) return BigFloat::undefined();  
 
-        if (k - 1 <= gmdetail::fact_n_cap()) {
+        if (gmdetail::gm_fact_cheap(k - 1, ctx.precision)) {
             const BigUInt f = factorial(k - 1);                     
             if (!f.is_undefined()) return BigFloat(f).rounded(ctx);
         }
@@ -635,18 +632,16 @@ BigFloat gamma(const BigFloat& z, const BigFloatContext& ctx) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace gmdetail {
 
 BigFloat gm_log_beta(const BigFloat& a, const BigFloat& b, const BigFloatContext& ctx, bool& neg, int& state) {
     neg = false;
     state = 0;
-    const BigFloat s = BigFloat::add(a, b, ctx.extended(16));
+    const BigFloat s = (a.is_finite() && b.is_finite()) ? hzdetail::hz_xadd(a, b) : BigFloat::add(a, b, ctx.extended(16));
     const int sa = gamma_sign(a, ctx);
     const int sb = gamma_sign(b, ctx);
     const int ss = gamma_sign(s, ctx);
@@ -659,10 +654,21 @@ BigFloat gm_log_beta(const BigFloat& a, const BigFloat& b, const BigFloatContext
 
     for (;;) {
         const BigFloatContext wc(BigFloatContext::clamp_precision(ctx.precision + guard), RoundingMode::nearest_even);
-        bool n = false, p = false;
-        const BigFloat la = gm_drive(a, wc, n, p);
-        const BigFloat lb = gm_drive(b, wc, n, p);
-        const BigFloat ls = gm_drive(s, wc, n, p);
+        auto lg = [&wc](const BigFloat& z) {
+            std::uint64_t k = 0;
+
+            if (gm_exact_u64(z, k) && k >= 1 && gm_fact_cheap(k - 1, wc.precision)) {
+                const BigUInt f = factorial(k - 1);
+                if (!f.is_undefined()) return f.is_one() ? BigFloat::zero() : ln(BigFloat(f), wc);
+            }
+
+            bool n = false, p = false;
+            return gm_drive(z, wc, n, p);
+        };
+
+        const BigFloat la = lg(a);
+        const BigFloat lb = lg(b);
+        const BigFloat ls = lg(s);
         if (!la.is_finite() || !lb.is_finite() || !ls.is_finite()) { state = 3; return BigFloat::undefined(); }
         const BigFloat v = BigFloat::sub(BigFloat::add(la, lb, wc), ls, wc);
         std::int64_t hi = la.get_exp_base2();
@@ -676,7 +682,7 @@ BigFloat gm_log_beta(const BigFloat& a, const BigFloat& b, const BigFloatContext
         const std::size_t L    = v.significand().bit_length();
         const std::size_t err  = (L > good) ? (L - good) : 0;
         if (v.is_zero()) return v;
-        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err + 2)) return v.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err + 2)) return v.rounded(ctx);
         if (gm_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
         guard = guard * 2 + lost;
     }
@@ -684,11 +690,9 @@ BigFloat gm_log_beta(const BigFloat& a, const BigFloat& b, const BigFloatContext
 
 } // namespace gmdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat log_abs_beta(const BigFloat& a, const BigFloat& b, const BigFloatContext& ctx) {
@@ -711,23 +715,52 @@ BigFloat log_beta(const BigFloat& a, const BigFloat& b, const BigFloatContext& c
 }
 
 BigFloat beta(const BigFloat& a, const BigFloat& b, const BigFloatContext& ctx) {
-    bool neg = false;
-    int  st  = 0;
-    const BigFloatContext probe(128, RoundingMode::nearest_even);   
-    const BigFloat lb0 = gmdetail::gm_log_beta(a, b, probe, neg, st);
-    if (st == 1) return BigFloat::zero();
-    if (st >= 2) return BigFloat::undefined();
-    if (!lb0.is_finite()) return lb0;
-    const std::int64_t e = lb0.get_exp_base2();
-    const std::size_t  E = (e != BigFloat::exp_none && e > 0) ? static_cast<std::size_t>(e) + 2 : 2;
-    const BigFloatContext wc(BigFloatContext::clamp_precision(ctx.precision + E + 64), RoundingMode::nearest_even);
-    const BigFloat lb = gmdetail::gm_log_beta(a, b, wc, neg, st);
-    if (st != 0 || !lb.is_finite()) return BigFloat::undefined();
-    const BigFloat v = exp(lb, wc);
-    if (!v.is_finite()) return v;
-    return v.with_sign(neg).rounded(ctx);
+    std::int64_t ia = 0, ib = 0;
+
+    if (hzdetail::hz_int64(a, ia) && hzdetail::hz_int64(b, ib) && ia > 0 && ib > 0 && ia + ib <= 4097) {
+        const std::uint64_t n = static_cast<std::uint64_t>(ia + ib - 2);
+        const std::uint64_t k = static_cast<std::uint64_t>(std::min(ia, ib) - 1);
+        BigUInt d = BigUInt::one();
+
+        for (std::uint64_t i = 1; i <= k; ++i) {
+            d.mul_small_mutable(n - k + i);
+            d.div_small_mutable(i);
+        }
+
+        d.mul_small_mutable(n + 1);
+        return BigFloat::div(BigFloat::one(), BigFloat(d), ctx);
+    }
+
+    bool        neg   = false;
+    int         st    = 0;
+    std::size_t guard = 32;
+
+    for (;;) {
+        const BigFloatContext wc(BigFloatContext::clamp_precision(ctx.precision + guard), RoundingMode::nearest_even);
+        const BigFloat lb = gmdetail::gm_log_beta(a, b, wc, neg, st);
+        if (st == 1) return BigFloat::zero();
+        if (st >= 2) return BigFloat::undefined();
+        if (!lb.is_finite()) return lb;
+        if (lb.is_zero()) return BigFloat::one(neg).rounded(ctx);
+        const std::int64_t e  = lb.get_exp_base2();
+        const std::size_t  ep = (e > 0) ? static_cast<std::size_t>(e) : 0;
+
+        if (ep + 8 >= guard) {
+            if (gmdetail::gm_guard_exhausted(ctx.precision, guard)) return exp(lb, ctx).with_sign(neg);
+            guard = 2 * guard + ep;
+            continue;
+        }
+
+        const BigFloat v = exp(lb, wc);
+        if (!v.is_finite() || v.is_zero()) return v.with_sign(neg);
+        const std::size_t good = wc.precision - ep - 3;
+        const std::size_t L    = v.significand().bit_length();
+        const std::size_t err  = (L > good) ? (L - good) : 0;
+        if (multiprecision::constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err + 2)) return v.with_sign(neg).rounded(ctx);
+        if (gmdetail::gm_guard_exhausted(ctx.precision, guard)) return v.with_sign(neg).rounded(ctx);
+        guard *= 2;
+    }
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

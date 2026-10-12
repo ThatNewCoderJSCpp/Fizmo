@@ -60,11 +60,11 @@ public:
     // ---- position -------------------------------------------------------------------------------
     double x() const noexcept { return m_x; }
     double y() const noexcept { return m_y; }
-    vector2d position() const noexcept { return { m_x, m_y }; }
+    linalg::vector2d position() const noexcept { return { m_x, m_y }; }
     void set_x(double x) noexcept { m_x = x; }
     void set_y(double y) noexcept { m_y = y; }
     void set_position(double x, double y) noexcept { m_x = x; m_y = y; }
-    void set_position(const vector2d& p) noexcept { m_x = p.x; m_y = p.y; }
+    void set_position(const linalg::vector2d& p) noexcept { m_x = p.x; m_y = p.y; }
     void translate(double dx, double dy) noexcept { m_x += dx; m_y += dy; }
 
     // Moves in the sprite's own facing (local +x is "forward" at rotation 0).
@@ -162,9 +162,9 @@ public:
 
     // ---- transforms -----------------------------------------------------------------------------
     // Maps source-frame pixel coordinates (0..frame_w, 0..frame_h) to world coordinates.
-    math::Matrix3d transform() const noexcept;
+    linalg::Matrix3d transform() const noexcept;
 
-    vector2d local_to_world(double lx, double ly) const noexcept;
+    linalg::vector2d local_to_world(double lx, double ly) const noexcept;
 
     // Inverse of local_to_world. Returns false when the sprite has zero scale.
     bool world_to_local(double wx, double wy, double& lx, double& ly) const noexcept;

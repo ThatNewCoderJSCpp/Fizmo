@@ -8,7 +8,6 @@
 #include <type_traits>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace ggdetail {
@@ -60,7 +59,7 @@ inline BigFloat generalized_gaussian_moment(const P& power, const R& rate, const
     return generalized_gaussian_moment(BigFloat(power), BigFloat(rate), BigFloat(shape), c);
 }
 
-template <typename P, typename R, typename S, typename std::enable_if<!(std::is_same<P, BigFloat>::value && std::is_same<R, BigFloat>::value && std::is_same<S, BigFloat>::value), int>::type = 0>
+template <typename P, typename R, typename S, typename std::enable_if<!(std::is_same<P, BigFloat>::value && std::is_same<R, BigFloat>::value && std::is_same<S, BigFloat>::value) && !any_fixed_width_mp<P, R, S>::value, int>::type = 0>
 inline BigFloat generalized_gaussian_moment(const P& power, const R& rate, const S& shape) {
     return generalized_gaussian_moment(BigFloat(power), BigFloat(rate), BigFloat(shape), BigFloatContext::current());
 }
@@ -70,13 +69,12 @@ inline BigFloat generalized_gaussian_integral(const R& rate, const S& shape, con
     return generalized_gaussian_integral(BigFloat(rate), BigFloat(shape), c);
 }
 
-template <typename R, typename S, typename std::enable_if<!(std::is_same<R, BigFloat>::value && std::is_same<S, BigFloat>::value), int>::type = 0>
+template <typename R, typename S, typename std::enable_if<!(std::is_same<R, BigFloat>::value && std::is_same<S, BigFloat>::value) && !any_fixed_width_mp<R, S>::value, int>::type = 0>
 inline BigFloat generalized_gaussian_integral(const R& rate, const S& shape) {
     return generalized_gaussian_integral(BigFloat(rate), BigFloat(shape), BigFloatContext::current());
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_GENERALIZED_GAUSSIAN_HPP

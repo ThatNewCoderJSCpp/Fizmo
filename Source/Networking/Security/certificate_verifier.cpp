@@ -50,7 +50,8 @@ auto CertificateVerifier::verify_chain_platform(
         extras,
         hostname,
         m_ca_store_path,
-        m_check_revocation
+        m_check_revocation,
+        m_crl_paths
     );
 }
 

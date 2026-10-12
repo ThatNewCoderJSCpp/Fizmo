@@ -20,12 +20,14 @@ namespace detail {
     using NativeCertOps     = SchannelCertOps;
     using NativeCredentials = SchannelCredentials;
     using NativeSession     = SchannelSession;
+    using NativePrivateKey  = SchannelPrivateKey;
     inline constexpr const char* kBackendName = "Schannel";
 #else
     using NativeCertificate = OpenSSLCertificate;
     using NativeCertOps     = OpenSSLCertOps;
     using NativeCredentials = OpenSSLCredentials;
     using NativeSession     = OpenSSLSession;
+    using NativePrivateKey  = OpenSSLPrivateKey;
     inline constexpr const char* kBackendName = "OpenSSL";
 #endif
 

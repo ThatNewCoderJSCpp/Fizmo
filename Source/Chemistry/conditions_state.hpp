@@ -2,7 +2,7 @@
 #define FIZMO_CHEMISTRY_CONDITIONS_HPP
 
 #include "../Converters/unit_converters.hpp"
-#include "../Standard Overloads/abs.hpp"
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <iostream>
@@ -75,12 +75,12 @@ public:
     static constexpr Conditions standard() noexcept { return Conditions(298.15, 100000.0); }
     
 public:
-    constexpr bool operator==(const Conditions& other) const noexcept {
-        return fizmo::abs_constexpr(m_t - other.m_t) <= constants::middle_epsilon() &&
-               fizmo::abs_constexpr(m_pa - other.m_pa) <= constants::middle_epsilon();
+    bool operator==(const Conditions& other) const noexcept {
+        return std::fabs(m_t - other.m_t) <= constants::middle_epsilon() &&
+               std::fabs(m_pa - other.m_pa) <= constants::middle_epsilon();
     }
     
-    constexpr bool operator!=(const Conditions& other) const noexcept { return !(*this == other); }
+    bool operator!=(const Conditions& other) const noexcept { return !(*this == other); }
 };
 
 class SubstanceState {
@@ -194,14 +194,14 @@ public:
     constexpr bool is_fluid() const noexcept { return m_phase == Phase::LIQUID || m_phase == Phase::GAS || m_phase == Phase::SUPERCRITICAL; }
     constexpr bool is_gas_like() const noexcept { return m_phase == Phase::GAS || m_phase == Phase::PLASMA; }
     constexpr bool is_two_phase() const noexcept { return m_phase == Phase::LIQUID_VAPOR || m_phase == Phase::SOLID_LIQUID; }
-    constexpr bool is_ideal() const noexcept { return fizmo::abs_constexpr(m_compressibility - 1.0) <= constants::middle_epsilon(); }
+    bool is_ideal() const noexcept { return std::fabs(m_compressibility - 1.0) <= constants::middle_epsilon(); }
 
 public:
     constexpr bool operator==(const SubstanceState& other) const noexcept {
         return m_phase == other.m_phase &&
-               fizmo::abs_constexpr(m_molar_volume - other.m_molar_volume) <= constants::middle_epsilon() &&
-               fizmo::abs_constexpr(m_density - other.m_density) <= constants::middle_epsilon() &&
-               fizmo::abs_constexpr(m_compressibility - other.m_compressibility) <= constants::middle_epsilon();
+               std::fabs(m_molar_volume - other.m_molar_volume) <= constants::middle_epsilon() &&
+               std::fabs(m_density - other.m_density) <= constants::middle_epsilon() &&
+               std::fabs(m_compressibility - other.m_compressibility) <= constants::middle_epsilon();
     }
 
     constexpr bool operator!=(const SubstanceState& other) const noexcept { return !(*this == other); }

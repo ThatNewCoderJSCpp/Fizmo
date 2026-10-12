@@ -276,6 +276,19 @@ void Painter::text(float x, float y, const std::string& s, const text::TextStyle
     m_r->draw_text(px(x + m_ox), px(y + m_oy), s, sc);
 }
 
+void Painter::text(float x, float y, const text::FancyText& layout) {
+    if (layout.empty()) return;
+    text::FancyText scaled = layout;
+    if (m_scale != 1.0f) scaled.scale(m_scale);
+    if (m_opacity < 1.0f) {
+        for (text::FancyRun& r : scaled.runs()) r.text.base().set_opacity((r.text.base().has_opacity() ? r.text.base().opacity() : 1.0f) * m_opacity);
+        for (text::FancyRect& r : scaled.rects()) r.color = fade(r.color);
+        for (text::FancyPath& p : scaled.paths()) p.color = fade(p.color);
+        for (text::FancyImage& im : scaled.images()) im.opacity *= m_opacity;
+    }
+    m_r->draw_fancy_text(scaled, (x + m_ox) * m_scale, (y + m_oy) * m_scale, text::FancyAnchor::TopLeft);
+}
+
 auto Ui::mouse_of(const windows::WindowEvent& e) noexcept -> Point {
     if (e.fx != 0.0f || e.fy != 0.0f) return Point{ e.fx, e.fy };
     return Point{ static_cast<float>(e.x), static_cast<float>(e.y) };
@@ -1025,6 +1038,60 @@ void Label::draw(Painter& p, Ui&) {
         p.text(x, y, l, st);
         y += lh;
     }
+}
+
+text::Text TextView::styled() const {
+    text::Text t = m_text;
+    const Theme& th = theme();
+    if (!t.base().has_fg_color()) t.color(!enabled() ? th.text_disabled : m_muted ? th.text_muted : th.text);
+    if (!t.base().has_size()) t.size(th.font_size);
+    return t;
+}
+
+const text::FancyText& TextView::layout_for(float width) const {
+    text::Text t = styled();
+    if (m_wrap && width > 0.0f) t.max_width(width);
+    std::string key = t.fingerprint();
+    if (key != m_layout_key || width != m_layout_width) {
+        m_layout = t.layout();
+        m_layout_key = std::move(key);
+        m_layout_width = width;
+    }
+    return m_layout;
+}
+
+auto TextView::measure(Ui&) -> Size {
+    const text::FancyText& ft = layout_for(m_wrap && width() > 0.0f ? width() : 0.0f);
+    return Size{ std::ceil(ft.width()), std::ceil(std::max(ft.height(), static_cast<float>(theme().font_size) * 1.25f)) };
+}
+
+void TextView::draw(Painter& p, Ui&) {
+    const text::FancyText& ft = layout_for(m_wrap ? width() : 0.0f);
+    p.text(0.0f, 0.0f, ft);
+}
+
+windows::SystemCursor TextView::cursor(float x, float y) const noexcept {
+    try {
+        const text::FancyText& ft = layout_for(m_wrap ? width() : 0.0f);
+        if (m_text.link_at(ft, x, y - ft.ascent()) != text::kNoFancyTag) return windows::SystemCursor::Hand;
+    } catch (...) {
+    }
+    return windows::SystemCursor::Arrow;
+}
+
+bool TextView::on_mouse_down(MouseEvent& e) {
+    if (e.button != input::MouseButton::Left) return false;
+    const text::FancyText& ft = layout_for(m_wrap ? width() : 0.0f);
+    m_pressed_link = m_text.link_at(ft, e.x, e.y - ft.ascent());
+    return m_pressed_link != text::kNoFancyTag;
+}
+
+void TextView::on_mouse_up(MouseEvent& e) {
+    if (m_pressed_link == text::kNoFancyTag) return;
+    const text::FancyText& ft = layout_for(m_wrap ? width() : 0.0f);
+    const std::uint32_t link = m_text.link_at(ft, e.x, e.y - ft.ascent());
+    if (link == m_pressed_link && m_on_link && link < m_text.links().size()) m_on_link(m_text.links()[link]);
+    m_pressed_link = text::kNoFancyTag;
 }
 
 auto Button::measure(Ui&) -> Size {

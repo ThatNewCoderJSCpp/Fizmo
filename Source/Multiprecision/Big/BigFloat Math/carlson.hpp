@@ -15,7 +15,6 @@
 #include <vector>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace csdetail {
@@ -109,34 +108,58 @@ inline BigFloat carlson_rd(const BigFloat& x, const BigFloat& y, const BigFloat&
 inline BigFloat carlson_rj(const BigFloat& x, const BigFloat& y, const BigFloat& z, const BigFloat& p) { return carlson_rj(x, y, z, p, BigFloatContext::current()); }
 
 template <typename X, typename Y,
-          typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<Y, BigFloat>::value), int>::type = 0
+          typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<Y, BigFloat>::value) && !any_big_complex_mp<X, Y>::value, int>::type = 0
           >
-inline BigFloat carlson_rc(const X& x, const Y& y, const BigFloatContext& c = BigFloatContext::current()) {
+inline BigFloat carlson_rc(const X& x, const Y& y, const BigFloatContext& c) {
     return carlson_rc(BigFloat(x), BigFloat(y), c);
+}
+
+template <typename X, typename Y,
+          typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<Y, BigFloat>::value) && !any_fixed_width_mp<X, Y>::value && !any_big_complex_mp<X, Y>::value, int>::type = 0>
+inline BigFloat carlson_rc(const X& x, const Y& y) {
+    return carlson_rc(BigFloat(x), BigFloat(y), BigFloatContext::current());
 }
 
 template <typename X, typename Y, typename Z,
           typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<Y, BigFloat>::value &&
-                                    std::is_same<Z, BigFloat>::value), int>::type = 0
+                                    std::is_same<Z, BigFloat>::value) && !any_big_complex_mp<X, Y, Z>::value, int>::type = 0
                                  >
-inline BigFloat carlson_rf(const X& x, const Y& y, const Z& z, const BigFloatContext& c = BigFloatContext::current()) {
+inline BigFloat carlson_rf(const X& x, const Y& y, const Z& z, const BigFloatContext& c) {
     return carlson_rf(BigFloat(x), BigFloat(y), BigFloat(z), c);
 }
 
 template <typename X, typename Y, typename Z,
+          typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<Y, BigFloat>::value && std::is_same<Z, BigFloat>::value) && !any_fixed_width_mp<X, Y, Z>::value && !any_big_complex_mp<X, Y, Z>::value, int>::type = 0>
+inline BigFloat carlson_rf(const X& x, const Y& y, const Z& z) {
+    return carlson_rf(BigFloat(x), BigFloat(y), BigFloat(z), BigFloatContext::current());
+}
+
+template <typename X, typename Y, typename Z,
           typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<Y, BigFloat>::value &&
-                                    std::is_same<Z, BigFloat>::value), int>::type = 0
+                                    std::is_same<Z, BigFloat>::value) && !any_big_complex_mp<X, Y, Z>::value, int>::type = 0
                                  >
-inline BigFloat carlson_rd(const X& x, const Y& y, const Z& z, const BigFloatContext& c = BigFloatContext::current()) {
+inline BigFloat carlson_rd(const X& x, const Y& y, const Z& z, const BigFloatContext& c) {
     return carlson_rd(BigFloat(x), BigFloat(y), BigFloat(z), c);
+}
+
+template <typename X, typename Y, typename Z,
+          typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<Y, BigFloat>::value && std::is_same<Z, BigFloat>::value) && !any_fixed_width_mp<X, Y, Z>::value && !any_big_complex_mp<X, Y, Z>::value, int>::type = 0>
+inline BigFloat carlson_rd(const X& x, const Y& y, const Z& z) {
+    return carlson_rd(BigFloat(x), BigFloat(y), BigFloat(z), BigFloatContext::current());
 }
 
 template <typename X, typename Y, typename Z, typename P,
           typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<Y, BigFloat>::value &&
-                                    std::is_same<Z, BigFloat>::value && std::is_same<P, BigFloat>::value), int>::type = 0
+                                    std::is_same<Z, BigFloat>::value && std::is_same<P, BigFloat>::value) && !any_big_complex_mp<X, Y, Z, P>::value, int>::type = 0
                                  >
-inline BigFloat carlson_rj(const X& x, const Y& y, const Z& z, const P& p, const BigFloatContext& c = BigFloatContext::current()) {
+inline BigFloat carlson_rj(const X& x, const Y& y, const Z& z, const P& p, const BigFloatContext& c) {
     return carlson_rj(BigFloat(x), BigFloat(y), BigFloat(z), BigFloat(p), c);
+}
+
+template <typename X, typename Y, typename Z, typename P,
+          typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<Y, BigFloat>::value && std::is_same<Z, BigFloat>::value && std::is_same<P, BigFloat>::value) && !any_fixed_width_mp<X, Y, Z, P>::value && !any_big_complex_mp<X, Y, Z, P>::value, int>::type = 0>
+inline BigFloat carlson_rj(const X& x, const Y& y, const Z& z, const P& p) {
+    return carlson_rj(BigFloat(x), BigFloat(y), BigFloat(z), BigFloat(p), BigFloatContext::current());
 }
 
 BigFloat carlson_rg(const BigFloat& x, const BigFloat& y, const BigFloat& z, const BigFloatContext& ctx);
@@ -145,14 +168,19 @@ inline BigFloat carlson_rg(const BigFloat& x, const BigFloat& y, const BigFloat&
 
 template <typename X, typename Y, typename Z,
           typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<Y, BigFloat>::value &&
-                                    std::is_same<Z, BigFloat>::value), int>::type = 0
+                                    std::is_same<Z, BigFloat>::value) && !any_big_complex_mp<X, Y, Z>::value, int>::type = 0
                                  >
-inline BigFloat carlson_rg(const X& x, const Y& y, const Z& z, const BigFloatContext& c = BigFloatContext::current()) {
+inline BigFloat carlson_rg(const X& x, const Y& y, const Z& z, const BigFloatContext& c) {
     return carlson_rg(BigFloat(x), BigFloat(y), BigFloat(z), c);
 }
 
+template <typename X, typename Y, typename Z,
+          typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<Y, BigFloat>::value && std::is_same<Z, BigFloat>::value) && !any_fixed_width_mp<X, Y, Z>::value && !any_big_complex_mp<X, Y, Z>::value, int>::type = 0>
+inline BigFloat carlson_rg(const X& x, const Y& y, const Z& z) {
+    return carlson_rg(BigFloat(x), BigFloat(y), BigFloat(z), BigFloatContext::current());
+}
+
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_CARLSON_HPP

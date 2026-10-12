@@ -6,7 +6,6 @@
 #include "Details/min_max_detail.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 template <std::size_t TB, std::size_t MB>
@@ -130,7 +129,6 @@ clamp(std::initializer_list<F> xs, const F& lo, const F& hi) noexcept {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_ABS_MIN_MAX_HPP

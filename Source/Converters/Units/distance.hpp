@@ -7,54 +7,54 @@ namespace fizmo {
 namespace units {
 namespace distance {
 
-constexpr LengthUnit meter(1.0L);
+constexpr LengthUnit meter(exact("1.0"));
 FIZMO_SI_PREFIXED(meter, meter);  
 
 constexpr LengthUnit light_time(long double seconds) noexcept {
-    return LengthUnit(constants::LIGHT_SPEED<long double> * seconds);
+    return LengthUnit(exact_constants::speed_of_light * ExactScale::from_long_double(seconds));
 }
 
-constexpr LengthUnit angstrom (1e-10L);
-constexpr LengthUnit micron   (1e-6L);
-constexpr LengthUnit bohr     (constants::BOHR_RADIUS<long double>);
-constexpr LengthUnit planck   (constants::PLANCK_LENGTH<long double>);
+constexpr LengthUnit angstrom (exact("1e-10"));
+constexpr LengthUnit micron   (exact("1e-6"));
+constexpr LengthUnit bohr     (exact_constants::bohr_radius);
+constexpr LengthUnit planck   (exact_constants::planck_length);
 
-constexpr LengthUnit thou      (2.54e-5L);
-constexpr LengthUnit barleycorn(0.0254L / 3.0L);
-constexpr LengthUnit inch      (0.0254L);
-constexpr LengthUnit hand      (0.1016L);
-constexpr LengthUnit foot      (0.3048L);
-constexpr LengthUnit yard      (0.9144L);
-constexpr LengthUnit fathom    (1.8288L);
-constexpr LengthUnit rod       (5.0292L);
-constexpr LengthUnit chain     (20.1168L);
-constexpr LengthUnit furlong   (201.168L);
-constexpr LengthUnit mile      (1609.344L);
-constexpr LengthUnit league    (4828.032L);
-constexpr LengthUnit link      (0.201168L);
-constexpr LengthUnit ell       (1.143L);
+constexpr LengthUnit thou      (exact("2.54e-5"));
+constexpr LengthUnit barleycorn(exact("0.0254") / ratio(3));
+constexpr LengthUnit inch      (exact("0.0254"));
+constexpr LengthUnit hand      (exact("0.1016"));
+constexpr LengthUnit foot      (exact("0.3048"));
+constexpr LengthUnit yard      (exact("0.9144"));
+constexpr LengthUnit fathom    (exact("1.8288"));
+constexpr LengthUnit rod       (exact("5.0292"));
+constexpr LengthUnit chain     (exact("20.1168"));
+constexpr LengthUnit furlong   (exact("201.168"));
+constexpr LengthUnit mile      (exact("1609.344"));
+constexpr LengthUnit league    (exact("4828.032"));
+constexpr LengthUnit link      (exact("0.201168"));
+constexpr LengthUnit ell       (exact("1.143"));
 
-constexpr LengthUnit nautical_mile      (1852.0L);
-constexpr LengthUnit international_cable(185.2L);
-constexpr LengthUnit us_cable           (219.456L);
-constexpr LengthUnit shackle            (27.432L);
+constexpr LengthUnit nautical_mile      (exact("1852.0"));
+constexpr LengthUnit international_cable(exact("185.2"));
+constexpr LengthUnit us_cable           (exact("219.456"));
+constexpr LengthUnit shackle            (exact("27.432"));
 
-constexpr LengthUnit point(0.0254L / 72.0L);
-constexpr LengthUnit pica (0.0254L / 6.0L);
-constexpr LengthUnit ligne(0.002256L);
+constexpr LengthUnit point(exact("0.0254") / ratio(72));
+constexpr LengthUnit pica (exact("0.0254") / ratio(6));
+constexpr LengthUnit ligne(exact("0.002256"));
 
-constexpr LengthUnit smoot(1.7018L);
+constexpr LengthUnit smoot(exact("1.7018"));
 
-constexpr LengthUnit au(constants::ASTRONOMICAL_UNIT<long double>);
+constexpr LengthUnit au(exact_constants::astronomical_unit);
 
-constexpr LengthUnit light_second = light_time(1.0L);
-constexpr LengthUnit light_minute = light_time(60.0L);
-constexpr LengthUnit light_hour   = light_time(3600.0L);
-constexpr LengthUnit light_day    = light_time(86400.0L);
-constexpr LengthUnit light_week   = light_time(604800.0L);
-constexpr LengthUnit light_year   = light_time(31557600.0L); // 365.25 days
+constexpr LengthUnit light_second(exact_constants::speed_of_light);
+constexpr LengthUnit light_minute(exact_constants::speed_of_light * ratio(60));
+constexpr LengthUnit light_hour  (exact_constants::speed_of_light * ratio(3600));
+constexpr LengthUnit light_day   (exact_constants::speed_of_light * ratio(86400));
+constexpr LengthUnit light_week  (exact_constants::speed_of_light * ratio(604800));
+constexpr LengthUnit light_year  (exact_constants::speed_of_light * exact_constants::julian_year); // 365.25 days
 
-constexpr LengthUnit parsec(constants::PARSEC<long double>);
+constexpr LengthUnit parsec(exact_constants::parsec);
 FIZMO_SI_PREFIXED(parsec, parsec); 
 
 } // namespace distance

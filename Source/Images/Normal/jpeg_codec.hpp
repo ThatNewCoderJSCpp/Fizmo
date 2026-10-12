@@ -16,7 +16,7 @@ inline bool is_jpeg(const std::uint8_t* data, std::size_t size) noexcept {
 
 bool decode_jpeg(const std::uint8_t* data, std::size_t size, BitmapImage& out, std::string* error = nullptr);
 
-bool decode_bmp(const std::uint8_t* data, std::size_t size, BitmapImage& out, std::string* error = nullptr);
+bool encode_jpeg(const BitmapImage& img, std::vector<std::uint8_t>& out, int quality = 90, std::string* error = nullptr);
 
 } // namespace images
 } // namespace fizmo

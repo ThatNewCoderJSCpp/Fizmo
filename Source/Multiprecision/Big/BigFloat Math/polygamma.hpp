@@ -12,7 +12,6 @@
 #include <vector>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace pgdetail {
@@ -130,7 +129,6 @@ inline BigFloat trigamma (const BigFloat& z)        { return trigamma(z,     Big
 inline BigFloat polygamma(const BigFloat& x, int n) { return polygamma(x, n, BigFloatContext::current()); }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_POLYGAMMA_HPP

@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace csdetail {
 
@@ -29,9 +28,9 @@ bool cs_safe(const BF& v, std::size_t want, double lost, std::size_t prec) {
     BigUInt           sig = v.significand();
     const std::size_t L   = sig.bit_length();
     if (L < want) sig.shift_left_mutable(want - L);                       
-    const double e = std::ceil(lost);
+    const double e = std::ceil(lost) + ((L > want) ? static_cast<double>(L - want) : 0.0);
     if (!(e + 4.0 < static_cast<double>(sig.bit_length()))) return false;
-    return constants::bfdetail::round_is_safe(sig, prec, (e <= 0.0) ? 2 : static_cast<std::size_t>(e) + 2);
+    return multiprecision::constants::bfdetail::round_is_safe(sig, prec, (e <= 0.0) ? 2 : static_cast<std::size_t>(e) + 2);
 }
 
 BF cs_xsub(const BF& x, const BF& y) {                             
@@ -308,11 +307,9 @@ cs_val cs_rg_raw(const BF& a, const BF& m, const BF& c, std::size_t want) {
 
 } // namespace csdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat carlson_rc(const BigFloat& x, const BigFloat& y, const BigFloatContext& ctx) {
@@ -413,5 +410,4 @@ BigFloat carlson_rg(const BigFloat& x, const BigFloat& y, const BigFloat& z, con
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

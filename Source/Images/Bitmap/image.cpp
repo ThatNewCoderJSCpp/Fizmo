@@ -5,8 +5,31 @@ namespace fizmo {
 namespace images {
 
 BitmapImage::BitmapImage(const unsigned int width, const unsigned int height) : m_width(width), m_height(height) {
-    if (m_width == 0 || m_width == 0) { throw std::runtime_error("Invalid image dimensions (must be positive)"); }
+    if (m_width == 0 || m_height == 0) { throw std::runtime_error("Invalid image dimensions (must be positive)"); }
     m_pixels.resize(width * height, fizmo::graphics::Color(255, 255, 255)); // White background
+}
+
+BitmapImage::BitmapImage(const unsigned int width, const unsigned int height, std::vector<fizmo::graphics::Color> pixels) : m_pixels(std::move(pixels)), m_width(width), m_height(height) {
+    if (m_pixels.size() != static_cast<std::size_t>(width) * height) { throw std::runtime_error("Pixel count does not match image dimensions"); }
+}
+
+BitmapImage BitmapImage::from_rgba(const unsigned int width, const unsigned int height, const std::uint8_t* rgba) {
+    std::vector<fizmo::graphics::Color> px(static_cast<std::size_t>(width) * height);
+    for (std::size_t i = 0; i < px.size(); ++i) px[i] = fizmo::graphics::Color(rgba[4 * i], rgba[4 * i + 1], rgba[4 * i + 2], rgba[4 * i + 3]);
+    return BitmapImage(width, height, std::move(px));
+}
+
+std::vector<std::uint8_t> BitmapImage::to_rgba() const {
+    std::vector<std::uint8_t> out(m_pixels.size() * 4);
+
+    for (std::size_t i = 0; i < m_pixels.size(); ++i) {
+        out[4 * i] = m_pixels[i].red();
+        out[4 * i + 1] = m_pixels[i].green();
+        out[4 * i + 2] = m_pixels[i].blue();
+        out[4 * i + 3] = m_pixels[i].alpha();
+    }
+
+    return out;
 }
 
 BitmapImage::BitmapImage(const std::string& filename) {

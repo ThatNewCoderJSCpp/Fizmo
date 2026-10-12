@@ -6,64 +6,88 @@
 namespace fizmo {
 namespace relativity {
 namespace special {
+namespace rdetail {
 
-template <typename L, typename V, class RU = units::LengthUnit>
-constexpr typename std::enable_if<std::is_arithmetic<L>::value && std::is_arithmetic<V>::value && is_fizmo_unit_v<RU> && RU::dimension() == units::DIMENSION_LENGTH, typename std::common_type<L, V, double>::type>::type
-contracted_length(const V object_velocity, const L original_length, const RU return_unit = units::distance::meter) noexcept {
-    using CT = typename std::common_type<L, V, double>::type;
-    const CT lorentz = lorentz_factor(object_velocity);
-    if (original_length <= 0 || lorentz == CT(0)) { return constants::QUIET_NAN<CT>; }
-    const CT contracted = static_cast<CT>(original_length) / lorentz;
-    return static_cast<CT>(units::convert(static_cast<long double>(contracted), units::distance::meter, return_unit));
+template <class N>
+constexpr N contracted_length_(const N& beta, const N& l) {
+    if (neg_(l)) return nan_<N>();
+    return s_(beta) * l;
 }
 
-template <typename L, typename V, class VU, class LU, class RU = units::LengthUnit>
-constexpr typename std::enable_if<std::is_arithmetic<L>::value && std::is_arithmetic<V>::value && is_fizmo_unit_v<VU> && is_fizmo_unit_v<LU> && is_fizmo_unit_v<RU> && VU::dimension() == units::DIMENSION_VELOCITY && LU::dimension() == units::DIMENSION_LENGTH && RU::dimension() == units::DIMENSION_LENGTH, typename std::common_type<L, V, double>::type>::type
-contracted_length(const V object_velocity, const L original_length, const VU velocity_unit, const LU length_unit, const RU return_unit = units::distance::meter) noexcept {
-    using CT = typename std::common_type<L, V, double>::type;
-    const CT v = static_cast<CT>(units::convert(static_cast<long double>(object_velocity), velocity_unit, units::velocity::light_speed));
-    const CT l = static_cast<CT>(units::convert(static_cast<long double>(original_length), length_unit, units::distance::meter));
-    return contracted_length(v, l, return_unit);
+template <class N>
+constexpr N original_length_(const N& beta, const N& l) {
+    if (neg_(l)) return nan_<N>();
+    return gamma_(beta) * l;
 }
 
-template <typename L, typename V, class RU = units::LengthUnit>
-constexpr typename std::enable_if<std::is_arithmetic<L>::value && std::is_arithmetic<V>::value && is_fizmo_unit_v<RU> && RU::dimension() == units::DIMENSION_LENGTH, typename std::common_type<L, V, double>::type>::type
-original_length(const V object_velocity, const L contracted_length, const RU return_unit = units::distance::meter) noexcept {
-    using CT = typename std::common_type<L, V, double>::type;
-    if (contracted_length <= 0) { return constants::QUIET_NAN<CT>; }
-    const CT lorentz = lorentz_factor(object_velocity);
-    const CT true_length = static_cast<CT>(contracted_length) * lorentz;
-    return static_cast<CT>(units::convert(static_cast<long double>(true_length), units::distance::meter, return_unit));
+template <class N>
+constexpr N length_contraction_velocity_(const N& original, const N& contracted) {
+    if (!(original > N(0)) || neg_(contracted)) return nan_<N>();
+    const N r = contracted / original;
+    if (r > N(1)) return nan_<N>();
+    return sqrt_((N(1) - r) * (N(1) + r));
 }
 
-template <typename L, typename V, class VU, class LU, class RU = units::LengthUnit>
-constexpr typename std::enable_if<std::is_arithmetic<L>::value && std::is_arithmetic<V>::value && is_fizmo_unit_v<VU> && is_fizmo_unit_v<LU> && is_fizmo_unit_v<RU> && VU::dimension() == units::DIMENSION_VELOCITY && LU::dimension() == units::DIMENSION_LENGTH && RU::dimension() == units::DIMENSION_LENGTH, typename std::common_type<L, V, double>::type>::type
-original_length(const V object_velocity, const L contracted_length, const VU velocity_unit, const LU length_unit, const RU return_unit = units::distance::meter) noexcept {
-    using CT = typename std::common_type<L, V, double>::type;
-    const CT v = static_cast<CT>(units::convert(static_cast<long double>(object_velocity), velocity_unit, units::velocity::light_speed));
-    const CT l = static_cast<CT>(units::convert(static_cast<long double>(contracted_length), length_unit, units::distance::meter));
-    return original_length(v, l, return_unit);
+} // namespace rdetail
+
+template <typename L, typename V, class RU = units::LengthUnit,
+          rdetail::enable_t<rdetail::all_values<L, V>::value && rdetail::has_dim<RU>(units::DIMENSION_LENGTH)> = 0>
+constexpr rdetail::result_t<L, V> contracted_length(const V& object_velocity, const L& original_length, const RU return_unit = units::distance::meter) {
+    return rdetail::run<rdetail::result_t<L, V>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        return rdetail::conv(rdetail::contracted_length_(rdetail::to_<N>(object_velocity), rdetail::to_<N>(original_length)), units::distance::meter, return_unit);
+    });
 }
 
-template <typename O, typename C, class RU = units::VelocityUnit>
-constexpr typename std::enable_if<std::is_arithmetic<C>::value && std::is_arithmetic<O>::value && is_fizmo_unit_v<RU> && RU::dimension() == units::DIMENSION_VELOCITY, typename std::common_type<C, O, double>::type>::type
-length_contraction_velocity(const O original_length, const C contracted_length, const RU return_unit = units::velocity::light_speed) noexcept {
-    using CT = typename std::common_type<O, C, double>::type;
-    if (original_length <= 0 || contracted_length <= 0) { return constants::QUIET_NAN<CT>; }
-    const CT arg1 = CT(1) + static_cast<CT>(contracted_length) / static_cast<CT>(original_length);
-    const CT arg2 = CT(1) - static_cast<CT>(contracted_length) / static_cast<CT>(original_length);
-    if (arg1 < 0 || arg2 < 0) { return constants::QUIET_NAN<CT>; }
-    const CT velocity = math::sqrt_constexpr(arg1) * math::sqrt_constexpr(arg2);
-    return static_cast<CT>(units::convert(static_cast<long double>(velocity), units::velocity::light_speed, return_unit));
+template <typename L, typename V, class VU, class LU, class RU = units::LengthUnit,
+          rdetail::enable_t<rdetail::all_values<L, V>::value && rdetail::has_dim<VU>(units::DIMENSION_VELOCITY) && rdetail::has_dim<LU>(units::DIMENSION_LENGTH) && rdetail::has_dim<RU>(units::DIMENSION_LENGTH)> = 0>
+constexpr rdetail::result_t<L, V> contracted_length(const V& object_velocity, const L& original_length, const VU velocity_unit, const LU length_unit, const RU return_unit = units::distance::meter) {
+    return rdetail::run<rdetail::result_t<L, V>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        const N v = rdetail::in_<N>(object_velocity, velocity_unit, units::velocity::light_speed);
+        const N l = rdetail::in_<N>(original_length, length_unit, units::distance::meter);
+        return rdetail::conv(rdetail::contracted_length_(v, l), units::distance::meter, return_unit);
+    });
 }
 
-template <typename O, typename C, class OU, class CU, class RU = units::VelocityUnit>
-constexpr typename std::enable_if<std::is_arithmetic<C>::value && std::is_arithmetic<O>::value && is_fizmo_unit_v<OU> && is_fizmo_unit_v<CU> && is_fizmo_unit_v<RU> && OU::dimension() == units::DIMENSION_LENGTH && CU::dimension() == units::DIMENSION_LENGTH && RU::dimension() == units::DIMENSION_VELOCITY, typename std::common_type<C, O, double>::type>::type
-length_contraction_velocity(const O original_length, const C contracted_length, const OU original_unit, const CU contracted_unit, const RU return_unit = units::velocity::light_speed) noexcept {
-    using CT = typename std::common_type<O, C, double>::type;
-    const CT l = static_cast<CT>(units::convert(static_cast<long double>(original_length), original_unit, units::distance::meter));
-    const CT l_prime = static_cast<CT>(units::convert(static_cast<long double>(contracted_length), contracted_unit, units::distance::meter));
-    return length_contraction_velocity(l, l_prime, return_unit);
+template <typename L, typename V, class RU = units::LengthUnit,
+          rdetail::enable_t<rdetail::all_values<L, V>::value && rdetail::has_dim<RU>(units::DIMENSION_LENGTH)> = 0>
+constexpr rdetail::result_t<L, V> original_length(const V& object_velocity, const L& contracted_length, const RU return_unit = units::distance::meter) {
+    return rdetail::run<rdetail::result_t<L, V>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        return rdetail::conv(rdetail::original_length_(rdetail::to_<N>(object_velocity), rdetail::to_<N>(contracted_length)), units::distance::meter, return_unit);
+    });
+}
+
+template <typename L, typename V, class VU, class LU, class RU = units::LengthUnit,
+          rdetail::enable_t<rdetail::all_values<L, V>::value && rdetail::has_dim<VU>(units::DIMENSION_VELOCITY) && rdetail::has_dim<LU>(units::DIMENSION_LENGTH) && rdetail::has_dim<RU>(units::DIMENSION_LENGTH)> = 0>
+constexpr rdetail::result_t<L, V> original_length(const V& object_velocity, const L& contracted_length, const VU velocity_unit, const LU length_unit, const RU return_unit = units::distance::meter) {
+    return rdetail::run<rdetail::result_t<L, V>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        const N v = rdetail::in_<N>(object_velocity, velocity_unit, units::velocity::light_speed);
+        const N l = rdetail::in_<N>(contracted_length, length_unit, units::distance::meter);
+        return rdetail::conv(rdetail::original_length_(v, l), units::distance::meter, return_unit);
+    });
+}
+
+template <typename O, typename C, class RU = units::VelocityUnit,
+          rdetail::enable_t<rdetail::all_values<O, C>::value && rdetail::has_dim<RU>(units::DIMENSION_VELOCITY)> = 0>
+constexpr rdetail::result_t<C, O> length_contraction_velocity(const O& original_length, const C& contracted_length, const RU return_unit = units::velocity::light_speed) {
+    return rdetail::run<rdetail::result_t<C, O>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        return rdetail::conv(rdetail::length_contraction_velocity_(rdetail::to_<N>(original_length), rdetail::to_<N>(contracted_length)), units::velocity::light_speed, return_unit);
+    });
+}
+
+template <typename O, typename C, class OU, class CU, class RU = units::VelocityUnit,
+          rdetail::enable_t<rdetail::all_values<O, C>::value && rdetail::has_dim<OU>(units::DIMENSION_LENGTH) && rdetail::has_dim<CU>(units::DIMENSION_LENGTH) && rdetail::has_dim<RU>(units::DIMENSION_VELOCITY)> = 0>
+constexpr rdetail::result_t<C, O> length_contraction_velocity(const O& original_length, const C& contracted_length, const OU original_unit, const CU contracted_unit, const RU return_unit = units::velocity::light_speed) {
+    return rdetail::run<rdetail::result_t<C, O>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        const N l  = rdetail::in_<N>(original_length, original_unit, units::distance::meter);
+        const N lp = rdetail::in_<N>(contracted_length, contracted_unit, units::distance::meter);
+        return rdetail::conv(rdetail::length_contraction_velocity_(l, lp), units::velocity::light_speed, return_unit);
+    });
 }
 
 } // namespace special

@@ -106,7 +106,7 @@ bool SpriteBatch::add(
 
 bool SpriteBatch::add_quad(
     const Texture& tex, const TextureRect& src,
-    const vector2d& top_left, const vector2d& top_right, const vector2d& bottom_right, const vector2d& bottom_left,
+    const linalg::vector2d& top_left, const linalg::vector2d& top_right, const linalg::vector2d& bottom_right, const linalg::vector2d& bottom_left,
     const Color& tint, float depth, float opacity 
 ) {
     const double xs[4] = { top_left.x, top_right.x, bottom_right.x, bottom_left.x };

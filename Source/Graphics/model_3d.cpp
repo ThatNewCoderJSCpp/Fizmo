@@ -30,7 +30,7 @@ Quat slerp(Quat a, Quat b, double t) noexcept {
     return { a.x * wa + b.x * wb, a.y * wa + b.y * wb, a.z * wa + b.z * wb, a.w * wa + b.w * wb };
 }
 
-Mat4 trs(const vector3d& t, const Quat& q0, const vector3d& s) noexcept {
+Mat4 trs(const linalg::vector3d& t, const Quat& q0, const linalg::vector3d& s) noexcept {
     const Quat q = normalize(q0);
     const double xx = q.x * q.x, yy = q.y * q.y, zz = q.z * q.z;
     const double xy = q.x * q.y, xz = q.x * q.z, yz = q.y * q.z, wx = q.w * q.x, wy = q.w * q.y, wz = q.w * q.z;
@@ -66,17 +66,17 @@ Mat4 inverse(const Mat4& m) noexcept {
     return inv;
 }
 
-vector3d point(const Mat4& m, double x, double y, double z) noexcept {
+linalg::vector3d point(const Mat4& m, double x, double y, double z) noexcept {
     return { m[0] * x + m[1] * y + m[2] * z + m[3], m[4] * x + m[5] * y + m[6] * z + m[7], m[8] * x + m[9] * y + m[10] * z + m[11] };
 }
 
-math::Matrix4d to_matrix(const Mat4& m) noexcept {
-    math::Matrix4d out = math::Matrix4d::identity();
+linalg::Matrix4d to_matrix(const Mat4& m) noexcept {
+    linalg::Matrix4d out = linalg::Matrix4d::identity();
     for (int i = 0; i < 16; ++i) out.data[static_cast<std::size_t>(i)] = m[static_cast<std::size_t>(i)];
     return out;
 }
 
-Mat4 from_matrix(const math::Matrix4d& m) noexcept {
+Mat4 from_matrix(const linalg::Matrix4d& m) noexcept {
     Mat4 out{};
     for (int i = 0; i < 16; ++i) out[static_cast<std::size_t>(i)] = m.data[static_cast<std::size_t>(i)];
     return out;
@@ -110,15 +110,15 @@ void Model3D::generate_normals(Mesh3D& mesh, bool smooth) {
         generate_normals(mesh, true);
         return;
     }
-    std::vector<vector3d> acc(v.size(), vector3d{ 0, 0, 0 });
+    std::vector<linalg::vector3d> acc(v.size(), linalg::vector3d{ 0, 0, 0 });
     for (std::size_t t = 0; t < tris; ++t) {
         const std::uint32_t a = idx.empty() ? static_cast<std::uint32_t>(t * 3) : idx[t * 3];
         const std::uint32_t b = idx.empty() ? static_cast<std::uint32_t>(t * 3 + 1) : idx[t * 3 + 1];
         const std::uint32_t c = idx.empty() ? static_cast<std::uint32_t>(t * 3 + 2) : idx[t * 3 + 2];
         if (a >= v.size() || b >= v.size() || c >= v.size()) continue;
-        const vector3d e1{ v[b].x - v[a].x, v[b].y - v[a].y, v[b].z - v[a].z };
-        const vector3d e2{ v[c].x - v[a].x, v[c].y - v[a].y, v[c].z - v[a].z };
-        const vector3d n{ e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z, e1.x * e2.y - e1.y * e2.x };
+        const linalg::vector3d e1{ v[b].x - v[a].x, v[b].y - v[a].y, v[b].z - v[a].z };
+        const linalg::vector3d e2{ v[c].x - v[a].x, v[c].y - v[a].y, v[c].z - v[a].z };
+        const linalg::vector3d n{ e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z, e1.x * e2.y - e1.y * e2.x };
         acc[a] = acc[a] + n; acc[b] = acc[b] + n; acc[c] = acc[c] + n;
     }
     for (std::size_t i = 0; i < v.size(); ++i) {
@@ -527,7 +527,7 @@ bool Model3D::load_obj(const std::filesystem::path& path, Model3D& out, std::str
     if (!text) return fail("cannot read " + system::paths::to_utf8(path));
     Model3D m;
     make_import(m, options);
-    std::vector<vector3d> pos, nrm;
+    std::vector<linalg::vector3d> pos, nrm;
     std::vector<std::array<double, 2>> uvs;
     std::vector<Color> vcol;
     std::unordered_map<std::string, int> material_index;
@@ -669,10 +669,10 @@ bool Model3D::load_obj(const std::filesystem::path& path, Model3D& out, std::str
                 const auto f = dedupe.find(key2);
                 if (f != dedupe.end()) { face.push_back(f->second); continue; }
                 Vertex3D v;
-                const vector3d& p = pos[static_cast<std::size_t>(vi - 1)];
+                const linalg::vector3d& p = pos[static_cast<std::size_t>(vi - 1)];
                 v.x = static_cast<float>(p.x); v.y = static_cast<float>(p.y); v.z = static_cast<float>(p.z);
                 if (ti > 0 && static_cast<std::size_t>(ti) <= uvs.size()) { v.u = static_cast<float>(uvs[static_cast<std::size_t>(ti - 1)][0]); v.v = static_cast<float>(1.0 - uvs[static_cast<std::size_t>(ti - 1)][1]); }
-                if (ni > 0 && static_cast<std::size_t>(ni) <= nrm.size()) { const vector3d& n = nrm[static_cast<std::size_t>(ni - 1)]; v.nx = static_cast<float>(n.x); v.ny = static_cast<float>(n.y); v.nz = static_cast<float>(n.z); has_normals = true; }
+                if (ni > 0 && static_cast<std::size_t>(ni) <= nrm.size()) { const linalg::vector3d& n = nrm[static_cast<std::size_t>(ni - 1)]; v.nx = static_cast<float>(n.x); v.ny = static_cast<float>(n.y); v.nz = static_cast<float>(n.z); has_normals = true; }
                 const Color base = current_material >= 0 ? m.materials[static_cast<std::size_t>(current_material)].base_color : Color(255, 255, 255);
                 const Color vc = vcol[static_cast<std::size_t>(vi - 1)];
                 v.rgba = Vertex3D::pack(Color(static_cast<std::uint8_t>(base.red() * vc.red() / 255), static_cast<std::uint8_t>(base.green() * vc.green() / 255), static_cast<std::uint8_t>(base.blue() * vc.blue() / 255), base.alpha()));
@@ -770,7 +770,7 @@ std::size_t Model3D::vertex_count() const noexcept {
     return n;
 }
 
-void Model3D::bounds(vector3d& lo, vector3d& hi) const {
+void Model3D::bounds(linalg::vector3d& lo, linalg::vector3d& hi) const {
     std::vector<model_math::Mat4> world;
     world_matrices(rest_pose(), world);
     lo = { 1e300, 1e300, 1e300 };
@@ -779,7 +779,7 @@ void Model3D::bounds(vector3d& lo, vector3d& hi) const {
         if (nodes[i].mesh < 0 || static_cast<std::size_t>(nodes[i].mesh) >= meshes.size()) continue;
         for (const auto& p : meshes[static_cast<std::size_t>(nodes[i].mesh)].primitives) {
             for (const Vertex3D& v : p.mesh.vertices()) {
-                const vector3d w = model_math::point(world[i], v.x, v.y, v.z);
+                const linalg::vector3d w = model_math::point(world[i], v.x, v.y, v.z);
                 lo = { std::min(lo.x, w.x), std::min(lo.y, w.y), std::min(lo.z, w.z) };
                 hi = { std::max(hi.x, w.x), std::max(hi.y, w.y), std::max(hi.z, w.z) };
             }
@@ -787,13 +787,13 @@ void Model3D::bounds(vector3d& lo, vector3d& hi) const {
     }
 }
 
-void Model3D::draw(windows::Renderer& r, const math::Matrix4d& transform, const Material3D* override_material) const {
+void Model3D::draw(windows::Renderer& r, const linalg::Matrix4d& transform, const Material3D* override_material) const {
     std::vector<model_math::Mat4> world;
     world_matrices(rest_pose(), world);
     const model_math::Mat4 base = model_math::from_matrix(transform);
     for (std::size_t i = 0; i < nodes.size(); ++i) {
         if (nodes[i].mesh < 0 || static_cast<std::size_t>(nodes[i].mesh) >= meshes.size()) continue;
-        const math::Matrix4d m = model_math::to_matrix(model_math::mul(base, world[i]));
+        const linalg::Matrix4d m = model_math::to_matrix(model_math::mul(base, world[i]));
         for (const auto& p : meshes[static_cast<std::size_t>(nodes[i].mesh)].primitives) r.draw_mesh(p.mesh, m, material3d(p.material, override_material));
     }
 }
@@ -935,7 +935,7 @@ double ModelAnimator::duration() const noexcept {
     return m_model && m_current.animation >= 0 ? m_model->animations[static_cast<std::size_t>(m_current.animation)].duration : 0.0;
 }
 
-auto ModelAnimator::node_position(int node) const noexcept -> vector3d {
+auto ModelAnimator::node_position(int node) const noexcept -> linalg::vector3d {
     if (node < 0 || static_cast<std::size_t>(node) >= m_world.size()) return { 0.0, 0.0, 0.0 };
     const auto& w = m_world[static_cast<std::size_t>(node)];
     return { w[3], w[7], w[11] };
@@ -970,16 +970,16 @@ void ModelAnimator::update(double dt) {
     refresh();
 }
 
-void ModelAnimator::draw(windows::Renderer& r, const math::Matrix4d& transform, const Material3D* override_material) const {
+void ModelAnimator::draw(windows::Renderer& r, const linalg::Matrix4d& transform, const Material3D* override_material) const {
     if (!m_model) return;
     const model_math::Mat4 base = model_math::from_matrix(transform);
-    const math::Matrix4d root = model_math::to_matrix(base);
+    const linalg::Matrix4d root = model_math::to_matrix(base);
 
     for (std::size_t i = 0; i < m_model->nodes.size(); ++i) {
         const ModelNode& node = m_model->nodes[i];
         if (node.mesh < 0 || static_cast<std::size_t>(node.mesh) >= m_model->meshes.size()) continue;
         const auto& prims = m_model->meshes[static_cast<std::size_t>(node.mesh)].primitives;
-        const math::Matrix4d m = model_math::to_matrix(model_math::mul(base, m_world[i]));
+        const linalg::Matrix4d m = model_math::to_matrix(model_math::mul(base, m_world[i]));
 
         for (std::size_t p = 0; p < prims.size(); ++p) {
             const Material3D mat = m_model->material3d(prims[p].material, override_material);

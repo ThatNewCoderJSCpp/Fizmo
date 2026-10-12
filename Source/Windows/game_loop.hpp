@@ -112,9 +112,9 @@ public:
 
     void quit() noexcept { m_app.quit(); }
 
-    vector2d window_to_view(double wx, double wy) const noexcept;
+    linalg::vector2d window_to_view(double wx, double wy) const noexcept;
 
-    vector2d view_to_window(double vx, double vy) const noexcept;
+    linalg::vector2d view_to_window(double vx, double vy) const noexcept;
 
     bool is_inside_view(int wx, int wy) const noexcept;
 

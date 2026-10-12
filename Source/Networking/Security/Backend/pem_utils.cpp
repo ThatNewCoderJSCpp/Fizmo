@@ -87,6 +87,62 @@ int PEM::decode_char(char c) noexcept {
     return -1;
 }
 
+std::vector<PEM::Block> PEM::decode_all(const std::string& text) {
+    std::vector<Block> blocks;
+    std::size_t pos = 0;
+
+    while (pos < text.size()) {
+        const std::size_t begin = text.find("-----BEGIN ", pos);
+        if (begin == std::string::npos) break;
+        const std::size_t label_start = begin + 11;
+        const std::size_t label_end = text.find("-----", label_start);
+        if (label_end == std::string::npos) break;
+        Block b;
+        b.label = text.substr(label_start, label_end - label_start);
+        const std::string end_marker = "-----END " + b.label + "-----";
+        const std::size_t body_start = text.find('\n', label_end);
+        if (body_start == std::string::npos) break;
+        const std::size_t end = text.find(end_marker, body_start);
+        if (end == std::string::npos) break;
+        std::string body = text.substr(body_start + 1, end - body_start - 1);
+
+        if (body.find("Proc-Type:") != std::string::npos) {
+            b.encrypted = true;
+            const std::size_t blank = body.find("\n\n") != std::string::npos ? body.find("\n\n") : body.find("\r\n\r\n");
+            if (blank != std::string::npos) body = body.substr(blank);
+        }
+
+        if (base64_decode(body.data(), body.size(), b.der)) blocks.push_back(std::move(b));
+        pos = end + end_marker.size();
+    }
+
+    return blocks;
+}
+
+std::string PEM::encode(const std::string& label, const std::uint8_t* der, std::size_t len) {
+    static const char* alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string b64;
+    std::size_t i = 0;
+
+    for (; i + 3 <= len; i += 3) {
+        const std::uint32_t v = (std::uint32_t(der[i]) << 16) | (std::uint32_t(der[i + 1]) << 8) | der[i + 2];
+        b64 += alphabet[(v >> 18) & 63]; b64 += alphabet[(v >> 12) & 63]; b64 += alphabet[(v >> 6) & 63]; b64 += alphabet[v & 63];
+    }
+
+    if (len - i == 1) {
+        const std::uint32_t v = std::uint32_t(der[i]) << 16;
+        b64 += alphabet[(v >> 18) & 63]; b64 += alphabet[(v >> 12) & 63]; b64 += "==";
+    } else if (len - i == 2) {
+        const std::uint32_t v = (std::uint32_t(der[i]) << 16) | (std::uint32_t(der[i + 1]) << 8);
+        b64 += alphabet[(v >> 18) & 63]; b64 += alphabet[(v >> 12) & 63]; b64 += alphabet[(v >> 6) & 63]; b64 += '=';
+    }
+
+    std::string out = "-----BEGIN " + label + "-----\n";
+    for (std::size_t k = 0; k < b64.size(); k += 64) out += b64.substr(k, 64) + "\n";
+    out += "-----END " + label + "-----\n";
+    return out;
+}
+
 } // namespace detail
 } // namespace security
 } // namespace networking

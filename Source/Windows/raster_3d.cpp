@@ -33,7 +33,7 @@ void SoftwareRasterizer3D::set_light(const graphics::Light3D& l) noexcept {
     m_diffuse = l.diffuse;
 }
 
-void SoftwareRasterizer3D::lines(const vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test) {
+void SoftwareRasterizer3D::lines(const linalg::vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test) {
     if (!pts || m_w <= 0 || m_h <= 0) return;
     const float a = color.alpha() / 255.0f;
     const float rgba[4] = { color.red() / 255.0f * a, color.green() / 255.0f * a, color.blue() / 255.0f * a, a };
@@ -127,7 +127,7 @@ void SoftwareRasterizer3D::prepare_lighting() {
     if (!m_soft.enabled) return;
     const graphics::SceneLighting3D& l = *m_lighting;
     const double len = l.sun_direction.magnitude();
-    const vector3d d = len > 0.0 ? l.sun_direction / len : vector3d{ 0.0, 0.0, -1.0 };
+    const linalg::vector3d d = len > 0.0 ? l.sun_direction / len : linalg::vector3d{ 0.0, 0.0, -1.0 };
     m_soft.sun_dir[0] = static_cast<float>(d.x); m_soft.sun_dir[1] = static_cast<float>(d.y); m_soft.sun_dir[2] = static_cast<float>(d.z);
     m_soft.sun_on = l.sun_intensity > 0.0f;
 
@@ -157,13 +157,13 @@ void SoftwareRasterizer3D::prepare_lighting() {
     }
 }
 
-void SoftwareRasterizer3D::transform_point(const float* model, const vector3d& p, float out[3]) noexcept {
+void SoftwareRasterizer3D::transform_point(const float* model, const linalg::vector3d& p, float out[3]) noexcept {
     const float x = static_cast<float>(p.x), y = static_cast<float>(p.y), z = static_cast<float>(p.z);
     if (!model) { out[0] = x; out[1] = y; out[2] = z; return; }
     for (int r = 0; r < 3; ++r) out[r] = model[r * 4 + 0] * x + model[r * 4 + 1] * y + model[r * 4 + 2] * z + model[r * 4 + 3];
 }
 
-void SoftwareRasterizer3D::transform_normal(const float* model, const vector3d& n, float out[3]) noexcept {
+void SoftwareRasterizer3D::transform_normal(const float* model, const linalg::vector3d& n, float out[3]) noexcept {
     const float x = static_cast<float>(n.x), y = static_cast<float>(n.y), z = static_cast<float>(n.z);
     if (!model) { out[0] = x; out[1] = y; out[2] = z; }
     else for (int r = 0; r < 3; ++r) out[r] = model[r * 4 + 0] * x + model[r * 4 + 1] * y + model[r * 4 + 2] * z;
@@ -193,8 +193,8 @@ void SoftwareRasterizer3D::corner_factor(const graphics::CompactVertex3D& v, con
 }
 
 void SoftwareRasterizer3D::expand_quad(const graphics::CompactVertex3D* c, const std::int32_t* cell_origin, const float* model, bool material_lit) {
-    const vector3d a = c[0].position(), b = c[1].position(), d = c[3].position();
-    const vector3d n = c[0].normal();
+    const linalg::vector3d a = c[0].position(), b = c[1].position(), d = c[3].position();
+    const linalg::vector3d n = c[0].normal();
     const bool tint = c[0].variation > 0 && c[0].face != graphics::CellFace::None;
     const graphics::Color base = c[0].color();
     float corner[4][3];
@@ -215,14 +215,14 @@ void SoftwareRasterizer3D::expand_quad(const graphics::CompactVertex3D* c, const
     };
 
     auto emit = [&](double s0, double s1, double t0, double t1) {
-        const vector3d p00 = a + (b - a) * s0 + (d - a) * t0;
-        const vector3d p10 = a + (b - a) * s1 + (d - a) * t0;
-        const vector3d p11 = a + (b - a) * s1 + (d - a) * t1;
-        const vector3d p01 = a + (b - a) * s0 + (d - a) * t1;
+        const linalg::vector3d p00 = a + (b - a) * s0 + (d - a) * t0;
+        const linalg::vector3d p10 = a + (b - a) * s1 + (d - a) * t0;
+        const linalg::vector3d p11 = a + (b - a) * s1 + (d - a) * t1;
+        const linalg::vector3d p01 = a + (b - a) * s0 + (d - a) * t1;
         int delta = 0;
 
         if (tint) {
-            const vector3d mid = (p00 + p11) * 0.5 - n * 0.5;
+            const linalg::vector3d mid = (p00 + p11) * 0.5 - n * 0.5;
             const std::int32_t o[3] = { cell_origin ? cell_origin[0] : 0, cell_origin ? cell_origin[1] : 0, cell_origin ? cell_origin[2] : 0 };
             delta = graphics::cell_variation(
                 static_cast<std::int32_t>(std::floor(mid.x)) + o[0],
@@ -231,7 +231,7 @@ void SoftwareRasterizer3D::expand_quad(const graphics::CompactVertex3D* c, const
         }
 
         const graphics::Color col = graphics::cell_tinted(base, delta, 255);
-        const vector3d vn{ 0.0, 0.0, 0.0 };
+        const linalg::vector3d vn{ 0.0, 0.0, 0.0 };
         const graphics::Vertex3D w0(p00, vn, lit_color(col, s0, t0)), w1(p10, vn, lit_color(col, s1, t0));
         const graphics::Vertex3D w2(p11, vn, lit_color(col, s1, t1)), w3(p01, vn, lit_color(col, s0, t1));
         m_quad_scratch.push_back(w0); m_quad_scratch.push_back(w1); m_quad_scratch.push_back(w2);
@@ -248,7 +248,7 @@ void SoftwareRasterizer3D::expand_quad(const graphics::CompactVertex3D* c, const
             emit(m_breaks_s[i], m_breaks_s[i + 1], m_breaks_t[j], m_breaks_t[j + 1]);
 }
 
-int SoftwareRasterizer3D::axis_of(const vector3d& e) noexcept {
+int SoftwareRasterizer3D::axis_of(const linalg::vector3d& e) noexcept {
     const double ax = std::fabs(e.x), ay = std::fabs(e.y), az = std::fabs(e.z);
     return ax >= ay && ax >= az ? 0 : (ay >= az ? 1 : 2);
 }
@@ -266,7 +266,7 @@ void SoftwareRasterizer3D::resolve(std::vector<graphics::Color>& out) const {
     }
 }
 
-void SoftwareRasterizer3D::to_clip(const Mat4f& m, const vector3d& p, float out[4]) noexcept {
+void SoftwareRasterizer3D::to_clip(const Mat4f& m, const linalg::vector3d& p, float out[4]) noexcept {
     const float x = static_cast<float>(p.x), y = static_cast<float>(p.y), z = static_cast<float>(p.z);
     for (int r = 0; r < 4; ++r) out[r] = m[r * 4 + 0] * x + m[r * 4 + 1] * y + m[r * 4 + 2] * z + m[r * 4 + 3];
 }

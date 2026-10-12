@@ -14,7 +14,6 @@
 #include <vector>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace cbdetail {
@@ -106,7 +105,6 @@ FIZMO_MP_CB_FWD(combination)
 #undef FIZMO_MP_CB_FWD
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_COMBINATORICS_HPP

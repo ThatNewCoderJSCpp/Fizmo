@@ -166,7 +166,7 @@ public:
     void insert(std::size_t index, const T* src, std::size_t count) {
         if (count == 0) return;
         if (points_into(src, this->m_data, this->m_capacity) || points_into(src + count - 1, this->m_data, this->m_capacity)) {
-            DynamicArray<T> copy(src, src + count);
+            collections::DynamicArray<T> copy(src, src + count);
             insert(index, copy.data(), count);
             return;
         }
@@ -181,7 +181,7 @@ public:
 
     template <typename It, typename = typename std::enable_if<is_iterator_like<It>::value && !std::is_pointer<It>::value>::type>
     void insert(std::size_t index, It first, It last) {
-        DynamicArray<T> tmp(first, last);
+        collections::DynamicArray<T> tmp(first, last);
         insert(index, tmp.data(), tmp.size());
     }
 
@@ -264,7 +264,7 @@ public:
 
     void assign(const T* src, std::size_t count) {
         if (points_into(src, this->m_data, this->m_size)) {
-            DynamicArray<T> copy(src, src + count);
+            collections::DynamicArray<T> copy(src, src + count);
             assign(copy.data(), count);
             return;
         }

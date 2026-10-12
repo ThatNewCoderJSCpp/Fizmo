@@ -40,7 +40,7 @@ Quat normalize(Quat q) noexcept;
 
 Quat slerp(Quat a, Quat b, double t) noexcept;
 
-Mat4 trs(const vector3d& t, const Quat& q0, const vector3d& s) noexcept;
+Mat4 trs(const linalg::vector3d& t, const Quat& q0, const linalg::vector3d& s) noexcept;
 
 inline Mat4 from_column_major(const float* m) noexcept {
     Mat4 r{};
@@ -50,15 +50,15 @@ inline Mat4 from_column_major(const float* m) noexcept {
 
 Mat4 inverse(const Mat4& m) noexcept;
 
-vector3d point(const Mat4& m, double x, double y, double z) noexcept;
+linalg::vector3d point(const Mat4& m, double x, double y, double z) noexcept;
 
-inline vector3d direction(const Mat4& m, double x, double y, double z) noexcept {
+inline linalg::vector3d direction(const Mat4& m, double x, double y, double z) noexcept {
     return { m[0] * x + m[1] * y + m[2] * z, m[4] * x + m[5] * y + m[6] * z, m[8] * x + m[9] * y + m[10] * z };
 }
 
-math::Matrix4d to_matrix(const Mat4& m) noexcept;
+linalg::Matrix4d to_matrix(const Mat4& m) noexcept;
 
-Mat4 from_matrix(const math::Matrix4d& m) noexcept;
+Mat4 from_matrix(const linalg::Matrix4d& m) noexcept;
 
 } // namespace model_math
 
@@ -102,9 +102,9 @@ struct ModelNode {
     std::string            name;
     int                    parent = -1;
     std::vector<int>       children;
-    vector3d               translation{ 0.0, 0.0, 0.0 };
+    linalg::vector3d               translation{ 0.0, 0.0, 0.0 };
     model_math::Quat       rotation;
-    vector3d               scale{ 1.0, 1.0, 1.0 };
+    linalg::vector3d               scale{ 1.0, 1.0, 1.0 };
     bool                   has_matrix = false;
     model_math::Mat4       matrix = model_math::identity();
     int                    mesh = -1;
@@ -135,9 +135,9 @@ struct ModelAnimation {
 };
 
 struct NodePose {
-    vector3d         translation{ 0.0, 0.0, 0.0 };
+    linalg::vector3d         translation{ 0.0, 0.0, 0.0 };
     model_math::Quat rotation;
-    vector3d         scale{ 1.0, 1.0, 1.0 };
+    linalg::vector3d         scale{ 1.0, 1.0, 1.0 };
 };
 
 class Model3D {
@@ -201,9 +201,9 @@ public:
 
     std::size_t vertex_count() const noexcept;
 
-    void bounds(vector3d& lo, vector3d& hi) const;
+    void bounds(linalg::vector3d& lo, linalg::vector3d& hi) const;
 
-    void draw(windows::Renderer& r, const math::Matrix4d& transform = math::Matrix4d::identity(), const Material3D* override_material = nullptr) const;
+    void draw(windows::Renderer& r, const linalg::Matrix4d& transform = linalg::Matrix4d::identity(), const Material3D* override_material = nullptr) const;
 };
 
 class ModelAnimator {
@@ -264,7 +264,7 @@ public:
     std::vector<NodePose>& pose() noexcept { return m_pose; }
     const std::vector<model_math::Mat4>& world() const noexcept { return m_world; }
 
-    vector3d node_position(int node) const noexcept;
+    linalg::vector3d node_position(int node) const noexcept;
 
     void refresh() {
         if (!m_model) return;
@@ -274,7 +274,7 @@ public:
 
     void update(double dt);
 
-    void draw(windows::Renderer& r, const math::Matrix4d& transform = math::Matrix4d::identity(), const Material3D* override_material = nullptr) const;
+    void draw(windows::Renderer& r, const linalg::Matrix4d& transform = linalg::Matrix4d::identity(), const Material3D* override_material = nullptr) const;
 };
 
 } // namespace graphics

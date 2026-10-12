@@ -7,7 +7,7 @@ namespace fizmo {
 namespace units {
 namespace amount {
 
-constexpr AmountUnit mole(1.0L);
+constexpr AmountUnit mole(exact("1.0"));
 FIZMO_SI_PREFIXED(mole, mole);   
 
 } // namespace amount

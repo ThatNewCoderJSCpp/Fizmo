@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace aydetail {
 
@@ -23,9 +22,9 @@ bool ay_safe(const BF& v, std::size_t want, double lost, std::size_t prec) {
     BigUInt           sig = v.significand();
     const std::size_t L   = sig.bit_length();
     if (L < want) sig.shift_left_mutable(want - L);                    
-    const double e = std::ceil(lost);
+    const double e = std::ceil(lost) + ((L > want) ? static_cast<double>(L - want) : 0.0);
     if (!(e + 4.0 < static_cast<double>(sig.bit_length()))) return false;
-    return constants::bfdetail::round_is_safe(sig, prec, (e <= 0.0) ? 2 : static_cast<std::size_t>(e) + 2);
+    return multiprecision::constants::bfdetail::round_is_safe(sig, prec, (e <= 0.0) ? 2 : static_cast<std::size_t>(e) + 2);
 }
 
 const ay_consts& ay_constants(std::size_t want) {
@@ -39,7 +38,7 @@ const ay_consts& ay_constants(std::size_t want) {
         const BF          l3    = ln(three, c);
         const BF          p16   = exp(-BF::div(l3, BF(static_cast<std::uint64_t>(6)), c), c);
         const BF          p13   = exp(-BF::div(l3, three, c), c);
-        K.c1   = BF::div(BF::mul(p16, g13, c), constants::two_pi(c), c);
+        K.c1   = BF::div(BF::mul(p16, g13, c), multiprecision::constants::two_pi(c), c);
         K.c2   = BF::div(p13, g13, c);
         K.prec = p;
     }
@@ -109,20 +108,20 @@ ay_val ay_from_series(ay_kind k, const BF& x, std::size_t want) {
             break;
 
         case ay_kind::bi:
-            v = BF::mul(constants::sqrt3(wc), sum, wc);
+            v = BF::mul(multiprecision::constants::sqrt3(wc), sum, wc);
             lparts += 0.8;
             break;
 
         case ay_kind::hi: {
-            const BF hp = BF::mul(constants::inv_pi(wc), s.h, wc);
-            v      = BF::add(BF::mul(constants::inv_sqrt3(wc).scaled_pow2(1), sum, wc), hp, wc);
+            const BF hp = BF::mul(multiprecision::constants::inv_pi(wc), s.h, wc);
+            v      = BF::add(BF::mul(multiprecision::constants::inv_sqrt3(wc).scaled_pow2(1), sum, wc), hp, wc);
             lparts = ay_lsum(lparts + 0.21, ay_l2hi(hp));
             break;
         }
 
         default: {
-            const BF hp = BF::mul(constants::inv_pi(wc), s.h, wc);
-            v      = BF::sub(BF::mul(constants::inv_sqrt3(wc), sum, wc), hp, wc);
+            const BF hp = BF::mul(multiprecision::constants::inv_pi(wc), s.h, wc);
+            v      = BF::sub(BF::mul(multiprecision::constants::inv_sqrt3(wc), sum, wc), hp, wc);
             lparts = ay_lsum(lparts, ay_l2hi(hp));
             break;
         }
@@ -188,7 +187,7 @@ ay_val ay_ai_pos_asym(const BF& x, std::size_t want) {
         E = ay_lsum(E, lw + std::log2(4.0 * static_cast<double>(k) + 4.0));
     }
 
-    const BF pre = BF::div(BF::mul(exp(-zeta, wc), constants::inv_sqrt_pi(wc), wc).scaled_pow2(-1), sqrt(sx, wc), wc);
+    const BF pre = BF::div(BF::mul(exp(-zeta, wc), multiprecision::constants::inv_sqrt_pi(wc), wc).scaled_pow2(-1), sqrt(sx, wc), wc);
     const BF v   = BF::mul(pre, S, wc);
     const double units = 4.0 * zd + 12.0 + std::exp2(E + 1.0) + std::exp2(tail + static_cast<double>(want));
     return ay_val{v, std::log2(units) + 1.0};
@@ -217,12 +216,12 @@ ay_val ay_neg_asym(const BF& y, bool bi, std::size_t want) {
         E = ay_lsum(E, lw + std::log2(4.0 * static_cast<double>(j) + 4.0));
     }
 
-    const BF theta = BF::sub(zeta, constants::pi(wc).scaled_pow2(-2), wc);
+    const BF theta = BF::sub(zeta, multiprecision::constants::pi(wc).scaled_pow2(-2), wc);
     const BF c     = cos(theta, wc);
     const BF s     = sin(theta, wc);
     const BF core  = bi ? BF::sub(BF::mul(c, Q, wc), BF::mul(s, P, wc), wc)
                         : BF::add(BF::mul(c, P, wc), BF::mul(s, Q, wc), wc);
-    const BF pre   = BF::div(constants::inv_sqrt_pi(wc), sqrt(sy, wc), wc);
+    const BF pre   = BF::div(multiprecision::constants::inv_sqrt_pi(wc), sqrt(sy, wc), wc);
     const BF v     = BF::mul(pre, core, wc);
     if (v.is_zero()) return ay_val{v, 1.0e9};
     const double lPQ   = ay_lsum(ay_l2hi(P), ay_l2hi(Q));
@@ -248,7 +247,7 @@ ay_val ay_hi_neg_asym(const BF& y, std::size_t want) {
         E = ay_lsum(E, lw + std::log2(6.0 * static_cast<double>(k) + 6.0));
     }
 
-    const BF v = BF::div(BF::mul(constants::inv_pi(wc), S, wc), y, wc);
+    const BF v = BF::div(BF::mul(multiprecision::constants::inv_pi(wc), S, wc), y, wc);
     const double units = 6.0 + std::exp2(E + 1.0) + std::exp2(tail + static_cast<double>(want));
     return ay_val{v, std::log2(units) + 1.0};
 }
@@ -270,7 +269,7 @@ ay_val ay_gi_pos_asym(const BF& x, std::size_t want) {
         E = ay_lsum(E, ay_l2hi(w) + std::log2(6.0 * static_cast<double>(k) + 6.0));
     }
 
-    const BF v = BF::div(BF::mul(constants::inv_pi(wc), S, wc), x, wc);
+    const BF v = BF::div(BF::mul(multiprecision::constants::inv_pi(wc), S, wc), x, wc);
     const double units = 6.0 + std::exp2(E + 1.0) + std::exp2(tail + static_cast<double>(want));
     return ay_val{v, std::log2(units) + 1.0};
 }
@@ -347,5 +346,4 @@ BF ay_public(ay_kind k, const BF& x, const BFC& ctx) {
 
 } // namespace aydetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

@@ -6,25 +6,30 @@
 #include "../common/ops/container_ops.hpp"
 
 namespace fizmo {
+namespace collections {
 
 template <typename T>
 class DynamicArray;
+
+} // namespace collections
 
 namespace arrays {
 namespace detail {
 
 template <typename T>
 using DynamicArrayBase =
-    ContainerOps<DynamicArray<T>, T,
-    FunctionalOps<DynamicArray<T>, T,
-    EditOps<DynamicArray<T>, T,
-    InplaceOps<DynamicArray<T>, T,
-    QueryOps<DynamicArray<T>, T,
-    AccessOps<DynamicArray<T>, T,
+    ContainerOps<collections::DynamicArray<T>, T,
+    FunctionalOps<collections::DynamicArray<T>, T,
+    EditOps<collections::DynamicArray<T>, T,
+    InplaceOps<collections::DynamicArray<T>, T,
+    QueryOps<collections::DynamicArray<T>, T,
+    AccessOps<collections::DynamicArray<T>, T,
     HeapStorage<T>>>>>>>;
 
 } // namespace detail
 } // namespace arrays
+
+namespace collections {
 
 template <typename T>
 class DynamicArray : public arrays::detail::DynamicArrayBase<T> {
@@ -44,7 +49,7 @@ class DynamicArray : public arrays::detail::DynamicArrayBase<T> {
     template <typename D, typename V, typename B>
     friend class arrays::detail::ContainerOps;
     template <typename C>
-    friend class fizmo::BasicWhereProxy;
+    friend class fizmo::collections::BasicWhereProxy;
 
     void copy_construct_from(const T* src, std::size_t n) {
         if (n == 0) return;
@@ -186,6 +191,7 @@ public:
     }
 };
 
+} // namespace collections
 } // namespace fizmo
 
 #include "../common/where_proxy.hpp"

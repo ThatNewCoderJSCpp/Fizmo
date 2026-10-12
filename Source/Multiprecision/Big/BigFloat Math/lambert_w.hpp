@@ -15,7 +15,6 @@
 #include <type_traits>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace lwdetail {
@@ -85,7 +84,6 @@ template <typename T, typename std::enable_if<std::is_arithmetic<T>::value, int>
 inline BigFloat lambert_w(T x, const BigFloatContext& ctx) { return lambert_w(BigFloat(x), 0, ctx); }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_LAMBERT_W_HPP

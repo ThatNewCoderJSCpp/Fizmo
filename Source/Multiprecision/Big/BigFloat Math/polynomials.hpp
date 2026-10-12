@@ -10,7 +10,6 @@
 #include <vector>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace pldetail {
@@ -154,7 +153,6 @@ inline std::vector<BigInt> fibonacci_polynomial_coefficients(std::size_t n) {
 std::vector<BigInt> lucas_polynomial_coefficients(std::size_t n);
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_POLYNOMIALS_HPP

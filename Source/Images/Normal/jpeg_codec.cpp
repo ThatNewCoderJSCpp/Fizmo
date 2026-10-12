@@ -51,22 +51,33 @@ bool decode_jpeg(const std::uint8_t* data, std::size_t size, BitmapImage& out, s
     jpeg_create_decompress(&cinfo);
     jpeg_mem_src(&cinfo, const_cast<unsigned char*>(data), static_cast<unsigned long>(size));
     jpeg_read_header(&cinfo, TRUE);
-    cinfo.out_color_space = JCS_RGB;
+    const bool cmyk = cinfo.jpeg_color_space == JCS_CMYK || cinfo.jpeg_color_space == JCS_YCCK;
+    const bool inverted = cmyk && cinfo.saw_Adobe_marker;
+    cinfo.out_color_space = cmyk ? JCS_CMYK : JCS_RGB;
     jpeg_start_decompress(&cinfo);
     const unsigned int w = cinfo.output_width, h = cinfo.output_height;
-    if (w == 0 || h == 0 || cinfo.output_components != 3) {
+    const int comps = cinfo.output_components;
+    if (w == 0 || h == 0 || comps != (cmyk ? 4 : 3)) {
         jpeg_destroy_decompress(&cinfo);
         if (error) *error = "unsupported JPEG layout";
         return false;
     }
     result = BitmapImage(w, h);
-    row.resize(static_cast<std::size_t>(w) * 3);
+    row.resize(static_cast<std::size_t>(w) * static_cast<std::size_t>(comps));
 
     while (cinfo.output_scanline < h) {
         const unsigned int y = cinfo.output_scanline;
         JSAMPROW ptr = row.data();
         jpeg_read_scanlines(&cinfo, &ptr, 1);
-        for (unsigned int x = 0; x < w; ++x) result.set_pixel(x, y, graphics::Color(row[x * 3], row[x * 3 + 1], row[x * 3 + 2]));
+        if (!cmyk) {
+            for (unsigned int x = 0; x < w; ++x) result.set_pixel(x, y, graphics::Color(row[x * 3], row[x * 3 + 1], row[x * 3 + 2]));
+            continue;
+        }
+        for (unsigned int x = 0; x < w; ++x) {
+            unsigned c = row[x * 4], m = row[x * 4 + 1], ye = row[x * 4 + 2], k = row[x * 4 + 3];
+            if (!inverted) { c = 255 - c; m = 255 - m; ye = 255 - ye; k = 255 - k; }
+            result.set_pixel(x, y, graphics::Color(static_cast<std::uint8_t>((c * k + 127) / 255), static_cast<std::uint8_t>((m * k + 127) / 255), static_cast<std::uint8_t>((ye * k + 127) / 255)));
+        }
     }
 
     jpeg_finish_decompress(&cinfo);
@@ -75,32 +86,59 @@ bool decode_jpeg(const std::uint8_t* data, std::size_t size, BitmapImage& out, s
     return true;
 }
 
-bool decode_bmp(const std::uint8_t* data, std::size_t size, BitmapImage& out, std::string* error) {
-    auto fail = [&](const char* why) { if (error) *error = why; return false; };
-    auto u16 = [&](std::size_t o) -> std::uint32_t { return o + 2 <= size ? static_cast<std::uint32_t>(data[o] | (data[o + 1] << 8)) : 0; };
-    auto u32 = [&](std::size_t o) -> std::uint32_t { return o + 4 <= size ? static_cast<std::uint32_t>(data[o] | (data[o + 1] << 8) | (data[o + 2] << 16) | (static_cast<std::uint32_t>(data[o + 3]) << 24)) : 0; };
-    if (size < 54 || data[0] != 'B' || data[1] != 'M') return fail("not a BMP file");
-    const std::uint32_t offset = u32(10);
-    const std::int32_t width = static_cast<std::int32_t>(u32(18));
-    const std::int32_t height_raw = static_cast<std::int32_t>(u32(22));
-    const std::uint32_t bits = u16(28), compression = u32(30);
-    if (width <= 0 || height_raw == 0 || (bits != 24 && bits != 32)) return fail("unsupported BMP (24/32-bit only)");
-    if (compression != 0 && !(compression == 3 && bits == 32)) return fail("compressed BMP not supported");
-    const bool top_down = height_raw < 0;
-    const std::uint32_t w = static_cast<std::uint32_t>(width), h = static_cast<std::uint32_t>(top_down ? -height_raw : height_raw);
-    const std::size_t stride = ((static_cast<std::size_t>(w) * bits / 8) + 3) & ~std::size_t(3);
-    if (offset + stride * h > size) return fail("truncated BMP");
-    BitmapImage img(w, h);
-
-    for (std::uint32_t y = 0; y < h; ++y) {
-        const std::uint8_t* row = data + offset + stride * (top_down ? y : h - 1 - y);
-        for (std::uint32_t x = 0; x < w; ++x) {
-            const std::uint8_t* p = row + x * (bits / 8);
-            img.set_pixel(x, y, graphics::Color(p[2], p[1], p[0], bits == 32 && compression == 3 ? p[3] : 255));
-        }
+bool encode_jpeg(const BitmapImage& img, std::vector<std::uint8_t>& out, int quality, std::string* error) {
+    out.clear();
+    if (!img.is_valid_image()) {
+        if (error) *error = "empty image";
+        return false;
     }
 
-    out = std::move(img);
+    jpeg_compress_struct cinfo;
+    jpeg_detail::ErrorManager err;
+    cinfo.err = jpeg_std_error(&err.pub);
+    err.pub.error_exit = jpeg_detail::fizmo_jpeg_error_exit;
+    err.pub.emit_message = jpeg_detail::fizmo_jpeg_silent;
+    err.message[0] = '\0';
+    unsigned char* buffer = nullptr;
+    unsigned long size = 0;
+    std::vector<std::uint8_t> row;
+
+    if (setjmp(err.jump)) {
+        jpeg_destroy_compress(&cinfo);
+        if (buffer) std::free(buffer);
+        if (error) *error = std::string("JPEG encode failed: ") + err.message;
+        return false;
+    }
+
+    jpeg_create_compress(&cinfo);
+    jpeg_mem_dest(&cinfo, &buffer, &size);
+    cinfo.image_width = img.width();
+    cinfo.image_height = img.height();
+    cinfo.input_components = 3;
+    cinfo.in_color_space = JCS_RGB;
+    jpeg_set_defaults(&cinfo);
+    jpeg_set_quality(&cinfo, std::max(1, std::min(100, quality)), TRUE);
+    cinfo.optimize_coding = TRUE;
+    jpeg_start_compress(&cinfo, TRUE);
+    row.resize(static_cast<std::size_t>(img.width()) * 3);
+    const auto& px = img.pixels();
+
+    while (cinfo.next_scanline < cinfo.image_height) {
+        const std::size_t base = static_cast<std::size_t>(cinfo.next_scanline) * img.width();
+        for (unsigned int x = 0; x < img.width(); ++x) {
+            const graphics::Color& c = px[base + x];
+            row[x * 3] = c.red();
+            row[x * 3 + 1] = c.green();
+            row[x * 3 + 2] = c.blue();
+        }
+        JSAMPROW ptr = row.data();
+        jpeg_write_scanlines(&cinfo, &ptr, 1);
+    }
+
+    jpeg_finish_compress(&cinfo);
+    out.assign(buffer, buffer + size);
+    jpeg_destroy_compress(&cinfo);
+    std::free(buffer);
     return true;
 }
 

@@ -63,16 +63,16 @@ public:
 
     vectors::SymbolicVector2 gradient() const { return F_.gradient(); }   
 
-    vector2d gradient_at(double x, double y) const {
+    linalg::vector2d gradient_at(double x, double y) const {
         return { 
             F_.partial_x().evaluate({{xvar(), x}, {yvar(), y}}),
             F_.partial_y().evaluate({{xvar(), x}, {yvar(), y}}) 
         };
     }
 
-    vector2d normal_at(double x, double y) const { return gradient_at(x, y); }
+    linalg::vector2d normal_at(double x, double y) const { return gradient_at(x, y); }
 
-    vector2d tangent_at(double x, double y) const {
+    linalg::vector2d tangent_at(double x, double y) const {
         auto gradient = gradient_at(x, y);      
         return { -gradient.y, gradient.x };
     }

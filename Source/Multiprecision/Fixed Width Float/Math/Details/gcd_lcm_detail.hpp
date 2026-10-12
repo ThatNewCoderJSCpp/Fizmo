@@ -5,7 +5,6 @@
 #include "min_max_detail.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace gdetail {
 
@@ -49,8 +48,8 @@ U gcd_u(U a, U b) noexcept {
 
 template <std::size_t B, sign S>
 long long ctz(const integer<B, S>& x) noexcept {       
-    const umag<B> m = x.magnitude();
-    return (m & (umag<B>() - m)).highest_bit();        
+    const multiprecision::umag<B> m = x.magnitude();
+    return (m & (multiprecision::umag<B>() - m)).highest_bit();        
 }
 
 template <std::size_t B, sign S>
@@ -109,7 +108,6 @@ struct fold2<C, false> {
 
 } // namespace gdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_GCD_LCM_DETAIL_HPP

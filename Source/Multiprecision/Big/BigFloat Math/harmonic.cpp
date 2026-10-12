@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace hmdetail {
 
@@ -73,17 +72,16 @@ bool hm_safe(const BigFloat& v, std::size_t want, std::size_t lost, std::size_t 
     BigUInt           sig = v.significand();
     const std::size_t L   = sig.bit_length();
     if (L < want) sig.shift_left_mutable(want - L);                        
+    if (L > want) lost += L - want;
     if (lost + 4 >= sig.bit_length()) return false;
-    return constants::bfdetail::round_is_safe(sig, prec, lost + 2);
+    return multiprecision::constants::bfdetail::round_is_safe(sig, prec, lost + 2);
 }
 
 } // namespace hmdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat harmonic(const BigFloat& x, const BigFloatContext& ctx) {
@@ -104,12 +102,12 @@ BigFloat harmonic(const BigFloat& x, const BigFloatContext& ctx) {
         std::size_t lost = 3;
 
         if (hmdetail::hm_tiny(x, want)) {
-            v = BigFloat::mul(constants::zeta2(wc), x, wc);
+            v = BigFloat::mul(multiprecision::constants::zeta2(wc), x, wc);
         } else {
             if (!have_xp1) { xp1 = hmdetail::hm_plus_one(x); have_xp1 = true; }
             const BigFloat ps = digamma(xp1, wc);
             if (!ps.is_finite()) return ps;
-            const BigFloat g = constants::euler_mascheroni(wc);
+            const BigFloat g = multiprecision::constants::euler_mascheroni(wc);
             v     = BigFloat::add(ps, g, wc);
             lost += hmdetail::hm_cancel(ps, g, v);
         }
@@ -121,5 +119,4 @@ BigFloat harmonic(const BigFloat& x, const BigFloatContext& ctx) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

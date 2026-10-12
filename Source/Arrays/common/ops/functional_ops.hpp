@@ -5,9 +5,12 @@
 #include "../views/array_view.hpp"
 
 namespace fizmo {
+namespace collections {
 
 template <typename Container>
 class BasicWhereProxy;
+
+} // namespace collections
 
 namespace arrays {
 namespace detail {
@@ -33,19 +36,19 @@ protected:
     struct value_of { using type = typename std::decay<decltype(*std::declval<const C&>().data())>::type; };
 
 public:
-    ArrayView<T> view(std::size_t start, std::size_t end_idx) const noexcept {
-        if (!clamp_range(start, end_idx, this->m_size)) return ArrayView<T>(nullptr, 0);
-        return ArrayView<T>(this->m_data + start, end_idx - start);
+    collections::ArrayView<T> view(std::size_t start, std::size_t end_idx) const noexcept {
+        if (!clamp_range(start, end_idx, this->m_size)) return collections::ArrayView<T>(nullptr, 0);
+        return collections::ArrayView<T>(this->m_data + start, end_idx - start);
     }
 
-    ArrayView<T> view() const noexcept { return ArrayView<T>(this->m_data, this->m_size); }
+    collections::ArrayView<T> view() const noexcept { return collections::ArrayView<T>(this->m_data, this->m_size); }
 
-    ArraySpan<T> span(std::size_t start, std::size_t end_idx) noexcept {
-        if (!clamp_range(start, end_idx, this->m_size)) return ArraySpan<T>(nullptr, 0);
-        return ArraySpan<T>(this->m_data + start, end_idx - start);
+    collections::ArraySpan<T> span(std::size_t start, std::size_t end_idx) noexcept {
+        if (!clamp_range(start, end_idx, this->m_size)) return collections::ArraySpan<T>(nullptr, 0);
+        return collections::ArraySpan<T>(this->m_data + start, end_idx - start);
     }
 
-    ArraySpan<T> span() noexcept { return ArraySpan<T>(this->m_data, this->m_size); }
+    collections::ArraySpan<T> span() noexcept { return collections::ArraySpan<T>(this->m_data, this->m_size); }
 
     Derived slice(std::size_t start, std::size_t end_idx) const {
         if (!clamp_range(start, end_idx, this->m_size)) return Derived();
@@ -109,22 +112,22 @@ public:
         return parts;
     }
 
-    DynamicArray<ArrayView<T>> chunks(std::size_t chunk_size) const {
-        DynamicArray<ArrayView<T>> out;
+    collections::DynamicArray<collections::ArrayView<T>> chunks(std::size_t chunk_size) const {
+        collections::DynamicArray<collections::ArrayView<T>> out;
         if (chunk_size == 0) return out;
         out.reserve((this->m_size + chunk_size - 1) / chunk_size);
         for (std::size_t i = 0; i < this->m_size; i += chunk_size) {
             const std::size_t n = this->m_size - i < chunk_size ? this->m_size - i : chunk_size;
-            out.push_back(ArrayView<T>(this->m_data + i, n));
+            out.push_back(collections::ArrayView<T>(this->m_data + i, n));
         }
         return out;
     }
 
-    DynamicArray<ArrayView<T>> windows(std::size_t window_size) const {
-        DynamicArray<ArrayView<T>> out;
+    collections::DynamicArray<collections::ArrayView<T>> windows(std::size_t window_size) const {
+        collections::DynamicArray<collections::ArrayView<T>> out;
         if (window_size == 0 || window_size > this->m_size) return out;
         out.reserve(this->m_size - window_size + 1);
-        for (std::size_t i = 0; i + window_size <= this->m_size; ++i) out.push_back(ArrayView<T>(this->m_data + i, window_size));
+        for (std::size_t i = 0; i + window_size <= this->m_size; ++i) out.push_back(collections::ArrayView<T>(this->m_data + i, window_size));
         return out;
     }
 
@@ -147,7 +150,7 @@ public:
         const std::size_t extra = other.size();
         if (extra == 0) return result;
         if (use_hash(result.size() + extra)) {
-            DynamicArray<T> keys;
+            collections::DynamicArray<T> keys;
             keys.reserve(result.size() + extra);
             keys.append(result.data(), result.size());
             hashing::IndexSet<T> seen(keys.data(), keys.capacity());
@@ -327,17 +330,17 @@ public:
         return result;
     }
 
-    BasicWhereProxy<Derived> where(const T& value);
+    collections::BasicWhereProxy<Derived> where(const T& value);
 
     template <typename Pred>
-    BasicWhereProxy<Derived> where(Pred pred);
+    collections::BasicWhereProxy<Derived> where(Pred pred);
 
-    BasicWhereProxy<Derived> where_indices(index_array_t<T> indices);
+    collections::BasicWhereProxy<Derived> where_indices(index_array_t<T> indices);
 
-    BasicWhereProxy<const Derived> where(const T& value) const;
+    collections::BasicWhereProxy<const Derived> where(const T& value) const;
 
     template <typename Pred>
-    BasicWhereProxy<const Derived> where(Pred pred) const;
+    collections::BasicWhereProxy<const Derived> where(Pred pred) const;
 
 private:
     static bool use_hash(std::size_t n) noexcept { return hashing::is_hashable<T>::value && n >= kHashSetThreshold; }
@@ -391,7 +394,7 @@ private:
     template <typename K, typename Func>
     rebind_t<Derived> group_by_impl(Func& func, std::true_type) const {
         rebind_t<Derived> groups;
-        DynamicArray<K> keys;
+        collections::DynamicArray<K> keys;
         keys.reserve(this->m_size);
         hashing::IndexSet<K> index(keys.data(), 16);
         hashing::Hasher<K> h;
@@ -416,7 +419,7 @@ private:
     template <typename K, typename Func>
     rebind_t<Derived> group_by_impl(Func& func, std::false_type) const {
         rebind_t<Derived> groups;
-        DynamicArray<K> keys;
+        collections::DynamicArray<K> keys;
         for (std::size_t i = 0; i < this->m_size; ++i) {
             K key = func(this->m_data[i]);
             std::size_t g = npos;

@@ -6,7 +6,6 @@
 #include "trig.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace detail {
@@ -59,7 +58,6 @@ FIZMO_MP_TRIG_FORWARD(sech)
 FIZMO_MP_TRIG_FORWARD(csch)
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_HYPERBOLIC_HPP

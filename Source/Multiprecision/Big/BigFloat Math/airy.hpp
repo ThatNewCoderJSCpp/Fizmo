@@ -15,7 +15,6 @@
 #include <type_traits>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace aydetail {
@@ -128,7 +127,6 @@ FIZMO_MP_AIRY_ARITH_FORWARD(scorer_hi)
 #undef FIZMO_MP_AIRY_ARITH_FORWARD
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_AIRY_HPP

@@ -11,7 +11,6 @@
 #include <vector>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace hzdetail {
@@ -122,24 +121,23 @@ BigFloat lerch_transcendent(const BigFloat& z, const BigFloat& s, const BigFloat
 inline BigFloat hurwitz_zeta(const BigFloat& s, const BigFloat& a) { return hurwitz_zeta(s, a, BigFloatContext::current()); }
 inline BigFloat lerch_transcendent(const BigFloat& z, const BigFloat& s, const BigFloat& a) { return lerch_transcendent(z, s, a, BigFloatContext::current()); }
 
-template <typename S, typename A, typename std::enable_if<!(std::is_same<S, BigFloat>::value && std::is_same<A, BigFloat>::value), int>::type = 0>
+template <typename S, typename A, typename std::enable_if<!(std::is_same<S, BigFloat>::value && std::is_same<A, BigFloat>::value) && !any_big_complex_mp<S, A>::value, int>::type = 0>
 inline BigFloat hurwitz_zeta(const S& s, const A& a, const BigFloatContext& c) { return hurwitz_zeta(BigFloat(s), BigFloat(a), c); }
 
-template <typename S, typename A, typename std::enable_if<!(std::is_same<S, BigFloat>::value && std::is_same<A, BigFloat>::value), int>::type = 0>
+template <typename S, typename A, typename std::enable_if<!(std::is_same<S, BigFloat>::value && std::is_same<A, BigFloat>::value) && !any_fixed_width_mp<S, A>::value && !any_big_complex_mp<S, A>::value, int>::type = 0>
 inline BigFloat hurwitz_zeta(const S& s, const A& a) { return hurwitz_zeta(BigFloat(s), BigFloat(a), BigFloatContext::current()); }
 
-template <typename Z, typename S, typename A, typename std::enable_if<!(std::is_same<Z, BigFloat>::value && std::is_same<S, BigFloat>::value && std::is_same<A, BigFloat>::value), int>::type = 0>
+template <typename Z, typename S, typename A, typename std::enable_if<!(std::is_same<Z, BigFloat>::value && std::is_same<S, BigFloat>::value && std::is_same<A, BigFloat>::value) && !any_big_complex_mp<Z, S, A>::value, int>::type = 0>
 inline BigFloat lerch_transcendent(const Z& z, const S& s, const A& a, const BigFloatContext& c) {
     return lerch_transcendent(BigFloat(z), BigFloat(s), BigFloat(a), c);
 }
 
-template <typename Z, typename S, typename A, typename std::enable_if<!(std::is_same<Z, BigFloat>::value && std::is_same<S, BigFloat>::value && std::is_same<A, BigFloat>::value), int>::type = 0>
+template <typename Z, typename S, typename A, typename std::enable_if<!(std::is_same<Z, BigFloat>::value && std::is_same<S, BigFloat>::value && std::is_same<A, BigFloat>::value) && !any_fixed_width_mp<Z, S, A>::value && !any_big_complex_mp<Z, S, A>::value, int>::type = 0>
 inline BigFloat lerch_transcendent(const Z& z, const S& s, const A& a) {
     return lerch_transcendent(BigFloat(z), BigFloat(s), BigFloat(a), BigFloatContext::current());
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_HURWITZ_LERCH_HPP

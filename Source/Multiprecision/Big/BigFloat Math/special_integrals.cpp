@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace spdetail {
 
@@ -51,7 +50,7 @@ zt_val sp_ci_series(const BF& x, bool hyp, std::size_t want) {
     const BF     q   = hyp ? x2 : -x2;
     const double lx2 = hz_l2(x2);
     sp_sum a;
-    a.add(constants::euler_mascheroni(wc), 1.0, ac, want);
+    a.add(multiprecision::constants::euler_mascheroni(wc), 1.0, ac, want);
     a.add(ln(x, wc), 1.0, ac, want);
     BF u = q.scaled_pow2(-1);                                                               
 
@@ -114,7 +113,7 @@ zt_val sp_sici_asym(bool ci, const BF& x, std::size_t want) {
     const BF c  = cos(x, wc);
     const BF p1 = BF::mul(f, ci ? s : c, wc);
     const BF p2 = BF::mul(g, ci ? c : s, wc);
-    const BF v  = ci ? BF::sub(p1, p2, wc) : BF::sub(BF::sub(constants::half_pi(wc), p1, wc), p2, wc);
+    const BF v  = ci ? BF::sub(p1, p2, wc) : BF::sub(BF::sub(multiprecision::constants::half_pi(wc), p1, wc), p2, wc);
     const double wd = static_cast<double>(want);
     double err = hz_lsum(hz_l2(f) - wd, hz_l2(g) - wd);                                    
     err = hz_lsum(err, hz_l2(p1) + std::log2(std::exp2(eF) + 4.0) - wd);
@@ -145,7 +144,7 @@ zt_val sp_ei_series(const BF& x, std::size_t want) {
     const BFC    ac = sp_ctx(want + 40);
     const double lx = hz_l2(x);
     sp_sum a;
-    a.add(constants::euler_mascheroni(wc), 1.0, ac, want);
+    a.add(multiprecision::constants::euler_mascheroni(wc), 1.0, ac, want);
     a.add(ln(x, wc), 1.0, ac, want);
     BF t = x;
 
@@ -171,7 +170,7 @@ zt_val sp_en_series(const BF& x, std::uint64_t n, std::size_t want) {
     const double wd = static_cast<double>(want);
     BF H = BF::zero();
     for (std::uint64_t j = 1; j < n; ++j) H = BF::add(H, BF(j).reciprocal(ac), ac);
-    const BF psi  = BF::sub(H, constants::euler_mascheroni(wc), wc);
+    const BF psi  = BF::sub(H, multiprecision::constants::euler_mascheroni(wc), wc);
     const BF lnx  = ln(x, wc);
     const BF pl   = BF::sub(psi, lnx, wc);
     const double lpl = hz_lsum(hz_l2(psi) + 1.0, hz_l2(lnx)) + 1.0 - wd;                    
@@ -272,7 +271,7 @@ zt_val sp_lin_series(const BF& y, std::uint64_t n, std::size_t want) {
     const double wd = static_cast<double>(want);
     BF H = BF::zero();
     for (std::uint64_t j = 1; j < n; ++j) H = BF::add(H, BF(j).reciprocal(ac), ac);
-    const BF     psi = BF::sub(H, constants::euler_mascheroni(wc), wc);
+    const BF     psi = BF::sub(H, multiprecision::constants::euler_mascheroni(wc), wc);
     const BF     lny = ln(y.abs(), wc);
     const BF     c   = BF::sub(lny, psi, wc);
     const double lc  = hz_lsum(hz_l2(psi) + 1.0, hz_l2(lny)) + 1.0 - wd;
@@ -366,7 +365,7 @@ zt_val sp_en_neg_raw(const BF& x, std::uint64_t m, std::size_t want) {
 
 void sp_sincospi(const BF& q, const BFC& wc, BF& s, BF& c) {
     const bool odd = q.get_integer_part().is_odd();
-    const BF   a   = BF::mul(constants::pi(wc), q.get_fractional_part(), wc);
+    const BF   a   = BF::mul(multiprecision::constants::pi(wc), q.get_fractional_part(), wc);
     s = sin(a, wc);
     c = cos(a, wc);
 
@@ -379,7 +378,7 @@ void sp_sincospi(const BF& q, const BFC& wc, BF& s, BF& c) {
 zt_val sp_fresnel_series(bool sine, const BF& x, std::size_t want) {            
     const BFC    wc = sp_ctx(want);
     const BFC    ac = sp_ctx(want + 40);
-    const BF     y  = BF::mul(constants::pi(wc), hz_xmul(x, x).scaled_pow2(-1), wc);
+    const BF     y  = BF::mul(multiprecision::constants::pi(wc), hz_xmul(x, x).scaled_pow2(-1), wc);
     const double ly = hz_l2(y);
     sp_sum a;
     BF w = x;
@@ -425,7 +424,7 @@ zt_val sp_fresnel_asym(bool sine, const BF& x, std::size_t want) {
     const BFC wc  = sp_ctx(want);
     const BFC ac  = sp_ctx(want + 40);
     const BF  one = BF::one();
-    const BF  pi  = constants::pi(wc);
+    const BF  pi  = multiprecision::constants::pi(wc);
     const BF  xx  = hz_xmul(x, x);
     const BF  z   = BF::mul(pi, xx, wc);
     const BF  iz2 = BF::mul(z, z, wc).reciprocal(wc);
@@ -482,11 +481,11 @@ bool sp_reduce_2pi(const BF& t, std::size_t want, BF& r, bool& reduced) {
     if (e > 60) return false;
     const std::size_t eb = static_cast<std::size_t>(e > 0 ? e : 0);
     const BFC         qc = sp_ctx(eb + 80);
-    const BF          q  = BF::mul(t.abs(), constants::inv_pi(qc).scaled_pow2(-1), qc);    
+    const BF          q  = BF::mul(t.abs(), multiprecision::constants::inv_pi(qc).scaled_pow2(-1), qc);    
     std::int64_t      j  = static_cast<std::int64_t>(BF::add(q, BF::one().scaled_pow2(-1), qc).get_integer_part().get_lowest_bits());
     if (t.signbit()) j = -j;
     const BFC rc = sp_ctx(want + eb + 28);
-    const BF  tp = constants::two_pi(rc);
+    const BF  tp = multiprecision::constants::two_pi(rc);
     const BF  pi = tp.scaled_pow2(-1);
     r = BF::sub(t, BF::mul(BF(j), tp, rc), rc);
     if (BF::compare(r, pi) == BF::ordering::greater)   { ++j; r = BF::sub(r, tp, rc); }
@@ -624,7 +623,7 @@ zt_val sp_debye_small(const BF& x, std::uint64_t n, std::size_t want) {
     sp_sum a;
     a.add(BF::div(xn, BF(n), wc), nd + 1.0, ac, want);
     a.add(-BF::div(BF::mul(xn, x, wc), BF(2 * (n + 1)), wc), nd + 3.0, ac, want);
-    const BF ro  = BF::div(x, constants::two_pi(wc), wc);
+    const BF ro  = BF::div(x, multiprecision::constants::two_pi(wc), wc);
     const BF ro2 = BF::mul(ro, ro, wc);
     const double rho = sp_dbl(ro2);
     BF p = xn;
@@ -705,11 +704,9 @@ BF sp_neg_constant(const BFC& ctx, BF (*fn)(const BFC&)) {
 
 } // namespace spdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat fresnel_c(const BigFloat& x, const BigFloatContext& ctx) {
@@ -732,7 +729,7 @@ BigFloat sin_integral(const BigFloat& x, const BigFloatContext& ctx) {
     using namespace spdetail;
     if (sp_bad(x))   return x.is_nan() ? BigFloat::nan() : BigFloat::undefined();
     if (x.is_zero()) return x;
-    if (x.is_infinite()) return x.signbit() ? sp_neg_constant(ctx, &constants::half_pi) : constants::half_pi(ctx);
+    if (x.is_infinite()) return x.signbit() ? sp_neg_constant(ctx, &multiprecision::constants::half_pi) : multiprecision::constants::half_pi(ctx);
     return hzdetail::hz_drive(sp_sici_guard(0, x, ctx.precision), ctx, [&](std::size_t want) { return sp_sici_raw(0, x, want); });
 }
 
@@ -842,11 +839,9 @@ BigFloat clausen(const BigFloat& theta, std::int64_t s, const BigFloatContext& c
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace spdetail {
 
@@ -879,5 +874,4 @@ BigFloat sp_debye_public(int kind, const BigFloat& x, std::int64_t n, const BigF
 
 } // namespace spdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

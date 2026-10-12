@@ -4,7 +4,6 @@
 #include "log_pow_roots_detail.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace edetail {
 
@@ -12,10 +11,10 @@ namespace edetail {
 template <class G>
 G fmod_pow2(const G& a, const typename G::sstore_t& eb, bool& q_odd) noexcept {
     using S = typename G::sstore_t;
-    const G t = fmath::scalb(a, S(0) - eb);            // a / 2^eb
+    const G t = multiprecision::fmath::scalb(a, S(0) - eb);            // a / 2^eb
     q_odd = odd_integer(t);                            // false when ulp(t) > 1, which is correct
     const G f = t.get_fractional_part();
-    return f.is_zero() ? G::zero() : fmath::scalb(f, eb);
+    return f.is_zero() ? G::zero() : multiprecision::fmath::scalb(f, eb);
 }
 
 // a, b finite and strictly positive. Returns a mod b in [0, b), exactly.
@@ -26,8 +25,8 @@ G fmod_core(const G& a, const G& b, bool& q_odd) noexcept {
     q_odd = false;
     if (a < b) return a;
     S ea, eb; G fa, fb;
-    fmath::split_pow2(a, fa, ea);                      // fa, fb in [1, 2)
-    fmath::split_pow2(b, fb, eb);
+    multiprecision::fmath::split_pow2(a, fa, ea);                      // fa, fb in [1, 2)
+    multiprecision::fmath::split_pow2(b, fb, eb);
     if (fb == G(1)) return fmod_pow2(a, eb, q_odd);
     const long long d = root_exp_ll<G>(ea) - root_exp_ll<G>(eb);
     G r = fa;
@@ -38,10 +37,10 @@ G fmod_core(const G& a, const G& b, bool& q_odd) noexcept {
             if (i == 0) q_odd = true;
         }
         if (r.is_zero()) break;                        // remaining quotient bits are all zero
-        if (i > 0) r = fmath::scalb_i(r, 1);
+        if (i > 0) r = multiprecision::fmath::scalb_i(r, 1);
     }
 
-    return fmath::scalb(r, eb);
+    return multiprecision::fmath::scalb(r, eb);
 }
 
 // ---- shared special-case handling ---------------------------------------
@@ -64,8 +63,8 @@ rem_parts<F> rem_split(const F& x, const F& y) noexcept {
     if (y.is_zero() || x.is_infinite())       { return p; }
     if (x.is_zero() || y.is_infinite())       { p.early = x; return p; }
     p.done = false;
-    p.mag  = fmod_core(fmath::float_cast<G>(math::abs(x)),
-                       fmath::float_cast<G>(math::abs(y)), p.q_odd);
+    p.mag  = fmod_core(multiprecision::fmath::float_cast<G>(math::abs(x)),
+                       multiprecision::fmath::float_cast<G>(math::abs(y)), p.q_odd);
     return p;
 }
 
@@ -75,7 +74,7 @@ template <class F>
 F fmod_run(const F& x, const F& y) noexcept {
     const rem_parts<F> p = rem_split(x, y);
     if (p.done) return p.early;
-    return signed_root(fmath::float_cast<F>(p.mag), p.xneg);
+    return signed_root(multiprecision::fmath::float_cast<F>(p.mag), p.xneg);
 }
 
 template <class F>
@@ -83,11 +82,11 @@ F remainder_run(const F& x, const F& y) noexcept {
     using G = typename F::guard_t;
     const rem_parts<F> p = rem_split(x, y);
     if (p.done) return p.early;
-    const G gy    = fmath::float_cast<G>(math::abs(y));
-    const G twice = fmath::scalb_i(p.mag, 1);
+    const G gy    = multiprecision::fmath::float_cast<G>(math::abs(y));
+    const G twice = multiprecision::fmath::scalb_i(p.mag, 1);
     const bool up = (twice > gy) || (twice == gy && p.q_odd);      // ties to even
     const G r     = up ? (gy - p.mag) : p.mag;
-    return signed_root(fmath::float_cast<F>(r), p.xneg != up);
+    return signed_root(multiprecision::fmath::float_cast<F>(r), p.xneg != up);
 }
 
 // Result carries the sign of y and lies in [0, |y|).
@@ -97,9 +96,9 @@ F mod_floor_run(const F& x, const F& y) noexcept {
     const rem_parts<F> p = rem_split(x, y);
     if (p.done) return p.early;
     if (p.mag.is_zero() || p.xneg == p.yneg)
-        return signed_root(fmath::float_cast<F>(p.mag), p.yneg && !p.mag.is_zero());
-    const G gy = fmath::float_cast<G>(math::abs(y));
-    const F r  = fmath::float_cast<F>(gy - p.mag);                 // complement, at guard precision
+        return signed_root(multiprecision::fmath::float_cast<F>(p.mag), p.yneg && !p.mag.is_zero());
+    const G gy = multiprecision::fmath::float_cast<G>(math::abs(y));
+    const F r  = multiprecision::fmath::float_cast<F>(gy - p.mag);                 // complement, at guard precision
     if (!(r < math::abs(y))) return F::zero(p.yneg);               // rounded up to |y|: clamp
     return signed_root(r, p.yneg);
 }
@@ -110,9 +109,9 @@ F mod_euclid_run(const F& x, const F& y) noexcept {
     using G = typename F::guard_t;
     const rem_parts<F> p = rem_split(x, y);
     if (p.done) return p.done && p.early.is_negative() ? math::abs(p.early) : p.early;
-    if (p.mag.is_zero() || !p.xneg) return fmath::float_cast<F>(p.mag);
-    const G gy = fmath::float_cast<G>(math::abs(y));
-    const F r  = fmath::float_cast<F>(gy - p.mag);
+    if (p.mag.is_zero() || !p.xneg) return multiprecision::fmath::float_cast<F>(p.mag);
+    const G gy = multiprecision::fmath::float_cast<G>(math::abs(y));
+    const F r  = multiprecision::fmath::float_cast<F>(gy - p.mag);
     return (!(r < math::abs(y))) ? F::zero() : r;
 }
 
@@ -162,7 +161,6 @@ struct apply<F, false> {
 
 } // namespace fdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_FMOD_DETAIL_HPP

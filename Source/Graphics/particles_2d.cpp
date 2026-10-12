@@ -102,7 +102,7 @@ float ParticleEmitter::size_at(const Particle& p) const {
     return p.size0 + (p.size1 - p.size0) * static_cast<float>(e);
 }
 
-auto ParticleEmitter::world_position(const Particle& p) const noexcept -> vector2d {
+auto ParticleEmitter::world_position(const Particle& p) const noexcept -> linalg::vector2d {
     if (!m_config.local_space) return { p.x, p.y };
     const float rad = m_angle * 0.0174532925f;
     const float c = std::cos(rad), s = std::sin(rad);

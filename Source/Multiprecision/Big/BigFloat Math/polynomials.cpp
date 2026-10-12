@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace pldetail {
 
@@ -102,7 +101,7 @@ bool pl_safe(const BigFloat& v, std::size_t want, double le, std::size_t prec) {
     const double e = std::ceil(le) - static_cast<double>(lsb);
     if (e + 4.0 >= static_cast<double>(sig.bit_length())) return false;
     const std::size_t err = (e <= 0.0) ? 0 : static_cast<std::size_t>(e);
-    return constants::bfdetail::round_is_safe(sig, prec, err + 2);
+    return multiprecision::constants::bfdetail::round_is_safe(sig, prec, err + 2);
 }
 
 bool pl_special(const BigFloat& x, std::uint64_t deg, std::uint64_t c0, bool flip, const BigFloatContext& ctx, BigFloat& out) {
@@ -142,11 +141,9 @@ std::vector<BigInt> pc_run(std::size_t n, std::vector<BigInt> y0, std::vector<Bi
 
 } // namespace pldetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat chebyshev_t(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx) {
@@ -253,5 +250,4 @@ std::vector<BigInt> lucas_polynomial_coefficients(std::size_t n) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

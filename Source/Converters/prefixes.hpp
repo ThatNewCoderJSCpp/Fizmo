@@ -1,7 +1,7 @@
 #ifndef FIZMO_CORE_PREFIXES_HPP
 #define FIZMO_CORE_PREFIXES_HPP
 
-#include "convert.hpp"
+#include "exact_constants.hpp"
 
 namespace fizmo {
 namespace units {
@@ -23,82 +23,82 @@ constexpr long double ronna  = 1e27L;  constexpr long double quetta= 1e30L;
 } // namespace prefix
 
 #define FIZMO_SI_PREFIXED(BASE, U)                                            \
-    constexpr auto quecto##BASE = ::fizmo::units::prefixed(1e-30L, U); \
-    constexpr auto ronto##BASE  = ::fizmo::units::prefixed(1e-27L, U); \
-    constexpr auto yocto##BASE  = ::fizmo::units::prefixed(1e-24L, U); \
-    constexpr auto zepto##BASE  = ::fizmo::units::prefixed(1e-21L, U); \
-    constexpr auto atto##BASE   = ::fizmo::units::prefixed(1e-18L, U); \
-    constexpr auto femto##BASE  = ::fizmo::units::prefixed(1e-15L, U); \
-    constexpr auto pico##BASE   = ::fizmo::units::prefixed(1e-12L, U); \
-    constexpr auto nano##BASE   = ::fizmo::units::prefixed(1e-9L,  U); \
-    constexpr auto micro##BASE  = ::fizmo::units::prefixed(1e-6L,  U); \
-    constexpr auto milli##BASE  = ::fizmo::units::prefixed(1e-3L,  U); \
-    constexpr auto centi##BASE  = ::fizmo::units::prefixed(1e-2L,  U); \
-    constexpr auto deci##BASE   = ::fizmo::units::prefixed(1e-1L,  U); \
-    constexpr auto deca##BASE   = ::fizmo::units::prefixed(1e1L,   U); \
-    constexpr auto hecto##BASE  = ::fizmo::units::prefixed(1e2L,   U); \
-    constexpr auto kilo##BASE   = ::fizmo::units::prefixed(1e3L,   U); \
-    constexpr auto mega##BASE   = ::fizmo::units::prefixed(1e6L,   U); \
-    constexpr auto giga##BASE   = ::fizmo::units::prefixed(1e9L,   U); \
-    constexpr auto tera##BASE   = ::fizmo::units::prefixed(1e12L,  U); \
-    constexpr auto peta##BASE   = ::fizmo::units::prefixed(1e15L,  U); \
-    constexpr auto exa##BASE    = ::fizmo::units::prefixed(1e18L,  U); \
-    constexpr auto zetta##BASE  = ::fizmo::units::prefixed(1e21L,  U); \
-    constexpr auto yotta##BASE  = ::fizmo::units::prefixed(1e24L,  U); \
-    constexpr auto ronna##BASE  = ::fizmo::units::prefixed(1e27L,  U); \
-    constexpr auto quetta##BASE = ::fizmo::units::prefixed(1e30L,  U)
+    constexpr auto quecto##BASE = ::fizmo::units::prefixed(::fizmo::units::exact("1e-30"), U); \
+    constexpr auto ronto##BASE  = ::fizmo::units::prefixed(::fizmo::units::exact("1e-27"), U); \
+    constexpr auto yocto##BASE  = ::fizmo::units::prefixed(::fizmo::units::exact("1e-24"), U); \
+    constexpr auto zepto##BASE  = ::fizmo::units::prefixed(::fizmo::units::exact("1e-21"), U); \
+    constexpr auto atto##BASE   = ::fizmo::units::prefixed(::fizmo::units::exact("1e-18"), U); \
+    constexpr auto femto##BASE  = ::fizmo::units::prefixed(::fizmo::units::exact("1e-15"), U); \
+    constexpr auto pico##BASE   = ::fizmo::units::prefixed(::fizmo::units::exact("1e-12"), U); \
+    constexpr auto nano##BASE   = ::fizmo::units::prefixed(::fizmo::units::exact("1e-9"), U); \
+    constexpr auto micro##BASE  = ::fizmo::units::prefixed(::fizmo::units::exact("1e-6"), U); \
+    constexpr auto milli##BASE  = ::fizmo::units::prefixed(::fizmo::units::exact("1e-3"), U); \
+    constexpr auto centi##BASE  = ::fizmo::units::prefixed(::fizmo::units::exact("1e-2"), U); \
+    constexpr auto deci##BASE   = ::fizmo::units::prefixed(::fizmo::units::exact("1e-1"), U); \
+    constexpr auto deca##BASE   = ::fizmo::units::prefixed(::fizmo::units::exact("1e1"), U); \
+    constexpr auto hecto##BASE  = ::fizmo::units::prefixed(::fizmo::units::exact("1e2"), U); \
+    constexpr auto kilo##BASE   = ::fizmo::units::prefixed(::fizmo::units::exact("1e3"), U); \
+    constexpr auto mega##BASE   = ::fizmo::units::prefixed(::fizmo::units::exact("1e6"), U); \
+    constexpr auto giga##BASE   = ::fizmo::units::prefixed(::fizmo::units::exact("1e9"), U); \
+    constexpr auto tera##BASE   = ::fizmo::units::prefixed(::fizmo::units::exact("1e12"), U); \
+    constexpr auto peta##BASE   = ::fizmo::units::prefixed(::fizmo::units::exact("1e15"), U); \
+    constexpr auto exa##BASE    = ::fizmo::units::prefixed(::fizmo::units::exact("1e18"), U); \
+    constexpr auto zetta##BASE  = ::fizmo::units::prefixed(::fizmo::units::exact("1e21"), U); \
+    constexpr auto yotta##BASE  = ::fizmo::units::prefixed(::fizmo::units::exact("1e24"), U); \
+    constexpr auto ronna##BASE  = ::fizmo::units::prefixed(::fizmo::units::exact("1e27"), U); \
+    constexpr auto quetta##BASE = ::fizmo::units::prefixed(::fizmo::units::exact("1e30"), U)
 
 #define FIZMO_SI_PREFIXED_POWERED(PREFIX, BASE_NAME, BASE_UNIT, POWER)                 \
     constexpr auto PREFIX##_##BASE_NAME =                             \
         (BASE_UNIT).pow<POWER>();                                                       \
     constexpr auto PREFIX##_quecto##BASE_NAME =                       \
-        ::fizmo::units::prefixed(1e-30L, BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e-30"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_ronto##BASE_NAME  =                       \
-        ::fizmo::units::prefixed(1e-27L, BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e-27"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_yocto##BASE_NAME  =                       \
-        ::fizmo::units::prefixed(1e-24L, BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e-24"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_zepto##BASE_NAME  =                       \
-        ::fizmo::units::prefixed(1e-21L, BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e-21"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_atto##BASE_NAME   =                       \
-        ::fizmo::units::prefixed(1e-18L, BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e-18"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_femto##BASE_NAME  =                       \
-        ::fizmo::units::prefixed(1e-15L, BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e-15"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_pico##BASE_NAME   =                       \
-        ::fizmo::units::prefixed(1e-12L, BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e-12"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_nano##BASE_NAME   =                       \
-        ::fizmo::units::prefixed(1e-9L,  BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e-9"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_micro##BASE_NAME  =                       \
-        ::fizmo::units::prefixed(1e-6L,  BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e-6"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_milli##BASE_NAME  =                       \
-        ::fizmo::units::prefixed(1e-3L,  BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e-3"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_centi##BASE_NAME  =                       \
-        ::fizmo::units::prefixed(1e-2L,  BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e-2"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_deci##BASE_NAME   =                       \
-        ::fizmo::units::prefixed(1e-1L,  BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e-1"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_deca##BASE_NAME   =                       \
-        ::fizmo::units::prefixed(1e1L,   BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e1"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_hecto##BASE_NAME  =                       \
-        ::fizmo::units::prefixed(1e2L,   BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e2"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_kilo##BASE_NAME   =                       \
-        ::fizmo::units::prefixed(1e3L,   BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e3"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_mega##BASE_NAME   =                       \
-        ::fizmo::units::prefixed(1e6L,   BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e6"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_giga##BASE_NAME   =                       \
-        ::fizmo::units::prefixed(1e9L,   BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e9"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_tera##BASE_NAME   =                       \
-        ::fizmo::units::prefixed(1e12L,  BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e12"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_peta##BASE_NAME   =                       \
-        ::fizmo::units::prefixed(1e15L,  BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e15"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_exa##BASE_NAME    =                       \
-        ::fizmo::units::prefixed(1e18L,  BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e18"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_zetta##BASE_NAME  =                       \
-        ::fizmo::units::prefixed(1e21L,  BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e21"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_yotta##BASE_NAME  =                       \
-        ::fizmo::units::prefixed(1e24L,  BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e24"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_ronna##BASE_NAME  =                       \
-        ::fizmo::units::prefixed(1e27L,  BASE_UNIT).pow<POWER>();                       \
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e27"), BASE_UNIT).pow<POWER>();                       \
     constexpr auto PREFIX##_quetta##BASE_NAME =                       \
-        ::fizmo::units::prefixed(1e30L,  BASE_UNIT).pow<POWER>()
+        ::fizmo::units::prefixed(::fizmo::units::exact("1e30"), BASE_UNIT).pow<POWER>()
 
 } // namespace units
 } // namespace fizmo

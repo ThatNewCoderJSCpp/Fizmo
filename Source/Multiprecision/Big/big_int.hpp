@@ -297,6 +297,10 @@ FIZMO_BIGINT_CMP(>=)
 inline std::ostream& operator<<(std::ostream& os, const BigInt& x) { return os << x.to_string(); }
 
 } // namespace multiprecision
+
+namespace math {
+using multiprecision::BigInt;
+} // namespace math
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_INTEGER_CLASS_HPP

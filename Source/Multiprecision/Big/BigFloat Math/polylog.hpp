@@ -11,7 +11,6 @@
 #include <vector>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace pldetail {
@@ -89,10 +88,10 @@ BigFloat polylog(const BigFloat& z, const BigFloat& s, const BigFloatContext& ct
 
 inline BigFloat polylog(const BigFloat& z, const BigFloat& s) { return polylog(z, s, BigFloatContext::current()); }
 
-template <typename S, typename Z, typename std::enable_if<!(std::is_same<S, BigFloat>::value && std::is_same<Z, BigFloat>::value), int>::type = 0>
+template <typename S, typename Z, typename std::enable_if<!(std::is_same<S, BigFloat>::value && std::is_same<Z, BigFloat>::value) && !any_big_complex_mp<S, Z>::value, int>::type = 0>
 inline BigFloat polylog(const Z& z, const S& s, const BigFloatContext& c) { return polylog(BigFloat(z), BigFloat(s), c); }
 
-template <typename S, typename Z, typename std::enable_if<!(std::is_same<S, BigFloat>::value && std::is_same<Z, BigFloat>::value), int>::type = 0>
+template <typename S, typename Z, typename std::enable_if<!(std::is_same<S, BigFloat>::value && std::is_same<Z, BigFloat>::value) && !any_fixed_width_mp<S, Z>::value && !any_big_complex_mp<S, Z>::value, int>::type = 0>
 inline BigFloat polylog(const Z& z, const S& s) { return polylog(BigFloat(z), BigFloat(s), BigFloatContext::current()); }
 
 inline BigFloat dilogarithm(const BigFloat& z, const BigFloatContext& ctx)  { return polylog(z, BigFloat(static_cast<std::uint64_t>(2)), ctx); }
@@ -101,7 +100,6 @@ inline BigFloat dilogarithm(const BigFloat& z)  { return dilogarithm(z, BigFloat
 inline BigFloat trilogarithm(const BigFloat& z) { return trilogarithm(z, BigFloatContext::current()); }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_POLYLOG_HPP

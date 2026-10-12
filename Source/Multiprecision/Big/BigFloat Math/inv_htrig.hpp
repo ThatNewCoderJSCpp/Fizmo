@@ -5,7 +5,6 @@
 #include "logarithms.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace detail {
@@ -44,7 +43,6 @@ FIZMO_MP_TRIG_FORWARD(arcsech)
 FIZMO_MP_TRIG_FORWARD(arccsch)
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_INVERSE_HYPERBOLIC_HPP

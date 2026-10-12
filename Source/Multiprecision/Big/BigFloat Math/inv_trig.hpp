@@ -6,7 +6,6 @@
 #include <cmath>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace detail {
@@ -70,8 +69,8 @@ inline BigFloat atan2(const BigFloat& y, const BigFloat& x) {
     template <typename A, typename B, typename std::enable_if<!std::is_same<A, BigFloat>::value             \
                                                            || !std::is_same<B, BigFloat>::value, int>::type = 0> \
     inline BigFloat atan2(const A& y, const B& x, const BigFloatContext& c) { return atan2(BigFloat(y), BigFloat(x), c); } \
-    template <typename A, typename B, typename std::enable_if<!std::is_same<A, BigFloat>::value             \
-                                                           || !std::is_same<B, BigFloat>::value, int>::type = 0> \
+    template <typename A, typename B, typename std::enable_if<(!std::is_same<A, BigFloat>::value            \
+                                                           || !std::is_same<B, BigFloat>::value) && !any_fixed_width_mp<A, B>::value, int>::type = 0> \
     inline BigFloat atan2(const A& y, const B& x) { return atan2(BigFloat(y), BigFloat(x), BigFloatContext::current()); }
 
 FIZMO_MP_ATAN2_FORWARD()
@@ -79,7 +78,6 @@ FIZMO_MP_ATAN2_FORWARD()
 #undef FIZMO_MP_ATAN2_FORWARD
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_INVERSE_TRIGONOMETRIC_HPP

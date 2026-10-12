@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace detail {
 
@@ -76,7 +75,7 @@ BigFloat hy_dispatch(const BigFloat& x, hyp_sel sel, const BigFloatContext& ctx)
         const std::size_t acc = (want > 4) ? (want - 4) : 1;
         const std::size_t L   = v.significand().bit_length();
         const std::size_t err = (L > acc) ? (L - acc) : 0;
-        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err + 2)) return v.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err + 2)) return v.rounded(ctx);
         if (hy_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
         guard *= 2;
     }
@@ -84,11 +83,9 @@ BigFloat hy_dispatch(const BigFloat& x, hyp_sel sel, const BigFloatContext& ctx)
 
 } // namespace detail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat sinh(const BigFloat& x, const BigFloatContext& ctx) {
@@ -140,5 +137,4 @@ BigFloat csch(const BigFloat& x, const BigFloatContext& ctx) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

@@ -10,7 +10,6 @@
 #include <vector>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace ztdetail {
@@ -48,6 +47,23 @@ void zt_borwein_step(BigUInt& c, std::uint64_t n, std::uint64_t i);
 
 zt_val zt_core(const BigFloat& s, const BigFloat& om, std::size_t want);
 
+class zt_shift {
+public:
+    zt_shift(const BigFloat& s, std::size_t want);
+    zt_val at(std::uint64_t k);
+
+private:
+    BigFloat              s_;
+    std::size_t           want_;
+    std::size_t           wb_;
+    std::uint64_t         n_;
+    std::uint64_t         k_;
+    bool                  started_ = false;
+    std::vector<BigFloat> p_;
+    std::vector<BigFloat> inv_;
+    std::vector<BigFloat> bern_;
+};
+
 zt_val zt_chi_low(const BigFloat& s, const BigFloat& om, std::size_t want);
 
 zt_val zt_fe(const BigFloat& s, const BigFloat& om, std::size_t want);
@@ -79,7 +95,6 @@ FIZMO_MP_ZETA_ARITH_FORWARD(riemann_chi)
 #undef FIZMO_MP_ZETA_ARITH_FORWARD
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_RIEMANN_ZETA_HPP

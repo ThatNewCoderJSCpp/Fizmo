@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace pldetail {
 
@@ -15,7 +14,7 @@ BigFloat pl_eta_pos(std::uint64_t j, const BigFloatContext& wc) {
 
 BigFloat pl_zeta_negodd(std::uint64_t m, const BigFloatContext& wc) {              
     return pl_cached(pl_zneg_cache(), static_cast<std::size_t>(m), wc, [m](const BigFloatContext& hc) {
-        return BigFloat::div(-constants::bernoulli_float(static_cast<std::size_t>(m + 1), hc), BigFloat(m + 1), hc);
+        return BigFloat::div(-multiprecision::constants::bernoulli_float(static_cast<std::size_t>(m + 1), hc), BigFloat(m + 1), hc);
     });
 }
 
@@ -45,9 +44,9 @@ bool pl_neg_int(std::uint64_t m, const BigFloat& z, const BigFloatContext& ctx, 
     BigFloat P = z;
 
     if (m >= 1) {
-        const std::vector<BigUInt>& row = constants::detail::eulerian_half_row(static_cast<std::size_t>(m));
+        const std::vector<BigUInt>& row = multiprecision::constants::detail::eulerian_half_row(static_cast<std::size_t>(m));
         BigFloat h = BigFloat::zero();
-        for (std::size_t i = static_cast<std::size_t>(m); i-- > 0; ) h = hz_xadd(hz_xmul(h, z), BigFloat(constants::detail::en_at(row, static_cast<std::size_t>(m), i)));
+        for (std::size_t i = static_cast<std::size_t>(m); i-- > 0; ) h = hz_xadd(hz_xmul(h, z), BigFloat(multiprecision::constants::detail::en_at(row, static_cast<std::size_t>(m), i)));
         P = hz_xmul(z, h);
     }
 
@@ -117,7 +116,7 @@ zt_val pl_int_mu(std::uint64_t n, const BigFloat& mu, bool eta, std::size_t want
             ce   = 2.0;
         } else if (k + 1 == n) {
             if (eta) {
-                coef = constants::ln2(wc);
+                coef = multiprecision::constants::ln2(wc);
                 ce   = 1.0;
             } else {
                 BigFloat H = BigFloat::zero();
@@ -138,7 +137,7 @@ zt_val pl_int_mu(std::uint64_t n, const BigFloat& mu, bool eta, std::size_t want
                 ce   = 2.0;
 
                 if (eta) {                                                              
-                    BigUInt f = constants::bfdetail::unit(static_cast<std::size_t>(m + 1));
+                    BigUInt f = multiprecision::constants::bfdetail::unit(static_cast<std::size_t>(m + 1));
                     f.sub_small_mutable(1);
                     coef = -BigFloat::mul(coef, BigFloat(f), wc);
                     ce   = 3.0;
@@ -220,7 +219,7 @@ zt_val pl_nonint_mu(const BigFloat& s, const BigFloat& om, const BigFloat& mu, b
         acc.add(sing, 4.0 + 3.0 * std::fabs(1.0 - sd) * (std::fabs(std::log(am)) + 1.0), std::fabs(1.0 - sd));
     }
 
-    const BigFloat      tp   = constants::two_pi(wc);
+    const BigFloat      tp   = multiprecision::constants::two_pi(wc);
     const BigFloat      i4p2 = BigFloat::mul(tp, tp, wc).reciprocal(wc);
     const std::uint64_t kcap = 4 * static_cast<std::uint64_t>(want) + 1000;
     BigFloat      pk = one;
@@ -229,6 +228,7 @@ zt_val pl_nonint_mu(const BigFloat& s, const BigFloat& om, const BigFloat& mu, b
     bool          chain   = false;
     std::uint64_t ka      = 0;
     double        lt_prev = hz_ninf();
+    ztdetail::zt_shift shift(s, want);
 
     for (std::uint64_t k = 0; k <= kcap; ++k) {
         if (k > 0) pk = BigFloat::div(BigFloat::mul(pk, mu, wc), BigFloat(k), wc);
@@ -260,7 +260,7 @@ zt_val pl_nonint_mu(const BigFloat& s, const BigFloat& om, const BigFloat& mu, b
                 crel[par] += 6.0;
             }
 
-            const zt_val z1 = ztdetail::zt_core(oms, sig, want);                        
+            const zt_val z1 = shift.at(k);
             if (!z1.v.is_finite()) return z1;
             coef = BigFloat::mul(chi[par], z1.v, wc);
             ce   = crel[par] + std::exp2(z1.lost) + 1.0;
@@ -330,7 +330,7 @@ zt_val pl_li2_raw(const BigFloat& z, std::size_t want) {
     const BigFloatContext    wc(want, RoundingMode::nearest_even);
     const BigFloat::ordering ca = BigFloat::compare(z.abs(), BigFloat::one());
     if (ca == BigFloat::ordering::less)  return pl_int_raw(2, z, want);
-    if (ca == BigFloat::ordering::equal) return zt_val{-constants::zeta2(wc).scaled_pow2(-1), 1.0};    // Li_2(-1) = -pi^2/12
+    if (ca == BigFloat::ordering::equal) return zt_val{-multiprecision::constants::zeta2(wc).scaled_pow2(-1), 1.0};    // Li_2(-1) = -pi^2/12
     const double mu = hz_l2(z) * hz_ln2;                                                                // ln(-z) > 0
     if (mu <= 1.0) return pl_int_mu(2, ln(-z, wc), true, want);
     return pl_int_inversion(2, z, want);
@@ -338,11 +338,9 @@ zt_val pl_li2_raw(const BigFloat& z, std::size_t want) {
 
 } // namespace pldetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat polylog(const BigFloat& z, const BigFloat& s, const BigFloatContext& ctx) {
@@ -437,5 +435,4 @@ BigFloat polylog(const BigFloat& z, const BigFloat& s, const BigFloatContext& ct
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

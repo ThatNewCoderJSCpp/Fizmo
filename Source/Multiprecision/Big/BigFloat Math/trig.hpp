@@ -5,7 +5,6 @@
 #include "big_float_consts.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace detail {
@@ -92,7 +91,6 @@ FIZMO_MP_TRIG_FORWARD(sinc)
 FIZMO_MP_TRIG_FORWARD(normalized_sinc)
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_TRIGONOMETRIC_HPP

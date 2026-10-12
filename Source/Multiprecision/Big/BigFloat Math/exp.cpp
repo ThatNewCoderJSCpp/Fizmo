@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace detail {
 
@@ -13,7 +12,7 @@ bool ziv_round_safe(const BigFloat& v, std::size_t w, std::size_t err, std::size
     if (L < w) { m.shift_left_mutable(w - L); len = w; }
     else       { err += L - w; }
     if (err + prec + 2 > len) return false;
-    return constants::bfdetail::round_is_safe(m, prec, err);
+    return multiprecision::constants::bfdetail::round_is_safe(m, prec, err);
 }
 
 BigFloat exp_taylor_small(const BigFloat& r, const BigFloatContext& wc, std::size_t splits, std::size_t& nterms) {
@@ -43,7 +42,7 @@ BigFloat exp_finite(const BigFloat& x, const BigFloatContext& ctx) {
     if (ex < -static_cast<std::int64_t>(p + 4)) return BigFloat::add(BigFloat::one(), x, ctx);
     const std::size_t     ib = (ex > 0) ? static_cast<std::size_t>(ex) : 0;
     const BigFloatContext kc(ib + 64, RoundingMode::nearest_even);
-    const BigFloat        q  = BigFloat::mul(x, constants::inv_ln2(kc), kc);
+    const BigFloat        q  = BigFloat::mul(x, multiprecision::constants::inv_ln2(kc), kc);
     const BigFloat        hq = BigFloat::add(q, BigFloat(BigUInt::one(), q.signbit(), -1), kc);
     const BigInt          k  = hq.get_integer_part();           
     if (k.is_nan() || k.is_undefined()) return BigFloat::undefined();
@@ -60,7 +59,7 @@ BigFloat exp_finite(const BigFloat& x, const BigFloatContext& ctx) {
 
         if (ak != 0) {
             const BigFloatContext rc(w + kbits + 8, RoundingMode::nearest_even);
-            r = BigFloat::sub(x, BigFloat::mul(kb, constants::ln2(rc), rc), rc);
+            r = BigFloat::sub(x, BigFloat::mul(kb, multiprecision::constants::ln2(rc), rc), rc);
         }
 
         const std::size_t s = exp_splits(w);
@@ -76,11 +75,9 @@ BigFloat exp_finite(const BigFloat& x, const BigFloatContext& ctx) {
 
 } // namespace detail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat exp(const BigFloat& x, const BigFloatContext& ctx) {
@@ -98,5 +95,4 @@ BigFloat exp(const BigInt& x, const BigFloatContext& ctx) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

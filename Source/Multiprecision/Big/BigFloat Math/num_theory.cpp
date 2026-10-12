@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat fmod(const BigFloat& x, const BigFloat& y) {
@@ -70,5 +69,4 @@ BigFloat ceiling(const BigFloat& x) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

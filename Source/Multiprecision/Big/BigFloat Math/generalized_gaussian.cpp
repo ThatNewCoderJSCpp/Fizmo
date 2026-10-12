@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace ggdetail {
 
@@ -19,10 +18,10 @@ bool gg_safe(const BigFloat& v, std::size_t want, double lost, std::size_t prec)
     BigUInt           sig = v.significand();
     const std::size_t L   = sig.bit_length();
     if (L < want) sig.shift_left_mutable(want - L);                     
-    const double e = std::ceil(lost);
+    const double e = std::ceil(lost) + ((L > want) ? static_cast<double>(L - want) : 0.0);
     if (!(e + 4.0 < static_cast<double>(sig.bit_length()))) return false;
     const std::size_t err = (e <= 0.0) ? 0 : static_cast<std::size_t>(e);
-    return constants::bfdetail::round_is_safe(sig, prec, err + 2);
+    return multiprecision::constants::bfdetail::round_is_safe(sig, prec, err + 2);
 }
 
 double gg_units(double nu, double lnb) {
@@ -59,11 +58,9 @@ bool gg_exact(std::uint64_t n, const BigFloat& b, const BigFloat& c, const BigFl
 
 } // namespace ggdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat generalized_gaussian_moment(const BigFloat& power, const BigFloat& rate, const BigFloat& shape, const BigFloatContext& ctx) {
@@ -103,5 +100,4 @@ BigFloat generalized_gaussian_moment(const BigFloat& power, const BigFloat& rate
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

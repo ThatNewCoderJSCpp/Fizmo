@@ -15,13 +15,13 @@ namespace physics {
 inline bool overlap_aabb(const AABB& a, const AABB& b) noexcept { return a.overlaps(b); }
 
 bool overlap_circles(
-    const vector2d& c1, double r1,
-    const vector2d& c2, double r2
+    const linalg::vector2d& c1, double r1,
+    const linalg::vector2d& c2, double r2
 ) noexcept;
 
 bool overlap_aabb_circle(
     const AABB& box,
-    const vector2d& center,
+    const linalg::vector2d& center,
     double radius
 ) noexcept;
 
@@ -29,19 +29,19 @@ struct OverlapResult {
     bool     hit = false;
     double   depth_x = 0.0; 
     double   depth_y = 0.0;
-    vector2d normal{};      
+    linalg::vector2d normal{};      
 };
 
 OverlapResult overlap_aabb_mtv(const AABB& a, const AABB& b) noexcept;
 
 OverlapResult overlap_circles_mtv(
-    const vector2d& c1, double r1,
-    const vector2d& c2, double r2
+    const linalg::vector2d& c1, double r1,
+    const linalg::vector2d& c2, double r2
 ) noexcept;
 
 OverlapResult overlap_aabb_circle_mtv(
     const AABB& box,
-    const vector2d& center,
+    const linalg::vector2d& center,
     double radius
 ) noexcept;
 
@@ -165,24 +165,24 @@ private:
     }
 
     AABB loosen(const AABB& b) const noexcept {
-        const vector2d c = b.center();
-        const vector2d h = b.extents() * m_looseness;
+        const linalg::vector2d c = b.center();
+        const linalg::vector2d h = b.extents() * m_looseness;
         return { c - h, c + h };
     }
 
     static AABB quadrant_bounds(const AABB& b, int q) noexcept {
-        const vector2d mid = b.center();
-        vector2d lo = b.min, hi = b.max;
+        const linalg::vector2d mid = b.center();
+        linalg::vector2d lo = b.min, hi = b.max;
         if (q & 1) lo.x = mid.x; else hi.x = mid.x;
         if (q & 2) lo.y = mid.y; else hi.y = mid.y;
         return { lo, hi };
     }
 
     int find_child(const Node& node, const AABB& item_aabb) const noexcept {
-        const vector2d mid = node.bounds.center();
+        const linalg::vector2d mid = node.bounds.center();
 
         if (is_loose()) {
-            const vector2d c = item_aabb.center();
+            const linalg::vector2d c = item_aabb.center();
             const int q = (c.x >= mid.x ? 1 : 0) | (c.y >= mid.y ? 2 : 0);
             return loosen(quadrant_bounds(node.bounds, q)).contains(item_aabb) ? q : -1;
         }

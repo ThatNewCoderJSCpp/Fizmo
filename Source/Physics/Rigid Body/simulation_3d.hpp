@@ -7,12 +7,12 @@ namespace fizmo {
 namespace physics {
 
 struct ContactPoint3D {
-    vector3d position{};           // world-space point midway between the two surfaces (m)
+    linalg::vector3d position{};           // world-space point midway between the two surfaces (m)
     double separation = 0.0;       // negative = penetrating (m)
     double normal_impulse = 0.0;   // accumulated normal impulse (N*s), filled in after the velocity solve
-    vector3d friction_impulse{};   // accumulated friction impulse, world space (N*s), filled in after the velocity solve
-    vector3d local_anchor_a{};     // point on A's surface, in A's body frame (m)
-    vector3d local_anchor_b{};     // point on B's surface, in B's body frame (m)
+    linalg::vector3d friction_impulse{};   // accumulated friction impulse, world space (N*s), filled in after the velocity solve
+    linalg::vector3d local_anchor_a{};     // point on A's surface, in A's body frame (m)
+    linalg::vector3d local_anchor_b{};     // point on B's surface, in B's body frame (m)
 };
 
 struct ContactManifold3D {
@@ -20,7 +20,7 @@ struct ContactManifold3D {
 
     RigidBody3D* body_a = nullptr;
     RigidBody3D* body_b = nullptr;
-    vector3d normal{}; // unit vector from A toward B
+    linalg::vector3d normal{}; // unit vector from A toward B
     ContactPoint3D points[MAX_POINTS];
     int point_count = 0;
     double friction    = 0.0;
@@ -33,46 +33,46 @@ struct ContactManifold3D {
 namespace narrowphase3d {
 
 struct Candidate {
-    vector3d position;
+    linalg::vector3d position;
     double   separation;
 };
 
-vector3d closest_point_on_segment(const vector3d& p, const vector3d& a, const vector3d& b);
+linalg::vector3d closest_point_on_segment(const linalg::vector3d& p, const linalg::vector3d& a, const linalg::vector3d& b);
 
 struct SegmentPair {
-    vector3d closest1{};
-    vector3d closest2{};
+    linalg::vector3d closest1{};
+    linalg::vector3d closest2{};
     double fraction1 = 0.0;
     double fraction2 = 0.0;
     double distance_squared = 0.0;
 };
 
-SegmentPair closest_segment_points(const vector3d& p1, const vector3d& q1, const vector3d& p2, const vector3d& q2);
+SegmentPair closest_segment_points(const linalg::vector3d& p1, const linalg::vector3d& q1, const linalg::vector3d& p2, const linalg::vector3d& q2);
 
-void reduce_contacts(ContactManifold3D& m, const std::vector<Candidate>& c, const vector3d& normal);
+void reduce_contacts(ContactManifold3D& m, const std::vector<Candidate>& c, const linalg::vector3d& normal);
 
-bool point_in_face(const HullShape& h, const HullFace& f, const vector3d& q);
+bool point_in_face(const HullShape& h, const HullFace& f, const linalg::vector3d& q);
 
-vector3d closest_point_on_face(const HullShape& h, const HullFace& f, const vector3d& p);
+linalg::vector3d closest_point_on_face(const HullShape& h, const HullFace& f, const linalg::vector3d& p);
 
 struct PointHullResult {
     bool     inside = false;
-    vector3d point{};        // closest surface point (m)
-    vector3d normal{};       // outward from the hull toward p
+    linalg::vector3d point{};        // closest surface point (m)
+    linalg::vector3d normal{};       // outward from the hull toward p
     double   distance = 0.0; // signed: negative when p is inside
 };
 
-PointHullResult closest_point_on_hull(const HullShape& h, const vector3d& p);
+PointHullResult closest_point_on_hull(const HullShape& h, const linalg::vector3d& p);
 
-bool segment_intersects_hull(const HullShape& h, const vector3d& p1, const vector3d& p2);
+bool segment_intersects_hull(const HullShape& h, const linalg::vector3d& p1, const linalg::vector3d& p2);
 
-bool clip_segment_to_face(const HullShape& h, const HullFace& f, vector3d& a, vector3d& b);
+bool clip_segment_to_face(const HullShape& h, const HullFace& f, linalg::vector3d& a, linalg::vector3d& b);
 
-int support_edge(const HullShape& h, const vector3d& dir, const vector3d& axis, double sign);
+int support_edge(const HullShape& h, const linalg::vector3d& dir, const linalg::vector3d& axis, double sign);
 
-void project_hull(const HullShape& h, const vector3d& axis, double& lo, double& hi);
+void project_hull(const HullShape& h, const linalg::vector3d& axis, double& lo, double& hi);
 
-void project_points(const std::vector<vector3d>& pts, const vector3d& axis, double& lo, double& hi);
+void project_points(const std::vector<linalg::vector3d>& pts, const linalg::vector3d& axis, double& lo, double& hi);
 
 bool collide_sphere_sphere(
     const SphereShape& sa, const Transform3D& xa,
@@ -80,7 +80,7 @@ bool collide_sphere_sphere(
     ContactManifold3D& m, double margin = 0.0
 );
 
-bool collide_sphere_point(const vector3d& c, double ra, const vector3d& p, double rb, ContactManifold3D& m, double margin);
+bool collide_sphere_point(const linalg::vector3d& c, double ra, const linalg::vector3d& p, double rb, ContactManifold3D& m, double margin);
 
 bool collide_sphere_capsule(
     const SphereShape& s, const Transform3D& xs,
@@ -94,7 +94,7 @@ bool collide_sphere_hull(
     ContactManifold3D& m, double margin = 0.0
 );
 
-inline void plane_in_world(const PlaneShape& p, const Transform3D& xp, vector3d& n, double& d) {
+inline void plane_in_world(const PlaneShape& p, const Transform3D& xp, linalg::vector3d& n, double& d) {
     n = xp.rotate(p.normal);
     d = p.offset + vec3::dot(n, xp.position);
 }
@@ -140,19 +140,19 @@ struct EdgeQuery {
     double   separation = -std::numeric_limits<double>::max();
     int      dir_a = -1;
     int      dir_b = -1;
-    vector3d axis{}; 
+    linalg::vector3d axis{}; 
 };
 
-FaceQuery query_faces(const HullShape& a, const std::vector<vector3d>& other);
+FaceQuery query_faces(const HullShape& a, const std::vector<linalg::vector3d>& other);
 
-EdgeQuery query_edges(const HullShape& a, const std::vector<vector3d>& b_vertices, const std::vector<vector3d>& b_dirs);
+EdgeQuery query_edges(const HullShape& a, const std::vector<linalg::vector3d>& b_vertices, const std::vector<linalg::vector3d>& b_dirs);
 
-void clip_polygon(std::vector<vector3d>& poly, const vector3d& n, double d, std::vector<vector3d>& scratch);
+void clip_polygon(std::vector<linalg::vector3d>& poly, const linalg::vector3d& n, double d, std::vector<linalg::vector3d>& scratch);
 
 void face_contact(
     const HullShape& r, const Transform3D& xr, int rf,
     const HullShape& inc, const Transform3D& xi,
-    std::vector<Candidate>& out, vector3d& normal, double margin
+    std::vector<Candidate>& out, linalg::vector3d& normal, double margin
 );
 
 } // namespace detail_sat3d
@@ -172,8 +172,8 @@ bool collide_shapes(
 );
 
 struct VelocityConstraintPoint3D {
-    vector3d rA{}; // contact − center_A (m)
-    vector3d rB{}; // contact − center_B (m)
+    linalg::vector3d rA{}; // contact − center_A (m)
+    linalg::vector3d rB{}; // contact − center_B (m)
     double normal_mass = 0.0;
     double tangent_mass[2] = { 0.0, 0.0 };
     double velocity_bias = 0.0;
@@ -184,9 +184,9 @@ struct VelocityConstraintPoint3D {
 struct VelocityConstraint3D {
     RigidBody3D* body_a = nullptr;
     RigidBody3D* body_b = nullptr;
-    vector3d normal{};
-    vector3d tangent1{};
-    vector3d tangent2{};
+    linalg::vector3d normal{};
+    linalg::vector3d tangent1{};
+    linalg::vector3d tangent2{};
     double friction = 0.0;
     double restitution = 0.0;
     double restitution_threshold = 1.0;
@@ -199,14 +199,14 @@ struct VelocityConstraint3D {
 struct ContactEvent3D {
     RigidBody3D* body_a = nullptr;
     RigidBody3D* body_b = nullptr;
-    vector3d normal{};
-    vector3d point{};
+    linalg::vector3d normal{};
+    linalg::vector3d point{};
     double impulse = 0.0; 
     bool sensor = false;  
 };
 
 struct Simulation3DConfig {
-    vector3d gravity           = {0.0, -constants::gravity(), 0.0}; // m/s2
+    linalg::vector3d gravity           = {0.0, -constants::gravity(), 0.0}; // m/s2
     double   fixed_dt          = 1.0 / 60.0;        // s
     int      velocity_iters    = 10;
     int      position_iters    = 3;
@@ -239,7 +239,7 @@ public:
         return *m_bodies.back();
     }
 
-    RigidBody3D& add_body(const vector3d& pos, PhysicsFlags preset = PhysicsFlags::DefaultDynamic) {
+    RigidBody3D& add_body(const linalg::vector3d& pos, PhysicsFlags preset = PhysicsFlags::DefaultDynamic) {
         auto& b = add_body(preset);
         b.set_position(pos);
         return b;
@@ -261,8 +261,8 @@ public:
           Config& config()       noexcept { return m_cfg; }
     const Config& config() const noexcept { return m_cfg; }
 
-    void set_gravity(const vector3d& g) noexcept { m_cfg.gravity = g; }
-    vector3d gravity() const noexcept { return m_cfg.gravity; }
+    void set_gravity(const linalg::vector3d& g) noexcept { m_cfg.gravity = g; }
+    linalg::vector3d gravity() const noexcept { return m_cfg.gravity; }
 
     void on_contact_begin(std::function<void(const ContactEvent3D&)> cb) { m_on_begin   = std::move(cb); }
     void on_contact_end(std::function<void(const ContactEvent3D&)> cb)   { m_on_end     = std::move(cb); }
@@ -277,7 +277,7 @@ public:
 
     std::vector<RigidBody3D*> query_aabb(const AABB3D& region);
 
-    RigidBody3D* point_query(const vector3d& point);
+    RigidBody3D* point_query(const linalg::vector3d& point);
 
 private:
     using Key     = detail::ContactKey<RigidBody3D>;
@@ -289,12 +289,12 @@ private:
         bool sensor = false;
         bool events = false;
         bool touching = false; 
-        vector3d normal{};
-        vector3d point{};
+        linalg::vector3d normal{};
+        linalg::vector3d point{};
         int point_count = 0;
-        std::array<vector3d, ContactManifold3D::MAX_POINTS> local_anchor_a{};
+        std::array<linalg::vector3d, ContactManifold3D::MAX_POINTS> local_anchor_a{};
         std::array<double,   ContactManifold3D::MAX_POINTS> normal_impulse{};
-        std::array<vector3d, ContactManifold3D::MAX_POINTS> friction_impulse{};
+        std::array<linalg::vector3d, ContactManifold3D::MAX_POINTS> friction_impulse{};
     };
 
     using ContactCache = std::unordered_map<Key, CachedContact, KeyHash>;
@@ -315,13 +315,13 @@ private:
 
     static bool wants_events(const RigidBody3D& a, const RigidBody3D& b, bool sensor) noexcept;
 
-    static vector3d point_velocity(const RigidBody3D& b, const vector3d& r) noexcept {
+    static linalg::vector3d point_velocity(const RigidBody3D& b, const linalg::vector3d& r) noexcept {
         return b.linear_velocity() + vec3::cross(b.angular_velocity(), r);
     }
 
-    static void apply_impulse(RigidBody3D& a, RigidBody3D& b, const vector3d& rA, const vector3d& rB, const vector3d& P);
+    static void apply_impulse(RigidBody3D& a, RigidBody3D& b, const linalg::vector3d& rA, const linalg::vector3d& rB, const linalg::vector3d& P);
 
-    static double effective_inv_mass(const RigidBody3D& a, const RigidBody3D& b, const vector3d& rA, const vector3d& rB, const vector3d& u);
+    static double effective_inv_mass(const RigidBody3D& a, const RigidBody3D& b, const linalg::vector3d& rA, const linalg::vector3d& rB, const linalg::vector3d& u);
 
     void synchronize_all_colliders() {
         for (auto& b : m_bodies) {

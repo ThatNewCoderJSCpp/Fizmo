@@ -32,7 +32,6 @@
 #include "BigFloat Math/combinatorics.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace raw {
 
@@ -248,7 +247,6 @@ inline const char* to_string(RawStatus s) noexcept {
 
 } // namespace raw
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_RAW_RESULT_MATH_HPP

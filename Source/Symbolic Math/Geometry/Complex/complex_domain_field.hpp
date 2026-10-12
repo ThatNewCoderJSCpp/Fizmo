@@ -42,7 +42,7 @@ struct CauchyRiemannSample {
 };
 
 struct ComplexIntegrationResult {
-    BasicComplex<double> value;
+    ComplexD value;
     double real_error   = 0.0;
     double imag_error   = 0.0;
     bool   converged    = false;

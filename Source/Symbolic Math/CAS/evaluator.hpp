@@ -4,17 +4,7 @@
 #include "expression.hpp"
 #include "../../Basic/constants.hpp"
 
-#include "../Math Impl/gamma.hpp"
-#include "../Math Impl/error.hpp"
-#include "../Math Impl/lambert_w.hpp"
-#include "../Math Impl/chebyshev.hpp"
-#include "../Math Impl/exp_log_integral.hpp"
-#include "../Math Impl/trig_integrals.hpp"
-#include "../Math Impl/fresnel.hpp"
-#include "../Math Impl/spence.hpp"
-#include "../Math Impl/rogers.hpp"
-#include "../Math Impl/gudermannian.hpp"
-#include "../Math Impl/fibonacci_lucas.hpp"
+#include "numeric_functions.hpp"
 
 namespace fizmo {
 namespace math {

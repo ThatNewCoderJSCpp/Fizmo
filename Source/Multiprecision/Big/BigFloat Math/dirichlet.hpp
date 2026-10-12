@@ -9,7 +9,6 @@
 #include <vector>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace dldetail {
@@ -79,7 +78,6 @@ FIZMO_MP_DIRICHLET_ARITH_FORWARD(dirichlet_beta)
 #undef FIZMO_MP_DIRICHLET_ARITH_FORWARD
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_DIRICHLET_HPP

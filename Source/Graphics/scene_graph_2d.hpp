@@ -38,8 +38,8 @@ private:
     bool                                 m_visible = true;
     bool                                 m_active = true;
     float                                m_opacity = 1.0f;
-    mutable math::Matrix3d               m_local;
-    mutable math::Matrix3d               m_world;
+    mutable linalg::Matrix3d               m_local;
+    mutable linalg::Matrix3d               m_world;
     mutable bool                         m_local_dirty = true;
     mutable bool                         m_world_dirty = true;
     bool                                 m_order_dirty = false;
@@ -81,7 +81,7 @@ public:
 
     double x() const noexcept { return m_x; }
     double y() const noexcept { return m_y; }
-    vector2d position() const noexcept { return { m_x, m_y }; }
+    linalg::vector2d position() const noexcept { return { m_x, m_y }; }
     double rotation() const noexcept { return m_rotation; }
     double scale_x() const noexcept { return m_scale_x; }
     double scale_y() const noexcept { return m_scale_y; }
@@ -104,18 +104,18 @@ public:
     Node2D& on_update(UpdateFn fn) { m_on_update = std::move(fn); return *this; }
     Node2D& on_draw(DrawFn fn) { m_on_draw = std::move(fn); return *this; }
 
-    const math::Matrix3d& local_transform() const noexcept;
+    const linalg::Matrix3d& local_transform() const noexcept;
 
-    const math::Matrix3d& world_transform() const noexcept;
+    const linalg::Matrix3d& world_transform() const noexcept;
 
-    vector2d local_to_world(double lx, double ly) const noexcept {
+    linalg::vector2d local_to_world(double lx, double ly) const noexcept {
         const auto& m = world_transform().data;
         return { m[0] * lx + m[1] * ly + m[2], m[3] * lx + m[4] * ly + m[5] };
     }
 
-    vector2d world_to_local(double wx, double wy) const noexcept;
+    linalg::vector2d world_to_local(double wx, double wy) const noexcept;
 
-    vector2d world_position() const noexcept { return local_to_world(m_origin_x, m_origin_y); }
+    linalg::vector2d world_position() const noexcept { return local_to_world(m_origin_x, m_origin_y); }
 
     double world_rotation() const noexcept {
         const auto& m = world_transform().data;

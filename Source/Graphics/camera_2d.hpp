@@ -4,7 +4,7 @@
 #include "../Matrices/square_matrices.hpp"
 #include <cmath>
 #include <utility>
-#include "../Standard Overloads/min_max.hpp"
+#include <algorithm>
 #include "../Vectors/vectors.hpp"
 
 namespace fizmo {
@@ -45,19 +45,19 @@ public:
     void set_rotation(double degrees) noexcept { m_rotation = degrees; mark_dirty(); }
     void rotate(double degrees) noexcept { m_rotation += degrees; mark_dirty(); }
 
-    const math::Matrix3d& view_matrix() const noexcept {
+    const linalg::Matrix3d& view_matrix() const noexcept {
         rebuild_if_dirty();
         return m_view;
     }
 
-    const math::Matrix3d& inverse_view_matrix() const noexcept {
+    const linalg::Matrix3d& inverse_view_matrix() const noexcept {
         rebuild_if_dirty();
         return m_inv_view;
     }
 
-    vector2d screen_to_world(double sx, double sy) const noexcept;
+    linalg::vector2d screen_to_world(double sx, double sy) const noexcept;
 
-    vector2d world_to_screen(double wx, double wy) const noexcept;
+    linalg::vector2d world_to_screen(double wx, double wy) const noexcept;
 
     struct AABB {
         double min_x, min_y, max_x, max_y;
@@ -78,8 +78,8 @@ private:
     unsigned int m_vp_w = 0;
     unsigned int m_vp_h = 0;
 
-    mutable math::Matrix3d m_view     = math::Matrix3d::identity();
-    mutable math::Matrix3d m_inv_view = math::Matrix3d::identity();
+    mutable linalg::Matrix3d m_view     = linalg::Matrix3d::identity();
+    mutable linalg::Matrix3d m_inv_view = linalg::Matrix3d::identity();
     mutable bool m_dirty = true;
 
     void mark_dirty() noexcept { m_dirty = true; }

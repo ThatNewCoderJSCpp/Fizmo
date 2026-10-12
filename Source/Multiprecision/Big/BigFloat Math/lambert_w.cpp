@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace lwdetail {
 
@@ -23,9 +22,9 @@ bool lw_safe(const BF& v, std::size_t want, double lost, std::size_t prec) {
     BigUInt           sig = v.significand();
     const std::size_t L   = sig.bit_length();
     if (L < want) sig.shift_left_mutable(want - L);                       
-    const double e = std::ceil(lost);
+    const double e = std::ceil(lost) + ((L > want) ? static_cast<double>(L - want) : 0.0);
     if (!(e + 4.0 < static_cast<double>(sig.bit_length()))) return false;
-    return constants::bfdetail::round_is_safe(sig, prec, (e <= 0.0) ? 2 : static_cast<std::size_t>(e) + 2);
+    return multiprecision::constants::bfdetail::round_is_safe(sig, prec, (e <= 0.0) ? 2 : static_cast<std::size_t>(e) + 2);
 }
 
 int lw_eps(const BF& x, BF& eps) {
@@ -35,7 +34,7 @@ int lw_eps(const BF& x, BF& eps) {
 
     for (std::size_t q = 128; ; q *= 2) {
         const BFC qc = lw_ctx(q);
-        eps = BF::add(one, BF::mul(constants::e(qc), x, qc), qc);
+        eps = BF::add(one, BF::mul(multiprecision::constants::e(qc), x, qc), qc);
         if (!eps.is_zero() && lw_log2(eps) > 4.0 - static_cast<double>(q) + 64.0) return eps.signbit() ? -1 : 1;
         if (static_cast<double>(q) > cap) return eps.is_zero() ? 0 : (eps.signbit() ? -1 : 1);
     }
@@ -132,7 +131,11 @@ bool lw_newton(const BF& x, bool lower, const BF& eps, bool have_eps, std::size_
         BF        wn   = BF::sub(w, step, pc);
         if (!lower && BF::compare(wn, mone) != BF::ordering::greater) wn = BF::add(w, mone, pc).scaled_pow2(-1);   
         if (lower  && BF::compare(wn, mone) != BF::ordering::less)    wn = BF::add(w, mone, pc).scaled_pow2(-1);
-        const bool small = step.is_zero() || step.get_exp_base2() <= w.get_exp_base2() - static_cast<std::int64_t>(p) + 8;
+        const BF   den   = BF::mul(ew, wp1, pc);
+        const BF   wew   = BF::mul(w, ew, pc);
+        const bool tiny  = step.is_zero() || step.get_exp_base2() <= w.get_exp_base2() - static_cast<std::int64_t>(p) + 8;
+        const bool noisy = !tiny && !wew.is_zero() && !den.is_zero() && lw_log2(step.abs()) <= lw_log2(wew.abs()) - lw_log2(den.abs()) + std::log2(6.0 + 2.0 * std::fabs(lw_to_double(w))) - static_cast<double>(p) + 2.0;
+        const bool small = tiny || noisy;
         w = wn;
 
         if (small) {
@@ -178,11 +181,9 @@ lw_val lw_raw(const BF& x, bool lower, const BF& eps, bool have_eps, std::size_t
 
 } // namespace lwdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat lambert_w(const BigFloat& x, std::int64_t k, const BigFloatContext& ctx) {
@@ -208,5 +209,4 @@ BigFloat lambert_w(const BigFloat& x, std::int64_t k, const BigFloatContext& ctx
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

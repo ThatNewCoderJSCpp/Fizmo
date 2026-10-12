@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace detail {
 
@@ -69,7 +68,7 @@ BigFloat recip_rounded(const BigFloat& v, const BigFloatContext& ctx, std::size_
         const BigFloatContext wc(ctx.precision + guard, RoundingMode::nearest_even);
         const BigFloat r = v.reciprocal(wc);
         if (!r.is_finite() || r.is_zero()) return r;
-        if (constants::bfdetail::round_is_safe(r.significand(), ctx.precision, err)) return r.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(r.significand(), ctx.precision, err)) return r.rounded(ctx);
         if (pw_guard_exhausted(ctx.precision, guard)) return r.rounded(ctx);
         guard *= 2;
     }
@@ -119,7 +118,7 @@ BigFloat pow_int_finite(const BigFloat& ax, std::int64_t n, const BigFloatContex
 
         if (n < 0) r = r.reciprocal(wc);
         if (!r.is_finite() || r.is_zero()) return r;
-        if (constants::bfdetail::round_is_safe(r.significand(), ctx.precision, err + 1)) return r.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(r.significand(), ctx.precision, err + 1)) return r.rounded(ctx);
         if (pw_guard_exhausted(ctx.precision, guard)) return r.rounded(ctx);
         guard *= 2;
     }
@@ -147,7 +146,7 @@ BigFloat exp_log_core(const BigFloat& ax, const BigFloat& y, log_op op, bool neg
         if (t.is_nan() || t.is_undefined()) return t;
         const BigFloat r = exp(t, wc);
         if (!r.is_finite() || r.is_zero()) return r.with_sign(neg_result);
-        if (constants::bfdetail::round_is_safe(r.significand(), ctx.precision, err)) return r.with_sign(neg_result).rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(r.significand(), ctx.precision, err)) return r.with_sign(neg_result).rounded(ctx);
         if (pw_guard_exhausted(ctx.precision, guard + extra)) return r.with_sign(neg_result).rounded(ctx);
         guard *= 2;
     }
@@ -170,7 +169,7 @@ bool pow_dyadic(const BigFloat& ax, const BigFloat& y, const BigFloatContext& ct
         BigFloat r = pow_int_finite(ax, m, wc);
         for (std::size_t i = 0; i < k && r.is_finite() && !r.is_zero(); ++i) r = math::sqrt(r, wc);
         if (!r.is_finite() || r.is_zero()) { out = r; return true; }
-        if (constants::bfdetail::round_is_safe(r.significand(), ctx.precision, err)) { out = r.rounded(ctx); return true; }
+        if (multiprecision::constants::bfdetail::round_is_safe(r.significand(), ctx.precision, err)) { out = r.rounded(ctx); return true; }
         if (pw_guard_exhausted(ctx.precision, guard)) { out = r.rounded(ctx); return true; }
         guard *= 2;
     }
@@ -202,11 +201,9 @@ BigFloat pw_extreme(const BigFloat& ax, bool y_negative, bool neg_result) {
 
 } // namespace detail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat pow(const BigFloat& x, const BigInt& n, const BigFloatContext& ctx) {
@@ -275,11 +272,11 @@ BigFloat pow2(const BigFloat& x, const BigFloatContext& ctx) {
 
     for (;;) {
         const BigFloatContext wc(ctx.precision + guard, RoundingMode::nearest_even);
-        BigFloat r = exp(BigFloat::mul(f, constants::ln2(wc), wc), wc);
+        BigFloat r = exp(BigFloat::mul(f, multiprecision::constants::ln2(wc), wc), wc);
         if (!r.is_finite()) return r;
         r = r.scaled_pow2(ki);                             
         if (!r.is_finite() || r.is_zero()) return r;
-        if (constants::bfdetail::round_is_safe(r.significand(), ctx.precision, 6)) return r.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(r.significand(), ctx.precision, 6)) return r.rounded(ctx);
         if (detail::pw_guard_exhausted(ctx.precision, guard)) return r.rounded(ctx);
         guard *= 2;
     }
@@ -309,11 +306,11 @@ BigFloat pow10(const BigFloat& x, const BigFloatContext& ctx) {
         const BigFloatContext wc(ctx.precision + guard, RoundingMode::nearest_even);
         const BigFloat base = detail::pow_int_finite(ten, ki, wc);
         if (!base.is_finite() || base.is_zero()) return base;
-        const BigFloat frac = exp(BigFloat::mul(f, constants::ln10(wc), wc), wc);
+        const BigFloat frac = exp(BigFloat::mul(f, multiprecision::constants::ln10(wc), wc), wc);
         if (!frac.is_finite()) return frac;
         const BigFloat r = BigFloat::mul(base, frac, wc);
         if (!r.is_finite() || r.is_zero()) return r;
-        if (constants::bfdetail::round_is_safe(r.significand(), ctx.precision, 8)) return r.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(r.significand(), ctx.precision, 8)) return r.rounded(ctx);
         if (detail::pw_guard_exhausted(ctx.precision, guard)) return r.rounded(ctx);
         guard *= 2;
     }
@@ -351,5 +348,4 @@ BigFloat nth_root(const BigFloat& x, const BigFloat& y, const BigFloatContext& c
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

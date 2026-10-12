@@ -4,7 +4,6 @@
 #include "elementary.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace cxdetail {
@@ -122,7 +121,7 @@ template <typename F>
 inline BF ic_signed(F&& f, bool neg, const BFC& c) { return neg ? -f(mirrored(c)) : f(c); }
 
 inline BF ic_half_pi(bool neg, const BFC& c) {
-    return ic_signed([](const BFC& cc) { return constants::half_pi(cc); }, neg, c);
+    return ic_signed([](const BFC& cc) { return multiprecision::constants::half_pi(cc); }, neg, c);
 }
 
 inline BF::ordering ic_cmp1(const BF& v) { return BF::compare(v.abs(), BF::one()); }
@@ -217,11 +216,11 @@ inline BC ic_acos_eval(const BF& a, const BF& b, const BFC& cr, const BFC& ci) {
     if (b.is_zero()) {                                                  
         if (ic_cmp1(a) != BF::ordering::greater) return BC(math::arccos(a, cr), BF::zero(!b.signbit()));
         const BF aa = a.abs();
-        const BF re = a.signbit() ? constants::pi(cr) : BF::zero();
+        const BF re = a.signbit() ? multiprecision::constants::pi(cr) : BF::zero();
         return BC(re, ic_signed([&](const BFC& c) { return math::arccosh(aa, c); }, !b.signbit(), ci));
     }
 
-    if (a.is_zero()) return BC(constants::half_pi(cr), -math::arcsinh(b, mirrored(ci)));
+    if (a.is_zero()) return BC(multiprecision::constants::half_pi(cr), -math::arcsinh(b, mirrored(ci)));
     return ic_arc_ziv(ic_arc::acos_v, false, a, b, cr, ci);
 }
 
@@ -250,11 +249,11 @@ inline BC ic_asec_eval(const BF& a, const BF& b, const BFC& cr, const BFC& ci) {
     if (b.is_zero()) {
         if (ic_cmp1(a) != BF::ordering::less) return BC(math::arcsec(a, cr), BF::zero(b.signbit()));
         const BF aa = a.abs();
-        const BF re = a.signbit() ? constants::pi(cr) : BF::zero();
+        const BF re = a.signbit() ? multiprecision::constants::pi(cr) : BF::zero();
         return BC(re, ic_signed([&](const BFC& c) { return math::arcsech(aa, c); }, b.signbit(), ci));
     }
 
-    if (a.is_zero()) return BC(constants::half_pi(cr), math::arccsch(b, ci));
+    if (a.is_zero()) return BC(multiprecision::constants::half_pi(cr), math::arccsch(b, ci));
     return ic_arc_ziv(ic_arc::acos_v, true, a, b, cr, ci);
 }
 
@@ -303,7 +302,7 @@ inline bool ic_tan_at(ic_tan k, const BF& a, const BF& b, std::size_t w, work& r
     if (!a.signbit()) {
         re = ic_half_atan2(a2, ic_neg(omn), wc);
     } else {
-        const ic_val p = ic_rounded(constants::pi(wc), 1);
+        const ic_val p = ic_rounded(multiprecision::constants::pi(wc), 1);
         const ic_val t = ic_fn(math::atan2(-a2.v, omn.v, wc), a2, omn);   
         re = ic_scale(ic_add(p, t, wc), -1);
     }
@@ -370,19 +369,19 @@ inline BC ic_atan_eval(const BF& a, const BF& b, const BFC& cr, const BFC& ci) {
 
 inline BC ic_acot_eval(const BF& a, const BF& b, const BFC& cr, const BFC& ci) {
     if (a.is_infinite() || b.is_infinite()) {
-        return BC(a.signbit() ? constants::pi(cr) : BF::zero(), BF::zero(!b.signbit()));
+        return BC(a.signbit() ? multiprecision::constants::pi(cr) : BF::zero(), BF::zero(!b.signbit()));
     }
 
     if (b.is_zero()) {                                                  // includes z == 0
-        if (a.is_zero()) return BC(constants::half_pi(cr), BF::zero(!b.signbit()));
+        if (a.is_zero()) return BC(multiprecision::constants::half_pi(cr), BF::zero(!b.signbit()));
         return BC(math::arccot(a, cr), BF::zero(!b.signbit()));
     }
 
     if (a.is_zero()) {
         const BF::ordering o = ic_cmp1(b);
-        if (o == BF::ordering::less)  return BC(constants::half_pi(cr), -math::arctanh(b, mirrored(ci)));
-        if (o == BF::ordering::equal) return BC(constants::half_pi(cr), BF::infinity(!b.signbit()));
-        return BC(a.signbit() ? constants::pi(cr) : BF::zero(), -math::arccoth(b, mirrored(ci)));
+        if (o == BF::ordering::less)  return BC(multiprecision::constants::half_pi(cr), -math::arctanh(b, mirrored(ci)));
+        if (o == BF::ordering::equal) return BC(multiprecision::constants::half_pi(cr), BF::infinity(!b.signbit()));
+        return BC(a.signbit() ? multiprecision::constants::pi(cr) : BF::zero(), -math::arccoth(b, mirrored(ci)));
     }
 
     return ic_tan_ziv(ic_tan::acot_v, a, b, cr, ci);
@@ -469,7 +468,6 @@ FIZMO_CX_INV(arccsch)
 #undef FIZMO_CX_INV
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_COMPLEX_INVERSE_ELEMENTARY_HPP

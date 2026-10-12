@@ -12,7 +12,6 @@
 #include <vector>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace gmdetail {
@@ -53,8 +52,8 @@ struct gm_const_cache_t {
 
 BigFloat gm_cached_const(gm_const_cache_t& c, const BigFloatContext& wc, BigFloat (*compute)(const BigFloatContext&));
 
-inline BigFloat gm_ln_pi_raw(const BigFloatContext& c)          { return ln(constants::pi(c), c); }
-inline BigFloat gm_half_ln_two_pi_raw(const BigFloatContext& c) { return ln(constants::two_pi(c), c).scaled_pow2(-1); }
+inline BigFloat gm_ln_pi_raw(const BigFloatContext& c)          { return ln(multiprecision::constants::pi(c), c); }
+inline BigFloat gm_half_ln_two_pi_raw(const BigFloatContext& c) { return ln(multiprecision::constants::two_pi(c), c).scaled_pow2(-1); }
 
 inline BigFloat gm_ln_pi(const BigFloatContext& wc) {
     static thread_local gm_const_cache_t c;
@@ -99,6 +98,13 @@ struct fact_cache_t {
 inline fact_cache_t& fact_cache() { static thread_local fact_cache_t c; return c; }
 
 std::uint64_t fact_n_cap();
+
+inline bool gm_fact_cheap(std::uint64_t n, std::size_t prec) {
+    if (n > fact_n_cap()) return false;
+    if (n <= 64) return true;
+    const double nd = static_cast<double>(n);
+    return nd * std::log2(nd) <= 8.0 * static_cast<double>(prec) + 4096.0;
+}
 
 inline std::size_t gm_target(std::size_t w) { return (w * 3) / 10 + 16; }
 
@@ -180,7 +186,6 @@ inline BigFloat log_beta(const BigFloat& a, const BigFloat& b)     { return log_
 inline BigFloat beta(const BigFloat& a, const BigFloat& b)         { return beta(a, b, BigFloatContext::current()); }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_GAMMA_HPP

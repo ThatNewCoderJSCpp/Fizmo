@@ -3,12 +3,7 @@
 
 #include "complex_expression.hpp"
 
-#include "../../../Complex/trig.hpp"
-#include "../../../Complex/htrig.hpp"
-#include "../../../Complex/inv_trig.hpp"
-#include "../../../Complex/inv_htrig.hpp"
-#include "../../../Complex/log_pow_root.hpp"
-#include "../../../Complex/util.hpp"
+#include "../../../Complex/complex_math.hpp"
 
 #include <limits>
 #include <stdexcept>

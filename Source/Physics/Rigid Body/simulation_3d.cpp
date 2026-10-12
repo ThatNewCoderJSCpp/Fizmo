@@ -5,16 +5,16 @@ namespace fizmo {
 namespace physics {
 namespace narrowphase3d {
 
-vector3d closest_point_on_segment(const vector3d& p, const vector3d& a, const vector3d& b) {
-    vector3d ab = b - a;
+linalg::vector3d closest_point_on_segment(const linalg::vector3d& p, const linalg::vector3d& a, const linalg::vector3d& b) {
+    linalg::vector3d ab = b - a;
     double t = vec3::length_squared(ab);
     if (t <= constants::middle_epsilon()) return a;
     t = std::clamp(vec3::dot(p - a, ab) / t, 0.0, 1.0);
     return a + ab * t;
 }
 
-SegmentPair closest_segment_points(const vector3d& p1, const vector3d& q1, const vector3d& p2, const vector3d& q2) {
-    vector3d d1 = q1 - p1, d2 = q2 - p2, r = p1 - p2;
+SegmentPair closest_segment_points(const linalg::vector3d& p1, const linalg::vector3d& q1, const linalg::vector3d& p2, const linalg::vector3d& q2) {
+    linalg::vector3d d1 = q1 - p1, d2 = q2 - p2, r = p1 - p2;
     double a = vec3::dot(d1, d1), e = vec3::dot(d2, d2), f = vec3::dot(d2, r);
     double s, t;
     const double eps = constants::middle_epsilon();
@@ -47,7 +47,7 @@ SegmentPair closest_segment_points(const vector3d& p1, const vector3d& q1, const
     return out;
 }
 
-void reduce_contacts(ContactManifold3D& m, const std::vector<Candidate>& c, const vector3d& normal) {
+void reduce_contacts(ContactManifold3D& m, const std::vector<Candidate>& c, const linalg::vector3d& normal) {
     m.point_count = 0;
     if (c.empty()) return;
 
@@ -68,7 +68,7 @@ void reduce_contacts(ContactManifold3D& m, const std::vector<Candidate>& c, cons
 
     std::size_t i2 = c.size(), i3 = c.size();
     double max_area = 0.0, min_area = 0.0;
-    const vector3d e = c[i1].position - c[i0].position;
+    const linalg::vector3d e = c[i1].position - c[i0].position;
 
     for (std::size_t i = 0; i < c.size(); ++i) {
         double area = vec3::dot(vec3::cross(e, c[i].position - c[i0].position), normal);
@@ -90,27 +90,27 @@ void reduce_contacts(ContactManifold3D& m, const std::vector<Candidate>& c, cons
     }
 }
 
-bool point_in_face(const HullShape& h, const HullFace& f, const vector3d& q) {
+bool point_in_face(const HullShape& h, const HullFace& f, const linalg::vector3d& q) {
     const std::size_t n = f.indices.size();
 
     for (std::size_t i = 0; i < n; ++i) {
-        const vector3d& a = h.vertices[f.indices[i]];
-        const vector3d& b = h.vertices[f.indices[(i + 1) % n]];
+        const linalg::vector3d& a = h.vertices[f.indices[i]];
+        const linalg::vector3d& b = h.vertices[f.indices[(i + 1) % n]];
         if (vec3::dot(vec3::cross(b - a, q - a), f.normal) < 0.0) return false;
     }
 
     return true;
 }
 
-vector3d closest_point_on_face(const HullShape& h, const HullFace& f, const vector3d& p) {
-    vector3d q = p - f.normal * (vec3::dot(f.normal, p) - f.offset);
+linalg::vector3d closest_point_on_face(const HullShape& h, const HullFace& f, const linalg::vector3d& p) {
+    linalg::vector3d q = p - f.normal * (vec3::dot(f.normal, p) - f.offset);
     if (point_in_face(h, f, q)) return q;
     const std::size_t n = f.indices.size();
     double best = std::numeric_limits<double>::max();
-    vector3d out = q;
+    linalg::vector3d out = q;
 
     for (std::size_t i = 0; i < n; ++i) {
-        vector3d c = closest_point_on_segment(p, h.vertices[f.indices[i]], h.vertices[f.indices[(i + 1) % n]]);
+        linalg::vector3d c = closest_point_on_segment(p, h.vertices[f.indices[i]], h.vertices[f.indices[(i + 1) % n]]);
         double d = vec3::length_squared(p - c);
         if (d < best) { best = d; out = c; }
     }
@@ -118,7 +118,7 @@ vector3d closest_point_on_face(const HullShape& h, const HullFace& f, const vect
     return out;
 }
 
-PointHullResult closest_point_on_hull(const HullShape& h, const vector3d& p) {
+PointHullResult closest_point_on_hull(const HullShape& h, const linalg::vector3d& p) {
     PointHullResult r;
     double max_sep = -std::numeric_limits<double>::max();
     std::size_t face = 0;
@@ -140,7 +140,7 @@ PointHullResult closest_point_on_hull(const HullShape& h, const vector3d& p) {
 
     for (const auto& f : h.faces) {
         if (vec3::dot(f.normal, p) - f.offset <= 0.0) continue;
-        vector3d c = closest_point_on_face(h, f, p);
+        linalg::vector3d c = closest_point_on_face(h, f, p);
         double d = vec3::length_squared(p - c);
         if (d < best) { best = d; r.point = c; }
     }
@@ -150,9 +150,9 @@ PointHullResult closest_point_on_hull(const HullShape& h, const vector3d& p) {
     return r;
 }
 
-bool segment_intersects_hull(const HullShape& h, const vector3d& p1, const vector3d& p2) {
+bool segment_intersects_hull(const HullShape& h, const linalg::vector3d& p1, const linalg::vector3d& p2) {
     double tmin = 0.0, tmax = 1.0;
-    const vector3d d = p2 - p1;
+    const linalg::vector3d d = p2 - p1;
 
     for (const auto& f : h.faces) {
         double denom = vec3::dot(f.normal, d);
@@ -172,15 +172,15 @@ bool segment_intersects_hull(const HullShape& h, const vector3d& p1, const vecto
     return true;
 }
 
-bool clip_segment_to_face(const HullShape& h, const HullFace& f, vector3d& a, vector3d& b) {
+bool clip_segment_to_face(const HullShape& h, const HullFace& f, linalg::vector3d& a, linalg::vector3d& b) {
     double tmin = 0.0, tmax = 1.0;
-    const vector3d d = b - a;
+    const linalg::vector3d d = b - a;
     const std::size_t n = f.indices.size();
 
     for (std::size_t i = 0; i < n; ++i) {
-        const vector3d& v0 = h.vertices[f.indices[i]];
-        const vector3d& v1 = h.vertices[f.indices[(i + 1) % n]];
-        vector3d side = vec3::cross(v1 - v0, f.normal); 
+        const linalg::vector3d& v0 = h.vertices[f.indices[i]];
+        const linalg::vector3d& v1 = h.vertices[f.indices[(i + 1) % n]];
+        linalg::vector3d side = vec3::cross(v1 - v0, f.normal); 
         double dist  = vec3::dot(side, a - v0);
         double denom = vec3::dot(side, d);
 
@@ -195,20 +195,20 @@ bool clip_segment_to_face(const HullShape& h, const HullFace& f, vector3d& a, ve
         if (tmin > tmax) return false;
     }
 
-    vector3d a0 = a;
+    linalg::vector3d a0 = a;
     a = a0 + d * tmin;
     b = a0 + d * tmax;
     return true;
 }
 
-int support_edge(const HullShape& h, const vector3d& dir, const vector3d& axis, double sign) {
+int support_edge(const HullShape& h, const linalg::vector3d& dir, const linalg::vector3d& axis, double sign) {
     int best = -1;
     double best_d = -std::numeric_limits<double>::max();
 
     for (std::size_t i = 0; i < h.edges.size(); ++i) {
-        const vector3d& a = h.vertices[h.edges[i][0]];
-        const vector3d& b = h.vertices[h.edges[i][1]];
-        vector3d e = vec3::normalize(b - a);
+        const linalg::vector3d& a = h.vertices[h.edges[i][0]];
+        const linalg::vector3d& b = h.vertices[h.edges[i][1]];
+        linalg::vector3d e = vec3::normalize(b - a);
         if (std::abs(vec3::dot(e, dir)) < 1.0 - 1e-6) continue;
         double d = sign * vec3::dot(axis, (a + b) * 0.5);
         if (d > best_d) { best_d = d; best = static_cast<int>(i); }
@@ -217,13 +217,13 @@ int support_edge(const HullShape& h, const vector3d& dir, const vector3d& axis, 
     return best;
 }
 
-void project_hull(const HullShape& h, const vector3d& axis, double& lo, double& hi) {
+void project_hull(const HullShape& h, const linalg::vector3d& axis, double& lo, double& hi) {
     lo = std::numeric_limits<double>::max();
     hi = -lo;
     for (const auto& v : h.vertices) { double d = vec3::dot(axis, v); lo = std::min(lo, d); hi = std::max(hi, d); }
 }
 
-void project_points(const std::vector<vector3d>& pts, const vector3d& axis, double& lo, double& hi) {
+void project_points(const std::vector<linalg::vector3d>& pts, const linalg::vector3d& axis, double& lo, double& hi) {
     lo = std::numeric_limits<double>::max();
     hi = -lo;
     for (const auto& v : pts) { double d = vec3::dot(axis, v); lo = std::min(lo, d); hi = std::max(hi, d); }
@@ -234,14 +234,14 @@ bool collide_sphere_sphere(
     const SphereShape& sb, const Transform3D& xb,
     ContactManifold3D& m, double margin 
 ) {
-    vector3d cA = xa.apply(sa.center);
-    vector3d cB = xb.apply(sb.center);
-    vector3d d = cB - cA;
+    linalg::vector3d cA = xa.apply(sa.center);
+    linalg::vector3d cB = xb.apply(sb.center);
+    linalg::vector3d d = cB - cA;
     double dist_sq = vec3::length_squared(d);
     double r_sum = sa.radius + sb.radius;
     if (dist_sq > (r_sum + margin) * (r_sum + margin)) return false;
     double dist = std::sqrt(dist_sq);
-    m.normal = (dist >= constants::middle_epsilon()) ? d * (1.0 / dist) : vector3d{0.0, 1.0, 0.0};
+    m.normal = (dist >= constants::middle_epsilon()) ? d * (1.0 / dist) : linalg::vector3d{0.0, 1.0, 0.0};
     double pen = r_sum - dist;
     m.point_count = 1;
     m.points[0].position = cA + m.normal * (sa.radius - pen * 0.5);
@@ -249,7 +249,7 @@ bool collide_sphere_sphere(
     return true;
 }
 
-bool collide_sphere_point(const vector3d& c, double ra, const vector3d& p, double rb, ContactManifold3D& m, double margin) {
+bool collide_sphere_point(const linalg::vector3d& c, double ra, const linalg::vector3d& p, double rb, ContactManifold3D& m, double margin) {
     SphereShape a{ c, ra }, b{ p, rb };
     return collide_sphere_sphere(a, Transform3D{}, b, Transform3D{}, m, margin);
 }
@@ -259,8 +259,8 @@ bool collide_sphere_capsule(
     const CapsuleShape3D& k, const Transform3D& xk,
     ContactManifold3D& m, double margin 
 ) {
-    vector3d c = xs.apply(s.center);
-    vector3d p = closest_point_on_segment(c, xk.apply(k.point1), xk.apply(k.point2));
+    linalg::vector3d c = xs.apply(s.center);
+    linalg::vector3d p = closest_point_on_segment(c, xk.apply(k.point1), xk.apply(k.point2));
     return collide_sphere_point(c, s.radius, p, k.radius, m, margin);
 }
 
@@ -270,11 +270,11 @@ bool collide_sphere_hull(
     ContactManifold3D& m, double margin 
 ) {
     if (!h.valid()) return false;
-    const vector3d c = xh.apply_inverse(xs.apply(s.center)); 
+    const linalg::vector3d c = xh.apply_inverse(xs.apply(s.center)); 
     PointHullResult q = closest_point_on_hull(h, c);
     if (q.distance > s.radius + margin) return false;
-    const vector3d n = xh.rotate(q.normal); 
-    const vector3d cw = xs.apply(s.center);
+    const linalg::vector3d n = xh.rotate(q.normal); 
+    const linalg::vector3d cw = xs.apply(s.center);
     m.normal = n * -1.0;
     m.point_count = 1;
     m.points[0].position = cw - n * ((s.radius + q.distance) * 0.5);
@@ -287,9 +287,9 @@ bool collide_sphere_plane(
     const PlaneShape& p, const Transform3D& xp,
     ContactManifold3D& m, double margin 
 ) {
-    vector3d n; double d;
+    linalg::vector3d n; double d;
     plane_in_world(p, xp, n, d);
-    vector3d c = xs.apply(s.center);
+    linalg::vector3d c = xs.apply(s.center);
     double dist = vec3::dot(n, c) - d;
     if (dist > s.radius + margin) return false;
     m.normal = n * -1.0;
@@ -304,19 +304,19 @@ bool collide_capsule_capsule(
     const CapsuleShape3D& kb, const Transform3D& xb,
     ContactManifold3D& m, double margin 
 ) {
-    const vector3d p1 = xa.apply(ka.point1), q1 = xa.apply(ka.point2);
-    const vector3d p2 = xb.apply(kb.point1), q2 = xb.apply(kb.point2);
+    const linalg::vector3d p1 = xa.apply(ka.point1), q1 = xa.apply(ka.point2);
+    const linalg::vector3d p2 = xb.apply(kb.point1), q2 = xb.apply(kb.point2);
     const double R = ka.radius + kb.radius;
     SegmentPair sp = closest_segment_points(p1, q1, p2, q2);
     if (sp.distance_squared > (R + margin) * (R + margin)) return false;
     const double dist = std::sqrt(sp.distance_squared);
-    const vector3d d1 = q1 - p1, d2 = q2 - p2;
-    vector3d n;
+    const linalg::vector3d d1 = q1 - p1, d2 = q2 - p2;
+    linalg::vector3d n;
 
     if (dist > constants::middle_epsilon()) {
         n = (sp.closest2 - sp.closest1) * (1.0 / dist);
     } else {
-        vector3d axis = vec3::normalize(d1), t1, t2;
+        linalg::vector3d axis = vec3::normalize(d1), t1, t2;
         vec3::orthonormal_basis(axis, t1, t2);
         n = t1;
     }
@@ -332,8 +332,8 @@ bool collide_capsule_capsule(
 
         if (hi - lo > 1e-6) {
             for (double t : { lo, hi }) {
-                vector3d a = p1 + d1 * t;
-                vector3d b = closest_point_on_segment(a, p2, q2);
+                linalg::vector3d a = p1 + d1 * t;
+                linalg::vector3d b = closest_point_on_segment(a, p2, q2);
                 double sep = vec3::dot(b - a, n) - R;
                 if (sep > margin) continue;
                 m.points[m.point_count].position = ((a + n * ka.radius) + (b - n * kb.radius)) * 0.5;
@@ -356,11 +356,11 @@ bool collide_capsule_plane(
     const PlaneShape& p, const Transform3D& xp,
     ContactManifold3D& m, double margin 
 ) {
-    vector3d n; double d;
+    linalg::vector3d n; double d;
     plane_in_world(p, xp, n, d);
     m.point_count = 0;
 
-    for (const vector3d& e : { xk.apply(k.point1), xk.apply(k.point2) }) {
+    for (const linalg::vector3d& e : { xk.apply(k.point1), xk.apply(k.point2) }) {
         double dist = vec3::dot(n, e) - d;
         if (dist > k.radius + margin) continue;
         m.points[m.point_count].position = e - n * ((k.radius + dist) * 0.5);
@@ -378,12 +378,12 @@ bool collide_hull_plane(
     ContactManifold3D& m, double margin 
 ) {
     if (!h.valid()) return false;
-    vector3d n; double d;
+    linalg::vector3d n; double d;
     plane_in_world(p, xp, n, d);
     std::vector<Candidate> c;
 
     for (const auto& v : h.vertices) {
-        vector3d w = xh.apply(v);
+        linalg::vector3d w = xh.apply(v);
         double s = vec3::dot(n, w) - d;
         if (s <= margin) c.push_back({ w - n * (s * 0.5), s });
     }
@@ -400,17 +400,17 @@ bool collide_capsule_hull(
     ContactManifold3D& m, double margin 
 ) {
     if (!h.valid()) return false;
-    const vector3d p1 = xh.apply_inverse(xk.apply(k.point1)); 
-    const vector3d p2 = xh.apply_inverse(xk.apply(k.point2));
+    const linalg::vector3d p1 = xh.apply_inverse(xk.apply(k.point1)); 
+    const linalg::vector3d p2 = xh.apply_inverse(xk.apply(k.point2));
     const double r = k.radius;
-    vector3d n_local{};           
+    linalg::vector3d n_local{};           
     std::vector<Candidate> local; 
 
     auto add_face_points = [&](const HullFace& f) {
-        vector3d a = p1, b = p2;
+        linalg::vector3d a = p1, b = p2;
         if (!clip_segment_to_face(h, f, a, b)) return;
 
-        for (const vector3d& q : { a, b }) {
+        for (const linalg::vector3d& q : { a, b }) {
             double s = vec3::dot(f.normal, q) - f.offset;
             if (s - r > margin) continue;
             local.push_back({ q - f.normal * ((r + s) * 0.5), s - r });
@@ -421,9 +421,9 @@ bool collide_capsule_hull(
 
     if (!segment_intersects_hull(h, p1, p2)) {
         double best = std::numeric_limits<double>::max();
-        vector3d on_seg{}, on_hull{};
+        linalg::vector3d on_seg{}, on_hull{};
 
-        for (const vector3d& e : { p1, p2 }) {
+        for (const linalg::vector3d& e : { p1, p2 }) {
             PointHullResult q = closest_point_on_hull(h, e);
             double d = vec3::length_squared(e - q.point);
             if (d < best) { best = d; on_seg = e; on_hull = q.point; }
@@ -449,10 +449,10 @@ bool collide_capsule_hull(
     }
 
     if (local.empty()) {
-        const vector3d d = p2 - p1;
+        const linalg::vector3d d = p2 - p1;
         double best = -std::numeric_limits<double>::max();
         int best_face = -1;
-        vector3d best_axis{};
+        linalg::vector3d best_axis{};
         int best_dir = -1;
 
         for (std::size_t i = 0; i < h.faces.size(); ++i) {
@@ -465,7 +465,7 @@ bool collide_capsule_hull(
         const double dl = vec3::length(d);
 
         for (std::size_t i = 0; i < h.edge_directions.size() && dl > constants::middle_epsilon(); ++i) {
-            vector3d L = vec3::cross(d, h.edge_directions[i]);
+            linalg::vector3d L = vec3::cross(d, h.edge_directions[i]);
             double len = vec3::length(L);
             if (len < 1e-6 * dl) continue;
             L = L * (1.0 / len);
@@ -492,7 +492,7 @@ bool collide_capsule_hull(
             add_face_points(f);
 
             if (local.empty()) {
-                const vector3d& q = (vec3::dot(f.normal, p1) < vec3::dot(f.normal, p2)) ? p1 : p2;
+                const linalg::vector3d& q = (vec3::dot(f.normal, p1) < vec3::dot(f.normal, p2)) ? p1 : p2;
                 double s = vec3::dot(f.normal, q) - f.offset;
                 local.push_back({ q - f.normal * ((r + s) * 0.5), s - r });
             }
@@ -505,7 +505,7 @@ bool collide_capsule_hull(
         }
     }
 
-    const vector3d n_world = xh.rotate(n_local);
+    const linalg::vector3d n_world = xh.rotate(n_local);
     m.normal = n_world * -1.0; 
     m.point_count = 0;
 
@@ -528,7 +528,7 @@ namespace physics {
 namespace narrowphase3d {
 namespace detail_sat3d {
 
-FaceQuery query_faces(const HullShape& a, const std::vector<vector3d>& other) {
+FaceQuery query_faces(const HullShape& a, const std::vector<linalg::vector3d>& other) {
     FaceQuery q;
 
     for (std::size_t i = 0; i < a.faces.size(); ++i) {
@@ -541,12 +541,12 @@ FaceQuery query_faces(const HullShape& a, const std::vector<vector3d>& other) {
     return q;
 }
 
-EdgeQuery query_edges(const HullShape& a, const std::vector<vector3d>& b_vertices, const std::vector<vector3d>& b_dirs) {
+EdgeQuery query_edges(const HullShape& a, const std::vector<linalg::vector3d>& b_vertices, const std::vector<linalg::vector3d>& b_dirs) {
     EdgeQuery q;
 
     for (std::size_t i = 0; i < a.edge_directions.size(); ++i) {
         for (std::size_t j = 0; j < b_dirs.size(); ++j) {
-            vector3d L = vec3::cross(a.edge_directions[i], b_dirs[j]);
+            linalg::vector3d L = vec3::cross(a.edge_directions[i], b_dirs[j]);
             double len = vec3::length(L);
             if (len < 1e-6) continue;
             L = L * (1.0 / len);
@@ -568,13 +568,13 @@ EdgeQuery query_edges(const HullShape& a, const std::vector<vector3d>& b_vertice
     return q;
 }
 
-void clip_polygon(std::vector<vector3d>& poly, const vector3d& n, double d, std::vector<vector3d>& scratch) {
+void clip_polygon(std::vector<linalg::vector3d>& poly, const linalg::vector3d& n, double d, std::vector<linalg::vector3d>& scratch) {
     scratch.clear();
     const std::size_t count = poly.size();
 
     for (std::size_t i = 0; i < count; ++i) {
-        const vector3d& a = poly[i];
-        const vector3d& b = poly[(i + 1) % count];
+        const linalg::vector3d& a = poly[i];
+        const linalg::vector3d& b = poly[(i + 1) % count];
         double da = vec3::dot(n, a) - d;
         double db = vec3::dot(n, b) - d;
         if (da <= 0.0) scratch.push_back(a);
@@ -587,14 +587,14 @@ void clip_polygon(std::vector<vector3d>& poly, const vector3d& n, double d, std:
 void face_contact(
     const HullShape& r, const Transform3D& xr, int rf,
     const HullShape& inc, const Transform3D& xi,
-    std::vector<Candidate>& out, vector3d& normal, double margin
+    std::vector<Candidate>& out, linalg::vector3d& normal, double margin
 ) {
     const HullFace& ref = r.faces[static_cast<std::size_t>(rf)];
     normal = xr.rotate(ref.normal);
-    std::vector<vector3d> ref_poly;
+    std::vector<linalg::vector3d> ref_poly;
     for (auto idx : ref.indices) ref_poly.push_back(xr.apply(r.vertices[idx]));
     const double offset = vec3::dot(normal, ref_poly[0]);
-    const vector3d n_in_i = xi.rotate_inverse(normal);
+    const linalg::vector3d n_in_i = xi.rotate_inverse(normal);
     std::size_t inc_face = 0;
     double min_dot = std::numeric_limits<double>::max();
 
@@ -603,13 +603,13 @@ void face_contact(
         if (d < min_dot) { min_dot = d; inc_face = f; }
     }
 
-    std::vector<vector3d> poly, scratch;
+    std::vector<linalg::vector3d> poly, scratch;
     for (auto idx : inc.faces[inc_face].indices) poly.push_back(xi.apply(inc.vertices[idx]));
 
     for (std::size_t k = 0; k < ref_poly.size() && !poly.empty(); ++k) {
-        const vector3d& a = ref_poly[k];
-        const vector3d& b = ref_poly[(k + 1) % ref_poly.size()];
-        vector3d side = vec3::cross(b - a, normal);
+        const linalg::vector3d& a = ref_poly[k];
+        const linalg::vector3d& b = ref_poly[(k + 1) % ref_poly.size()];
+        linalg::vector3d side = vec3::cross(b - a, normal);
         clip_polygon(poly, side, vec3::dot(side, a), scratch);
     }
 
@@ -620,10 +620,10 @@ void face_contact(
 
     if (out.empty()) {
         double best = std::numeric_limits<double>::max();
-        vector3d deepest{};
+        linalg::vector3d deepest{};
 
         for (const auto& v : inc.vertices) {
-            vector3d w = xi.apply(v);
+            linalg::vector3d w = xi.apply(v);
             double s = vec3::dot(normal, w) - offset;
             if (s < best) { best = s; deepest = w; }
         }
@@ -648,7 +648,7 @@ bool collide_hull_hull(
 ) {
     using namespace detail_sat3d;
     if (!a.valid() || !b.valid()) return false;
-    std::vector<vector3d> b_in_a, a_in_b, b_dirs;
+    std::vector<linalg::vector3d> b_in_a, a_in_b, b_dirs;
     b_in_a.reserve(b.vertices.size());
     a_in_b.reserve(a.vertices.size());
     for (const auto& v : b.vertices) b_in_a.push_back(xa.apply_inverse(xb.apply(v)));
@@ -664,17 +664,17 @@ bool collide_hull_hull(
     const double face_sep = std::max(fa.separation, fb.separation);
 
     if (eq.dir_a >= 0 && eq.separation > rel_tolerance * face_sep + abs_tolerance) {
-        const vector3d& L = eq.axis; 
+        const linalg::vector3d& L = eq.axis; 
         int ea = support_edge(a, a.edge_directions[static_cast<std::size_t>(eq.dir_a)], L, 1.0);
-        vector3d dir_b_local = xb.rotate_inverse(xa.rotate(b_dirs[static_cast<std::size_t>(eq.dir_b)]));
-        vector3d L_in_b = xb.rotate_inverse(xa.rotate(L));
+        linalg::vector3d dir_b_local = xb.rotate_inverse(xa.rotate(b_dirs[static_cast<std::size_t>(eq.dir_b)]));
+        linalg::vector3d L_in_b = xb.rotate_inverse(xa.rotate(L));
         int eb = support_edge(b, dir_b_local, L_in_b, -1.0);
 
         if (ea >= 0 && eb >= 0) {
-            vector3d a0 = xa.apply(a.vertices[a.edges[ea][0]]), a1 = xa.apply(a.vertices[a.edges[ea][1]]);
-            vector3d b0 = xb.apply(b.vertices[b.edges[eb][0]]), b1 = xb.apply(b.vertices[b.edges[eb][1]]);
+            linalg::vector3d a0 = xa.apply(a.vertices[a.edges[ea][0]]), a1 = xa.apply(a.vertices[a.edges[ea][1]]);
+            linalg::vector3d b0 = xb.apply(b.vertices[b.edges[eb][0]]), b1 = xb.apply(b.vertices[b.edges[eb][1]]);
             SegmentPair sp = closest_segment_points(a0, a1, b0, b1);
-            vector3d n = xa.rotate(L);
+            linalg::vector3d n = xa.rotate(L);
             m.normal = n;
             m.point_count = 1;
             m.points[0].position = (sp.closest1 + sp.closest2) * 0.5;
@@ -684,7 +684,7 @@ bool collide_hull_hull(
     }
 
     std::vector<Candidate> c;
-    vector3d n;
+    linalg::vector3d n;
 
     if (fb.separation > 0.98 * fa.separation + 0.001) {
         face_contact(b, xb, fb.index, a, xa, c, n, margin);
@@ -814,8 +814,8 @@ auto Simulation3D::query_aabb(const AABB3D& region) -> std::vector<RigidBody3D*>
     return m_tree.query(region);
 }
 
-auto Simulation3D::point_query(const vector3d& point) -> RigidBody3D* {
-    const vector3d e{0.001, 0.001, 0.001};
+auto Simulation3D::point_query(const linalg::vector3d& point) -> RigidBody3D* {
+    const linalg::vector3d e{0.001, 0.001, 0.001};
     auto results = query_aabb({ point - e, point + e });
 
     for (auto* b : results) {
@@ -841,15 +841,15 @@ bool Simulation3D::wants_events(const RigidBody3D& a, const RigidBody3D& b, bool
     return sensor && (a.has(PhysicsFlags::SensorEvents) || b.has(PhysicsFlags::SensorEvents));
 }
 
-void Simulation3D::apply_impulse(RigidBody3D& a, RigidBody3D& b, const vector3d& rA, const vector3d& rB, const vector3d& P) {
+void Simulation3D::apply_impulse(RigidBody3D& a, RigidBody3D& b, const linalg::vector3d& rA, const linalg::vector3d& rB, const linalg::vector3d& P) {
     a.set_linear_velocity(a.linear_velocity() - P * a.inv_mass());
     a.set_angular_velocity(a.angular_velocity() - a.apply_inv_inertia(vec3::cross(rA, P)));
     b.set_linear_velocity(b.linear_velocity() + P * b.inv_mass());
     b.set_angular_velocity(b.angular_velocity() + b.apply_inv_inertia(vec3::cross(rB, P)));
 }
 
-double Simulation3D::effective_inv_mass(const RigidBody3D& a, const RigidBody3D& b, const vector3d& rA, const vector3d& rB, const vector3d& u) {
-    vector3d ra_u = vec3::cross(rA, u), rb_u = vec3::cross(rB, u);
+double Simulation3D::effective_inv_mass(const RigidBody3D& a, const RigidBody3D& b, const linalg::vector3d& rA, const linalg::vector3d& rB, const linalg::vector3d& u) {
+    linalg::vector3d ra_u = vec3::cross(rA, u), rb_u = vec3::cross(rB, u);
     return a.inv_mass() + b.inv_mass()
          + vec3::dot(ra_u, a.apply_inv_inertia(ra_u))
          + vec3::dot(rb_u, b.apply_inv_inertia(rb_u));
@@ -916,7 +916,7 @@ void Simulation3D::generate_contacts(RigidBody3D* a, RigidBody3D* b) {
 
             for (int p = 0; p < mf.point_count; ++p) {
                 ContactPoint3D& cp = mf.points[p];
-                vector3d half = mf.normal * (cp.separation * 0.5);
+                linalg::vector3d half = mf.normal * (cp.separation * 0.5);
                 cp.local_anchor_a = a->transform().apply_inverse(cp.position - half);
                 cp.local_anchor_b = b->transform().apply_inverse(cp.position + half);
             }
@@ -1025,8 +1025,8 @@ void Simulation3D::build_velocity_constraints(double dt) {
         vc.restitution_threshold = mf.restitution_threshold;
         vc.point_count = mf.point_count;
         vc.manifold_index = mi;
-        const vector3d cA = a->world_center();
-        const vector3d cB = b->world_center();
+        const linalg::vector3d cA = a->world_center();
+        const linalg::vector3d cB = b->world_center();
         const CachedContact* old = nullptr;
 
         if (m_cfg.warm_starting) {
@@ -1053,8 +1053,8 @@ void Simulation3D::build_velocity_constraints(double dt) {
 
             for (int q = 0; q <= p; ++q) {
                 const auto& o = vc.points[q];
-                vector3d ra_p = vec3::cross(vcp.rA, vc.normal), rb_p = vec3::cross(vcp.rB, vc.normal);
-                vector3d ra_q = vec3::cross(o.rA, vc.normal),   rb_q = vec3::cross(o.rB, vc.normal);
+                linalg::vector3d ra_p = vec3::cross(vcp.rA, vc.normal), rb_p = vec3::cross(vcp.rB, vc.normal);
+                linalg::vector3d ra_q = vec3::cross(o.rA, vc.normal),   rb_q = vec3::cross(o.rB, vc.normal);
                 double k = a->inv_mass() + b->inv_mass() + vec3::dot(ra_p, a->apply_inv_inertia(ra_q)) + vec3::dot(rb_p, b->apply_inv_inertia(rb_q));
                 vc.normal_block[p][q] = vc.normal_block[q][p] = k;
             }
@@ -1083,7 +1083,7 @@ void Simulation3D::warm_start() {
     for (auto& vc : m_constraints) {
         for (int p = 0; p < vc.point_count; ++p) {
             const auto& vcp = vc.points[p];
-            vector3d P = vc.normal * vcp.normal_impulse + vc.tangent1 * vcp.tangent_impulse[0] + vc.tangent2 * vcp.tangent_impulse[1];
+            linalg::vector3d P = vc.normal * vcp.normal_impulse + vc.tangent1 * vcp.tangent_impulse[0] + vc.tangent2 * vcp.tangent_impulse[1];
             apply_impulse(*vc.body_a, *vc.body_b, vcp.rA, vcp.rB, P);
         }
     }
@@ -1099,7 +1099,7 @@ void Simulation3D::solve_velocity_constraints(bool reverse) {
 
         for (int pi = 0; pi < vc.point_count; ++pi) {
             auto& vcp = vc.points[reverse ? vc.point_count - 1 - pi : pi];
-            vector3d dv = point_velocity(b, vcp.rB) - point_velocity(a, vcp.rA);
+            linalg::vector3d dv = point_velocity(b, vcp.rB) - point_velocity(a, vcp.rA);
             double old1 = vcp.tangent_impulse[0], old2 = vcp.tangent_impulse[1];
             double new1 = old1 - vec3::dot(dv, vc.tangent1) * vcp.tangent_mass[0];
             double new2 = old2 - vec3::dot(dv, vc.tangent2) * vcp.tangent_mass[1];
@@ -1203,11 +1203,11 @@ bool Simulation3D::solve_normal_block(VelocityConstraint3D& vc) {
             }
 
             if (!ok) continue;
-            vector3d P_lin{}, ang_a{}, ang_b{};
+            linalg::vector3d P_lin{}, ang_a{}, ang_b{};
 
             for (int i = 0; i < n; ++i) {
                 x[i] = std::max(x[i], 0.0);
-                vector3d P = vc.normal * (x[i] - acc[i]);
+                linalg::vector3d P = vc.normal * (x[i] - acc[i]);
                 P_lin += P;
                 ang_a += vec3::cross(vc.points[i].rA, P);
                 ang_b += vec3::cross(vc.points[i].rB, P);
@@ -1247,20 +1247,20 @@ bool Simulation3D::solve_position_constraints(bool reverse) {
 
         for (int pi = 0; pi < mf.point_count; ++pi) {
             const int p = reverse ? mf.point_count - 1 - pi : pi;
-            vector3d pA = a.transform().apply(mf.points[p].local_anchor_a);
-            vector3d pB = b.transform().apply(mf.points[p].local_anchor_b);
+            linalg::vector3d pA = a.transform().apply(mf.points[p].local_anchor_a);
+            linalg::vector3d pB = b.transform().apply(mf.points[p].local_anchor_b);
             double separation = vec3::dot(pB - pA, mf.normal);
             min_separation = std::min(min_separation, separation);
             double C = std::clamp(m_cfg.baumgarte_factor * (separation + m_cfg.slop), -m_cfg.max_correction, 0.0);
             if (C == 0.0) continue;
-            vector3d point = (pA + pB) * 0.5;
-            vector3d rA = point - a.world_center();
-            vector3d rB = point - b.world_center();
+            linalg::vector3d point = (pA + pB) * 0.5;
+            linalg::vector3d rA = point - a.world_center();
+            linalg::vector3d rB = point - b.world_center();
             double K = effective_inv_mass(a, b, rA, rB, mf.normal);
             double impulse = (K > 0.0) ? -C / K : 0.0;
-            vector3d P = mf.normal * impulse;
-            vector3d dwA = a.apply_inv_inertia(vec3::cross(rA, P)) * -1.0;
-            vector3d dwB = b.apply_inv_inertia(vec3::cross(rB, P));
+            linalg::vector3d P = mf.normal * impulse;
+            linalg::vector3d dwA = a.apply_inv_inertia(vec3::cross(rA, P)) * -1.0;
+            linalg::vector3d dwB = b.apply_inv_inertia(vec3::cross(rB, P));
             a.apply_position_correction(P * -a.inv_mass(), dwA);
             b.apply_position_correction(P *  b.inv_mass(), dwB);
         }

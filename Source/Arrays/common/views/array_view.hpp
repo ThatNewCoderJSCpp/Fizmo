@@ -2,7 +2,7 @@
 #define FIZMO_ARRAYS_VIEWS_ARRAY_VIEW_HPP
 
 #include "../ops/inplace_ops.hpp"
-#include "../../array_iterators.hpp"
+#include "../../../Collections/iterator.hpp"
 
 namespace fizmo {
 namespace arrays {
@@ -31,6 +31,8 @@ protected:
 
 } // namespace detail
 } // namespace arrays
+
+namespace collections {
 
 template <typename T>
 class ArraySpan;
@@ -115,6 +117,7 @@ public:
     operator ArrayView<T>() const noexcept { return view(); }
 };
 
+} // namespace collections
 } // namespace fizmo
 
 #endif // FIZMO_ARRAYS_VIEWS_ARRAY_VIEW_HPP

@@ -12,19 +12,19 @@ void Shape::make_ccw() {
     if (area < 0.0) std::reverse(m_points.begin(), m_points.end());
 }
 
-auto Shape::box(const vector2d& center, double hw, double hh, double angle_degrees) -> Shape {
+auto Shape::box(const linalg::vector2d& center, double hw, double hh, double angle_degrees) -> Shape {
     const double a = angle_degrees * constants::pi_180();
     const double c = std::cos(a), s = std::sin(a);
-    std::vector<vector2d> pts;
+    std::vector<linalg::vector2d> pts;
     const double lx[4] = { -hw, hw, hw, -hw }, ly[4] = { -hh, -hh, hh, hh };
     for (int i = 0; i < 4; ++i) pts.push_back({ center.x + lx[i] * c - ly[i] * s, center.y + lx[i] * s + ly[i] * c });
     return Shape(std::move(pts));
 }
 
-auto Shape::convex_hull(std::vector<vector2d> pts) -> Shape {
-    std::sort(pts.begin(), pts.end(), [](const vector2d& a, const vector2d& b) { return a.x < b.x || (a.x == b.x && a.y < b.y); });
+auto Shape::convex_hull(std::vector<linalg::vector2d> pts) -> Shape {
+    std::sort(pts.begin(), pts.end(), [](const linalg::vector2d& a, const linalg::vector2d& b) { return a.x < b.x || (a.x == b.x && a.y < b.y); });
     if (pts.size() < 3) return Shape(std::move(pts));
-    std::vector<vector2d> hull(2 * pts.size());
+    std::vector<linalg::vector2d> hull(2 * pts.size());
     std::size_t k = 0;
     for (std::size_t i = 0; i < pts.size(); ++i) { while (k >= 2 && cross(hull[k - 1] - hull[k - 2], pts[i] - hull[k - 2]) <= 0.0) --k; hull[k++] = pts[i]; }
     for (std::size_t i = pts.size() - 1, t = k + 1; i > 0; --i) { while (k >= t && cross(hull[k - 1] - hull[k - 2], pts[i - 1] - hull[k - 2]) <= 0.0) --k; hull[k++] = pts[i - 1]; }
@@ -42,17 +42,17 @@ auto Shape::circle_of_sprite(const Sprite& s, double scale) -> Shape {
     return circle({ b.x + b.w * 0.5, b.y + b.h * 0.5 }, std::min(s.display_width(), s.display_height()) * scale);
 }
 
-auto Shape::center() const noexcept -> vector2d {
-    vector2d c{};
+auto Shape::center() const noexcept -> linalg::vector2d {
+    linalg::vector2d c{};
     if (m_points.empty()) return c;
-    for (const vector2d& p : m_points) c = c + p;
+    for (const linalg::vector2d& p : m_points) c = c + p;
     return c * (1.0 / static_cast<double>(m_points.size()));
 }
 
 void Shape::bounds(double& x0, double& y0, double& x1, double& y1) const noexcept {
     x0 = y0 = std::numeric_limits<double>::max();
     x1 = y1 = std::numeric_limits<double>::lowest();
-    for (const vector2d& p : m_points) { x0 = std::min(x0, p.x); y0 = std::min(y0, p.y); x1 = std::max(x1, p.x); y1 = std::max(y1, p.y); }
+    for (const linalg::vector2d& p : m_points) { x0 = std::min(x0, p.x); y0 = std::min(y0, p.y); x1 = std::max(x1, p.x); y1 = std::max(y1, p.y); }
     x0 -= m_radius; y0 -= m_radius; x1 += m_radius; y1 += m_radius;
 }
 
@@ -65,16 +65,16 @@ namespace graphics {
 namespace collision {
 namespace detail {
 
-vector2d closest_on_segment(const vector2d& p, const vector2d& a, const vector2d& b) noexcept {
-    const vector2d ab = b - a;
+linalg::vector2d closest_on_segment(const linalg::vector2d& p, const linalg::vector2d& a, const linalg::vector2d& b) noexcept {
+    const linalg::vector2d ab = b - a;
     const double d = dot(ab, ab);
     if (d <= 0.0) return a;
     const double t = std::max(0.0, std::min(1.0, dot(p - a, ab) / d));
     return a + ab * t;
 }
 
-void segment_closest(const vector2d& p1, const vector2d& q1, const vector2d& p2, const vector2d& q2, vector2d& c1, vector2d& c2) noexcept {
-    const vector2d d1 = q1 - p1, d2 = q2 - p2, r = p1 - p2;
+void segment_closest(const linalg::vector2d& p1, const linalg::vector2d& q1, const linalg::vector2d& p2, const linalg::vector2d& q2, linalg::vector2d& c1, linalg::vector2d& c2) noexcept {
+    const linalg::vector2d d1 = q1 - p1, d2 = q2 - p2, r = p1 - p2;
     const double a = dot(d1, d1), e = dot(d2, d2), f = dot(d2, r);
     double s = 0.0, t = 0.0;
     if (a <= 1e-12 && e <= 1e-12) { c1 = p1; c2 = p2; return; }
@@ -94,29 +94,29 @@ void segment_closest(const vector2d& p1, const vector2d& q1, const vector2d& p2,
     c2 = p2 + d2 * t;
 }
 
-bool core_contains(const std::vector<vector2d>& pts, const vector2d& p) noexcept {
+bool core_contains(const std::vector<linalg::vector2d>& pts, const linalg::vector2d& p) noexcept {
     if (pts.size() < 3) return false;
     for (std::size_t i = 0; i < pts.size(); ++i) {
-        const vector2d& a = pts[i];
-        const vector2d& b = pts[(i + 1) % pts.size()];
+        const linalg::vector2d& a = pts[i];
+        const linalg::vector2d& b = pts[(i + 1) % pts.size()];
         if (cross(b - a, p - a) < 0.0) return false;
     }
     return true;
 }
 
-void project(const std::vector<vector2d>& pts, const vector2d& axis, double& lo, double& hi) noexcept {
+void project(const std::vector<linalg::vector2d>& pts, const linalg::vector2d& axis, double& lo, double& hi) noexcept {
     lo = hi = dot(pts[0], axis);
     for (std::size_t i = 1; i < pts.size(); ++i) { const double d = dot(pts[i], axis); lo = std::min(lo, d); hi = std::max(hi, d); }
 }
 
-bool sat_cores(const std::vector<vector2d>& a, const vector2d& ca, const std::vector<vector2d>& b, const vector2d& cb, vector2d& normal, double& depth) noexcept {
+bool sat_cores(const std::vector<linalg::vector2d>& a, const linalg::vector2d& ca, const std::vector<linalg::vector2d>& b, const linalg::vector2d& cb, linalg::vector2d& normal, double& depth) noexcept {
     depth = std::numeric_limits<double>::max();
-    auto test = [&](const std::vector<vector2d>& poly) {
+    auto test = [&](const std::vector<linalg::vector2d>& poly) {
         if (poly.size() < 2) return true;
         const std::size_t edges = poly.size() == 2 ? 1 : poly.size();
         for (std::size_t i = 0; i < edges; ++i) {
-            const vector2d e = poly[(i + 1) % poly.size()] - poly[i];
-            vector2d n{ e.y, -e.x };
+            const linalg::vector2d e = poly[(i + 1) % poly.size()] - poly[i];
+            linalg::vector2d n{ e.y, -e.x };
             const double l = len(n);
             if (l <= 1e-12) continue;
             n = n * (1.0 / l);
@@ -135,16 +135,16 @@ bool sat_cores(const std::vector<vector2d>& a, const vector2d& ca, const std::ve
     return test(a) && test(b);
 }
 
-double feature_distance(const std::vector<vector2d>& a, const std::vector<vector2d>& b, vector2d& pa, vector2d& pb) noexcept {
+double feature_distance(const std::vector<linalg::vector2d>& a, const std::vector<linalg::vector2d>& b, linalg::vector2d& pa, linalg::vector2d& pb) noexcept {
     double best = std::numeric_limits<double>::max();
     const std::size_t ea = a.size() <= 2 ? 1 : a.size(), eb = b.size() <= 2 ? 1 : b.size();
     for (std::size_t i = 0; i < ea; ++i) {
-        const vector2d& a0 = a[i];
-        const vector2d& a1 = a.size() == 1 ? a[0] : a[(i + 1) % a.size()];
+        const linalg::vector2d& a0 = a[i];
+        const linalg::vector2d& a1 = a.size() == 1 ? a[0] : a[(i + 1) % a.size()];
         for (std::size_t j = 0; j < eb; ++j) {
-            const vector2d& b0 = b[j];
-            const vector2d& b1 = b.size() == 1 ? b[0] : b[(j + 1) % b.size()];
-            vector2d c1, c2;
+            const linalg::vector2d& b0 = b[j];
+            const linalg::vector2d& b1 = b.size() == 1 ? b[0] : b[(j + 1) % b.size()];
+            linalg::vector2d c1, c2;
             segment_closest(a0, a1, b0, b1, c1, c2);
             const double d = len(c2 - c1);
             if (d < best) { best = d; pa = c1; pb = c2; }
@@ -153,14 +153,14 @@ double feature_distance(const std::vector<vector2d>& a, const std::vector<vector
     return best;
 }
 
-bool cores_overlap(const Shape& a, const Shape& b, double feature, vector2d& normal, double& depth) noexcept {
+bool cores_overlap(const Shape& a, const Shape& b, double feature, linalg::vector2d& normal, double& depth) noexcept {
     const auto& pa = a.points();
     const auto& pb = b.points();
     if (pa.size() < 3 && pb.size() < 3) {
         if (feature > 1e-9) return false;
-        const vector2d dc = b.center() - a.center();
+        const linalg::vector2d dc = b.center() - a.center();
         const double l = len(dc);
-        normal = l > 1e-12 ? dc * (1.0 / l) : vector2d(1.0, 0.0);
+        normal = l > 1e-12 ? dc * (1.0 / l) : linalg::vector2d(1.0, 0.0);
         depth = 0.0;
         return true;
     }
@@ -180,7 +180,7 @@ namespace collision {
 
 double distance(const Shape& a, const Shape& b) noexcept {
     if (a.empty() || b.empty()) return std::numeric_limits<double>::max();
-    vector2d ca, cb, n;
+    linalg::vector2d ca, cb, n;
     double depth = 0.0;
     const double d = detail::feature_distance(a.points(), b.points(), ca, cb);
     if (detail::cores_overlap(a, b, d, n, depth)) return -(depth + a.radius() + b.radius());
@@ -191,7 +191,7 @@ Hit overlap(const Shape& a, const Shape& b) noexcept {
     Hit h;
     if (a.empty() || b.empty()) return h;
     const double ra = a.radius(), rb = b.radius();
-    vector2d ca, cb, n;
+    linalg::vector2d ca, cb, n;
     double depth = 0.0;
     const double d = detail::feature_distance(a.points(), b.points(), ca, cb);
 
@@ -205,34 +205,34 @@ Hit overlap(const Shape& a, const Shape& b) noexcept {
 
     if (d >= ra + rb) return h;
     h.hit = true;
-    h.normal = d > 1e-12 ? (cb - ca) * (1.0 / d) : vector2d(1.0, 0.0);
+    h.normal = d > 1e-12 ? (cb - ca) * (1.0 / d) : linalg::vector2d(1.0, 0.0);
     h.depth = ra + rb - d;
     h.point = ca + h.normal * (ra - h.depth * 0.5);
     return h;
 }
 
-bool contains(const Shape& s, const vector2d& p) noexcept {
+bool contains(const Shape& s, const linalg::vector2d& p) noexcept {
     if (s.empty()) return false;
     if (s.points().size() >= 3 && detail::core_contains(s.points(), p)) return true;
     const Shape pt = Shape::point(p);
-    vector2d a, b;
+    linalg::vector2d a, b;
     return detail::feature_distance(s.points(), pt.points(), a, b) <= s.radius();
 }
 
-RayHit raycast(const Shape& s, const vector2d& origin, const vector2d& dir, double max_t) noexcept {
+RayHit raycast(const Shape& s, const linalg::vector2d& origin, const linalg::vector2d& dir, double max_t) noexcept {
     RayHit best;
     if (s.empty()) return best;
     const double dl = detail::len(dir);
     if (dl <= 1e-12) return best;
-    const vector2d d = dir * (1.0 / dl);
+    const linalg::vector2d d = dir * (1.0 / dl);
     if (contains(s, origin)) { best.hit = true; best.t = 0.0; best.point = origin; best.normal = d * -1.0; return best; }
     best.t = max_t;
     const auto& pts = s.points();
     const double r = s.radius();
 
-    auto try_circle = [&](const vector2d& c) {
+    auto try_circle = [&](const linalg::vector2d& c) {
         if (r <= 0.0) return;
-        const vector2d m = origin - c;
+        const linalg::vector2d m = origin - c;
         const double b = detail::dot(m, d), cc = detail::dot(m, m) - r * r;
         if (cc > 0.0 && b > 0.0) return;
         const double disc = b * b - cc;
@@ -241,13 +241,13 @@ RayHit raycast(const Shape& s, const vector2d& origin, const vector2d& dir, doub
         if (t >= 0.0 && t < best.t) { best.hit = true; best.t = t; best.point = origin + d * t; best.normal = (best.point - c) * (1.0 / r); }
     };
 
-    auto try_segment = [&](const vector2d& a, const vector2d& b, const vector2d& outward) {
-        const vector2d off = outward * r;
-        const vector2d a2 = a + off, b2 = b + off;
-        const vector2d e = b2 - a2;
+    auto try_segment = [&](const linalg::vector2d& a, const linalg::vector2d& b, const linalg::vector2d& outward) {
+        const linalg::vector2d off = outward * r;
+        const linalg::vector2d a2 = a + off, b2 = b + off;
+        const linalg::vector2d e = b2 - a2;
         const double denom = detail::cross(d, e);
         if (std::abs(denom) <= 1e-12) return;
-        const vector2d w = a2 - origin;
+        const linalg::vector2d w = a2 - origin;
         const double t = detail::cross(w, e) / denom;
         const double u = detail::cross(w, d) / denom;
         if (t >= 0.0 && u >= 0.0 && u <= 1.0 && t < best.t && detail::dot(d, outward) < 0.0) { best.hit = true; best.t = t; best.point = origin + d * t; best.normal = outward; }
@@ -258,22 +258,22 @@ RayHit raycast(const Shape& s, const vector2d& origin, const vector2d& dir, doub
     } else {
         const std::size_t edges = pts.size() == 2 ? 2 : pts.size();
         for (std::size_t i = 0; i < edges; ++i) {
-            const vector2d& a = pts[i % pts.size()];
-            const vector2d& b = pts[(i + 1) % pts.size()];
-            const vector2d e = b - a;
+            const linalg::vector2d& a = pts[i % pts.size()];
+            const linalg::vector2d& b = pts[(i + 1) % pts.size()];
+            const linalg::vector2d e = b - a;
             const double l = detail::len(e);
             if (l <= 1e-12) continue;
-            const vector2d outward{ e.y / l, -e.x / l };
+            const linalg::vector2d outward{ e.y / l, -e.x / l };
             try_segment(a, b, outward);
         }
-        for (const vector2d& p : pts) try_circle(p);
+        for (const linalg::vector2d& p : pts) try_circle(p);
     }
 
     if (!best.hit) best.t = 0.0;
     return best;
 }
 
-SweepHit sweep(const Shape& moving, const vector2d& delta, const Shape& target, int iterations) noexcept {
+SweepHit sweep(const Shape& moving, const linalg::vector2d& delta, const Shape& target, int iterations) noexcept {
     SweepHit out;
     const double dl = detail::len(delta);
     double t = 0.0;
@@ -286,9 +286,9 @@ SweepHit sweep(const Shape& moving, const vector2d& delta, const Shape& target, 
         if (d <= 1e-6) {
             out.hit = true;
             out.time = t;
-            vector2d pa, pb;
+            linalg::vector2d pa, pb;
             detail::feature_distance(at.points(), target.points(), pa, pb);
-            const vector2d n = pa - pb;
+            const linalg::vector2d n = pa - pb;
             const double l = detail::len(n);
             out.normal = l > 1e-12 ? n * (1.0 / l) : delta * (-1.0 / dl);
             out.point = pb + out.normal * target.radius();

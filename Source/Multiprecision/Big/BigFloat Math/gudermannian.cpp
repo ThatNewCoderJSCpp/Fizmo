@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace gddetail {
 
@@ -9,8 +8,9 @@ bool gd_safe(const BigFloat& v, std::size_t want, std::size_t lost, std::size_t 
     BigUInt           sig = v.significand();
     const std::size_t L   = sig.bit_length();
     if (L < want) sig.shift_left_mutable(want - L);
+    if (L > want) lost += L - want;
     if (lost + 4 >= sig.bit_length()) return false;
-    return constants::bfdetail::round_is_safe(sig, prec, lost + 2);
+    return multiprecision::constants::bfdetail::round_is_safe(sig, prec, lost + 2);
 }
 
 bool gd_in_domain(const BigFloat& ax) {
@@ -20,7 +20,7 @@ bool gd_in_domain(const BigFloat& ax) {
 
     for (;;) {
         const BigFloatContext hc(hb, RoundingMode::nearest_even);
-        const BigFloat        d = BigFloat::sub(ax, constants::half_pi(hc), hc);
+        const BigFloat        d = BigFloat::sub(ax, multiprecision::constants::half_pi(hc), hc);
         if (!d.is_zero() && d.get_exp_base2() > 2 - static_cast<std::int64_t>(hb)) return d.signbit();
         if (hb >= BigFloatContext::max_prec / 4) return false;
         hb = BigFloatContext::clamp_precision(2 * hb);
@@ -29,11 +29,9 @@ bool gd_in_domain(const BigFloat& ax) {
 
 } // namespace gddetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat gudermannian(const BigFloat& x, const BigFloatContext& ctx) {
@@ -48,7 +46,7 @@ BigFloat gudermannian(const BigFloat& x, const BigFloatContext& ctx) {
         const std::size_t     want = BigFloatContext::clamp_precision(ctx.precision + guard);
         const BigFloatContext wc(want, RoundingMode::nearest_even);
         const bool     sat = BigFloat::compare(ax, BigFloat(static_cast<std::uint64_t>(want + 8))) != BigFloat::ordering::less;
-        const BigFloat v   = sat ? constants::half_pi(wc) : arctan(sinh(ax, wc), wc);
+        const BigFloat v   = sat ? multiprecision::constants::half_pi(wc) : arctan(sinh(ax, wc), wc);
         if (!v.is_finite()) return v;
         if (gddetail::gd_safe(v, want, 3, ctx.precision)) return v.with_sign(neg).rounded(ctx);
         if (gddetail::gd_guard_exhausted(ctx.precision, guard)) return v.with_sign(neg).rounded(ctx);
@@ -78,5 +76,4 @@ BigFloat inv_gudermannian(const BigFloat& x, const BigFloatContext& ctx) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

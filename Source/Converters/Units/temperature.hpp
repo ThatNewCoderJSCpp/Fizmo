@@ -9,20 +9,20 @@ namespace temperature {
 
 // POINT units (absolute temperatures) carry the offset
 // Use these with convert(). DO NOT multiply/divide them
-constexpr TemperatureUnit kelvin    (1.0L,        0.0L);
-constexpr TemperatureUnit celsius   (1.0L,        273.15L);
-constexpr TemperatureUnit fahrenheit(5.0L/9.0L,   273.15L - 32.0L*5.0L/9.0L);
-constexpr TemperatureUnit rankine   (5.0L/9.0L,   0.0L);
-constexpr TemperatureUnit reaumur   (5.0L/4.0L,   273.15L);
-constexpr TemperatureUnit romer     (40.0L/21.0L, 273.15L - 7.5L*40.0L/21.0L);
-constexpr TemperatureUnit delisle   (-2.0L/3.0L,  373.15L);   
-constexpr TemperatureUnit newton    (100.0L/33.0L,273.15L);
+constexpr TemperatureUnit kelvin    (ratio(1),       ExactScale::zero());
+constexpr TemperatureUnit celsius   (ratio(1),       exact("273.15"));
+constexpr TemperatureUnit fahrenheit(ratio(5, 9),    ratio(229835, 900));
+constexpr TemperatureUnit rankine   (ratio(5, 9),    ExactScale::zero());
+constexpr TemperatureUnit reaumur   (ratio(5, 4),    exact("273.15"));
+constexpr TemperatureUnit romer     (ratio(40, 21),  ratio(181205, 700));
+constexpr TemperatureUnit delisle   (ratio(-2, 3),   exact("373.15"));
+constexpr TemperatureUnit newton    (ratio(100, 33), exact("273.15"));
 
 // Offset 0, so they compose correctly inside rates like J/(kg*K) or cal/(g*C)
 // DO NOT use these with convert() - they are for multiplying/dividing only
-constexpr TemperatureUnit kelvin_interval    (1.0L);
-constexpr TemperatureUnit celsius_interval   (1.0L);          
-constexpr TemperatureUnit fahrenheit_interval(5.0L/9.0L);   
+constexpr TemperatureUnit kelvin_interval    (exact("1.0"));
+constexpr TemperatureUnit celsius_interval   (exact("1.0"));          
+constexpr TemperatureUnit fahrenheit_interval(ratio(5, 9));
 
 } // namespace temperature
 } // namespace units

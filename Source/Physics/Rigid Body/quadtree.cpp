@@ -5,8 +5,8 @@ namespace fizmo {
 namespace physics {
 
 bool overlap_circles(
-    const vector2d& c1, double r1,
-    const vector2d& c2, double r2
+    const linalg::vector2d& c1, double r1,
+    const linalg::vector2d& c2, double r2
 ) noexcept {
     double dx = c2.x - c1.x;
     double dy = c2.y - c1.y;
@@ -16,7 +16,7 @@ bool overlap_circles(
 
 bool overlap_aabb_circle(
     const AABB& box,
-    const vector2d& center,
+    const linalg::vector2d& center,
     double radius
 ) noexcept {
     double cx = std::max(box.min.x, std::min(center.x, box.max.x));
@@ -47,11 +47,11 @@ OverlapResult overlap_aabb_mtv(const AABB& a, const AABB& b) noexcept {
 }
 
 OverlapResult overlap_circles_mtv(
-    const vector2d& c1, double r1,
-    const vector2d& c2, double r2
+    const linalg::vector2d& c1, double r1,
+    const linalg::vector2d& c2, double r2
 ) noexcept {
-    vector2d d = c1 - c2;
-    double dist_sq = d.magnitude_squared();
+    linalg::vector2d d = c1 - c2;
+    double dist_sq = fast::length_squared(d);
     double r_sum = r1 + r2;
     if (dist_sq >= r_sum * r_sum) return {};
     OverlapResult r;
@@ -73,7 +73,7 @@ OverlapResult overlap_circles_mtv(
 
 OverlapResult overlap_aabb_circle_mtv(
     const AABB& box,
-    const vector2d& center,
+    const linalg::vector2d& center,
     double radius
 ) noexcept {
     double cx = std::max(box.min.x, std::min(center.x, box.max.x));

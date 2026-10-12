@@ -5,17 +5,23 @@
 
 #ifdef OS_WINDOWS
 
+#include <winsock2.h>
+#include <windows.h>
 #include <wincrypt.h>
 #include <schannel.h>
 #define SECURITY_WIN32
 #include <security.h>
 #include <sspi.h>
+#include <ncrypt.h>
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
+#include <mutex>
 
 #pragma comment(lib, "secur32.lib")
 #pragma comment(lib, "crypt32.lib")
+#pragma comment(lib, "ncrypt.lib")
+#pragma comment(lib, "bcrypt.lib")
 
 namespace fizmo {
 namespace networking {
@@ -83,22 +89,73 @@ public:
         const std::vector<const NativeCertificateBase*>& extras,
         const std::string& hostname,
         const std::string& ca_store_path,
-        bool check_revocation
+        bool check_revocation,
+        const std::vector<std::string>& crl_paths = {}
     ) noexcept;
+
+    static OCSPResult verify_ocsp(
+        const std::vector<std::uint8_t>& response,
+        const NativeCertificateBase& leaf,
+        const NativeCertificateBase* issuer,
+        const std::string& ca_store_path
+    ) noexcept;
+
+    static bool load_system_roots(std::vector<std::vector<std::uint8_t>>& out, const std::string& store_name) noexcept;
+
+    static int load_file_into_store(const std::string& path, HCERTSTORE certs, HCERTSTORE crls) noexcept;
 
 private:
     static HCERTSTORE build_extra_store(
         const std::vector<const NativeCertificateBase*>& extras,
-        const std::string& ca_store_path
+        const std::string& ca_store_path,
+        HCERTSTORE* roots
     ) noexcept;
 
-    static VerifyResult inspect_chain_status(PCCERT_CHAIN_CONTEXT chain_ctx) noexcept;
+    static VerifyResult check_crls(PCCERT_CHAIN_CONTEXT chain_ctx, const std::vector<std::string>& crl_paths) noexcept;
+
+    static VerifyResult inspect_chain_status(PCCERT_CHAIN_CONTEXT chain_ctx, DWORD ignored = 0) noexcept;
+    static bool root_in_store(PCCERT_CHAIN_CONTEXT chain_ctx, HCERTSTORE roots) noexcept;
 
     static VerifyResult map_policy_error(DWORD err, int depth) noexcept;
 
     static int error_depth(PCCERT_CHAIN_CONTEXT chain_ctx, DWORD flag) noexcept;
 
     static int chain_length(PCCERT_CHAIN_CONTEXT chain_ctx) noexcept;
+};
+
+class SchannelPrivateKey : public NativePrivateKeyBase {
+private:
+    NCRYPT_PROV_HANDLE m_prov = 0;
+    NCRYPT_KEY_HANDLE  m_key  = 0;
+    std::string        m_last_error;
+
+    bool import_pkcs8(const std::uint8_t* der, std::size_t len, const std::string& passphrase) noexcept;
+    bool export_public(std::vector<std::uint8_t>& out) const noexcept;
+
+public:
+    SchannelPrivateKey() noexcept = default;
+    ~SchannelPrivateKey() noexcept override { release(); }
+
+    SchannelPrivateKey(const SchannelPrivateKey&) = delete;
+    SchannelPrivateKey& operator=(const SchannelPrivateKey&) = delete;
+    SchannelPrivateKey(SchannelPrivateKey&& o) noexcept : m_prov(o.m_prov), m_key(o.m_key), m_last_error(std::move(o.m_last_error)) { o.m_prov = 0; o.m_key = 0; }
+    SchannelPrivateKey& operator=(SchannelPrivateKey&& o) noexcept {
+        if (this != &o) { release(); m_prov = o.m_prov; m_key = o.m_key; o.m_prov = 0; o.m_key = 0; m_last_error = std::move(o.m_last_error); }
+        return *this;
+    }
+
+    bool load_pem(const std::string& pem, const std::string& passphrase) noexcept override;
+    bool load_der(const std::uint8_t* der, std::size_t len, const std::string& passphrase) noexcept override;
+    void release() noexcept override;
+    bool valid() const noexcept override { return m_key != 0; }
+    KeyType key_type() const noexcept override;
+    int key_bits() const noexcept override;
+    bool matches_certificate(const NativeCertificateBase& cert) const noexcept override;
+    bool to_pkcs8_der(std::vector<std::uint8_t>& out) const noexcept override;
+    bool build_pkcs12(const NativeCertificateBase& leaf, const std::vector<const NativeCertificateBase*>& chain,
+                      const std::string& password, std::vector<std::uint8_t>& out) const noexcept override;
+    void* native() const noexcept override { return reinterpret_cast<void*>(m_key); }
+    const std::string& last_error() const noexcept override { return m_last_error; }
 };
 
 class SchannelCredentials : public NativeCredentialsBase {
@@ -108,6 +165,10 @@ private:
     HCERTSTORE     m_cert_store  = nullptr;
     PCCERT_CONTEXT m_cert_ctx    = nullptr;
     std::string    m_last_error;
+    TLSConfig      m_config;
+
+    bool acquire_modern(DWORD flags, unsigned long use) noexcept;
+    bool acquire_legacy(DWORD flags, unsigned long use) noexcept;
 
 public:
     SchannelCredentials() noexcept;
@@ -124,6 +185,9 @@ public:
     bool acquired() const noexcept override;
     const std::string& last_error() const noexcept override;
     void* native() const noexcept override;
+    const TLSConfig& config() const noexcept { return m_config; }
+
+    static bool keylog_supported() noexcept { return false; }
 
 private:
     static DWORD protocol_flags(const TLSConfig& config) noexcept;
@@ -141,8 +205,13 @@ private:
     std::string                m_hostname;
     SecPkgContext_StreamSizes  m_sizes{};
     bool                       m_sizes_queried = false;
+    const SchannelCredentials* m_creds = nullptr;
+    std::vector<std::uint8_t>  m_alpn_buffer;
+    AlertInfo                  m_alert;
 
     std::vector<std::uint8_t>  m_pending;
+
+    void note_failure(SECURITY_STATUS status) noexcept;
 
 public:
     SchannelSession() noexcept;
@@ -176,10 +245,19 @@ public:
 
     std::size_t max_plaintext_chunk() const noexcept override;
 
+    std::string alpn_selected() const noexcept override;
+    bool        session_reused() const noexcept override;
+    bool export_keying_material(const std::string& label, const std::uint8_t* context, std::size_t context_len, bool use_context, std::size_t out_len, std::vector<std::uint8_t>& out) const noexcept override;
+    bool channel_binding(ChannelBindingType type, std::vector<std::uint8_t>& out) const noexcept override;
+    AlertInfo last_alert() const noexcept override { return m_alert; }
+    bool local_certificate(std::vector<std::uint8_t>& out) const noexcept override;
+
+    static std::uint8_t status_to_alert(SECURITY_STATUS status) noexcept;
+
 private:
     static DWORD client_flags() noexcept;
 
-    static DWORD server_flags() noexcept;
+    DWORD server_flags() const noexcept;
 
     bool ensure_sizes() noexcept;
 

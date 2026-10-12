@@ -444,7 +444,7 @@ public:
         } catch (...) {}
     }
 
-    virtual void draw_lines_3d(const vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test) noexcept {
+    virtual void draw_lines_3d(const linalg::vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test) noexcept {
         if (!m_in_3d || !pts || count < 2) return;
         try { m_soft3d->lines(pts, count, color, width, depth_test); } catch (...) {}
     }

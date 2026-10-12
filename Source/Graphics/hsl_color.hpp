@@ -6,7 +6,7 @@
 #include <functional>
 #include "color.hpp"
 #include "../Basic/fizmo_defines.hpp"
-#include "../Standard Overloads/num_theory.hpp"
+#include <cmath>
 
 namespace fizmo {
 namespace graphics {
@@ -14,7 +14,7 @@ namespace graphics {
 class HSLColor {
 public:
     constexpr HSLColor() noexcept : m_hue(0), m_saturation(0), m_lightness(0) {}
-    constexpr HSLColor(const double h, const double s, const double l) noexcept : m_hue(clamp_hue(h)), m_saturation(clamp_percentage(s)), m_lightness(clamp_percentage(l)) {}
+    HSLColor(const double h, const double s, const double l) noexcept : m_hue(clamp_hue(h)), m_saturation(clamp_percentage(s)), m_lightness(clamp_percentage(l)) {}
     constexpr HSLColor(const HSLColor& other) noexcept : m_hue(other.m_hue), m_saturation(other.m_saturation), m_lightness(other.m_lightness) {}
 
     constexpr HSLColor(HSLColor&& other) noexcept : m_hue(other.m_hue), m_saturation(other.m_saturation), m_lightness(other.m_lightness) {
@@ -23,8 +23,8 @@ public:
         other.m_lightness = 0;
     }
 
-    constexpr HSLColor(const Color& other) noexcept : m_hue(init_hsl(other).h), m_saturation(init_hsl(other).s), m_lightness(init_hsl(other).l) {}
-    constexpr HSLColor(Color&& other) noexcept : m_hue(init_hsl(other).h), m_saturation(init_hsl(other).s), m_lightness(init_hsl(other).l) {}
+    HSLColor(const Color& other) noexcept : m_hue(init_hsl(other).h), m_saturation(init_hsl(other).s), m_lightness(init_hsl(other).l) {}
+    HSLColor(Color&& other) noexcept : m_hue(init_hsl(other).h), m_saturation(init_hsl(other).s), m_lightness(init_hsl(other).l) {}
 
     OPTIONAL_CPP14_CONSTEXPR HSLColor& operator=(const HSLColor& other) noexcept {
         if (this != &other) {
@@ -47,7 +47,7 @@ public:
         return *this;
     }
 
-    OPTIONAL_CPP14_CONSTEXPR HSLColor& operator=(const Color& other) noexcept {
+    HSLColor& operator=(const Color& other) noexcept {
         const HSLInitializer init = init_hsl(other);
         m_hue = init.h;
         m_saturation = init.s;
@@ -55,7 +55,7 @@ public:
         return *this;
     }
 
-    OPTIONAL_CPP14_CONSTEXPR HSLColor& operator=(Color&& other) noexcept {
+    HSLColor& operator=(Color&& other) noexcept {
         const HSLInitializer init = init_hsl(other);
         m_hue = init.h;
         m_saturation = init.s;
@@ -71,7 +71,7 @@ public:
     constexpr double& saturation() noexcept { return m_saturation; }
     constexpr double& lightness() noexcept { return m_lightness; }
 
-    constexpr void set_hue(const double h) noexcept { m_hue = clamp_hue(h); }
+    void set_hue(const double h) noexcept { m_hue = clamp_hue(h); }
     constexpr void set_saturation(const double s) noexcept { m_saturation = clamp_percentage(s); }
     constexpr void set_lightness(const double l) noexcept { m_lightness = clamp_percentage(l); }
 
@@ -90,8 +90,8 @@ public:
     }
 
 private:
-    constexpr double clamp_hue(const double h) const noexcept {
-        const double h_new = fizmo::math::mod_constexpr(h, 360.0);
+    double clamp_hue(const double h) const noexcept {
+        const double h_new = std::fmod(h, 360.0);
         return h_new < 0 ? h_new + 360.0 : h_new;
     }
 
@@ -104,18 +104,18 @@ private:
         double l;
     };
 
-    static constexpr HSLInitializer init_hsl(const Color& rgb) noexcept {
+    static HSLInitializer init_hsl(const Color& rgb) noexcept {
         HSLInitializer init{};
         const double r = rgb.red() / 255.0;
         const double g = rgb.green() / 255.0;
         const double b = rgb.blue() / 255.0;
 
-        const double c_max = fizmo::max_constexpr(r, g, b);
-        const double c_min = fizmo::min_constexpr(r, g, b);
+        const double c_max = std::fmax(r, std::fmax(g, b));
+        const double c_min = std::fmin(r, std::fmin(g, b));
         const double delta = c_max - c_min;
         init.l = (c_max + c_min) * 50.0;
 
-        if (fizmo::abs_constexpr(delta) <= 1e-10) {
+        if (std::fabs(delta) <= 1e-10) {
             init.h = 0.0;
             init.s = 0.0;
             return init;
@@ -125,7 +125,7 @@ private:
         double h = 0.0;
 
         if (c_max == r) {
-            h = 60.0 * fizmo::math::mod_constexpr(((g - b) / delta), 6.0);
+            h = 60.0 * std::fmod(((g - b) / delta), 6.0);
         } else if (c_max == g) {
             h = 60.0 * (((b - r) / delta) + 2.0);
         } else if (c_max == b) {
@@ -136,18 +136,18 @@ private:
         return init;
     }
 
-    static constexpr HSLInitializer init_hsl(Color&& rgb) noexcept {
+    static HSLInitializer init_hsl(Color&& rgb) noexcept {
         HSLInitializer init{};
         const double r = rgb.red() / 255.0;
         const double g = rgb.green() / 255.0;
         const double b = rgb.blue() / 255.0;
 
-        const double c_max = fizmo::max_constexpr(r, g, b);
-        const double c_min = fizmo::min_constexpr(r, g, b);
+        const double c_max = std::fmax(r, std::fmax(g, b));
+        const double c_min = std::fmin(r, std::fmin(g, b));
         const double delta = c_max - c_min;
         init.l = (c_max + c_min) * 50.0;
 
-        if (fizmo::abs_constexpr(delta) <= 1e-10) {
+        if (std::fabs(delta) <= 1e-10) {
             init.h = 0.0;
             init.s = 0.0;
             return init;
@@ -157,7 +157,7 @@ private:
         double h = 0.0;
 
         if (c_max == r) {
-            h = 60.0 * fizmo::math::mod_constexpr(((g - b) / delta), 6.0);
+            h = 60.0 * std::fmod(((g - b) / delta), 6.0);
         } else if (c_max == g) {
             h = 60.0 * (((b - r) / delta) + 2.0);
         } else if (c_max == b) {
@@ -175,13 +175,13 @@ private:
     double m_lightness;  
 };
 
-constexpr Color::RGBInitializer Color::init_rgb(const HSLColor& hsl) noexcept {
+inline Color::RGBInitializer Color::init_rgb(const HSLColor& hsl) noexcept {
     RGBInitializer init{};
     const double h = hsl.hue();
     const double s = hsl.saturation() / 100.0;
     const double l = hsl.lightness() / 100.0;
 
-    if (fizmo::abs_constexpr(s) <= 1e-10) {
+    if (std::fabs(s) <= 1e-10) {
         std::uint8_t gray = static_cast<std::uint8_t>(l * 255);
         init.r = gray;
         init.g = gray;
@@ -201,13 +201,13 @@ constexpr Color::RGBInitializer Color::init_rgb(const HSLColor& hsl) noexcept {
     return init;
 }
 
-constexpr Color::RGBInitializer Color::init_rgb(HSLColor&& hsl) noexcept {
+inline Color::RGBInitializer Color::init_rgb(HSLColor&& hsl) noexcept {
     RGBInitializer init{};
     const double h = hsl.hue();
     const double s = hsl.saturation() / 100.0;
     const double l = hsl.lightness() / 100.0;
 
-    if (fizmo::abs_constexpr(s) <= 1e-10) {
+    if (std::fabs(s) <= 1e-10) {
         std::uint8_t gray = static_cast<std::uint8_t>(l * 255);
         init.r = gray;
         init.g = gray;
@@ -233,9 +233,9 @@ constexpr Color::RGBInitializer Color::init_rgb(HSLColor&& hsl) noexcept {
     return init;
 }
 
-constexpr Color::Color(const HSLColor& hsl, std::uint8_t a) noexcept : m_red(init_rgb(hsl).r), m_green(init_rgb(hsl).g), m_blue(init_rgb(hsl).b), m_alpha(a) {}
+inline Color::Color(const HSLColor& hsl, std::uint8_t a) noexcept : m_red(init_rgb(hsl).r), m_green(init_rgb(hsl).g), m_blue(init_rgb(hsl).b), m_alpha(a) {}
 
-inline OPTIONAL_CPP14_CONSTEXPR Color& Color::operator=(const HSLColor& hsl) noexcept {
+inline Color& Color::operator=(const HSLColor& hsl) noexcept {
     const RGBInitializer init = init_rgb(hsl);
     m_red = init.r;
     m_green = init.g;

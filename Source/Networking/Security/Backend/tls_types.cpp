@@ -31,6 +31,8 @@ const char* verify_error_to_string(VerifyError e) noexcept {
         case VerifyError::SelfSigned:         return "SelfSigned";
         case VerifyError::WeakSignature:      return "WeakSignature";
         case VerifyError::RevocationUnknown:  return "RevocationUnknown";
+        case VerifyError::PinViolation:       return "PinViolation";
+        case VerifyError::Rejected:           return "Rejected";
         default:                              return "Unknown";
     }
 }
@@ -73,6 +75,29 @@ const char* verify_mode_to_string(VerifyMode m) noexcept {
         case VerifyMode::Peer:         return "Peer";
         case VerifyMode::FailIfNoPeer: return "FailIfNoPeer";
         default:                       return "Unknown";
+    }
+}
+
+const char* ocsp_status_to_string(OCSPCertStatus s) noexcept {
+    switch (s) {
+        case OCSPCertStatus::Unknown:     return "Unknown";
+        case OCSPCertStatus::Good:        return "Good";
+        case OCSPCertStatus::Revoked:     return "Revoked";
+        case OCSPCertStatus::Invalid:     return "Invalid";
+        case OCSPCertStatus::Unsupported: return "Unsupported";
+        default:                          return "Unknown";
+    }
+}
+
+const char* key_type_to_string(KeyType t) noexcept {
+    switch (t) {
+        case KeyType::None:    return "None";
+        case KeyType::RSA:     return "RSA";
+        case KeyType::EC:      return "EC";
+        case KeyType::Ed25519: return "Ed25519";
+        case KeyType::Ed448:   return "Ed448";
+        case KeyType::DSA:     return "DSA";
+        default:               return "Other";
     }
 }
 

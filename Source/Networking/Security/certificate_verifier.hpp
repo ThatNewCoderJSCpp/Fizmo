@@ -31,6 +31,9 @@ public:
 
     void set_allow_self_signed(bool enable) noexcept { m_allow_self_signed = enable; }
     bool allow_self_signed() const noexcept { return m_allow_self_signed; }
+    void set_crl_files(const std::vector<std::string>& paths) { m_crl_paths = paths; }
+    void add_crl_file(const std::string& path) { m_crl_paths.push_back(path); }
+    const std::vector<std::string>& crl_files() const noexcept { return m_crl_paths; }
 
 public:
     virtual VerifyResult verify(const std::string& hostname, const Certificate& leaf) const noexcept {
@@ -52,6 +55,7 @@ protected:
 
 private:
     std::string m_ca_store_path;
+    std::vector<std::string> m_crl_paths;
     bool        m_check_revocation  = true;
     bool        m_allow_self_signed = false;
 };

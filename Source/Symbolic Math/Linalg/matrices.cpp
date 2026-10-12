@@ -37,14 +37,14 @@ auto SymbolicMatrix2x2::simplify() const -> SymbolicMatrix2x2 { return { SIMPLIF
 
 auto SymbolicMatrix2x2::full_simplify(const cas::RewriterConfig& cfg) const -> SymbolicMatrix2x2 { return { FULL_SIMPLIFY(data[0][0],cfg), FULL_SIMPLIFY(data[0][1],cfg), FULL_SIMPLIFY(data[1][0],cfg), FULL_SIMPLIFY(data[1][1],cfg) }; }
 
-auto SymbolicMatrix2x2::evaluate(const std::unordered_map<std::string, double>& vals) const -> Matrix2d {
-    Matrix2d m;
+auto SymbolicMatrix2x2::evaluate(const std::unordered_map<std::string, double>& vals) const -> linalg::Matrix2d {
+    linalg::Matrix2d m;
     for (int r = 0; r < 2; ++r) for (int c = 0; c < 2; ++c) m.at(r, c) = data[r][c].evaluate(vals);
     return m;
 }
 
-auto SymbolicMatrix2x2::evaluate(std::initializer_list<std::pair<std::string, double>> vals) const -> Matrix2d {
-    Matrix2d m;
+auto SymbolicMatrix2x2::evaluate(std::initializer_list<std::pair<std::string, double>> vals) const -> linalg::Matrix2d {
+    linalg::Matrix2d m;
     for (int r = 0; r < 2; ++r) for (int c = 0; c < 2; ++c) m.at(r, c) = data[r][c].evaluate(vals);
     return m;
 }
@@ -132,14 +132,14 @@ auto SymbolicMatrix3x3::simplify() const -> SymbolicMatrix3x3 { SymbolicMatrix3x
 
 auto SymbolicMatrix3x3::full_simplify(const cas::RewriterConfig& cfg) const -> SymbolicMatrix3x3 { SymbolicMatrix3x3 m; for(int r=0;r<3;++r) for(int c=0;c<3;++c) m.data[r][c]=FULL_SIMPLIFY(data[r][c],cfg);  return m; }
 
-auto SymbolicMatrix3x3::evaluate(const std::unordered_map<std::string, double>& vals) const -> Matrix3d {
-    Matrix3d m;
+auto SymbolicMatrix3x3::evaluate(const std::unordered_map<std::string, double>& vals) const -> linalg::Matrix3d {
+    linalg::Matrix3d m;
     for (int r=0;r<3;++r) for (int c=0;c<3;++c) m.at(r, c)=data[r][c].evaluate(vals);
     return m;
 }
 
-auto SymbolicMatrix3x3::evaluate(std::initializer_list<std::pair<std::string, double>> vals) const -> Matrix3d {
-    Matrix3d m;
+auto SymbolicMatrix3x3::evaluate(std::initializer_list<std::pair<std::string, double>> vals) const -> linalg::Matrix3d {
+    linalg::Matrix3d m;
     for (int r=0;r<3;++r) for (int c=0;c<3;++c) m.at(r, c)=data[r][c].evaluate(vals);
     return m;
 }

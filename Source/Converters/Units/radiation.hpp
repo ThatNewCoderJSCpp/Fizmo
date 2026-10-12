@@ -7,14 +7,14 @@ namespace fizmo {
 namespace units {
 namespace radiation {
 
-constexpr AbsorbedDoseUnit gray   (1.0L);
-constexpr AbsorbedDoseUnit sievert(1.0L);
-constexpr AbsorbedDoseUnit rad    (0.01L);
-constexpr AbsorbedDoseUnit rem    (0.01L);
+constexpr AbsorbedDoseUnit gray   (exact("1.0"));
+constexpr AbsorbedDoseUnit sievert(exact("1.0"));
+constexpr AbsorbedDoseUnit rad    (exact("0.01"));
+constexpr AbsorbedDoseUnit rem    (exact("0.01"));
 
-constexpr FrequencyUnit becquerel (1.0L);
-constexpr FrequencyUnit curie     (3.7e10L);
-constexpr FrequencyUnit rutherford(1e6L);
+constexpr FrequencyUnit becquerel (exact("1.0"));
+constexpr FrequencyUnit curie     (exact("3.7e10"));
+constexpr FrequencyUnit rutherford(exact("1e6"));
 
 } // namespace radiation
 } // namespace units

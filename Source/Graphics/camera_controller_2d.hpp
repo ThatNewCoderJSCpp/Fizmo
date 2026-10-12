@@ -18,7 +18,7 @@ struct WorldRect {
 class CameraController2D {
 private:
     Camera2D*                      m_camera = nullptr;
-    std::function<vector2d()>      m_target_fn;
+    std::function<linalg::vector2d()>      m_target_fn;
     double                         m_tx = 0.0, m_ty = 0.0;
     double                         m_prev_tx = 0.0, m_prev_ty = 0.0;
     bool                           m_has_target = false;
@@ -64,7 +64,7 @@ public:
     Camera2D* camera() const noexcept { return m_camera; }
 
     CameraController2D& follow(double x, double y) noexcept { m_tx = x; m_ty = y; m_has_target = true; return *this; }
-    CameraController2D& follow(std::function<vector2d()> fn) { m_target_fn = std::move(fn); m_has_target = static_cast<bool>(m_target_fn); return *this; }
+    CameraController2D& follow(std::function<linalg::vector2d()> fn) { m_target_fn = std::move(fn); m_has_target = static_cast<bool>(m_target_fn); return *this; }
     CameraController2D& stop_following() noexcept { m_has_target = false; m_target_fn = nullptr; return *this; }
     CameraController2D& set_smoothing(double half_life_seconds) noexcept { m_half_life = std::max(0.0, half_life_seconds); return *this; }
     CameraController2D& set_deadzone(double w, double h) noexcept { m_dead_w = std::max(0.0, w); m_dead_h = std::max(0.0, h); return *this; }
@@ -81,8 +81,8 @@ public:
     double trauma() const noexcept { return m_trauma; }
     double zoom_target() const noexcept { return m_zoom_target; }
 
-    vector2d focus() const noexcept { return { m_x, m_y }; }
-    vector2d shake_offset() const noexcept { return { m_shake_x, m_shake_y }; }
+    linalg::vector2d focus() const noexcept { return { m_x, m_y }; }
+    linalg::vector2d shake_offset() const noexcept { return { m_shake_x, m_shake_y }; }
 
     void zoom_to_fit(const WorldRect& r, double padding = 0.0) noexcept;
 

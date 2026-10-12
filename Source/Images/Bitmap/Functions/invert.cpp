@@ -31,9 +31,9 @@ BitmapImage invert(
 ) noexcept {
     if (x1 > x2) { std::swap(x1, x2); }
     if (y1 > y2) { std::swap(y1, y2); }
-    const unsigned int x_1 = fizmo::min_constexpr(x1, source.width());
+    const unsigned int x_1 = std::min<unsigned int>(x1, source.width());
     const unsigned int x_2 = fizmo::clamp(x2, x_1, source.width());
-    const unsigned int y_1 = fizmo::min_constexpr(y1, source.height());
+    const unsigned int y_1 = std::min<unsigned int>(y1, source.height());
     const unsigned int y_2 = fizmo::clamp(y2, y_1, source.height());
     
     BitmapImage result(source);
@@ -85,9 +85,9 @@ BitmapImage invert_partial(
 ) noexcept {
     if (x1 > x2) { std::swap(x1, x2); }
     if (y1 > y2) { std::swap(y1, y2); }
-    const unsigned int x_1 = fizmo::min_constexpr(x1, source.width());
+    const unsigned int x_1 = std::min<unsigned int>(x1, source.width());
     const unsigned int x_2 = fizmo::clamp(x2, x_1, source.width());
-    const unsigned int y_1 = fizmo::min_constexpr(y1, source.height());
+    const unsigned int y_1 = std::min<unsigned int>(y1, source.height());
     const unsigned int y_2 = fizmo::clamp(y2, y_1, source.height());
     double factor = percentage;
     fizmo::clamp_value(factor, 0.0, 100.0);
@@ -134,9 +134,9 @@ BitmapImage invert_channels(
 ) noexcept {
     if (x1 > x2) { std::swap(x1, x2); }
     if (y1 > y2) { std::swap(y1, y2); }
-    const unsigned int x_1 = fizmo::min_constexpr(x1, source.width());
+    const unsigned int x_1 = std::min<unsigned int>(x1, source.width());
     const unsigned int x_2 = fizmo::clamp(x2, x_1, source.width());
-    const unsigned int y_1 = fizmo::min_constexpr(y1, source.height());
+    const unsigned int y_1 = std::min<unsigned int>(y1, source.height());
     const unsigned int y_2 = fizmo::clamp(y2, y_1, source.height());
     BitmapImage result(source);
     
@@ -190,9 +190,9 @@ BitmapImage invert_channels_partial(
 ) noexcept {
     if (x1 > x2) { std::swap(x1, x2); }
     if (y1 > y2) { std::swap(y1, y2); }
-    const unsigned int x_1 = fizmo::min_constexpr(x1, source.width());
+    const unsigned int x_1 = std::min<unsigned int>(x1, source.width());
     const unsigned int x_2 = fizmo::clamp(x2, x_1, source.width());
-    const unsigned int y_1 = fizmo::min_constexpr(y1, source.height());
+    const unsigned int y_1 = std::min<unsigned int>(y1, source.height());
     const unsigned int y_2 = fizmo::clamp(y2, y_1, source.height());
     const double red_factor = fizmo::clamp(red_percentage, 0.0, 100.0) / 100.0;
     const double green_factor = fizmo::clamp(green_percentage, 0.0, 100.0) / 100.0;

@@ -4,7 +4,7 @@
 namespace fizmo {
 namespace graphics {
 
-auto PointLight3D::spot(const vector3d& at, const vector3d& facing, const Color& c, float strength, float reach, float half_angle, bool shadows) noexcept -> PointLight3D {
+auto PointLight3D::spot(const linalg::vector3d& at, const linalg::vector3d& facing, const Color& c, float strength, float reach, float half_angle, bool shadows) noexcept -> PointLight3D {
     PointLight3D l(at, c, strength, reach, shadows);
     l.direction = facing;
     l.cone      = half_angle;
@@ -41,9 +41,9 @@ auto PointShadows3D::high() noexcept -> PointShadows3D {
     return p;
 }
 
-auto CapsuleOccluder3D::standing(const vector3d& feet, double height, double radius) noexcept -> CapsuleOccluder3D {
+auto CapsuleOccluder3D::standing(const linalg::vector3d& feet, double height, double radius) noexcept -> CapsuleOccluder3D {
     const double top = height > 2.0 * radius ? height - radius : radius;
-    return { feet + vector3d{ 0.0, 0.0, radius }, feet + vector3d{ 0.0, 0.0, top }, static_cast<float>(radius) };
+    return { feet + linalg::vector3d{ 0.0, 0.0, radius }, feet + linalg::vector3d{ 0.0, 0.0, top }, static_cast<float>(radius) };
 }
 
 auto SceneLighting3D::daylight(const SunShadow3D& shadows) -> SceneLighting3D {

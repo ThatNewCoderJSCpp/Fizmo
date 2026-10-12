@@ -7,25 +7,30 @@
 #include "../common/ops/container_ops.hpp"
 
 namespace fizmo {
+namespace collections {
 
 template <typename T, std::size_t N>
 class SmallVector;
+
+} // namespace collections
 
 namespace arrays {
 namespace detail {
 
 template <typename T, std::size_t N>
 using SmallVectorBase =
-    ContainerOps<SmallVector<T, N>, T,
-    FunctionalOps<SmallVector<T, N>, T,
-    EditOps<SmallVector<T, N>, T,
-    InplaceOps<SmallVector<T, N>, T,
-    QueryOps<SmallVector<T, N>, T,
-    AccessOps<SmallVector<T, N>, T,
+    ContainerOps<collections::SmallVector<T, N>, T,
+    FunctionalOps<collections::SmallVector<T, N>, T,
+    EditOps<collections::SmallVector<T, N>, T,
+    InplaceOps<collections::SmallVector<T, N>, T,
+    QueryOps<collections::SmallVector<T, N>, T,
+    AccessOps<collections::SmallVector<T, N>, T,
     InlineStorage<T, N>>>>>>>;
 
 } // namespace detail
 } // namespace arrays
+
+namespace collections {
 
 template <typename T, std::size_t N = 8>
 class SmallVector : public arrays::detail::SmallVectorBase<T, N> {
@@ -46,7 +51,7 @@ class SmallVector : public arrays::detail::SmallVectorBase<T, N> {
     template <typename D, typename V, typename B>
     friend class arrays::detail::ContainerOps;
     template <typename C>
-    friend class fizmo::BasicWhereProxy;
+    friend class fizmo::collections::BasicWhereProxy;
 
     void copy_construct_from(const T* src, std::size_t n) {
         if (n == 0) return;
@@ -202,6 +207,7 @@ public:
     }
 };
 
+} // namespace collections
 } // namespace fizmo
 
 #include "../common/where_proxy.hpp"

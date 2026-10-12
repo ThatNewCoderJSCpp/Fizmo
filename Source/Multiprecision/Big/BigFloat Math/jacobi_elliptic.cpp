@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace jcdetail {
 
@@ -29,10 +28,12 @@ bool jc_newton(const BF& ua, const BF& m, std::size_t want, BF& phi, double& lph
     hi = BF::add(hi, hi.scaled_pow2(4 - static_cast<std::int64_t>(p0)), c0);
     const cs_val K = eldetail::el_complete_raw(el_kind::f, BF::zero(), m, p0);
     if (!K.v.is_finite()) return false;
-    phi = BF::div(BF::mul(ua, constants::half_pi(c0), c0), K.v, c0);                       
+    phi = BF::div(BF::mul(ua, multiprecision::constants::half_pi(c0), c0), K.v, c0);                       
     if (BF::compare(phi, lo) == BF::ordering::less)    phi = lo;
     if (BF::compare(phi, hi) == BF::ordering::greater) phi = hi;
-    std::size_t p = p0;
+    const BF    lo0 = lo;
+    const BF    hi0 = hi;
+    std::size_t p   = p0;
 
     for (int it = 0; it < 400; ++it) {
         const BFC    pc = cs_ctx(p);
@@ -44,7 +45,8 @@ bool jc_newton(const BF& ua, const BF& m, std::size_t want, BF& phi, double& lph
         const BF cn   = cos(phi, pc);
         const BF d2   = mpos ? BF::add(omm, BF::mul(m, BF::mul(cn, cn, pc), pc), pc) : BF::sub(one, BF::mul(m, BF::mul(sn, sn, pc), pc), pc);
         const BF step = BF::mul(res, sqrt(d2, pc), pc);                                     
-        const bool small = step.is_zero() || step.get_exp_base2() <= phi.get_exp_base2() - static_cast<std::int64_t>(p) + 8;
+        const double lnoise = cs_l2hi(Fv.v) + Fv.lost - static_cast<double>(p) + 0.5 * cs_l2hi(d2) + 2.0;
+        const bool small = step.is_zero() || step.get_exp_base2() <= phi.get_exp_base2() - static_cast<std::int64_t>(p) + 8 || cs_l2hi(step) <= lnoise;
 
         if (small && p == wp) {
             const double lres  = cs_l2hi(res);
@@ -56,12 +58,17 @@ bool jc_newton(const BF& ua, const BF& m, std::size_t want, BF& phi, double& lph
 
         BF next = BF::sub(phi, step, pc);
 
-        if (BF::compare(next, lo) != BF::ordering::greater || BF::compare(next, hi) != BF::ordering::less) {
+        if (!step.is_zero() && (BF::compare(next, lo) != BF::ordering::greater || BF::compare(next, hi) != BF::ordering::less)) {
             next = BF::add(lo, hi, pc).scaled_pow2(-1);                                     
         }
 
         phi = next;
-        if (small) p = std::min<std::size_t>(2 * p, wp);
+
+        if (small) {
+            p  = std::min<std::size_t>(2 * p, wp);
+            lo = lo0;
+            hi = hi0;
+        }
     }
 
     return false;
@@ -205,8 +212,8 @@ BF jc_public(jc_fn f, const BF& u, const BF& m, const BFC& ctx) {
 
         switch (f) {
             case jc_fn::am:
-                if (!neg) return constants::half_pi(ctx);
-                return csdetail::cs_drive(ctx, [](std::size_t want) { return cs_val{-constants::half_pi(cs_ctx(want)), 1.0}; });
+                if (!neg) return multiprecision::constants::half_pi(ctx);
+                return csdetail::cs_drive(ctx, [](std::size_t want) { return cs_val{-multiprecision::constants::half_pi(cs_ctx(want)), 1.0}; });
             case jc_fn::sn: case jc_fn::ns: return BF::one(neg);
             case jc_fn::cn: case jc_fn::dn: return BF::zero();
             case jc_fn::nc: case jc_fn::nd: return BF::infinity();
@@ -235,5 +242,4 @@ BF jc_public(jc_fn f, const BF& u, const BF& m, const BFC& ctx) {
 
 } // namespace jcdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

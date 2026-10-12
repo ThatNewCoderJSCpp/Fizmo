@@ -42,11 +42,11 @@
         #ifndef FIZMO_STRING
             #define FIZMO_STRING
         #endif
-        #ifndef FIZMO_ARRAY
-            #define FIZMO_ARRAY
-        #endif
         #ifndef FIZMO_STATISTICS
             #define FIZMO_STATISTICS
+        #endif
+        #ifndef FIZMO_GRAPHS
+            #define FIZMO_GRAPHS
         #endif
         #ifndef FIZMO_MISC
             #define FIZMO_MISC
@@ -56,6 +56,9 @@
         #endif
         #ifndef FIZMO_MATRICES
             #define FIZMO_MATRICES
+        #endif
+        #ifndef FIZMO_COLLECTIONS
+            #define FIZMO_COLLECTIONS
         #endif
 
         #ifndef FIZMO_MATHTEXT
@@ -76,6 +79,10 @@
             #include "../images.hpp"
         #endif 
 
+        #ifdef FIZMO_COLLECTIONS
+            #include "../collections.hpp"
+        #endif 
+
         #ifdef FIZMO_VECTORS
             #include "../basic_vectors.hpp"
         #endif 
@@ -85,7 +92,6 @@
         #endif 
 
         #ifdef FIZMO_MATH
-            #include "../misc_math.hpp"
             #include "../std_overloads.hpp"
 
             #include "../complex.hpp"
@@ -106,10 +112,6 @@
             #include "../string.hpp"
         #endif
 
-        #if defined(FIZMO_ARRAY) || defined(FIZMO_ARR)
-            #include "../arrays.hpp"
-        #endif
-
         #if defined(FIZMO_CHEMISTRY) || defined(FIZMO_CHEM)
             #include "../chemistry.hpp"
         #endif
@@ -118,8 +120,24 @@
             #include "../matrices.hpp"
         #endif
 
+        #if defined(FIZMO_STATISTICS) || defined(FIZMO_STATS)
+            #include "../statistics.hpp"
+        #endif
+
+        #if defined(FIZMO_GRAPHS) || defined(FIZMO_GRAPH)
+            #include "../graphs.hpp"
+        #endif
+
         #ifdef FIZMO_MATHTEXT
             #include "../mathtext.hpp"
+        #endif
+
+        #if defined(FIZMO_CRYPTO) || defined(FIZMO_NETWORKING) || defined(FIZMO_NET)
+            #include "../crypto.hpp"
+        #endif
+
+        #if defined(FIZMO_NETWORKING) || defined(FIZMO_NET)
+            #include "../networking.hpp"
         #endif
     #endif // FIZMO
 #endif //ALL_FIZMO_INCLUDES_FILE_HPP

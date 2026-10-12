@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace detail {
 
@@ -103,11 +102,9 @@ BigFloat cbrt_finite(const BigFloat& x, const BigFloatContext& ctx) {
 
 } // namespace detail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat sqrt(const BigFloat& x, const BigFloatContext& ctx) {
@@ -139,5 +136,4 @@ BigFloat cbrt(const BigInt& x, const BigFloatContext& ctx) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat fractional_part(const BigInt& x) { 
@@ -11,5 +10,4 @@ BigFloat fractional_part(const BigInt& x) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

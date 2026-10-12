@@ -735,18 +735,18 @@ public:
     bool hit_self(float, float) const noexcept override { return false; }
 
     template <std::size_t M = N, typename std::enable_if<M == 2, int>::type = 0>
-    vector2d vec() const { return vector2d(m_fields[0]->value(), m_fields[1]->value()); }
+    linalg::vector2d vec() const { return linalg::vector2d(m_fields[0]->value(), m_fields[1]->value()); }
     template <std::size_t M = N, typename std::enable_if<M == 3, int>::type = 0>
-    vector3d vec() const { return vector3d(m_fields[0]->value(), m_fields[1]->value(), m_fields[2]->value()); }
+    linalg::vector3d vec() const { return linalg::vector3d(m_fields[0]->value(), m_fields[1]->value(), m_fields[2]->value()); }
     template <std::size_t M = N, typename std::enable_if<M == 4, int>::type = 0>
-    vector4d vec() const { return vector4d(m_fields[0]->value(), m_fields[1]->value(), m_fields[2]->value(), m_fields[3]->value()); }
+    linalg::vector4d vec() const { return linalg::vector4d(m_fields[0]->value(), m_fields[1]->value(), m_fields[2]->value(), m_fields[3]->value()); }
 
     template <std::size_t M = N, typename std::enable_if<M == 2, int>::type = 0>
-    VectorField& set_vec(const vector2d& v, bool notify = false) { return set_value({ v.x, v.y }, notify); }
+    VectorField& set_vec(const linalg::vector2d& v, bool notify = false) { return set_value({ v.x, v.y }, notify); }
     template <std::size_t M = N, typename std::enable_if<M == 3, int>::type = 0>
-    VectorField& set_vec(const vector3d& v, bool notify = false) { return set_value({ v.x, v.y, v.z }, notify); }
+    VectorField& set_vec(const linalg::vector3d& v, bool notify = false) { return set_value({ v.x, v.y, v.z }, notify); }
     template <std::size_t M = N, typename std::enable_if<M == 4, int>::type = 0>
-    VectorField& set_vec(const vector4d& v, bool notify = false) { return set_value({ v.x, v.y, v.z, v.w }, notify); }
+    VectorField& set_vec(const linalg::vector4d& v, bool notify = false) { return set_value({ v.x, v.y, v.z, v.w }, notify); }
 };
 
 using Vector2Field = VectorField<2>;

@@ -9,14 +9,14 @@ namespace physics {
 inline constexpr std::size_t MAX_POLYGON_VERTICES = 8;
 
 struct AABB {
-    vector2d min{}; // meters
-    vector2d max{}; // meters
+    linalg::vector2d min{}; // meters
+    linalg::vector2d max{}; // meters
 
     constexpr AABB() noexcept = default;
-    constexpr AABB(const vector2d& lo, const vector2d& hi) noexcept : min(lo), max(hi) {}
+    constexpr AABB(const linalg::vector2d& lo, const linalg::vector2d& hi) noexcept : min(lo), max(hi) {}
 
-    constexpr vector2d center() const noexcept { return (min + max) * 0.5; }
-    constexpr vector2d extents() const noexcept { return (max - min) * 0.5; }
+    linalg::vector2d center() const noexcept { return (min + max) * 0.5; }
+    linalg::vector2d extents() const noexcept { return (max - min) * 0.5; }
 
     constexpr double perimeter() const noexcept { 
         double w = max.x - min.x, h = max.y - min.y;
@@ -25,15 +25,15 @@ struct AABB {
 
     constexpr double area() const noexcept { return (max.x - min.x) * (max.y - min.y); }
     constexpr bool overlaps(const AABB& o) const noexcept { return min.x <= o.max.x && max.x >= o.min.x && min.y <= o.max.y && max.y >= o.min.y; }
-    constexpr bool contains(const vector2d& p) const noexcept { return p.x >= min.x && p.x <= max.x && p.y >= min.y && p.y <= max.y; }
+    constexpr bool contains(const linalg::vector2d& p) const noexcept { return p.x >= min.x && p.x <= max.x && p.y >= min.y && p.y <= max.y; }
     constexpr bool contains(const AABB& o) const noexcept { return min.x <= o.min.x && min.y <= o.min.y && max.x >= o.max.x && max.y >= o.max.y; }
 
     // margin in meters
-    constexpr AABB fatten(double margin) const noexcept {
+    AABB fatten(double margin) const noexcept {
         return { {min.x - margin, min.y - margin}, {max.x + margin, max.y + margin} };
     }
 
-    static constexpr AABB merge(const AABB& a, const AABB& b) noexcept {
+    static AABB merge(const AABB& a, const AABB& b) noexcept {
         return { 
             { 
                 a.min.x < b.min.x ? a.min.x : b.min.x,
@@ -48,34 +48,34 @@ struct AABB {
 };
 
 struct Transform2D {
-    vector2d position{}; // meters
+    linalg::vector2d position{}; // meters
     double angle = 0.0;  // radians
     double cos_a = 1.0;
     double sin_a = 0.0;
 
     constexpr Transform2D() noexcept = default;
 
-    Transform2D(const vector2d& pos, double angle_rad) noexcept
+    Transform2D(const linalg::vector2d& pos, double angle_rad) noexcept
         : position(pos), angle(angle_rad),
           cos_a(std::cos(angle_rad)), sin_a(std::sin(angle_rad)) {}
 
-    static constexpr Transform2D identity() noexcept { return {}; }
+    static Transform2D identity() noexcept { return {}; }
 
-    constexpr vector2d apply(const vector2d& local) const noexcept {
+    linalg::vector2d apply(const linalg::vector2d& local) const noexcept {
         return { cos_a * local.x - sin_a * local.y + position.x, sin_a * local.x + cos_a * local.y + position.y };
     }
 
-    constexpr vector2d apply_inverse(const vector2d& world) const noexcept {
+    linalg::vector2d apply_inverse(const linalg::vector2d& world) const noexcept {
         double dx = world.x - position.x;
         double dy = world.y - position.y;
         return {  cos_a * dx + sin_a * dy, -sin_a * dx + cos_a * dy };
     }
 
-    constexpr vector2d rotate(const vector2d& dir) const noexcept {
+    linalg::vector2d rotate(const linalg::vector2d& dir) const noexcept {
         return { cos_a * dir.x - sin_a * dir.y, sin_a * dir.x + cos_a * dir.y };
     }
 
-    constexpr vector2d rotate_inverse(const vector2d& dir) const noexcept {
+    linalg::vector2d rotate_inverse(const linalg::vector2d& dir) const noexcept {
         return { cos_a * dir.x + sin_a * dir.y, -sin_a * dir.x + cos_a * dir.y };
     }
 
@@ -91,9 +91,9 @@ struct Transform2D {
 };
 
 struct Sweep2D {
-    vector2d center_local{}; // meters
-    vector2d position0{};    // meters
-    vector2d position1{};    // meters
+    linalg::vector2d center_local{}; // meters
+    linalg::vector2d position0{};    // meters
+    linalg::vector2d position1{};    // meters
     double angle0 = 0.0;     // radians
     double angle1 = 0.0;     // radians
 
@@ -101,40 +101,40 @@ struct Sweep2D {
 };
 
 struct CircleShape {
-    vector2d center{};   // meters, local body space
+    linalg::vector2d center{};   // meters, local body space
     double radius = 0.0; // meters
 };
 
 struct PolygonShape {
-    std::array<vector2d, MAX_POLYGON_VERTICES> vertices{}; // meters, local
-    std::array<vector2d, MAX_POLYGON_VERTICES> normals{};  // unitless, unit vectors
-    vector2d centroid{}; // meters, local
+    std::array<linalg::vector2d, MAX_POLYGON_VERTICES> vertices{}; // meters, local
+    std::array<linalg::vector2d, MAX_POLYGON_VERTICES> normals{};  // unitless, unit vectors
+    linalg::vector2d centroid{}; // meters, local
     std::size_t count = 0;
 
-    void set(const vector2d* pts, std::size_t n);
+    void set(const linalg::vector2d* pts, std::size_t n);
 
     static PolygonShape make_box(double hx, double hy);
 
-    static PolygonShape make_box(double hx, double hy, const vector2d& center, double angle_rad);
+    static PolygonShape make_box(double hx, double hy, const linalg::vector2d& center, double angle_rad);
 };
 
 struct CapsuleShape {
-    vector2d point1{}; // meters, local
-    vector2d point2{}; // meters, local
+    linalg::vector2d point1{}; // meters, local
+    linalg::vector2d point2{}; // meters, local
     double radius = 0.0; // meters
-    constexpr vector2d center() const noexcept { return (point1 + point2) * 0.5; }
-    constexpr double half_length() const noexcept { return (point2 - point1).magnitude() * 0.5; } // m
+    linalg::vector2d center() const noexcept { return (point1 + point2) * 0.5; }
+    double half_length() const noexcept { return fast::length(point2 - point1) * 0.5; } // m
 };
 
 struct EdgeShape {
-    vector2d v1{}, v2{};         // meters, local
-    vector2d ghost1{}, ghost2{}; // meters, local
+    linalg::vector2d v1{}, v2{};         // meters, local
+    linalg::vector2d ghost1{}, ghost2{}; // meters, local
     bool has_ghost1 = false;
     bool has_ghost2 = false;
 
-    constexpr vector2d normal() const noexcept {
-        vector2d e = v2 - v1;
-        return vector2d(e.y, -e.x).unit_vector();
+    linalg::vector2d normal() const noexcept {
+        linalg::vector2d e = v2 - v1;
+        return fast::normalize(linalg::vector2d(e.y, -e.x));
     }
 };
 
@@ -163,15 +163,15 @@ struct Shape2D {
     Shape2D(const Shape2D& o) noexcept { copy_from(o); }
     Shape2D& operator=(const Shape2D& o) noexcept { if (this != &o) copy_from(o); return *this; }
 
-    static Shape2D make_circle(const vector2d& center, double radius);
+    static Shape2D make_circle(const linalg::vector2d& center, double radius);
 
-    static Shape2D make_polygon(const vector2d* pts, std::size_t n);
+    static Shape2D make_polygon(const linalg::vector2d* pts, std::size_t n);
 
     static Shape2D make_box(double hx, double hy);
 
-    static Shape2D make_capsule(const vector2d& p1, const vector2d& p2, double radius);
+    static Shape2D make_capsule(const linalg::vector2d& p1, const linalg::vector2d& p2, double radius);
 
-    static Shape2D make_edge(const vector2d& v1, const vector2d& v2);
+    static Shape2D make_edge(const linalg::vector2d& v1, const linalg::vector2d& v2);
 
     AABB compute_aabb(const Transform2D& xf) const noexcept;
 
@@ -184,7 +184,7 @@ private:
 struct MassData {
     double mass    = 0.0; // kg
     double inertia = 0.0; // kg*m2, about centroid
-    vector2d center{};    // meters, local body space
+    linalg::vector2d center{};    // meters, local body space
 
     static MassData combine(const MassData* parts, std::size_t n);
 };
@@ -214,20 +214,20 @@ MassData compute_capsule_mass(const CapsuleShape& c, double density);
 inline MassData compute_edge_mass(const EdgeShape&, double) { return { 0.0, 0.0, {} }; }
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, vector2d>::type
-convert_velocity_vec(const vector2d& v, FromU from, ToU to) {
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, linalg::vector2d>::type
+convert_velocity_vec(const linalg::vector2d& v, FromU from, ToU to) {
     return { convert_velocity_scalar(v.x, from, to), convert_velocity_scalar(v.y, from, to) };
 }
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, vector2d>::type
-convert_force_vec(const vector2d& v, FromU from, ToU to) {
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, linalg::vector2d>::type
+convert_force_vec(const linalg::vector2d& v, FromU from, ToU to) {
     return { convert_force_scalar(v.x, from, to), convert_force_scalar(v.y, from, to) };
 }
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, vector2d>::type
-convert_position_vec(const vector2d& v, FromU from, ToU to) {
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, linalg::vector2d>::type
+convert_position_vec(const linalg::vector2d& v, FromU from, ToU to) {
     return { convert_distance_scalar(v.x, from, to), convert_distance_scalar(v.y, from, to) };
 }
 
@@ -387,19 +387,19 @@ public:
     );
 
 public:
-    vector2d position() const noexcept { return m_transform.position; }
+    linalg::vector2d position() const noexcept { return m_transform.position; }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
-    vector2d position(U distance_unit) const noexcept {
+    linalg::vector2d position(U distance_unit) const noexcept {
         double a = units::convert(m_transform.position.x, units::distance::meter, distance_unit);
         double b = units::convert(m_transform.position.y, units::distance::meter, distance_unit);
-        return vector2d(a, b);
+        return linalg::vector2d(a, b);
     }
 
-    void set_position(const vector2d& pos) noexcept { m_transform.position = pos; }
+    void set_position(const linalg::vector2d& pos) noexcept { m_transform.position = pos; }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
-    void set_position(const vector2d& pos, U distance_unit) noexcept {
+    void set_position(const linalg::vector2d& pos, U distance_unit) noexcept {
         m_transform.position.x = units::convert(pos.x, distance_unit, units::distance::meter);
         m_transform.position.y = units::convert(pos.y, distance_unit, units::distance::meter);
     }
@@ -413,22 +413,22 @@ public:
     }
 
 public:
-    vector2d linear_velocity() const noexcept { return m_linear_velocity; }
+    linalg::vector2d linear_velocity() const noexcept { return m_linear_velocity; }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_VELOCITY, int>::type = 0>
-    vector2d linear_velocity(U unit) const noexcept {
+    linalg::vector2d linear_velocity(U unit) const noexcept {
         double a = units::convert(m_linear_velocity.x, units::velocity::meters_per_second, unit);
         double b = units::convert(m_linear_velocity.y, units::velocity::meters_per_second, unit);
-        return vector2d(a, b);
+        return linalg::vector2d(a, b);
     }
 
-    void set_linear_velocity(const vector2d& v) noexcept {
+    void set_linear_velocity(const linalg::vector2d& v) noexcept {
         m_linear_velocity = v;
         if (v.x != 0.0 || v.y != 0.0) wake();
     }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_VELOCITY, int>::type = 0>
-    void set_linear_velocity(const vector2d& v, U unit) noexcept {
+    void set_linear_velocity(const linalg::vector2d& v, U unit) noexcept {
         set_linear_velocity(detail::convert_velocity_vec(v, unit, units::velocity::meters_per_second));
     }
 
@@ -453,17 +453,17 @@ public:
     }
 
 public:
-    vector2d force() const noexcept { return m_force; }
+    linalg::vector2d force() const noexcept { return m_force; }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_FORCE, int>::type = 0>
-    vector2d force(U force_unit) const noexcept {
+    linalg::vector2d force(U force_unit) const noexcept {
         return detail::convert_force_vec(m_force, units::force::newton, force_unit);
     }
 
-    void set_force(const vector2d& f) noexcept { m_force = f; }
+    void set_force(const linalg::vector2d& f) noexcept { m_force = f; }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_FORCE, int>::type = 0>
-    void set_force(const vector2d& f, U unit) noexcept {
+    void set_force(const linalg::vector2d& f, U unit) noexcept {
         m_force = detail::convert_force_vec(f, unit, units::force::newton);
     }
 
@@ -556,13 +556,13 @@ public:
     }
 
 public:
-    vector2d local_center() const noexcept {
+    linalg::vector2d local_center() const noexcept {
         ensure_mass_uptodate();
         return m_local_center;
     }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
-    vector2d local_center(U length_unit) const noexcept {
+    linalg::vector2d local_center(U length_unit) const noexcept {
         ensure_mass_uptodate();
         return detail::convert_position_vec(m_local_center, units::distance::meter, length_unit);
     }
@@ -615,21 +615,21 @@ public:
     void   set_gravity_scale(double s) noexcept { m_gravity_scale = s; }
 
 public:
-    void apply_force(const vector2d& f) {
+    void apply_force(const linalg::vector2d& f) {
         if (!has(PhysicsFlags::LinearForces)) return;
         m_force += f;
         wake();
     }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_FORCE, int>::type = 0>
-    void apply_force(const vector2d& f, U unit) {
+    void apply_force(const linalg::vector2d& f, U unit) {
         apply_force(detail::convert_force_vec(f, unit, units::force::newton));
     }
 
-    void apply_force_at(const vector2d& f, const vector2d& world_point);
+    void apply_force_at(const linalg::vector2d& f, const linalg::vector2d& world_point);
 
     template <class FU, class PU, typename std::enable_if<is_fizmo_unit_v<FU> && is_fizmo_unit_v<PU> && FU::dimension() == units::DIMENSION_FORCE && PU::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
-    void apply_force_at(const vector2d& f, FU f_unit, const vector2d& world_point, PU p_unit) {
+    void apply_force_at(const linalg::vector2d& f, FU f_unit, const linalg::vector2d& world_point, PU p_unit) {
         apply_force_at(
             detail::convert_force_vec(f, f_unit, units::force::newton),
             detail::convert_position_vec(world_point, p_unit, units::distance::meter)
@@ -649,31 +649,31 @@ public:
     }
 
 public:
-    void apply_linear_impulse(const vector2d& impulse);
+    void apply_linear_impulse(const linalg::vector2d& impulse);
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_IMPULSE, int>::type = 0>
-    void apply_linear_impulse(const vector2d& impulse, U impulse_unit) {
+    void apply_linear_impulse(const linalg::vector2d& impulse, U impulse_unit) {
         double f = detail::convert_impulse_scalar(1.0, impulse_unit, units::impulse::newton_second);
         apply_linear_impulse(impulse * f);
     }
 
-    void apply_impulse_at(const vector2d& impulse, const vector2d& world_point);
+    void apply_impulse_at(const linalg::vector2d& impulse, const linalg::vector2d& world_point);
 
     void apply_angular_impulse(double impulse);
 
 public:
-    void integrate_forces(double dt, const vector2d& gravity);
+    void integrate_forces(double dt, const linalg::vector2d& gravity);
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_ACCELERATION, int>::type = 0>
-    void integrate_forces(double dt, const vector2d& gravity, U grav_accel_unit) {
+    void integrate_forces(double dt, const linalg::vector2d& gravity, U grav_accel_unit) {
         double a = units::convert(gravity.x, grav_accel_unit, units::acceleration::meters_per_second_squared);
         double b = units::convert(gravity.y, grav_accel_unit, units::acceleration::meters_per_second_squared);
-        return integrate_forces(dt, vector2d(a, b));
+        return integrate_forces(dt, linalg::vector2d(a, b));
     }
 
     void integrate_velocities(double dt);
 
-    void apply_position_correction(const vector2d& d_center, double d_angle);
+    void apply_position_correction(const linalg::vector2d& d_center, double d_angle);
 
     void clear_forces() {
         m_force  = {};
@@ -697,26 +697,26 @@ public:
 
     AABB compute_body_aabb() const;
 
-    vector2d world_center() const noexcept {
+    linalg::vector2d world_center() const noexcept {
         ensure_mass_uptodate();
         return m_transform.apply(m_local_center);
     }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
-    vector2d world_center(U distance_unit) const noexcept {
+    linalg::vector2d world_center(U distance_unit) const noexcept {
         return detail::convert_position_vec(world_center(), units::distance::meter, distance_unit);
     }
 
-    vector2d get_world_point(const vector2d& local)  const noexcept { return m_transform.apply(local); }
-    vector2d get_local_point(const vector2d& world)  const noexcept { return m_transform.apply_inverse(world); }
-    vector2d get_world_vector(const vector2d& local) const noexcept { return m_transform.rotate(local); }
-    vector2d get_local_vector(const vector2d& world) const noexcept { return m_transform.rotate_inverse(world); }
+    linalg::vector2d get_world_point(const linalg::vector2d& local)  const noexcept { return m_transform.apply(local); }
+    linalg::vector2d get_local_point(const linalg::vector2d& world)  const noexcept { return m_transform.apply_inverse(world); }
+    linalg::vector2d get_world_vector(const linalg::vector2d& local) const noexcept { return m_transform.rotate(local); }
+    linalg::vector2d get_local_vector(const linalg::vector2d& world) const noexcept { return m_transform.rotate_inverse(world); }
 
-    vector2d get_velocity_at(const vector2d& world_point) const noexcept;
+    linalg::vector2d get_velocity_at(const linalg::vector2d& world_point) const noexcept;
 
     template <class PU, class VU, typename std::enable_if<is_fizmo_unit_v<PU> && is_fizmo_unit_v<VU> && PU::dimension() == units::DIMENSION_LENGTH && VU::dimension() == units::DIMENSION_VELOCITY, int>::type = 0>
-    vector2d get_velocity_at(const vector2d& world_point, PU position_distance_unit, VU velocity_unit) const noexcept {
-        vector2d wp_si = detail::convert_position_vec(world_point, position_distance_unit, units::distance::meter);
+    linalg::vector2d get_velocity_at(const linalg::vector2d& world_point, PU position_distance_unit, VU velocity_unit) const noexcept {
+        linalg::vector2d wp_si = detail::convert_position_vec(world_point, position_distance_unit, units::distance::meter);
         return detail::convert_velocity_vec(get_velocity_at(wp_si), units::velocity::meters_per_second, velocity_unit);
     }
 
@@ -760,9 +760,9 @@ private:
     Transform2D     m_transform;
     mutable Sweep2D m_sweep;
 
-    vector2d m_linear_velocity{};       // m/s
+    linalg::vector2d m_linear_velocity{};       // m/s
     double   m_angular_velocity = 0.0;  // rad/s
-    vector2d m_force{};                 // N
+    linalg::vector2d m_force{};                 // N
     double   m_torque = 0.0;            // N*m
 
     mutable double  m_density    = 1.0; // kg/m2
@@ -774,7 +774,7 @@ private:
     mutable double   m_inv_mass    = 0.0;       // 1/kg
     mutable double   m_inertia     = 0.0;       // kg*m2
     mutable double   m_inv_inertia = 0.0;       // 1/(kg*m2)
-    mutable vector2d m_local_center{};          // m
+    mutable linalg::vector2d m_local_center{};          // m
 
     double m_linear_damping   = 0.0;    // 1/s
     double m_angular_damping  = 0.0;    // 1/s

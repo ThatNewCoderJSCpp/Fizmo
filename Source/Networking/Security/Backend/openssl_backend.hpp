@@ -14,7 +14,10 @@
 #include <openssl/bio.h>
 #include <openssl/bn.h>
 #include <openssl/pem.h>
+#include <openssl/ocsp.h>
+#include <openssl/evp.h>
 #include <arpa/inet.h>
+#include <mutex>
 #include <ctime>
 #include <cstring>
 #include <cstdio>
@@ -104,17 +107,63 @@ public:
         const std::vector<const NativeCertificateBase*>& extras,
         const std::string& hostname,
         const std::string& ca_store_path,
-        bool check_revocation
+        bool check_revocation,
+        const std::vector<std::string>& crl_paths = {}
     ) noexcept;
+
+    static OCSPResult verify_ocsp(
+        const std::vector<std::uint8_t>& response,
+        const NativeCertificateBase& leaf,
+        const NativeCertificateBase* issuer,
+        const std::string& ca_store_path
+    ) noexcept;
+
+    static bool load_system_roots(std::vector<std::vector<std::uint8_t>>& out, const std::string& store_name) noexcept;
+
+    static int load_crls(X509_STORE* store, const std::vector<std::string>& paths) noexcept;
 
 private:
     static VerifyResult map_verify_error(int error, int depth) noexcept;
 };
 
+class OpenSSLPrivateKey : public NativePrivateKeyBase {
+private:
+    EVP_PKEY*   m_key = nullptr;
+    std::string m_last_error;
+
+public:
+    OpenSSLPrivateKey() noexcept { openssl_init_once(); }
+    ~OpenSSLPrivateKey() noexcept override { release(); }
+
+    OpenSSLPrivateKey(const OpenSSLPrivateKey&) = delete;
+    OpenSSLPrivateKey& operator=(const OpenSSLPrivateKey&) = delete;
+    OpenSSLPrivateKey(OpenSSLPrivateKey&& o) noexcept : m_key(o.m_key), m_last_error(std::move(o.m_last_error)) { o.m_key = nullptr; }
+    OpenSSLPrivateKey& operator=(OpenSSLPrivateKey&& o) noexcept {
+        if (this != &o) { release(); m_key = o.m_key; o.m_key = nullptr; m_last_error = std::move(o.m_last_error); }
+        return *this;
+    }
+
+    bool load_pem(const std::string& pem, const std::string& passphrase) noexcept override;
+    bool load_der(const std::uint8_t* der, std::size_t len, const std::string& passphrase) noexcept override;
+    void release() noexcept override { if (m_key) { EVP_PKEY_free(m_key); m_key = nullptr; } }
+    bool valid() const noexcept override { return m_key != nullptr; }
+    KeyType key_type() const noexcept override;
+    int key_bits() const noexcept override;
+    bool matches_certificate(const NativeCertificateBase& cert) const noexcept override;
+    bool to_pkcs8_der(std::vector<std::uint8_t>& out) const noexcept override;
+    bool build_pkcs12(const NativeCertificateBase& leaf, const std::vector<const NativeCertificateBase*>& chain,
+                      const std::string& password, std::vector<std::uint8_t>& out) const noexcept override;
+    void* native() const noexcept override { return m_key; }
+    const std::string& last_error() const noexcept override { return m_last_error; }
+};
+
 class OpenSSLCredentials : public NativeCredentialsBase {
 private:
-    SSL_CTX*    m_ctx = nullptr;
-    std::string m_last_error;
+    SSL_CTX*                  m_ctx = nullptr;
+    std::string               m_last_error;
+    TLSConfig                 m_config;
+    std::vector<std::uint8_t> m_alpn_wire;
+    std::mutex                m_keylog_mutex;
 
 public:
     OpenSSLCredentials() noexcept { openssl_init_once(); }
@@ -133,8 +182,18 @@ public:
     bool acquired() const noexcept override { return m_ctx != nullptr; }
     const std::string& last_error() const noexcept override { return m_last_error; }
     void* native() const noexcept override { return m_ctx; }
+    const TLSConfig& config() const noexcept { return m_config; }
+
+    static bool keylog_supported() noexcept;
 
 private:
+    static void keylog_callback(const SSL* ssl, const char* line);
+    static int  alpn_select(SSL* ssl, const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* arg);
+    static int  new_session(SSL* ssl, SSL_SESSION* session);
+    static int  status_callback(SSL* ssl, void* arg);
+
+    bool apply_extensions(const TLSConfig& config) noexcept;
+
     bool apply_cipher_suites(const TLSConfig& config) noexcept;
 
     bool apply_trust_store(const TLSConfig& config) noexcept;
@@ -154,6 +213,8 @@ private:
     bool        m_server = false;
     bool        m_done   = false;
     std::string m_hostname;
+    AlertInfo   m_alert;
+    std::function<void(std::vector<std::uint8_t>)> m_session_cb;
 
 public:
     OpenSSLSession() noexcept { openssl_init_once(); }
@@ -189,6 +250,23 @@ public:
     TLSVersion protocol_version() const noexcept override;
 
     std::size_t max_plaintext_chunk() const noexcept override { return 16384; }
+
+    std::string alpn_selected() const noexcept override;
+    std::string requested_server_name() const noexcept override;
+    bool        session_reused() const noexcept override;
+    std::vector<std::uint8_t> export_session() const noexcept override;
+    bool import_session(const std::uint8_t* data, std::size_t len) noexcept override;
+    void set_session_callback(std::function<void(std::vector<std::uint8_t>)> cb) noexcept override { m_session_cb = std::move(cb); }
+    bool export_keying_material(const std::string& label, const std::uint8_t* context, std::size_t context_len, bool use_context, std::size_t out_len, std::vector<std::uint8_t>& out) const noexcept override;
+    bool channel_binding(ChannelBindingType type, std::vector<std::uint8_t>& out) const noexcept override;
+    AlertInfo last_alert() const noexcept override { return m_alert; }
+    std::vector<std::uint8_t> ocsp_response() const noexcept override;
+    bool local_certificate(std::vector<std::uint8_t>& out) const noexcept override;
+    bool key_update(bool request_peer, std::vector<std::uint8_t>& out) noexcept override;
+    bool request_post_handshake_auth(std::vector<std::uint8_t>& out) noexcept override;
+
+    void deliver_session(SSL_SESSION* session) noexcept;
+    void record_alert(bool received, int value) noexcept;
 
 private:
     void drain_wbio(std::vector<std::uint8_t>& out) noexcept;

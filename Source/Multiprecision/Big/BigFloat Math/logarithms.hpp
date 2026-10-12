@@ -7,7 +7,6 @@
 #include <cmath>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace detail {
@@ -132,7 +131,6 @@ inline BigFloat log(const BigFloat& x, const BigFloat& base) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_LOGARITHMS_HPP

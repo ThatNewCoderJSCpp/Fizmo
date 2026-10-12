@@ -7,18 +7,18 @@ namespace fizmo {
 namespace physics {
 
 struct ContactPoint {
-    vector2d position{};          // world-space point midway between the two surfaces (m)
+    linalg::vector2d position{};          // world-space point midway between the two surfaces (m)
     double separation  = 0.0;     // negative = penetrating (m)
     double normal_impulse  = 0.0; // accumulated normal impulse (N*s), filled in after the velocity solve
     double tangent_impulse = 0.0; // accumulated tangent impulse (N*s), filled in after the velocity solve
-    vector2d local_anchor_a{};    // point on A's surface, in A's body frame (m)
-    vector2d local_anchor_b{};    // point on B's surface, in B's body frame (m)
+    linalg::vector2d local_anchor_a{};    // point on A's surface, in A's body frame (m)
+    linalg::vector2d local_anchor_b{};    // point on B's surface, in B's body frame (m)
 };
 
 struct ContactManifold {
     RigidBody2D* body_a = nullptr;
     RigidBody2D* body_b = nullptr;
-    vector2d normal{}; // unit vector from A toward B
+    linalg::vector2d normal{}; // unit vector from A toward B
     ContactPoint points[2];
     int point_count = 0;
     double friction    = 0.0;
@@ -30,18 +30,18 @@ struct ContactManifold {
 
 namespace narrowphase {
 
-void project_polygon(const PolygonShape& poly, const Transform2D& xf, const vector2d& axis, double& lo, double& hi);
+void project_polygon(const PolygonShape& poly, const Transform2D& xf, const linalg::vector2d& axis, double& lo, double& hi);
 
-inline void project_circle(const CircleShape& circ, const Transform2D& xf, const vector2d& axis, double& lo, double& hi) {
-    vector2d c = xf.apply(circ.center);
-    double p = axis.dot(c);
+inline void project_circle(const CircleShape& circ, const Transform2D& xf, const linalg::vector2d& axis, double& lo, double& hi) {
+    linalg::vector2d c = xf.apply(circ.center);
+    double p = fast::dot(axis, c);
     lo = p - circ.radius;
     hi = p + circ.radius;
 }
 
-void project_capsule(const CapsuleShape& cap, const Transform2D& xf, const vector2d& axis, double& lo, double& hi);
+void project_capsule(const CapsuleShape& cap, const Transform2D& xf, const linalg::vector2d& axis, double& lo, double& hi);
 
-vector2d closest_point_on_segment(const vector2d& p, const vector2d& a, const vector2d& b);
+linalg::vector2d closest_point_on_segment(const linalg::vector2d& p, const linalg::vector2d& a, const linalg::vector2d& b);
 
 bool collide_circle_circle(
     const CircleShape& ca, const Transform2D& xa,
@@ -58,15 +58,15 @@ bool collide_circle_polygon(
 namespace detail_sat {
 
 struct RoundPolygon {
-    std::array<vector2d, MAX_POLYGON_VERTICES> vertices{};
-    std::array<vector2d, MAX_POLYGON_VERTICES> normals{};
+    std::array<linalg::vector2d, MAX_POLYGON_VERTICES> vertices{};
+    std::array<linalg::vector2d, MAX_POLYGON_VERTICES> normals{};
     std::size_t count = 0;
     double radius = 0.0;
 };
 
 RoundPolygon make_round_polygon(const PolygonShape& p, const Transform2D& xf);
 
-RoundPolygon make_round_segment(const vector2d& a, const vector2d& b, double radius);
+RoundPolygon make_round_segment(const linalg::vector2d& a, const linalg::vector2d& b, double radius);
 
 struct AxisResult {
     double separation;
@@ -76,14 +76,14 @@ struct AxisResult {
 AxisResult find_max_separation(const RoundPolygon& a, const RoundPolygon& b);
 
 struct SegmentDistance {
-    vector2d closest1{};
-    vector2d closest2{};
+    linalg::vector2d closest1{};
+    linalg::vector2d closest2{};
     double fraction1 = 0.0; 
     double fraction2 = 0.0;
     double distance_squared = 0.0;
 };
 
-SegmentDistance segment_distance(const vector2d& p1, const vector2d& q1, const vector2d& p2, const vector2d& q2);
+SegmentDistance segment_distance(const linalg::vector2d& p1, const linalg::vector2d& q1, const linalg::vector2d& p2, const linalg::vector2d& q2);
 
 bool collide_round_polygons(const RoundPolygon& a, const RoundPolygon& b, ContactManifold& m);
 
@@ -140,8 +140,8 @@ bool collide_shapes(
 );
 
 struct VelocityConstraintPoint {
-    vector2d rA{}; // contact − center_A (m)
-    vector2d rB{}; // contact − center_B (m)
+    linalg::vector2d rA{}; // contact − center_A (m)
+    linalg::vector2d rB{}; // contact − center_B (m)
     double normal_mass  = 0.0;
     double tangent_mass = 0.0;
     double velocity_bias = 0.0;
@@ -152,7 +152,7 @@ struct VelocityConstraintPoint {
 struct VelocityConstraint {
     RigidBody2D* body_a = nullptr;
     RigidBody2D* body_b = nullptr;
-    vector2d normal{};
+    linalg::vector2d normal{};
     double friction = 0.0;
     double restitution = 0.0;
     double restitution_threshold = 1.0;
@@ -164,14 +164,14 @@ struct VelocityConstraint {
 struct ContactEvent {
     RigidBody2D* body_a = nullptr;
     RigidBody2D* body_b = nullptr;
-    vector2d normal{};
-    vector2d point{};
+    linalg::vector2d normal{};
+    linalg::vector2d point{};
     double impulse = 0.0; 
     bool sensor = false;  
 };
 
 struct Simulation2DConfig {
-    vector2d gravity           = {0.0, -constants::gravity()}; // m/s2
+    linalg::vector2d gravity           = {0.0, -constants::gravity()}; // m/s2
     double   fixed_dt          = 1.0 / 60.0;     // s
     int      velocity_iters    = 8;
     int      position_iters    = 3;
@@ -200,7 +200,7 @@ public:
         return *m_bodies.back();
     }
 
-    RigidBody2D& add_body(const vector2d& pos, PhysicsFlags preset = PhysicsFlags::DefaultDynamic) {
+    RigidBody2D& add_body(const linalg::vector2d& pos, PhysicsFlags preset = PhysicsFlags::DefaultDynamic) {
         auto& b = add_body(preset);
         b.set_position(pos);
         return b;
@@ -222,8 +222,8 @@ public:
           Config& config()       noexcept { return m_cfg; }
     const Config& config() const noexcept { return m_cfg; }
 
-    void set_gravity(const vector2d& g) noexcept { m_cfg.gravity = g; }
-    vector2d gravity() const noexcept { return m_cfg.gravity; }
+    void set_gravity(const linalg::vector2d& g) noexcept { m_cfg.gravity = g; }
+    linalg::vector2d gravity() const noexcept { return m_cfg.gravity; }
 
     void on_contact_begin(std::function<void(const ContactEvent&)> cb) { m_on_begin   = std::move(cb); }
     void on_contact_end(std::function<void(const ContactEvent&)> cb)   { m_on_end     = std::move(cb); }
@@ -238,7 +238,7 @@ public:
 
     std::vector<RigidBody2D*> query_aabb(const AABB& region);
 
-    RigidBody2D* point_query(const vector2d& point);
+    RigidBody2D* point_query(const linalg::vector2d& point);
 
 private:
     using Key     = detail::ContactKey<RigidBody2D>;
@@ -249,10 +249,10 @@ private:
         RigidBody2D* body_b = nullptr;
         bool sensor = false;
         bool events = false;
-        vector2d normal{};
-        vector2d point{};
+        linalg::vector2d normal{};
+        linalg::vector2d point{};
         int point_count = 0;
-        std::array<vector2d, 2> local_anchor_a{};
+        std::array<linalg::vector2d, 2> local_anchor_a{};
         std::array<double, 2> normal_impulse{};
         std::array<double, 2> tangent_impulse{};
     };

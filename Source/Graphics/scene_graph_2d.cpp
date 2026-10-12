@@ -14,18 +14,18 @@ auto Node2D::ordered() -> const std::vector<Node2D*>& {
     return m_draw_order;
 }
 
-auto Node2D::local_transform() const noexcept -> const math::Matrix3d& {
+auto Node2D::local_transform() const noexcept -> const linalg::Matrix3d& {
     if (m_local_dirty) {
         const double rad = m_rotation * constants::pi_180();
         const double c = std::cos(rad), s = std::sin(rad);
         const double a = c * m_scale_x, b = -s * m_scale_y, d = s * m_scale_x, e = c * m_scale_y;
-        m_local = math::Matrix3d{ a, b, m_x - (a * m_origin_x + b * m_origin_y), d, e, m_y - (d * m_origin_x + e * m_origin_y), 0.0, 0.0, 1.0 };
+        m_local = linalg::Matrix3d{ a, b, m_x - (a * m_origin_x + b * m_origin_y), d, e, m_y - (d * m_origin_x + e * m_origin_y), 0.0, 0.0, 1.0 };
         m_local_dirty = false;
     }
     return m_local;
 }
 
-auto Node2D::world_transform() const noexcept -> const math::Matrix3d& {
+auto Node2D::world_transform() const noexcept -> const linalg::Matrix3d& {
     if (m_world_dirty || m_local_dirty) {
         m_world = m_parent ? m_parent->world_transform() * local_transform() : local_transform();
         m_world_dirty = false;
@@ -33,7 +33,7 @@ auto Node2D::world_transform() const noexcept -> const math::Matrix3d& {
     return m_world;
 }
 
-auto Node2D::world_to_local(double wx, double wy) const noexcept -> vector2d {
+auto Node2D::world_to_local(double wx, double wy) const noexcept -> linalg::vector2d {
     const auto& m = world_transform().data;
     const double det = m[0] * m[4] - m[1] * m[3];
     if (std::abs(det) < 1e-12) return { 0.0, 0.0 };
@@ -66,12 +66,12 @@ auto Node2D::detach(Node2D* child) -> std::unique_ptr<Node2D> {
 bool Node2D::reparent(Node2D& new_parent, bool keep_world) {
     if (!m_parent || &new_parent == this) return false;
     for (const Node2D* p = &new_parent; p; p = p->m_parent) if (p == this) return false;
-    const math::Matrix3d world = world_transform();
+    const linalg::Matrix3d world = world_transform();
     std::unique_ptr<Node2D> self = m_parent->detach(this);
     new_parent.adopt(std::move(self));
 
     if (keep_world) {
-        const math::Matrix3d& pw = new_parent.world_transform();
+        const linalg::Matrix3d& pw = new_parent.world_transform();
         const auto& p = pw.data;
         const double det = p[0] * p[4] - p[1] * p[3];
         if (std::abs(det) > 1e-12) {
@@ -122,7 +122,7 @@ void Node2D::draw(windows::Renderer& r, float parent_opacity) {
 auto Node2D::world_bounds() const -> NodeBounds {
     const NodeBounds b = local_bounds();
     if (!b.valid) return b;
-    const vector2d c[4] = { local_to_world(b.x, b.y), local_to_world(b.x + b.w, b.y), local_to_world(b.x + b.w, b.y + b.h), local_to_world(b.x, b.y + b.h) };
+    const linalg::vector2d c[4] = { local_to_world(b.x, b.y), local_to_world(b.x + b.w, b.y), local_to_world(b.x + b.w, b.y + b.h), local_to_world(b.x, b.y + b.h) };
     NodeBounds out;
     double x0 = c[0].x, x1 = c[0].x, y0 = c[0].y, y1 = c[0].y;
     for (int i = 1; i < 4; ++i) { x0 = std::min(x0, c[i].x); x1 = std::max(x1, c[i].x); y0 = std::min(y0, c[i].y); y1 = std::max(y1, c[i].y); }
@@ -133,7 +133,7 @@ auto Node2D::world_bounds() const -> NodeBounds {
 bool Node2D::hit(double wx, double wy) const {
     const NodeBounds b = local_bounds();
     if (!b.valid) return false;
-    const vector2d l = world_to_local(wx, wy);
+    const linalg::vector2d l = world_to_local(wx, wy);
     return b.contains(l.x, l.y);
 }
 
@@ -185,7 +185,7 @@ void TextNode::draw_self(windows::Renderer& r, float opacity) {
 
 auto SceneGraph2D::pick_screen(double sx, double sy) -> Node2D* {
     if (!m_camera) return m_root.pick(sx, sy);
-    const vector2d w = m_camera->screen_to_world(sx, sy);
+    const linalg::vector2d w = m_camera->screen_to_world(sx, sy);
     return m_root.pick(w.x, w.y);
 }
 

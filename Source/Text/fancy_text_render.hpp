@@ -74,6 +74,10 @@ inline images::BitmapImage fancy_text_image(const FancyText& ft, float padding =
 
 void draw_fancy_text_native(windows::Renderer& r, const FancyText& ft, float x, float y, FancyAnchor anchor = FancyAnchor::TopLeft);
 
+void draw_fancy_images_native(windows::Renderer& r, const FancyText& ft, float x, float y, FancyAnchor anchor = FancyAnchor::TopLeft);
+
+void clear_fancy_image_cache();
+
 struct FancyTexture {
     graphics::Texture texture;
     float             padding = 0.0f;

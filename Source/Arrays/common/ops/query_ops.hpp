@@ -20,7 +20,7 @@ FIZMO_ARRAY_INLINE bool clamp_range(std::size_t& start, std::size_t& end_idx, st
 
 template <typename T>
 struct IndexArrayOf {
-    using type = DynamicArray<std::size_t>;
+    using type = collections::DynamicArray<std::size_t>;
 };
 
 template <typename T>
@@ -28,7 +28,7 @@ using index_array_t = typename IndexArrayOf<T>::type;
 
 template <typename T>
 struct FrequencyArrayOf {
-    using type = DynamicArray<std::pair<typename std::remove_const<T>::type, std::size_t>>;
+    using type = collections::DynamicArray<std::pair<typename std::remove_const<T>::type, std::size_t>>;
 };
 
 template <typename C, typename T, typename = void>
@@ -481,7 +481,7 @@ public:
 
     typename FrequencyArrayOf<T>::type frequency() const { return frequency_impl(hashing::is_hashable<typename std::remove_const<T>::type>()); }
 
-    DynamicArray<typename std::remove_const<T>::type> to_array() const { return DynamicArray<typename std::remove_const<T>::type>(q_ptr(), q_ptr() + q_len()); }
+    collections::DynamicArray<typename std::remove_const<T>::type> to_array() const { return collections::DynamicArray<typename std::remove_const<T>::type>(q_ptr(), q_ptr() + q_len()); }
 
 private:
     typename FrequencyArrayOf<T>::type frequency_impl(std::true_type) const {

@@ -19,6 +19,7 @@
 #include "../../Converters/quantity.hpp"
 #include "../../Matrices/square_matrices.hpp"
 #include "../../Quaternions/quaternion.hpp"
+#include "../../Vectors/fast_math.hpp"
 
 #ifdef OS_LINUX
 #endif

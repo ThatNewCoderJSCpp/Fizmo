@@ -46,7 +46,7 @@ public:
         draw_vertices(v, vcount, indices, icount, model, mat, vertex_lights, false);
     }
 
-    void lines(const vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test);
+    void lines(const linalg::vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test);
 
     bool touched() const noexcept { return m_touched; }
 
@@ -85,17 +85,17 @@ private:
 
     void prepare_lighting();
 
-    static void transform_point(const float* model, const vector3d& p, float out[3]) noexcept;
+    static void transform_point(const float* model, const linalg::vector3d& p, float out[3]) noexcept;
 
-    static void transform_normal(const float* model, const vector3d& n, float out[3]) noexcept;
+    static void transform_normal(const float* model, const linalg::vector3d& n, float out[3]) noexcept;
 
     void corner_factor(const graphics::CompactVertex3D& v, const float* model, bool material_lit, float out[3]) const noexcept;
 
     void expand_quad(const graphics::CompactVertex3D* c, const std::int32_t* cell_origin, const float* model, bool material_lit);
 
-    static int axis_of(const vector3d& e) noexcept;
+    static int axis_of(const linalg::vector3d& e) noexcept;
 
-    static double component(const vector3d& p, int axis) noexcept { return axis == 0 ? p.x : (axis == 1 ? p.y : p.z); }
+    static double component(const linalg::vector3d& p, int axis) noexcept { return axis == 0 ? p.x : (axis == 1 ? p.y : p.z); }
 
 public:
 
@@ -111,7 +111,7 @@ private:
 
     static Mat4f to_mat(const float* m) noexcept { Mat4f r; std::copy(m, m + 16, r.begin()); return r; }
 
-    static void to_clip(const Mat4f& m, const vector3d& p, float out[4]) noexcept;
+    static void to_clip(const Mat4f& m, const linalg::vector3d& p, float out[4]) noexcept;
 
     void draw_vertices(
         const graphics::Vertex3D* v, std::size_t vcount,

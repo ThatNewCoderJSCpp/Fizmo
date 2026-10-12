@@ -4,7 +4,6 @@
 #include "../big_float.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace detail {
@@ -50,7 +49,6 @@ BigFloat cbrt(const BigInt& x, const BigFloatContext& ctx);
 inline BigFloat cbrt(const BigInt& x) { return cbrt(x, BigFloatContext::current()); }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_SQRT_CBRT_HPP

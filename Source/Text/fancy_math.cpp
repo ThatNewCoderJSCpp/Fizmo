@@ -149,34 +149,3 @@ auto MathCache::get(std::string_view source, const MathRenderOptions& options, b
 } // namespace detail
 } // namespace text
 } // namespace fizmo
-
-namespace fizmo {
-namespace windows {
-
-void Renderer::draw_math(std::string_view source, float x, float y, const text::MathRenderOptions& options, text::FancyAnchor anchor) {
-    if (!m_fancy_cache) m_fancy_cache = std::make_shared<text::detail::MathCache>();
-    text::detail::MathCache& cache = *static_cast<text::detail::MathCache*>(m_fancy_cache.get());
-    const bool texture = !is_gpu();
-    const text::detail::MathCacheEntry& e = cache.get(source, options, texture);
-    if (e.has_texture) text::draw_fancy_texture(*this, e.texture, x, y, anchor);
-    else text::draw_fancy_text_native(*this, e.text, x, y, anchor);
-    cache.trim();
-}
-
-text::FancyText Renderer::math_text(std::string_view source, const text::MathRenderOptions& options) {
-    if (!m_fancy_cache) m_fancy_cache = std::make_shared<text::detail::MathCache>();
-    text::detail::MathCache& cache = *static_cast<text::detail::MathCache*>(m_fancy_cache.get());
-    text::FancyText out = cache.get(source, options, false).text;
-    cache.trim();
-    return out;
-}
-
-void Renderer::set_math_cache_capacity(std::size_t entries) {
-    if (!m_fancy_cache) m_fancy_cache = std::make_shared<text::detail::MathCache>();
-    text::detail::MathCache& cache = *static_cast<text::detail::MathCache*>(m_fancy_cache.get());
-    cache.capacity = entries == 0 ? 1 : entries;
-    cache.trim();
-}
-
-} // namespace windows
-} // namespace fizmo

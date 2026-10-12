@@ -4,7 +4,6 @@
 #include "Details/fmod_detail.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 #define FIZMO_DEFINE_MOD(name, impl)                                                     \
@@ -24,7 +23,6 @@ FIZMO_DEFINE_MOD(mod_euclid, euclid_)
 #undef FIZMO_DEFINE_MOD
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_FMOD_HPP

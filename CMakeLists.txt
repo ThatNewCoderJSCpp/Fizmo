@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.2.7
+    VERSION 0.2.8
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -35,6 +35,7 @@ target_include_directories(fizmo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
 target_compile_features(fizmo PUBLIC cxx_std_17)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoTuning.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoUnicode.cmake)
 
 set_target_properties(fizmo PROPERTIES
     OUTPUT_NAME fizmo
@@ -93,6 +94,8 @@ endif()
 option(FIZMO_BUILD_TOOLS "Build the fizmo command line tools" OFF)
 if(FIZMO_BUILD_TOOLS)
     add_subdirectory(tools/mathtext)
+    add_executable(fizmo-unicode tools/unicode/fizmo_unicode.cpp)
+    target_compile_features(fizmo-unicode PRIVATE cxx_std_17)
 endif()
 
 option(FIZMO_BUILD_TEST "Build tests/test.cpp as fizmo-test" OFF)

@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace cbdetail {
 
@@ -150,11 +149,9 @@ BF cb_rising_core(BF x, std::uint64_t n, bool inv, bool binom, const BFC& ctx) {
 
 } // namespace cbdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigInt rising_pochhammer(const BigInt& x, std::int64_t n) {                 
@@ -297,5 +294,4 @@ BigFloat combination(const BigFloat& x, const BigFloat& k, const BigFloatContext
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

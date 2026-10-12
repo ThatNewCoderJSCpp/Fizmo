@@ -10,7 +10,6 @@
 #include <limits>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace detail {
@@ -152,11 +151,11 @@ FIZMO_MP_ERF_FORWARD(inv_erfi)
 #undef FIZMO_MP_ERF_FORWARD
 
 #define FIZMO_MP_ERF2_FORWARD(FN)                                                                         \
-    template <typename A, typename B, typename std::enable_if<!std::is_same<A, BigFloat>::value            \
-                                                           || !std::is_same<B, BigFloat>::value, int>::type = 0> \
+    template <typename A, typename B, typename std::enable_if<(!std::is_same<A, BigFloat>::value           \
+                                                           || !std::is_same<B, BigFloat>::value) && !any_big_complex_mp<A, B>::value, int>::type = 0> \
     inline BigFloat FN(const A& x, const B& b, const BigFloatContext& c) { return FN(BigFloat(x), BigFloat(b), c); } \
-    template <typename A, typename B, typename std::enable_if<!std::is_same<A, BigFloat>::value            \
-                                                           || !std::is_same<B, BigFloat>::value, int>::type = 0> \
+    template <typename A, typename B, typename std::enable_if<(!std::is_same<A, BigFloat>::value           \
+                                                           || !std::is_same<B, BigFloat>::value) && !any_fixed_width_mp<A, B>::value && !any_big_complex_mp<A, B>::value, int>::type = 0> \
     inline BigFloat FN(const A& x, const B& b) { return FN(BigFloat(x), BigFloat(b), BigFloatContext::current()); }
 
 FIZMO_MP_ERF2_FORWARD(generalized_erf)
@@ -165,7 +164,6 @@ FIZMO_MP_ERF2_FORWARD(generalized_erfc)
 #undef FIZMO_MP_ERF2_FORWARD
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_ERROR_FUNCTIONS_HPP

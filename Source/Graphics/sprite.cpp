@@ -56,22 +56,22 @@ bool Sprite::set_frame(
     return true;
 }
 
-auto Sprite::transform() const noexcept -> math::Matrix3d {
+auto Sprite::transform() const noexcept -> linalg::Matrix3d {
     const double rad = m_rotation * constants::pi_180();
     const double c = std::cos(rad), s = std::sin(rad);
     const double px = m_pivot_x * m_source_rect.w, py = m_pivot_y * m_source_rect.h;
     const double a = c * m_scale_x, b = -s * m_scale_y;
     const double d = s * m_scale_x, e =  c * m_scale_y;
 
-    return math::Matrix3d{
+    return linalg::Matrix3d{
         a, b, m_x - (a * px + b * py),
         d, e, m_y - (d * px + e * py),
         0.0, 0.0, 1.0
     };
 }
 
-auto Sprite::local_to_world(double lx, double ly) const noexcept -> vector2d {
-    const math::Matrix3d m = transform();
+auto Sprite::local_to_world(double lx, double ly) const noexcept -> linalg::vector2d {
+    const linalg::Matrix3d m = transform();
     return { m.data[0] * lx + m.data[1] * ly + m.data[2], m.data[3] * lx + m.data[4] * ly + m.data[5] };
 }
 
@@ -129,7 +129,7 @@ bool Sprite::contains_opaque(double px, double py, std::uint8_t alpha_threshold)
 }
 
 auto Sprite::quad() const noexcept -> SpriteQuad {
-    const math::Matrix3d m = transform();
+    const linalg::Matrix3d m = transform();
     const double w = m_source_rect.w, h = m_source_rect.h;
     const double lx[4] = { 0.0, w, w, 0.0 };
     const double ly[4] = { 0.0, 0.0, h, h };

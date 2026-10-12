@@ -6,101 +6,132 @@
 namespace fizmo {
 namespace relativity {
 namespace special {
+namespace rdetail {
 
-template <typename P, typename M, class RU = units::EnergyUnit>
-constexpr typename std::enable_if<std::is_arithmetic<P>::value && std::is_arithmetic<M>::value && is_fizmo_unit_v<RU> && RU::dimension() == units::DIMENSION_ENERGY, typename std::common_type<P, M, double>::type>::type
-energy_momentum_energy(const P momentum, const M mass, const RU return_unit = units::energy::joule) noexcept {
-    using CT = typename std::common_type<P, M, double>::type;
-    if (mass < 0 || momentum < 0) { return constants::QUIET_NAN<CT>; }
-    const CT p = static_cast<CT>(momentum);
-    const CT m = static_cast<CT>(mass);
-    const CT c = constants::LIGHT_SPEED<CT>;
-    const CT c2 = c * c;
-    const CT pc = p * c;
-    const CT mc2 = m * c2;
-    const CT value = math::sqrt_constexpr(pc * pc + mc2 * mc2);
-    return static_cast<CT>(units::convert(static_cast<long double>(value), units::energy::joule, return_unit));
+template <class N>
+constexpr N hypot_(const N& a, const N& b) {
+    const N x = abs_(a);
+    const N y = abs_(b);
+    const N big   = (x > y) ? x : y;
+    const N small = (x > y) ? y : x;
+    if (big == N(0)) return N(0);
+    const N r = small / big;
+    return big * sqrt_(N(1) + r * r);
 }
 
-template <typename P, typename M, class PU, class MU, class RU = units::EnergyUnit>
-constexpr typename std::enable_if<std::is_arithmetic<P>::value && std::is_arithmetic<M>::value && is_fizmo_unit_v<PU> && is_fizmo_unit_v<MU> && is_fizmo_unit_v<RU> && PU::dimension() == units::DIMENSION_MOMENTUM && MU::dimension() == units::DIMENSION_MASS && RU::dimension() == units::DIMENSION_ENERGY, typename std::common_type<P, M, double>::type>::type
-energy_momentum_energy(const P momentum, const M mass, const PU momentum_unit, const MU mass_unit, const RU return_unit = units::energy::joule) noexcept {
-    using CT = typename std::common_type<P, M, double>::type;
-    const CT p = static_cast<CT>(units::convert(static_cast<long double>(momentum), momentum_unit, units::momentum::kilogram_meter_per_second));
-    const CT m = static_cast<CT>(units::convert(static_cast<long double>(mass), mass_unit, units::mass::kilogram));
-    return energy_momentum_energy(p, m, return_unit);
+template <class N>
+constexpr N energy_momentum_energy_(const N& p, const N& m) {
+    if (neg_(m) || neg_(p)) return nan_<N>();
+    const N c = c_<N>();
+    return hypot_(p * c, m * c * c);
 }
 
-template <typename E, typename M, class RU = units::MomentumUnit>
-constexpr typename std::enable_if<std::is_arithmetic<E>::value && std::is_arithmetic<M>::value && is_fizmo_unit_v<RU> && RU::dimension() == units::DIMENSION_MOMENTUM, typename std::common_type<E, M, double>::type>::type
-energy_momentum_momentum(const E energy, const M mass, const RU return_unit = units::momentum::kilogram_meter_per_second) noexcept {
-    using CT = typename std::common_type<E, M, double>::type;
-    if (mass < 0 || energy < 0) { return constants::QUIET_NAN<CT>; }
-    const CT E = static_cast<CT>(energy);
-    const CT m = static_cast<CT>(mass);
-    const CT c = constants::LIGHT_SPEED<CT>;
-    const CT c2 = c * c;
-    const CT mc2 = m * c2;
-    const CT arg = E * E - mc2 * mc2;
-    if (arg < 0) { return constants::QUIET_NAN<CT>; }
-    const CT value = math::sqrt_constexpr(arg) / c;
-    return static_cast<CT>(units::convert(static_cast<long double>(value), units::momentum::kilogram_meter_per_second, return_unit));
+template <class N>
+constexpr N energy_momentum_momentum_(const N& e, const N& m) {
+    if (neg_(m) || neg_(e)) return nan_<N>();
+    const N c   = c_<N>();
+    const N mc2 = m * c * c;
+    if (mc2 > e) return nan_<N>();
+    return sqrt_((e - mc2) * (e + mc2)) / c;
 }
 
-template <typename E, typename M, class EU, class MU, class RU = units::MomentumUnit>
-constexpr typename std::enable_if<std::is_arithmetic<E>::value && std::is_arithmetic<M>::value && is_fizmo_unit_v<EU> && is_fizmo_unit_v<MU> && is_fizmo_unit_v<RU> && EU::dimension() == units::DIMENSION_ENERGY && MU::dimension() == units::DIMENSION_MASS && RU::dimension() == units::DIMENSION_MOMENTUM, typename std::common_type<E, M, double>::type>::type
-energy_momentum_momentum(const E energy, const M mass, const EU energy_unit, const MU mass_unit, const RU return_unit = units::momentum::kilogram_meter_per_second) noexcept {
-    using CT = typename std::common_type<E, M, double>::type;
-    const CT E = static_cast<CT>(units::convert(static_cast<long double>(energy), energy_unit, units::energy::joule));
-    const CT m = static_cast<CT>(units::convert(static_cast<long double>(mass), mass_unit, units::mass::kilogram));
-    return energy_momentum_momentum(E, m, return_unit);
+template <class N>
+constexpr N energy_momentum_mass_(const N& e, const N& p) {
+    if (neg_(e) || neg_(p)) return nan_<N>();
+    const N c  = c_<N>();
+    const N pc = p * c;
+    if (pc > e) return nan_<N>();
+    return sqrt_((e - pc) * (e + pc)) / (c * c);
 }
 
-template <typename E, typename P, class RU = units::MassUnit>
-constexpr typename std::enable_if<std::is_arithmetic<E>::value && std::is_arithmetic<P>::value && is_fizmo_unit_v<RU> && RU::dimension() == units::DIMENSION_MASS, typename std::common_type<E, P, double>::type>::type
-energy_momentum_mass(const E energy, const P momentum, const RU return_unit = units::mass::kilogram) noexcept {
-    using CT = typename std::common_type<E, P, double>::type;
-    if (energy < 0 || momentum < 0) { return constants::QUIET_NAN<CT>; }
-    const CT E = static_cast<CT>(energy);
-    const CT p = static_cast<CT>(momentum);
-    const CT c = constants::LIGHT_SPEED<CT>;
-    const CT c2 = c * c;
-    const CT pc = p * c;
-    const CT arg = E * E - pc * pc;
-    if (arg < 0) { return constants::QUIET_NAN<CT>; }
-    const CT value = math::sqrt_constexpr(arg) / c2;
-    return static_cast<CT>(units::convert(static_cast<long double>(value), units::mass::kilogram, return_unit));
+template <class N>
+constexpr N energy_momentum_velocity_(const N& e, const N& p) {
+    if (!(e > N(0)) || neg_(p)) return nan_<N>();
+    const N beta = p * c_<N>() / e;
+    if (beta > N(1)) return nan_<N>();
+    return beta;
 }
 
-template <typename E, typename P, class EU, class PU, class RU = units::MassUnit>
-constexpr typename std::enable_if<std::is_arithmetic<E>::value && std::is_arithmetic<P>::value && is_fizmo_unit_v<EU> && is_fizmo_unit_v<PU> && is_fizmo_unit_v<RU> && EU::dimension() == units::DIMENSION_ENERGY && PU::dimension() == units::DIMENSION_MOMENTUM && RU::dimension() == units::DIMENSION_MASS, typename std::common_type<E, P, double>::type>::type
-energy_momentum_mass(const E energy, const P momentum, const EU energy_unit, const PU momentum_unit, const RU return_unit = units::mass::kilogram) noexcept {
-    using CT = typename std::common_type<E, P, double>::type;
-    const CT E = static_cast<CT>(units::convert(static_cast<long double>(energy), energy_unit, units::energy::joule));
-    const CT p = static_cast<CT>(units::convert(static_cast<long double>(momentum), momentum_unit, units::momentum::kilogram_meter_per_second));
-    return energy_momentum_mass(E, p, return_unit);
+} // namespace rdetail
+
+template <typename P, typename M, class RU = units::EnergyUnit,
+          rdetail::enable_t<rdetail::all_values<P, M>::value && rdetail::has_dim<RU>(units::DIMENSION_ENERGY)> = 0>
+constexpr rdetail::result_t<P, M> energy_momentum_energy(const P& momentum, const M& mass, const RU return_unit = units::energy::joule) {
+    return rdetail::run<rdetail::result_t<P, M>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        return rdetail::conv(rdetail::energy_momentum_energy_(rdetail::to_<N>(momentum), rdetail::to_<N>(mass)), units::energy::joule, return_unit);
+    });
 }
 
-template <typename E, typename P, class RU = units::VelocityUnit>
-constexpr typename std::enable_if<std::is_arithmetic<E>::value && std::is_arithmetic<P>::value && is_fizmo_unit_v<RU> && RU::dimension() == units::DIMENSION_VELOCITY, typename std::common_type<E, P, double>::type>::type
-energy_momentum_velocity(const E energy, const P momentum, const RU return_unit = units::velocity::light_speed) noexcept {
-    using CT = typename std::common_type<E, P, double>::type;
-    if (energy <= 0 || momentum < 0) { return constants::QUIET_NAN<CT>; }
-    const CT E = static_cast<CT>(energy);
-    const CT p = static_cast<CT>(momentum);
-    const CT c = constants::LIGHT_SPEED<CT>;
-    const CT value = (p * c * c) / E;
-    if (value > c) { return constants::QUIET_NAN<CT>; }
-    return static_cast<CT>(units::convert(static_cast<long double>(value / c), units::velocity::light_speed, return_unit));
+template <typename P, typename M, class PU, class MU, class RU = units::EnergyUnit,
+          rdetail::enable_t<rdetail::all_values<P, M>::value && rdetail::has_dim<PU>(units::DIMENSION_MOMENTUM) && rdetail::has_dim<MU>(units::DIMENSION_MASS) && rdetail::has_dim<RU>(units::DIMENSION_ENERGY)> = 0>
+constexpr rdetail::result_t<P, M> energy_momentum_energy(const P& momentum, const M& mass, const PU momentum_unit, const MU mass_unit, const RU return_unit = units::energy::joule) {
+    return rdetail::run<rdetail::result_t<P, M>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        const N p = rdetail::in_<N>(momentum, momentum_unit, units::momentum::kilogram_meter_per_second);
+        const N m = rdetail::in_<N>(mass, mass_unit, units::mass::kilogram);
+        return rdetail::conv(rdetail::energy_momentum_energy_(p, m), units::energy::joule, return_unit);
+    });
 }
 
-template <typename E, typename P, class EU, class PU, class RU = units::VelocityUnit>
-constexpr typename std::enable_if<std::is_arithmetic<E>::value && std::is_arithmetic<P>::value && is_fizmo_unit_v<EU> && is_fizmo_unit_v<PU> && is_fizmo_unit_v<RU> && EU::dimension() == units::DIMENSION_ENERGY && PU::dimension() == units::DIMENSION_MOMENTUM && RU::dimension() == units::DIMENSION_VELOCITY, typename std::common_type<E, P, double>::type>::type
-energy_momentum_velocity(const E energy, const P momentum, const EU energy_unit, const PU momentum_unit, const RU return_unit = units::velocity::light_speed) noexcept {
-    using CT = typename std::common_type<E, P, double>::type;
-    const CT E = static_cast<CT>(units::convert(static_cast<long double>(energy), energy_unit, units::energy::joule));
-    const CT p = static_cast<CT>(units::convert(static_cast<long double>(momentum), momentum_unit, units::momentum::kilogram_meter_per_second));
-    return energy_momentum_velocity(E, p, return_unit);
+template <typename E, typename M, class RU = units::MomentumUnit,
+          rdetail::enable_t<rdetail::all_values<E, M>::value && rdetail::has_dim<RU>(units::DIMENSION_MOMENTUM)> = 0>
+constexpr rdetail::result_t<E, M> energy_momentum_momentum(const E& energy, const M& mass, const RU return_unit = units::momentum::kilogram_meter_per_second) {
+    return rdetail::run<rdetail::result_t<E, M>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        return rdetail::conv(rdetail::energy_momentum_momentum_(rdetail::to_<N>(energy), rdetail::to_<N>(mass)), units::momentum::kilogram_meter_per_second, return_unit);
+    });
+}
+
+template <typename E, typename M, class EU, class MU, class RU = units::MomentumUnit,
+          rdetail::enable_t<rdetail::all_values<E, M>::value && rdetail::has_dim<EU>(units::DIMENSION_ENERGY) && rdetail::has_dim<MU>(units::DIMENSION_MASS) && rdetail::has_dim<RU>(units::DIMENSION_MOMENTUM)> = 0>
+constexpr rdetail::result_t<E, M> energy_momentum_momentum(const E& energy, const M& mass, const EU energy_unit, const MU mass_unit, const RU return_unit = units::momentum::kilogram_meter_per_second) {
+    return rdetail::run<rdetail::result_t<E, M>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        const N e = rdetail::in_<N>(energy, energy_unit, units::energy::joule);
+        const N m = rdetail::in_<N>(mass, mass_unit, units::mass::kilogram);
+        return rdetail::conv(rdetail::energy_momentum_momentum_(e, m), units::momentum::kilogram_meter_per_second, return_unit);
+    });
+}
+
+template <typename E, typename P, class RU = units::MassUnit,
+          rdetail::enable_t<rdetail::all_values<E, P>::value && rdetail::has_dim<RU>(units::DIMENSION_MASS)> = 0>
+constexpr rdetail::result_t<E, P> energy_momentum_mass(const E& energy, const P& momentum, const RU return_unit = units::mass::kilogram) {
+    return rdetail::run<rdetail::result_t<E, P>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        return rdetail::conv(rdetail::energy_momentum_mass_(rdetail::to_<N>(energy), rdetail::to_<N>(momentum)), units::mass::kilogram, return_unit);
+    });
+}
+
+template <typename E, typename P, class EU, class PU, class RU = units::MassUnit,
+          rdetail::enable_t<rdetail::all_values<E, P>::value && rdetail::has_dim<EU>(units::DIMENSION_ENERGY) && rdetail::has_dim<PU>(units::DIMENSION_MOMENTUM) && rdetail::has_dim<RU>(units::DIMENSION_MASS)> = 0>
+constexpr rdetail::result_t<E, P> energy_momentum_mass(const E& energy, const P& momentum, const EU energy_unit, const PU momentum_unit, const RU return_unit = units::mass::kilogram) {
+    return rdetail::run<rdetail::result_t<E, P>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        const N e = rdetail::in_<N>(energy, energy_unit, units::energy::joule);
+        const N p = rdetail::in_<N>(momentum, momentum_unit, units::momentum::kilogram_meter_per_second);
+        return rdetail::conv(rdetail::energy_momentum_mass_(e, p), units::mass::kilogram, return_unit);
+    });
+}
+
+template <typename E, typename P, class RU = units::VelocityUnit,
+          rdetail::enable_t<rdetail::all_values<E, P>::value && rdetail::has_dim<RU>(units::DIMENSION_VELOCITY)> = 0>
+constexpr rdetail::result_t<E, P> energy_momentum_velocity(const E& energy, const P& momentum, const RU return_unit = units::velocity::light_speed) {
+    return rdetail::run<rdetail::result_t<E, P>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        return rdetail::conv(rdetail::energy_momentum_velocity_(rdetail::to_<N>(energy), rdetail::to_<N>(momentum)), units::velocity::light_speed, return_unit);
+    });
+}
+
+template <typename E, typename P, class EU, class PU, class RU = units::VelocityUnit,
+          rdetail::enable_t<rdetail::all_values<E, P>::value && rdetail::has_dim<EU>(units::DIMENSION_ENERGY) && rdetail::has_dim<PU>(units::DIMENSION_MOMENTUM) && rdetail::has_dim<RU>(units::DIMENSION_VELOCITY)> = 0>
+constexpr rdetail::result_t<E, P> energy_momentum_velocity(const E& energy, const P& momentum, const EU energy_unit, const PU momentum_unit, const RU return_unit = units::velocity::light_speed) {
+    return rdetail::run<rdetail::result_t<E, P>>([&](auto t) {
+        using N = typename decltype(t)::type;
+        const N e = rdetail::in_<N>(energy, energy_unit, units::energy::joule);
+        const N p = rdetail::in_<N>(momentum, momentum_unit, units::momentum::kilogram_meter_per_second);
+        return rdetail::conv(rdetail::energy_momentum_velocity_(e, p), units::velocity::light_speed, return_unit);
+    });
 }
 
 } // namespace special

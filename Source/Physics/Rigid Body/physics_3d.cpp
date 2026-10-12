@@ -5,21 +5,21 @@ namespace fizmo {
 namespace physics {
 namespace vec3 {
 
-vector3d mul(const math::Matrix3d& m, const vector3d& v) noexcept {
+linalg::vector3d mul(const linalg::Matrix3d& m, const linalg::vector3d& v) noexcept {
     const auto& d = m.data;
     return { d[0] * v.x + d[1] * v.y + d[2] * v.z,
              d[3] * v.x + d[4] * v.y + d[5] * v.z,
              d[6] * v.x + d[7] * v.y + d[8] * v.z };
 }
 
-vector3d mul_transpose(const math::Matrix3d& m, const vector3d& v) noexcept {
+linalg::vector3d mul_transpose(const linalg::Matrix3d& m, const linalg::vector3d& v) noexcept {
     const auto& d = m.data;
     return { d[0] * v.x + d[3] * v.y + d[6] * v.z,
              d[1] * v.x + d[4] * v.y + d[7] * v.z,
              d[2] * v.x + d[5] * v.y + d[8] * v.z };
 }
 
-void orthonormal_basis(const vector3d& n, vector3d& t1, vector3d& t2) noexcept {
+void orthonormal_basis(const linalg::vector3d& n, linalg::vector3d& t1, linalg::vector3d& t2) noexcept {
     const double sign = std::copysign(1.0, n.z);
     const double a = -1.0 / (sign + n.z);
     const double b = n.x * n.y * a;
@@ -27,11 +27,11 @@ void orthonormal_basis(const vector3d& n, vector3d& t1, vector3d& t2) noexcept {
     t2 = { b, sign + n.y * n.y * a, -n.y };
 }
 
-QuatD integrate_rotation(const QuatD& q, const vector3d& w, double dt) noexcept {
+linalg::QuatD integrate_rotation(const linalg::QuatD& q, const linalg::vector3d& w, double dt) noexcept {
     const double speed = length(w);
     if (speed * dt <= 1e-15) return q;
-    QuatD dq = QuatD::from_axis_angle(w.x, w.y, w.z, speed * dt);
-    return (dq * q).normalized();
+    linalg::QuatD dq = fast::from_axis_angle(w.x, w.y, w.z, speed * dt);
+    return fast::normalize(fast::mul(dq, q));
 }
 
 } // namespace vec3
@@ -57,25 +57,25 @@ auto AABB3D::fatten(double margin) const noexcept -> AABB3D {
 }
 
 auto Sweep3D::get_transform(double t) const noexcept -> Transform3D { // t: unitless [0,1]
-    vector3d p = position0 * (1.0 - t) + position1 * t;
-    Transform3D xf(p, QuatD::nlerp(orientation0, orientation1, t));
+    linalg::vector3d p = position0 * (1.0 - t) + position1 * t;
+    Transform3D xf(p, fast::nlerp(orientation0, orientation1, t));
     xf.position = p - xf.rotate(center_local);
     return xf;
 }
 
 auto HullShape::box(double hx, double hy, double hz) -> HullShape { // meter half-extents
-    const vector3d pts[8] = {
+    const linalg::vector3d pts[8] = {
         {-hx, -hy, -hz}, { hx, -hy, -hz}, { hx,  hy, -hz}, {-hx,  hy, -hz},
         {-hx, -hy,  hz}, { hx, -hy,  hz}, { hx,  hy,  hz}, {-hx,  hy,  hz}
     };
     return from_points(pts, 8);
 }
 
-auto HullShape::from_points(const vector3d* pts, std::size_t n) -> HullShape {
+auto HullShape::from_points(const linalg::vector3d* pts, std::size_t n) -> HullShape {
     HullShape h;
-    std::vector<vector3d> p;
+    std::vector<linalg::vector3d> p;
     p.reserve(n);
-    vector3d lo = n ? pts[0] : vector3d{}, hi = lo;
+    linalg::vector3d lo = n ? pts[0] : linalg::vector3d{}, hi = lo;
     for (std::size_t i = 0; i < n; ++i) { lo = vec3::min(lo, pts[i]); hi = vec3::max(hi, pts[i]); }
     const double extent = std::max({ hi.x - lo.x, hi.y - lo.y, hi.z - lo.z });
     if (!(extent > 0.0)) return h;
@@ -89,13 +89,13 @@ auto HullShape::from_points(const vector3d* pts, std::size_t n) -> HullShape {
 
     if (p.size() < 4 || p.size() > 0xFFFF) return h;
     const std::size_t m = p.size();
-    struct Plane { vector3d n; double d; };
+    struct Plane { linalg::vector3d n; double d; };
     std::vector<Plane> planes;
 
     for (std::size_t i = 0; i < m; ++i) {
         for (std::size_t j = i + 1; j < m; ++j) {
             for (std::size_t k = j + 1; k < m; ++k) {
-                vector3d nrm = vec3::cross(p[j] - p[i], p[k] - p[i]);
+                linalg::vector3d nrm = vec3::cross(p[j] - p[i], p[k] - p[i]);
                 double len = vec3::length(nrm);
                 if (len <= tol * extent) continue; 
                 nrm = nrm * (1.0 / len);
@@ -124,7 +124,7 @@ auto HullShape::from_points(const vector3d* pts, std::size_t n) -> HullShape {
     std::vector<int> remap(m, -1);
 
     for (const auto& pl : planes) {
-        vector3d u, w;
+        linalg::vector3d u, w;
         vec3::orthonormal_basis(pl.n, u, w);
         struct P2 { double x, y; std::size_t idx; };
         std::vector<P2> on;
@@ -171,7 +171,7 @@ void HullShape::finalize() {
     edges.clear();
     edge_directions.clear();
     volume = 0.0;
-    centroid;
+    centroid = {};
     if (vertices.empty() || faces.empty()) return;
     for (auto& f : faces) f.offset = vec3::dot(f.normal, vertices[f.indices[0]]);
 
@@ -184,23 +184,23 @@ void HullShape::finalize() {
     }
 
     for (const auto& e : edges) {
-        vector3d d = vec3::normalize(vertices[e[1]] - vertices[e[0]]);
+        linalg::vector3d d = vec3::normalize(vertices[e[1]] - vertices[e[0]]);
         bool dup = false;
         for (const auto& q : edge_directions) { if (std::abs(vec3::dot(q, d)) > 1.0 - 1e-9) { dup = true; break; } }
         if (!dup) edge_directions.push_back(d);
     }
 
-    vector3d o{};
+    linalg::vector3d o{};
     for (const auto& v : vertices) o += v;
     o = o * (1.0 / static_cast<double>(vertices.size()));
-    vector3d c{};
+    linalg::vector3d c{};
 
     for (const auto& f : faces) {
-        const vector3d& a = vertices[f.indices[0]];
+        const linalg::vector3d& a = vertices[f.indices[0]];
 
         for (std::size_t i = 1; i + 1 < f.indices.size(); ++i) {
-            const vector3d& b = vertices[f.indices[i]];
-            const vector3d& d = vertices[f.indices[i + 1]];
+            const linalg::vector3d& b = vertices[f.indices[i]];
+            const linalg::vector3d& d = vertices[f.indices[i + 1]];
             double vol = vec3::dot(a - o, vec3::cross(b - o, d - o)) / 6.0;
             volume += vol;
             c += (o + a + b + d) * (vol * 0.25);
@@ -217,7 +217,7 @@ auto HullShape::bounds() const noexcept -> AABB3D {
     return b;
 }
 
-auto Shape3D::make_sphere(const vector3d& center, double radius) -> Shape3D {
+auto Shape3D::make_sphere(const linalg::vector3d& center, double radius) -> Shape3D {
     Shape3D s;
     s.type = ShapeType3D::Sphere;
     s.sphere = { center, radius };
@@ -225,7 +225,7 @@ auto Shape3D::make_sphere(const vector3d& center, double radius) -> Shape3D {
     return s;
 }
 
-auto Shape3D::make_capsule(const vector3d& p1, const vector3d& p2, double radius) -> Shape3D {
+auto Shape3D::make_capsule(const linalg::vector3d& p1, const linalg::vector3d& p2, double radius) -> Shape3D {
     Shape3D s;
     s.type = ShapeType3D::Capsule;
     s.capsule = { p1, p2, radius };
@@ -242,7 +242,7 @@ auto Shape3D::make_hull(HullShape h) -> Shape3D {
     return s;
 }
 
-auto Shape3D::make_plane(const vector3d& normal, double offset) -> Shape3D {
+auto Shape3D::make_plane(const linalg::vector3d& normal, double offset) -> Shape3D {
     Shape3D s;
     s.type = ShapeType3D::Plane;
     s.plane = { vec3::normalize(normal), offset };
@@ -257,13 +257,13 @@ void Shape3D::rebuild_bounds() {
         case ShapeType3D::Sphere: {
             double r = sphere.radius;
             bounding_radius = vec3::length(sphere.center) + r;
-            local_aabb = { sphere.center - vector3d{r, r, r}, sphere.center + vector3d{r, r, r} };
+            local_aabb = { sphere.center - linalg::vector3d{r, r, r}, sphere.center + linalg::vector3d{r, r, r} };
             break;
         }
         case ShapeType3D::Capsule: {
             double r = capsule.radius;
             bounding_radius = std::max(vec3::length(capsule.point1), vec3::length(capsule.point2)) + r;
-            local_aabb = { vec3::min(capsule.point1, capsule.point2) - vector3d{r, r, r}, vec3::max(capsule.point1, capsule.point2) + vector3d{r, r, r} };
+            local_aabb = { vec3::min(capsule.point1, capsule.point2) - linalg::vector3d{r, r, r}, vec3::max(capsule.point1, capsule.point2) + linalg::vector3d{r, r, r} };
             break;
         }
         case ShapeType3D::Hull: {
@@ -282,19 +282,19 @@ void Shape3D::rebuild_bounds() {
 auto Shape3D::compute_aabb(const Transform3D& xf) const noexcept -> AABB3D {
     switch (type) {
         case ShapeType3D::Sphere: {
-            vector3d c = xf.apply(sphere.center);
+            linalg::vector3d c = xf.apply(sphere.center);
             double r = sphere.radius;
-            return { c - vector3d{r, r, r}, c + vector3d{r, r, r} };
+            return { c - linalg::vector3d{r, r, r}, c + linalg::vector3d{r, r, r} };
         }
         case ShapeType3D::Capsule: {
-            vector3d p1 = xf.apply(capsule.point1);
-            vector3d p2 = xf.apply(capsule.point2);
+            linalg::vector3d p1 = xf.apply(capsule.point1);
+            linalg::vector3d p2 = xf.apply(capsule.point2);
             double r = capsule.radius;
-            return { vec3::min(p1, p2) - vector3d{r, r, r}, vec3::max(p1, p2) + vector3d{r, r, r} };
+            return { vec3::min(p1, p2) - linalg::vector3d{r, r, r}, vec3::max(p1, p2) + linalg::vector3d{r, r, r} };
         }
         case ShapeType3D::Hull: {
             if (!hull || hull->vertices.empty()) return { xf.position, xf.position };
-            vector3d v = xf.apply(hull->vertices[0]);
+            linalg::vector3d v = xf.apply(hull->vertices[0]);
             AABB3D box(v, v);
 
             for (std::size_t i = 1; i < hull->vertices.size(); ++i) {
@@ -307,7 +307,7 @@ auto Shape3D::compute_aabb(const Transform3D& xf) const noexcept -> AABB3D {
         }
         case ShapeType3D::Plane: {
             const double big = PLANE_EXTENT;
-            vector3d n = xf.rotate(plane.normal);
+            linalg::vector3d n = xf.rotate(plane.normal);
             double d = plane.offset + vec3::dot(n, xf.position);
             double lo[3] = { -big, -big, -big }, hi[3] = { big, big, big };
             const double nn[3] = { n.x, n.y, n.z };
@@ -332,8 +332,8 @@ auto MassData3D::combine(const MassData3D* parts, std::size_t n) -> MassData3D {
     total.center = total.center / total.mass;
 
     for (std::size_t i = 0; i < n; ++i) {
-        vector3d d = parts[i].center - total.center;
-        total.inertia = total.inertia + parts[i].inertia + (math::Matrix3d::identity() * vec3::length_squared(d) - vec3::outer(d, d)) * parts[i].mass;
+        linalg::vector3d d = parts[i].center - total.center;
+        total.inertia = total.inertia + parts[i].inertia + (linalg::Matrix3d::identity() * vec3::length_squared(d) - vec3::outer(d, d)) * parts[i].mass;
     }
 
     return total;
@@ -355,61 +355,61 @@ double capsule_volume(const CapsuleShape3D& c) {
 MassData3D compute_sphere_mass(const SphereShape& s, double density) {
     double mass = density * sphere_volume(s);
     double I = 0.4 * mass * s.radius * s.radius;
-    return { mass, math::Matrix3d::diagonal(I, I, I), s.center };
+    return { mass, linalg::Matrix3d::diagonal(I, I, I), s.center };
 }
 
 MassData3D compute_capsule_mass(const CapsuleShape3D& c, double density) {
     const double pi = static_cast<double>(constants::pi());
     double r = c.radius;
-    vector3d axis = c.point2 - c.point1;
+    linalg::vector3d axis = c.point2 - c.point1;
     double h = vec3::length(axis);
-    vector3d a = vec3::normalize(axis);
+    linalg::vector3d a = vec3::normalize(axis);
     double m_cyl = density * pi * r * r * h;
     double m_sph = density * 4.0 / 3.0 * pi * r * r * r; 
     double I_axis = m_cyl * r * r * 0.5 + m_sph * r * r * 0.4;
     double I_perp = m_cyl * (h * h / 12.0 + r * r * 0.25) + m_sph * (r * r * 0.4 + h * h * 0.25 + 3.0 * h * r / 8.0);
-    math::Matrix3d aa = vec3::outer(a, a);
-    math::Matrix3d I = aa * I_axis + (math::Matrix3d::identity() - aa) * I_perp;
+    linalg::Matrix3d aa = vec3::outer(a, a);
+    linalg::Matrix3d I = aa * I_axis + (linalg::Matrix3d::identity() - aa) * I_perp;
     return { m_cyl + m_sph, I, c.center() };
 }
 
 MassData3D compute_hull_mass(const HullShape& h, double density) {
     MassData3D md;
     if (!h.valid()) return md;
-    vector3d o{};
+    linalg::vector3d o{};
     for (const auto& v : h.vertices) o += v;
     o = o * (1.0 / static_cast<double>(h.vertices.size()));
     
-    const math::Matrix3d canonical(1.0 / 60.0,  1.0 / 120.0, 1.0 / 120.0,
+    const linalg::Matrix3d canonical(1.0 / 60.0,  1.0 / 120.0, 1.0 / 120.0,
                                    1.0 / 120.0, 1.0 / 60.0,  1.0 / 120.0,
                                    1.0 / 120.0, 1.0 / 120.0, 1.0 / 60.0
                                 );
 
-    math::Matrix3d C{};
+    linalg::Matrix3d C{};
 
     for (const auto& f : h.faces) {
-        const vector3d a = h.vertices[f.indices[0]] - o;
+        const linalg::vector3d a = h.vertices[f.indices[0]] - o;
 
         for (std::size_t i = 1; i + 1 < f.indices.size(); ++i) {
-            const vector3d b = h.vertices[f.indices[i]] - o;
-            const vector3d d = h.vertices[f.indices[i + 1]] - o;
+            const linalg::vector3d b = h.vertices[f.indices[i]] - o;
+            const linalg::vector3d d = h.vertices[f.indices[i + 1]] - o;
 
-            const math::Matrix3d A(a.x, b.x, d.x,
+            const linalg::Matrix3d A(a.x, b.x, d.x,
                                    a.y, b.y, d.y,
                                    a.z, b.z, d.z
                                 );
 
             const double det = vec3::dot(a, vec3::cross(b, d));
-            C = C + (A * canonical * A.transpose()) * det;
+            C = C + fast::mul(fast::mul(A, canonical), A.transpose()) * det;
         }
     }
 
     md.mass = density * h.volume;
     md.center = h.centroid;
     C = C * density;
-    const vector3d com = h.centroid - o;
+    const linalg::vector3d com = h.centroid - o;
     C = C - vec3::outer(com, com) * md.mass; 
-    md.inertia = math::Matrix3d::identity() * C.trace() - C;
+    md.inertia = linalg::Matrix3d::identity() * fast::trace(C) - C;
     return md;
 }
 
@@ -454,7 +454,7 @@ void Collider3D::recompute_mass(double gravity) {
     const double density = material.mass_spec.resolve_density(volume, gravity);
     mass_data = compute_mass(shape, density);
     mass_data.center  = local_offset.apply(mass_data.center);
-    mass_data.inertia = rotate_inertia(mass_data.inertia, local_offset.orientation);
+    mass_data.inertia = fast::rotate_inertia(mass_data.inertia, local_offset.orientation);
 }
 
 void Collider3D::update_world_aabb(const Transform3D& body_xf) {
@@ -501,9 +501,9 @@ auto RigidBody3D::add_collider(
     return c;
 }
 
-void RigidBody3D::set_rotation(const vector3d& axis, double angle, bool in_rad) noexcept {
+void RigidBody3D::set_rotation(const linalg::vector3d& axis, double angle, bool in_rad) noexcept {
     if (!in_rad) angle /= constants::reciprocal_pi_180();
-    set_orientation(QuatD::from_axis_angle(axis.x, axis.y, axis.z, angle));
+    set_orientation(fast::from_axis_angle(axis.x, axis.y, axis.z, angle));
 }
 
 std::array<double, 3> RigidBody3D::euler_angles(bool in_rad) const noexcept {
@@ -519,7 +519,7 @@ void RigidBody3D::set_euler_angles(double roll, double pitch, double yaw, bool i
         yaw   *= constants::pi_180();
     }
 
-    set_orientation(QuatD::from_euler(roll, pitch, yaw));
+    set_orientation(fast::from_euler(roll, pitch, yaw));
 }
 
 void RigidBody3D::set_density(double d) noexcept {
@@ -539,12 +539,12 @@ void RigidBody3D::set_mass(double kg) noexcept {
     resolve_mass_constraint_from(FrozenProperty::Mass);
 }
 
-auto RigidBody3D::inv_inertia_world() const noexcept -> const math::Matrix3d& {
+auto RigidBody3D::inv_inertia_world() const noexcept -> const linalg::Matrix3d& {
     ensure_mass_uptodate();
 
     if (m_world_inertia_dirty) {
-        const math::Matrix3d& R = m_transform.rotation;
-        math::Matrix3d W = R * m_inv_inertia * R.transpose();
+        const linalg::Matrix3d& R = m_transform.rotation;
+        linalg::Matrix3d W = fast::mul(fast::mul(R, m_inv_inertia), R.transpose());
         const bool lock[3] = { has(PhysicsFlags::LockRotationX), has(PhysicsFlags::LockRotationY), has(PhysicsFlags::LockRotationZ) };
 
         for (int r = 0; r < 3; ++r) {
@@ -560,7 +560,7 @@ auto RigidBody3D::inv_inertia_world() const noexcept -> const math::Matrix3d& {
     return m_inv_inertia_world;
 }
 
-void RigidBody3D::apply_force_at(const vector3d& f, const vector3d& world_point) {
+void RigidBody3D::apply_force_at(const linalg::vector3d& f, const linalg::vector3d& world_point) {
     if (!has(PhysicsFlags::LinearForces)) return;
     ensure_mass_uptodate();
     m_force += f;
@@ -568,14 +568,14 @@ void RigidBody3D::apply_force_at(const vector3d& f, const vector3d& world_point)
     wake();
 }
 
-void RigidBody3D::apply_linear_impulse(const vector3d& impulse) {
+void RigidBody3D::apply_linear_impulse(const linalg::vector3d& impulse) {
     if (!has(PhysicsFlags::LinearImpulses)) return;
     ensure_mass_uptodate();
     m_linear_velocity += impulse * m_inv_mass;
     wake();
 }
 
-void RigidBody3D::apply_impulse_at(const vector3d& impulse, const vector3d& world_point) {
+void RigidBody3D::apply_impulse_at(const linalg::vector3d& impulse, const linalg::vector3d& world_point) {
     if (!has(PhysicsFlags::LinearImpulses)) return;
     ensure_mass_uptodate();
     m_linear_velocity += impulse * m_inv_mass;
@@ -583,14 +583,14 @@ void RigidBody3D::apply_impulse_at(const vector3d& impulse, const vector3d& worl
     wake();
 }
 
-void RigidBody3D::apply_angular_impulse(const vector3d& impulse) {
+void RigidBody3D::apply_angular_impulse(const linalg::vector3d& impulse) {
     if (!has(PhysicsFlags::AngularImpulses)) return;
     ensure_mass_uptodate();
     m_angular_velocity += apply_inv_inertia(impulse);
     wake();
 }
 
-void RigidBody3D::integrate_forces(double dt, const vector3d& gravity) {
+void RigidBody3D::integrate_forces(double dt, const linalg::vector3d& gravity) {
     ensure_mass_uptodate();
     if (has(PhysicsFlags::Gravity))        m_linear_velocity += gravity * m_gravity_scale * dt;
     if (has(PhysicsFlags::LinearForces))   m_linear_velocity += m_force * m_inv_mass * dt;
@@ -613,53 +613,53 @@ void RigidBody3D::integrate_forces(double dt, const vector3d& gravity) {
 
 void RigidBody3D::integrate_gyroscopic(double dt) {
     ensure_mass_uptodate();
-    m_gyro_half;
+    m_gyro_half = {};
     if (m_inv_mass <= 0.0 || !has(PhysicsFlags::AngularVelocity)) return;
     if (has(PhysicsFlags::LockRotationX) || has(PhysicsFlags::LockRotationY) || has(PhysicsFlags::LockRotationZ)) return;
-    if (m_inertia.trace() <= 0.0 || vec3::is_zero(m_angular_velocity)) return;
-    const math::Matrix3d& I  = m_inertia;
-    const math::Matrix3d& Ii = m_inv_inertia;
-    auto euler = [&](const vector3d& w) { return vec3::mul(Ii, vec3::cross(vec3::mul(I, w), w)); };
-    const math::Matrix3d& R = m_transform.rotation;
-    const vector3d wb = vec3::mul_transpose(R, m_angular_velocity);
-    const vector3d k1 = euler(wb);
-    const vector3d k2 = euler(wb + k1 * (dt * 0.5));
-    const vector3d k3 = euler(wb + k2 * (dt * 0.5));
-    const vector3d k4 = euler(wb + k3 * dt);
-    const vector3d dw = vec3::mul(R, (k1 + k2 * 2.0 + k3 * 2.0 + k4) * (dt / 6.0));
+    if (fast::trace(m_inertia) <= 0.0 || vec3::is_zero(m_angular_velocity)) return;
+    const linalg::Matrix3d& I  = m_inertia;
+    const linalg::Matrix3d& Ii = m_inv_inertia;
+    auto euler = [&](const linalg::vector3d& w) { return vec3::mul(Ii, vec3::cross(vec3::mul(I, w), w)); };
+    const linalg::Matrix3d& R = m_transform.rotation;
+    const linalg::vector3d wb = vec3::mul_transpose(R, m_angular_velocity);
+    const linalg::vector3d k1 = euler(wb);
+    const linalg::vector3d k2 = euler(wb + k1 * (dt * 0.5));
+    const linalg::vector3d k3 = euler(wb + k2 * (dt * 0.5));
+    const linalg::vector3d k4 = euler(wb + k3 * dt);
+    const linalg::vector3d dw = vec3::mul(R, (k1 + k2 * 2.0 + k3 * 2.0 + k4) * (dt / 6.0));
     m_angular_velocity += dw;
     m_gyro_half = dw * 0.5;
 }
 
 void RigidBody3D::integrate_velocities(double dt) {
     ensure_mass_uptodate();
-    vector3d center = m_transform.apply(m_local_center);
+    linalg::vector3d center = m_transform.apply(m_local_center);
     m_sweep.position0    = center;
     m_sweep.orientation0 = m_transform.orientation;
     if (has(PhysicsFlags::LinearVelocity)) center += mask_translation(m_linear_velocity * dt);
 
     if (has(PhysicsFlags::AngularVelocity) && !has(PhysicsFlags::LockRotation3D)) {
-        vector3d w = mask_rotation(m_angular_velocity - m_gyro_half);
+        linalg::vector3d w = mask_rotation(m_angular_velocity - m_gyro_half);
 
         if (!vec3::is_zero(w)) {
-            const vector3d w_body = m_transform.rotate_inverse(m_angular_velocity);
+            const linalg::vector3d w_body = m_transform.rotate_inverse(m_angular_velocity);
             set_orientation(vec3::integrate_rotation(m_transform.orientation, w, dt));
             if (!vec3::is_zero(m_gyro_half)) m_angular_velocity = m_transform.rotate(w_body); // carried with the body
         }
     }
 
-    m_gyro_half;
+    m_gyro_half = {};
     m_transform.position = center - m_transform.rotate(m_local_center);
     m_sweep.position1    = center;
     m_sweep.orientation1 = m_transform.orientation;
 }
 
-void RigidBody3D::apply_position_correction(const vector3d& d_center, const vector3d& d_rotation) {
-    vector3d dc = mask_translation(d_center);
-    vector3d dr = mask_rotation(d_rotation);
+void RigidBody3D::apply_position_correction(const linalg::vector3d& d_center, const linalg::vector3d& d_rotation) {
+    linalg::vector3d dc = mask_translation(d_center);
+    linalg::vector3d dr = mask_rotation(d_rotation);
     if (vec3::is_zero(dc) && vec3::is_zero(dr)) return;
     ensure_mass_uptodate();
-    vector3d center = m_transform.apply(m_local_center) + dc;
+    linalg::vector3d center = m_transform.apply(m_local_center) + dc;
     if (!vec3::is_zero(dr)) set_orientation(vec3::integrate_rotation(m_transform.orientation, dr, 1.0));
     m_transform.position = center - m_transform.rotate(m_local_center);
 }
@@ -667,11 +667,11 @@ void RigidBody3D::apply_position_correction(const vector3d& d_center, const vect
 void RigidBody3D::put_to_sleep() {
     m_is_awake         = false;
     m_sleep_timer      = 0.0;
-    m_linear_velocity ;
-    m_angular_velocity;
-    m_force           ;
-    m_torque          ;
-    m_gyro_half       ;
+    m_linear_velocity = {};
+    m_angular_velocity = {};
+    m_force = {};
+    m_torque = {};
+    m_gyro_half = {};
 }
 
 double RigidBody3D::advance_sleep_timer(double dt) {
@@ -702,19 +702,19 @@ auto RigidBody3D::compute_body_aabb() const -> AABB3D {
 double RigidBody3D::kinetic_energy() const noexcept {
     ensure_mass_uptodate();
     double lin = 0.5 * m_mass * vec3::length_squared(m_linear_velocity);
-    vector3d wb = m_transform.rotate_inverse(m_angular_velocity);
+    linalg::vector3d wb = m_transform.rotate_inverse(m_angular_velocity);
     double rot = 0.5 * vec3::dot(wb, vec3::mul(m_inertia, wb));
     return lin + rot;
 }
 
-auto RigidBody3D::mask_rotation(vector3d w) const noexcept -> vector3d {
+auto RigidBody3D::mask_rotation(linalg::vector3d w) const noexcept -> linalg::vector3d {
     if (has(PhysicsFlags::LockRotationX)) w.x = 0.0;
     if (has(PhysicsFlags::LockRotationY)) w.y = 0.0;
     if (has(PhysicsFlags::LockRotationZ)) w.z = 0.0;
     return w;
 }
 
-auto RigidBody3D::mask_translation(vector3d d) const noexcept -> vector3d {
+auto RigidBody3D::mask_translation(linalg::vector3d d) const noexcept -> linalg::vector3d {
     if (has(PhysicsFlags::LockPositionX)) d.x = 0.0;
     if (has(PhysicsFlags::LockPositionY)) d.y = 0.0;
     if (has(PhysicsFlags::LockPositionZ)) d.z = 0.0;
@@ -730,13 +730,13 @@ bool RigidBody3D::validate_frozen(FrozenProperty f) noexcept {
     return count <= 2;
 }
 
-void RigidBody3D::set_inertia(const math::Matrix3d& I) const noexcept {
-    if (I.trace() > 0.0 && !has(PhysicsFlags::LockRotation3D)) {
+void RigidBody3D::set_inertia(const linalg::Matrix3d& I) const noexcept {
+    if (fast::trace(I) > 0.0 && !has(PhysicsFlags::LockRotation3D)) {
         m_inertia     = I;
-        m_inv_inertia = I.inverse();
+        m_inv_inertia = fast::inverse(I);
     } else {
-        m_inertia    ;
-        m_inv_inertia;
+        m_inertia     = {};
+        m_inv_inertia = {};
     }
 
     m_world_inertia_dirty = true;
@@ -744,12 +744,12 @@ void RigidBody3D::set_inertia(const math::Matrix3d& I) const noexcept {
 
 void RigidBody3D::recompute_mass_data(double gravity) const {
     m_mass = 0.0; m_inv_mass = 0.0;
-    m_inertia; m_inv_inertia;
-    m_local_center;
+    m_inertia = {}; m_inv_inertia = {};
+    m_local_center = {};
     m_world_inertia_dirty = true;
 
     if (!has(PhysicsFlags::LinearForces) && !has(PhysicsFlags::LinearImpulses)) {
-        m_sweep.center_local;
+        m_sweep.center_local = {};
         return;
     }
 
@@ -763,7 +763,7 @@ void RigidBody3D::recompute_mass_data(double gravity) const {
         const double density = c.material.mass_spec.resolve_density(volume, gravity);
         MassData3D md = compute_mass(c.shape, density);
         md.center  = c.local_offset.apply(md.center);
-        md.inertia = rotate_inertia(md.inertia, c.local_offset.orientation);
+        md.inertia = fast::rotate_inertia(md.inertia, c.local_offset.orientation);
         parts.push_back(md);
     }
 
@@ -869,7 +869,7 @@ void RigidBody3D::recompute_inertia_from_density() noexcept {
         if (c.is_sensor) continue;
         MassData3D md = compute_mass(c.shape, m_density);
         md.center  = c.local_offset.apply(md.center);
-        md.inertia = rotate_inertia(md.inertia, c.local_offset.orientation);
+        md.inertia = fast::rotate_inertia(md.inertia, c.local_offset.orientation);
         parts.push_back(md);
     }
 

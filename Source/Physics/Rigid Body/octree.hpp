@@ -15,8 +15,8 @@ namespace physics {
 inline bool overlap_aabb(const AABB3D& a, const AABB3D& b) noexcept { return a.overlaps(b); }
 
 inline bool overlap_spheres(
-    const vector3d& c1, double r1,
-    const vector3d& c2, double r2
+    const linalg::vector3d& c1, double r1,
+    const linalg::vector3d& c2, double r2
 ) noexcept {
     double r_sum = r1 + r2;
     return vec3::length_squared(c2 - c1) <= r_sum * r_sum;
@@ -24,26 +24,26 @@ inline bool overlap_spheres(
 
 bool overlap_aabb_sphere(
     const AABB3D& box,
-    const vector3d& center,
+    const linalg::vector3d& center,
     double radius
 ) noexcept;
 
 struct OverlapResult3D {
     bool     hit = false;
     double   depth = 0.0; // meters (positive = overlapping)
-    vector3d normal{};    // unit push direction (a out of b)
+    linalg::vector3d normal{};    // unit push direction (a out of b)
 };
 
 OverlapResult3D overlap_aabb_mtv(const AABB3D& a, const AABB3D& b) noexcept;
 
 OverlapResult3D overlap_spheres_mtv(
-    const vector3d& c1, double r1,
-    const vector3d& c2, double r2
+    const linalg::vector3d& c1, double r1,
+    const linalg::vector3d& c2, double r2
 ) noexcept;
 
 OverlapResult3D overlap_aabb_sphere_mtv(
     const AABB3D& box,
-    const vector3d& center,
+    const linalg::vector3d& center,
     double radius
 ) noexcept;
 
@@ -167,14 +167,14 @@ private:
     }
 
     AABB3D loosen(const AABB3D& b) const noexcept {
-        const vector3d c = b.center();
-        const vector3d h = b.extents() * m_looseness;
+        const linalg::vector3d c = b.center();
+        const linalg::vector3d h = b.extents() * m_looseness;
         return { c - h, c + h };
     }
 
     static AABB3D octant_bounds(const AABB3D& b, int q) noexcept {
-        vector3d mid = b.center();
-        vector3d lo = b.min, hi = b.max;
+        linalg::vector3d mid = b.center();
+        linalg::vector3d lo = b.min, hi = b.max;
         if (q & 1) lo.x = mid.x; else hi.x = mid.x;
         if (q & 2) lo.y = mid.y; else hi.y = mid.y;
         if (q & 4) lo.z = mid.z; else hi.z = mid.z;
@@ -182,10 +182,10 @@ private:
     }
 
     int find_child(const Node& node, const AABB3D& item_aabb) const noexcept {
-        vector3d mid = node.bounds.center();
+        linalg::vector3d mid = node.bounds.center();
 
         if (is_loose()) {
-            const vector3d c = item_aabb.center();
+            const linalg::vector3d c = item_aabb.center();
             const int q = (c.x >= mid.x ? 1 : 0) | (c.y >= mid.y ? 2 : 0) | (c.z >= mid.z ? 4 : 0);
             return loosen(octant_bounds(node.bounds, q)).contains(item_aabb) ? q : -1;
         }

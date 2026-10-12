@@ -124,7 +124,7 @@ void Renderer::pop_transform() noexcept {
     classify_transform();
 }
 
-auto Renderer::inverse_map_point(double sx, double sy) const noexcept -> vector2d {
+auto Renderer::inverse_map_point(double sx, double sy) const noexcept -> linalg::vector2d {
     const auto& m = m_xform.data;
     const double det = m[0] * m[4] - m[1] * m[3];
     if (std::abs(det) <= 1e-12) return { sx, sy };
@@ -155,7 +155,7 @@ void Renderer::draw_pixel(int x, int y, const fizmo::graphics::Color& color) noe
     if (!m_impl) return;
 
     if (m_xform_kind <= XformKind::Translate) {
-        const vector2d p = map_point(x, y);
+        const linalg::vector2d p = map_point(x, y);
         m_impl->draw_pixel(round_i(p.x), round_i(p.y), color);
         return;
     }
@@ -166,7 +166,7 @@ void Renderer::draw_pixel(int x, int y, const fizmo::graphics::Color& color) noe
 void Renderer::draw_line(int x1, int y1, int x2, int y2, const graphics::Paint& paint) noexcept {
     if (!m_impl) return;
     if (m_xform_kind == XformKind::Identity) { m_impl->draw_line(x1, y1, x2, y2, paint); return; }
-    const vector2d a = map_point(x1, y1), b = map_point(x2, y2);
+    const linalg::vector2d a = map_point(x1, y1), b = map_point(x2, y2);
     m_impl->draw_line(round_i(a.x), round_i(a.y), round_i(b.x), round_i(b.y), paint);
 }
 
@@ -199,7 +199,7 @@ void Renderer::draw_rect_corners(int x1, int y1, int x2, int y2, const graphics:
 void Renderer::draw_ellipse(int cx, int cy, unsigned int rx, unsigned int ry, const graphics::Paint& paint) noexcept {
     if (!m_impl) return;
     if (m_xform_kind == XformKind::Identity) { m_impl->draw_ellipse(cx, cy, rx, ry, paint); return; }
-    const vector2d c = map_point(cx, cy);
+    const linalg::vector2d c = map_point(cx, cy);
 
     if (m_xform_kind != XformKind::General) {
         m_impl->draw_ellipse(round_i(c.x), round_i(c.y), scale_len(rx, m_xform.data[0]), scale_len(ry, m_xform.data[4]), paint);
@@ -213,7 +213,7 @@ void Renderer::draw_ellipse(int cx, int cy, unsigned int rx, unsigned int ry, co
 void Renderer::draw_arc(int cx, int cy, unsigned int rx, unsigned int ry, const graphics::Paint& paint) noexcept {
     if (!m_impl) return;
     if (m_xform_kind == XformKind::Identity) { m_impl->draw_arc(cx, cy, rx, ry, paint); return; }
-    const vector2d c = map_point(cx, cy);
+    const linalg::vector2d c = map_point(cx, cy);
     const auto& m = m_xform.data;
     const double sx = m_xform_kind == XformKind::General ? std::sqrt(std::abs(m[0] * m[4] - m[1] * m[3])) : m[0];
     const double sy = m_xform_kind == XformKind::General ? sx : m[4];
@@ -316,7 +316,7 @@ unsigned int Renderer::viewport_height() const noexcept { return !m_target_frame
 
 void Renderer::visible_world_rect(double& x0, double& y0, double& x1, double& y1) const noexcept {
     const double w = viewport_width(), h = viewport_height();
-    const vector2d c[4] = { inverse_map_point(0.0, 0.0), inverse_map_point(w, 0.0), inverse_map_point(w, h), inverse_map_point(0.0, h) };
+    const linalg::vector2d c[4] = { inverse_map_point(0.0, 0.0), inverse_map_point(w, 0.0), inverse_map_point(w, h), inverse_map_point(0.0, h) };
     x0 = x1 = c[0].x;
     y0 = y1 = c[0].y;
     for (int i = 1; i < 4; ++i) { x0 = std::min(x0, c[i].x); x1 = std::max(x1, c[i].x); y0 = std::min(y0, c[i].y); y1 = std::max(y1, c[i].y); }
@@ -344,7 +344,7 @@ std::size_t Renderer::draw_tilemap(const graphics::TileMap& map, double x, doubl
     try {
         double vx0 = 0, vy0 = 0, vx1 = 0, vy1 = 0;
         visible_world_rect(vx0, vy0, vx1, vy1);
-        const vector2d cam = inverse_map_point(viewport_width() * 0.5, viewport_height() * 0.5);
+        const linalg::vector2d cam = inverse_map_point(viewport_width() * 0.5, viewport_height() * 0.5);
         const double tw = map.tile_width(), th = map.tile_height();
 
         for (const graphics::TileLayer& layer : map.layers()) {
@@ -415,7 +415,7 @@ std::size_t Renderer::draw_particles(const graphics::ParticleEmitter& emitter) n
             if (c.alpha() == 0) continue;
             const double size = emitter.size_at(p);
             if (size <= 0.0) continue;
-            const vector2d at = emitter.world_position(p);
+            const linalg::vector2d at = emitter.world_position(p);
             double angle = p.rotation * constants::pi_180();
             double hw = size * 0.5, hh = size * 0.5 * aspect;
 
@@ -568,7 +568,7 @@ void Renderer::draw_text(int x, int y, const char* utf8, int len, const text::Te
     if (utf8 && m_text_follow && m_xform_kind != XformKind::Identity && m_xform_kind != XformKind::Translate) {
         try { if (transformed_text(x, y, 0, 0, text::RichText(std::string(utf8, len < 0 ? std::strlen(utf8) : static_cast<std::size_t>(len)), style))) return; } catch (...) {}
     }
-    const vector2d p = map_point(x, y);
+    const linalg::vector2d p = map_point(x, y);
     m_impl->draw_text(round_i(p.x), round_i(p.y), utf8, len, style);
 }
 
@@ -577,7 +577,7 @@ void Renderer::draw_text(int x, int y, const wchar_t* str, int len, const text::
     if (str && m_text_follow && m_xform_kind != XformKind::Identity && m_xform_kind != XformKind::Translate) {
         try { if (transformed_text(x, y, 0, 0, text::RichText(wide_to_utf8(str, len), style))) return; } catch (...) {}
     }
-    const vector2d p = map_point(x, y);
+    const linalg::vector2d p = map_point(x, y);
     m_impl->draw_text(round_i(p.x), round_i(p.y), str, len, style);
 }
 
@@ -586,7 +586,7 @@ void Renderer::draw_text(int x, int y, unsigned int w, unsigned int h, const std
     try {
         const text::RichText rt(text, style);
         if (transformed_text(x, y, w, h, rt)) return;
-        const vector2d p = map_point(x, y);
+        const linalg::vector2d p = map_point(x, y);
         m_impl->draw_rich_text(round_i(p.x), round_i(p.y), w, h, rt);
     } catch (...) {}
 }
@@ -594,7 +594,7 @@ void Renderer::draw_text(int x, int y, unsigned int w, unsigned int h, const std
 void Renderer::draw_rich_text(int x, int y, unsigned int w, unsigned int h, const text::RichText& rt) noexcept {
     if (!m_impl) return;
     if (transformed_text(x, y, w, h, rt)) return;
-    const vector2d p = map_point(x, y);
+    const linalg::vector2d p = map_point(x, y);
     m_impl->draw_rich_text(round_i(p.x), round_i(p.y), w, h, rt);
 }
 
@@ -603,7 +603,7 @@ bool Renderer::begin_3d(const graphics::Camera3D& camera, int x, int y, unsigned
     if (m_impl->in_3d()) m_impl->end_3d();
     detail::Scene3D scene;
     m_origin_3d = camera.position();
-    math::Matrix4d vp = camera.view_projection_matrix() * translation(m_origin_3d);
+    linalg::Matrix4d vp = camera.view_projection_matrix() * translation(m_origin_3d);
 
     if (camera.depth_range() == graphics::DepthRange::NegativeOneToOne) {
         for (std::size_t c = 0; c < 4; ++c) vp.data[8 + c] = 0.5 * vp.data[8 + c] + 0.5 * vp.data[12 + c];
@@ -616,21 +616,21 @@ bool Renderer::begin_3d(const graphics::Camera3D& camera, int x, int y, unsigned
     return m_impl->in_3d();
 }
 
-void Renderer::draw_mesh(const graphics::Mesh3D& mesh, const math::Matrix4d& model, const graphics::Material3D& material) noexcept {
+void Renderer::draw_mesh(const graphics::Mesh3D& mesh, const linalg::Matrix4d& model, const graphics::Material3D& material) noexcept {
     if (!m_impl) return;
     float m[16];
     to_origin_relative(model, m);
     m_impl->draw_mesh_3d(mesh, m, material);
 }
 
-void Renderer::draw_quads(const graphics::QuadMesh3D& quads, const math::Matrix4d& model, const graphics::Material3D& material) noexcept {
+void Renderer::draw_quads(const graphics::QuadMesh3D& quads, const linalg::Matrix4d& model, const graphics::Material3D& material) noexcept {
     if (!m_impl) return;
     float m[16];
     to_origin_relative(model, m);
     m_impl->draw_quads_3d(quads, m, nullptr, material);
 }
 
-void Renderer::draw_quads_at(const graphics::QuadMesh3D& quads, const vector3d& offset, const graphics::Material3D& material) noexcept {
+void Renderer::draw_quads_at(const graphics::QuadMesh3D& quads, const linalg::vector3d& offset, const graphics::Material3D& material) noexcept {
     if (!m_impl) return;
     float m[16];
     std::int32_t cell[3];
@@ -651,14 +651,14 @@ auto Renderer::upload_quads(graphics::QuadMesh3D quads, bool keep_cpu_copy) -> g
     return h;
 }
 
-void Renderer::draw_mesh(const graphics::MeshHandle3D& mesh, const math::Matrix4d& model, const graphics::Material3D& material) noexcept {
+void Renderer::draw_mesh(const graphics::MeshHandle3D& mesh, const linalg::Matrix4d& model, const graphics::Material3D& material) noexcept {
     if (!m_impl || mesh.empty()) return;
     float m[16];
     to_origin_relative(model, m);
     m_impl->draw_handle_3d(mesh.slot(), m, nullptr, material);
 }
 
-void Renderer::draw_mesh_at(const graphics::MeshHandle3D& mesh, const vector3d& offset, const graphics::Material3D& material) noexcept {
+void Renderer::draw_mesh_at(const graphics::MeshHandle3D& mesh, const linalg::vector3d& offset, const graphics::Material3D& material) noexcept {
     if (!m_impl || mesh.empty()) return;
     float m[16];
     std::int32_t cell[3];
@@ -703,7 +703,7 @@ void Renderer::draw_quad_batch(const graphics::QuadBatch3D& batch, const graphic
     } catch (...) {}
 }
 
-void Renderer::draw_instances(const graphics::Mesh3D& mesh, const vector3d& origin, const graphics::Instance3D* instances,
+void Renderer::draw_instances(const graphics::Mesh3D& mesh, const linalg::vector3d& origin, const graphics::Instance3D* instances,
                     std::size_t count, const graphics::Material3D& material) noexcept {
     if (!m_impl || !instances || count == 0) return;
     float m[16];
@@ -714,23 +714,23 @@ void Renderer::draw_instances(const graphics::Mesh3D& mesh, const vector3d& orig
 void Renderer::draw_triangles_3d(const graphics::Vertex3D* vertices, std::size_t count, const graphics::Material3D& material) noexcept {
     if (!m_impl) return;
     float m[16];
-    to_origin_relative(math::Matrix4d::identity(), m);
+    to_origin_relative(linalg::Matrix4d::identity(), m);
     m_impl->draw_triangles_3d(vertices, count, m, material);
 }
 
-void Renderer::draw_triangles_3d(const graphics::Vertex3D* vertices, std::size_t count, const math::Matrix4d& model, const graphics::Material3D& material) noexcept {
+void Renderer::draw_triangles_3d(const graphics::Vertex3D* vertices, std::size_t count, const linalg::Matrix4d& model, const graphics::Material3D& material) noexcept {
     if (!m_impl) return;
     float m[16];
     to_origin_relative(model, m);
     m_impl->draw_triangles_3d(vertices, count, m, material);
 }
 
-void Renderer::draw_line_3d(const vector3d& a, const vector3d& b, const graphics::Color& color, float width, bool depth_test) noexcept {
-    const vector3d pts[2] = { a - m_origin_3d, b - m_origin_3d };
+void Renderer::draw_line_3d(const linalg::vector3d& a, const linalg::vector3d& b, const graphics::Color& color, float width, bool depth_test) noexcept {
+    const linalg::vector3d pts[2] = { a - m_origin_3d, b - m_origin_3d };
     if (m_impl) m_impl->draw_lines_3d(pts, 2, color, width, depth_test);
 }
 
-void Renderer::draw_lines_3d(const std::vector<vector3d>& points, const graphics::Color& color, float width, bool depth_test) noexcept {
+void Renderer::draw_lines_3d(const std::vector<linalg::vector3d>& points, const graphics::Color& color, float width, bool depth_test) noexcept {
     if (!m_impl) return;
 
     try {
@@ -740,12 +740,12 @@ void Renderer::draw_lines_3d(const std::vector<vector3d>& points, const graphics
     } catch (...) {}
 }
 
-void Renderer::draw_box_3d(const vector3d& lo, const vector3d& hi, const graphics::Color& color, float width, bool depth_test) noexcept {
+void Renderer::draw_box_3d(const linalg::vector3d& lo, const linalg::vector3d& hi, const graphics::Color& color, float width, bool depth_test) noexcept {
     if (!m_impl) return;
-    vector3d c[8];
-    for (int i = 0; i < 8; ++i) c[i] = vector3d{ (i & 1) ? hi.x : lo.x, (i & 2) ? hi.y : lo.y, (i & 4) ? hi.z : lo.z };
+    linalg::vector3d c[8];
+    for (int i = 0; i < 8; ++i) c[i] = linalg::vector3d{ (i & 1) ? hi.x : lo.x, (i & 2) ? hi.y : lo.y, (i & 4) ? hi.z : lo.z };
     const int e[24] = { 0,1, 2,3, 4,5, 6,7,  0,2, 1,3, 4,6, 5,7,  0,4, 1,5, 2,6, 3,7 };
-    vector3d pts[24];
+    linalg::vector3d pts[24];
     for (int i = 0; i < 24; ++i) pts[i] = c[e[i]] - m_origin_3d;
     m_impl->draw_lines_3d(pts, 24, color, width, depth_test);
 }
@@ -765,8 +765,8 @@ auto Renderer::measure_text(const std::wstring& text, const text::TextStyle& sty
     return {};
 }
 
-auto Renderer::translation(const vector3d& t) noexcept -> math::Matrix4d {
-    math::Matrix4d m = math::Matrix4d::identity();
+auto Renderer::translation(const linalg::vector3d& t) noexcept -> linalg::Matrix4d {
+    linalg::Matrix4d m = linalg::Matrix4d::identity();
     m.data[3] = t.x; m.data[7] = t.y; m.data[11] = t.z;
     return m;
 }
@@ -776,14 +776,14 @@ std::int32_t Renderer::clamp_i32(std::int64_t v) noexcept {
     return static_cast<std::int32_t>(v < lo ? lo : (v > hi ? hi : v));
 }
 
-void Renderer::cell_origin(const vector3d& offset, std::int32_t* out) noexcept {
+void Renderer::cell_origin(const linalg::vector3d& offset, std::int32_t* out) noexcept {
     out[0] = static_cast<std::int32_t>(std::floor(offset.x));
     out[1] = static_cast<std::int32_t>(std::floor(offset.y));
     out[2] = static_cast<std::int32_t>(std::floor(offset.z));
 }
 
-void Renderer::to_origin_relative(const math::Matrix4d& model, float* out) const noexcept {
-    const math::Matrix4d rel = translation(-m_origin_3d) * model;
+void Renderer::to_origin_relative(const linalg::Matrix4d& model, float* out) const noexcept {
+    const linalg::Matrix4d rel = translation(-m_origin_3d) * model;
     for (std::size_t i = 0; i < 16; ++i) out[i] = static_cast<float>(rel.data[i]);
 }
 
@@ -899,7 +899,7 @@ unsigned int Renderer::scale_len(unsigned int len, double s) noexcept {
 auto Renderer::map_rect_bounds(int x, int y, unsigned int w, unsigned int h) const noexcept -> ScreenRect {
     if (m_xform_kind == XformKind::Identity) return { x, y, w, h };
     const double x0 = x, y0 = y, x1 = x + static_cast<double>(w), y1 = y + static_cast<double>(h);
-    const vector2d c[4] = { map_point(x0, y0), map_point(x1, y0), map_point(x1, y1), map_point(x0, y1) };
+    const linalg::vector2d c[4] = { map_point(x0, y0), map_point(x1, y0), map_point(x1, y1), map_point(x0, y1) };
     double lx = c[0].x, hx = c[0].x, ly = c[0].y, hy = c[0].y;
 
     for (int i = 1; i < 4; ++i) {

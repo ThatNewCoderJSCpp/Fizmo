@@ -26,7 +26,7 @@ namespace multiprecision {
 
 namespace budetail {
 
-using limb_vec = SmallVector<std::uint64_t, 4>;
+using limb_vec = collections::SmallVector<std::uint64_t, 4>;
 constexpr std::uint64_t mask32 = 0xFFFFFFFFull;
 
 template <class T>
@@ -508,6 +508,10 @@ public:
 };
 
 } // namespace multiprecision
+
+namespace math {
+using multiprecision::BigUInt;
+} // namespace math
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_UNSIGNED_INTEGER_CLASS_HPP

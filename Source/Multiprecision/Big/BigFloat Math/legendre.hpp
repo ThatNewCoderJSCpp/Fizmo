@@ -12,7 +12,6 @@
 #include <vector>
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 namespace lgdetail {
@@ -75,14 +74,13 @@ FIZMO_MP_LEGENDRE_FORWARD(legendre_q)
 
 inline BigFloat legendre_chi(const BigFloat& x, const BigFloat& s) { return legendre_chi(x, s, BigFloatContext::current()); }
 
-template <typename X, typename S, typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<S, BigFloat>::value), int>::type = 0>
+template <typename X, typename S, typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<S, BigFloat>::value) && !any_big_complex_mp<X, S>::value, int>::type = 0>
 inline BigFloat legendre_chi(const X& x, const S& s, const BigFloatContext& c) { return legendre_chi(BigFloat(x), BigFloat(s), c); }
 
-template <typename X, typename S, typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<S, BigFloat>::value), int>::type = 0>
+template <typename X, typename S, typename std::enable_if<!(std::is_same<X, BigFloat>::value && std::is_same<S, BigFloat>::value) && !any_fixed_width_mp<X, S>::value && !any_big_complex_mp<X, S>::value, int>::type = 0>
 inline BigFloat legendre_chi(const X& x, const S& s) { return legendre_chi(BigFloat(x), BigFloat(s), BigFloatContext::current()); }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 #endif // FIZMO_MULTIPRECISION_BIG_LEGENDRE_HPP

@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace rgdetail {
 
@@ -30,7 +29,7 @@ zt_val rg_high(const BigFloat& x, std::size_t want) {
     const BigFloat lxm = ln(hz_xadd(x, one, true), wc);                                    
     const BigFloat d   = BigFloat::sub(lxm, lx, wc);                                       
     const BigFloat p   = BigFloat::mul(lx, d, wc).scaled_pow2(-1);
-    const BigFloat c   = constants::zeta2(wc).scaled_pow2(1);                              
+    const BigFloat c   = multiprecision::constants::zeta2(wc).scaled_pow2(1);                              
     const BigFloat v   = BigFloat::add(BigFloat::sub(c, li.v, wc), p, wc);
     if (v.is_zero()) return zt_val{v, 1.0e9};
     const double lv = hz_l2(v);
@@ -62,11 +61,9 @@ bool rg_normalized_exact(const BigFloat& x, BigFloat& out) {
 
 } // namespace rgdetail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat rogers_l(const BigFloat& x, const BigFloatContext& ctx) {
@@ -75,13 +72,13 @@ BigFloat rogers_l(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_zero())      return x;
 
     if (x.is_infinite()) {                                                                  
-        if (!x.signbit()) return constants::zeta2(ctx).scaled_pow2(1);
+        if (!x.signbit()) return multiprecision::constants::zeta2(ctx).scaled_pow2(1);
         return hzdetail::hz_drive(32, ctx, [](std::size_t want) {
-            return ztdetail::zt_val{-constants::zeta2(BigFloatContext(want, RoundingMode::nearest_even)), 1.0};
+            return ztdetail::zt_val{-multiprecision::constants::zeta2(BigFloatContext(want, RoundingMode::nearest_even)), 1.0};
         });
     }
 
-    if (BigFloat::compare(x, BigFloat::one()) == BigFloat::ordering::equal) return constants::zeta2(ctx);
+    if (BigFloat::compare(x, BigFloat::one()) == BigFloat::ordering::equal) return multiprecision::constants::zeta2(ctx);
     return hzdetail::hz_drive(rgdetail::rg_guard0(x), ctx, [&](std::size_t want) { return rgdetail::rg_raw(x, want); });
 }
 
@@ -98,7 +95,7 @@ BigFloat rogers_l_normalized(const BigFloat& x, const BigFloatContext& ctx) {
         const ztdetail::zt_val r = rgdetail::rg_raw(x, want);
         if (!r.v.is_finite()) return r;
         const BigFloatContext wc(want, RoundingMode::nearest_even);
-        return ztdetail::zt_val{BigFloat::div(r.v, constants::zeta2(wc), wc), std::log2(std::exp2(r.lost) + 2.0)};
+        return ztdetail::zt_val{BigFloat::div(r.v, multiprecision::constants::zeta2(wc), wc), std::log2(std::exp2(r.lost) + 2.0)};
     });
 }
 
@@ -119,5 +116,4 @@ BigFloat spence_integral(const BigFloat& x, const BigFloatContext& ctx) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

@@ -9,6 +9,7 @@
 #include "../Graphics/gradient.hpp"
 #include "../Graphics/paint.hpp"
 #include "../Text/text_style.hpp"
+#include "../Text/text.hpp"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -360,6 +361,8 @@ public:
     void texture(const graphics::Texture& tex, const Rect& r, const Color& tint = Color(255, 255, 255));
 
     void text(float x, float y, const std::string& s, const text::TextStyle& st);
+
+    void text(float x, float y, const text::FancyText& layout);
 };
 
 class Ui {
@@ -770,6 +773,38 @@ public:
     void on_mouse_up(MouseEvent& e) override { if (m_armed && bounds().contains(e.x, e.y)) click(); m_armed = false; }
 
     bool on_key(const KeyEvent& k) override;
+};
+
+class TextView : public Widget {
+protected:
+    text::Text                                    m_text;
+    bool                                          m_wrap = true;
+    bool                                          m_muted = false;
+    std::function<void(const text::TextLink&)>    m_on_link;
+    mutable text::FancyText                       m_layout;
+    mutable std::string                           m_layout_key;
+    mutable float                                 m_layout_width = -1.0f;
+    std::uint32_t                                 m_pressed_link = text::kNoFancyTag;
+
+    const text::FancyText& layout_for(float width) const;
+    text::Text styled() const;
+
+public:
+    explicit TextView(text::Text t = text::Text()) : m_text(std::move(t)) {}
+
+    TextView& set_text(text::Text t) { m_text = std::move(t); m_layout_width = -1.0f; return *this; }
+    TextView& set_markup(std::string_view markup) { return set_text(text::Text::markup(markup)); }
+    const text::Text& text() const noexcept { return m_text; }
+    TextView& set_wrap(bool w = true) noexcept { m_wrap = w; m_layout_width = -1.0f; return *this; }
+    TextView& set_muted(bool m = true) noexcept { m_muted = m; m_layout_width = -1.0f; return *this; }
+    TextView& on_link(std::function<void(const text::TextLink&)> fn) { m_on_link = std::move(fn); return *this; }
+    bool animated() const noexcept { return m_text.animated(); }
+
+    Size measure(Ui&) override;
+    void draw(Painter& p, Ui&) override;
+    windows::SystemCursor cursor(float x, float y) const noexcept override;
+    bool on_mouse_down(MouseEvent& e) override;
+    void on_mouse_up(MouseEvent& e) override;
 };
 
 class Form : public Widget {

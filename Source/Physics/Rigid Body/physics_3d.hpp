@@ -8,53 +8,53 @@ namespace physics {
 
 namespace vec3 {
 
-inline double dot(const vector3d& a, const vector3d& b) noexcept { return a.x * b.x + a.y * b.y + a.z * b.z; }
+inline double dot(const linalg::vector3d& a, const linalg::vector3d& b) noexcept { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
-inline vector3d cross(const vector3d& a, const vector3d& b) noexcept {
+inline linalg::vector3d cross(const linalg::vector3d& a, const linalg::vector3d& b) noexcept {
     return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x };
 }
 
-inline double length_squared(const vector3d& a) noexcept { return dot(a, a); }
-inline double length(const vector3d& a) noexcept { return std::sqrt(dot(a, a)); }
+inline double length_squared(const linalg::vector3d& a) noexcept { return dot(a, a); }
+inline double length(const linalg::vector3d& a) noexcept { return std::sqrt(dot(a, a)); }
 
-inline vector3d normalize(const vector3d& a, const vector3d& fallback = vector3d{0.0, 1.0, 0.0}) noexcept {
+inline linalg::vector3d normalize(const linalg::vector3d& a, const linalg::vector3d& fallback = linalg::vector3d{0.0, 1.0, 0.0}) noexcept {
     double l = length(a);
     return l > constants::middle_epsilon() ? a * (1.0 / l) : fallback;
 }
 
-inline vector3d negate(const vector3d& a) noexcept { return a * -1.0; }
-inline bool is_zero(const vector3d& a) noexcept { return a.x == 0.0 && a.y == 0.0 && a.z == 0.0; }
+inline linalg::vector3d negate(const linalg::vector3d& a) noexcept { return a * -1.0; }
+inline bool is_zero(const linalg::vector3d& a) noexcept { return a.x == 0.0 && a.y == 0.0 && a.z == 0.0; }
 
-inline vector3d min(const vector3d& a, const vector3d& b) noexcept { return { std::min(a.x, b.x), std::min(a.y, b.y), std::min(a.z, b.z) }; }
-inline vector3d max(const vector3d& a, const vector3d& b) noexcept { return { std::max(a.x, b.x), std::max(a.y, b.y), std::max(a.z, b.z) }; }
+inline linalg::vector3d min(const linalg::vector3d& a, const linalg::vector3d& b) noexcept { return { std::min(a.x, b.x), std::min(a.y, b.y), std::min(a.z, b.z) }; }
+inline linalg::vector3d max(const linalg::vector3d& a, const linalg::vector3d& b) noexcept { return { std::max(a.x, b.x), std::max(a.y, b.y), std::max(a.z, b.z) }; }
 
-inline double component(const vector3d& v, int axis) noexcept { return axis == 0 ? v.x : (axis == 1 ? v.y : v.z); }
+inline double component(const linalg::vector3d& v, int axis) noexcept { return axis == 0 ? v.x : (axis == 1 ? v.y : v.z); }
 
-vector3d mul(const math::Matrix3d& m, const vector3d& v) noexcept;
+linalg::vector3d mul(const linalg::Matrix3d& m, const linalg::vector3d& v) noexcept;
 
-vector3d mul_transpose(const math::Matrix3d& m, const vector3d& v) noexcept;
+linalg::vector3d mul_transpose(const linalg::Matrix3d& m, const linalg::vector3d& v) noexcept;
 
-inline math::Matrix3d outer(const vector3d& a, const vector3d& b) noexcept {
+inline linalg::Matrix3d outer(const linalg::vector3d& a, const linalg::vector3d& b) noexcept {
     return { a.x * b.x, a.x * b.y, a.x * b.z,
              a.y * b.x, a.y * b.y, a.y * b.z,
              a.z * b.x, a.z * b.y, a.z * b.z };
 }
 
-void orthonormal_basis(const vector3d& n, vector3d& t1, vector3d& t2) noexcept;
+void orthonormal_basis(const linalg::vector3d& n, linalg::vector3d& t1, linalg::vector3d& t2) noexcept;
 
-QuatD integrate_rotation(const QuatD& q, const vector3d& w, double dt) noexcept;
+linalg::QuatD integrate_rotation(const linalg::QuatD& q, const linalg::vector3d& w, double dt) noexcept;
 
 } // namespace vec3
 
 struct AABB3D {
-    vector3d min{}; // meters
-    vector3d max{}; // meters
+    linalg::vector3d min{}; // meters
+    linalg::vector3d max{}; // meters
 
     constexpr AABB3D() noexcept = default;
-    constexpr AABB3D(const vector3d& lo, const vector3d& hi) noexcept : min(lo), max(hi) {}
+    constexpr AABB3D(const linalg::vector3d& lo, const linalg::vector3d& hi) noexcept : min(lo), max(hi) {}
 
-    vector3d center()  const noexcept { return (min + max) * 0.5; }
-    vector3d extents() const noexcept { return (max - min) * 0.5; }
+    linalg::vector3d center()  const noexcept { return (min + max) * 0.5; }
+    linalg::vector3d extents() const noexcept { return (max - min) * 0.5; }
 
     double surface_area() const noexcept {
         double w = max.x - min.x, h = max.y - min.y, d = max.z - min.z;
@@ -65,7 +65,7 @@ struct AABB3D {
 
     bool overlaps(const AABB3D& o) const noexcept;
 
-    bool contains(const vector3d& p) const noexcept {
+    bool contains(const linalg::vector3d& p) const noexcept {
         return p.x >= min.x && p.x <= max.x && p.y >= min.y && p.y <= max.y && p.z >= min.z && p.z <= max.z;
     }
 
@@ -78,81 +78,81 @@ struct AABB3D {
 };
 
 struct Transform3D {
-    vector3d       position{};                              // meters
-    QuatD          orientation{1.0, 0.0, 0.0, 0.0};         // unit quaternion
-    math::Matrix3d rotation = math::Matrix3d::identity();   // cached from orientation
+    linalg::vector3d       position{};                              // meters
+    linalg::QuatD          orientation{1.0, 0.0, 0.0, 0.0};         // unit quaternion
+    linalg::Matrix3d rotation = linalg::Matrix3d::identity();   // cached from orientation
 
     Transform3D() noexcept = default;
 
-    Transform3D(const vector3d& pos, const QuatD& q) noexcept
-        : position(pos), orientation(q.normalized()), rotation(quat_to_mat3(orientation)) {}
+    Transform3D(const linalg::vector3d& pos, const linalg::QuatD& q) noexcept
+        : position(pos), orientation(fast::normalize(q)), rotation(fast::rotation_matrix(orientation)) {}
 
     static Transform3D identity() noexcept { return {}; }
 
-    vector3d apply(const vector3d& local) const noexcept { return vec3::mul(rotation, local) + position; }
-    vector3d apply_inverse(const vector3d& world) const noexcept { return vec3::mul_transpose(rotation, world - position); }
-    vector3d rotate(const vector3d& dir) const noexcept { return vec3::mul(rotation, dir); }
-    vector3d rotate_inverse(const vector3d& dir) const noexcept { return vec3::mul_transpose(rotation, dir); }
+    linalg::vector3d apply(const linalg::vector3d& local) const noexcept { return vec3::mul(rotation, local) + position; }
+    linalg::vector3d apply_inverse(const linalg::vector3d& world) const noexcept { return vec3::mul_transpose(rotation, world - position); }
+    linalg::vector3d rotate(const linalg::vector3d& dir) const noexcept { return vec3::mul(rotation, dir); }
+    linalg::vector3d rotate_inverse(const linalg::vector3d& dir) const noexcept { return vec3::mul_transpose(rotation, dir); }
 
     Transform3D compose(const Transform3D& other) const noexcept {
-        return Transform3D(apply(other.position), orientation * other.orientation);
+        return Transform3D(apply(other.position), fast::mul(orientation, other.orientation));
     }
 
-    void set_orientation(const QuatD& q) noexcept {
-        orientation = q.normalized();
-        rotation = quat_to_mat3(orientation);
+    void set_orientation(const linalg::QuatD& q) noexcept {
+        orientation = fast::normalize(q);
+        rotation = fast::rotation_matrix(orientation);
     }
 };
 
 struct Sweep3D {
-    vector3d center_local{}; // meters
-    vector3d position0{};    // meters (center of mass)
-    vector3d position1{};    // meters (center of mass)
-    QuatD    orientation0{1.0, 0.0, 0.0, 0.0};
-    QuatD    orientation1{1.0, 0.0, 0.0, 0.0};
+    linalg::vector3d center_local{}; // meters
+    linalg::vector3d position0{};    // meters (center of mass)
+    linalg::vector3d position1{};    // meters (center of mass)
+    linalg::QuatD    orientation0{1.0, 0.0, 0.0, 0.0};
+    linalg::QuatD    orientation1{1.0, 0.0, 0.0, 0.0};
 
     Transform3D get_transform(double t) const noexcept;
 };
 
 struct SphereShape {
-    vector3d center{};   // meters, local body space
+    linalg::vector3d center{};   // meters, local body space
     double radius = 0.0; // meters
 };
 
 struct CapsuleShape3D {
-    vector3d point1{};   // meters, local
-    vector3d point2{};   // meters, local
+    linalg::vector3d point1{};   // meters, local
+    linalg::vector3d point2{};   // meters, local
     double radius = 0.0; // meters
-    vector3d center() const noexcept { return (point1 + point2) * 0.5; }
+    linalg::vector3d center() const noexcept { return (point1 + point2) * 0.5; }
     double half_length() const noexcept { return vec3::length(point2 - point1) * 0.5; } // m
 };
 
 struct PlaneShape {
-    vector3d normal{0.0, 1.0, 0.0}; // unit, points out of the solid
+    linalg::vector3d normal{0.0, 1.0, 0.0}; // unit, points out of the solid
     double   offset = 0.0;          // meters
 };
 
 struct HullFace {
-    vector3d normal{};                  
+    linalg::vector3d normal{};                  
     double   offset = 0.0;              
     std::vector<std::uint16_t> indices; // counter-clockwise when viewed from outside
 };
 
 struct HullShape {
-    std::vector<vector3d> vertices;                    // meters, local
+    std::vector<linalg::vector3d> vertices;                    // meters, local
     std::vector<HullFace> faces;
     std::vector<std::array<std::uint16_t, 2>> edges;   // unique edges
-    std::vector<vector3d> edge_directions;             // unique (up to sign) unit edge directions
-    vector3d centroid{};                               // volume centroid (m, local)
+    std::vector<linalg::vector3d> edge_directions;             // unique (up to sign) unit edge directions
+    linalg::vector3d centroid{};                               // volume centroid (m, local)
     double   volume = 0.0;                             // m3
 
     bool valid() const noexcept { return faces.size() >= 4 && volume > 0.0; }
 
     static HullShape box(double hx, double hy, double hz);
 
-    static HullShape from_points(const vector3d* pts, std::size_t n);
+    static HullShape from_points(const linalg::vector3d* pts, std::size_t n);
 
-    static HullShape from_points(const std::vector<vector3d>& pts) { return from_points(pts.data(), pts.size()); }
+    static HullShape from_points(const std::vector<linalg::vector3d>& pts) { return from_points(pts.data(), pts.size()); }
 
     void finalize();
 
@@ -182,17 +182,17 @@ struct Shape3D {
     double bounding_radius = 0.0; // meters (infinite for planes)
     AABB3D local_aabb{};
 
-    static Shape3D make_sphere(const vector3d& center, double radius);
+    static Shape3D make_sphere(const linalg::vector3d& center, double radius);
 
-    static Shape3D make_capsule(const vector3d& p1, const vector3d& p2, double radius);
+    static Shape3D make_capsule(const linalg::vector3d& p1, const linalg::vector3d& p2, double radius);
 
     static Shape3D make_hull(HullShape h);
 
     static Shape3D make_box(double hx, double hy, double hz) { return make_hull(HullShape::box(hx, hy, hz)); } // meter half-extents
-    static Shape3D make_convex(const vector3d* pts, std::size_t n) { return make_hull(HullShape::from_points(pts, n)); }
-    static Shape3D make_convex(const std::vector<vector3d>& pts) { return make_hull(HullShape::from_points(pts)); }
+    static Shape3D make_convex(const linalg::vector3d* pts, std::size_t n) { return make_hull(HullShape::from_points(pts, n)); }
+    static Shape3D make_convex(const std::vector<linalg::vector3d>& pts) { return make_hull(HullShape::from_points(pts)); }
 
-    static Shape3D make_plane(const vector3d& normal, double offset);
+    static Shape3D make_plane(const linalg::vector3d& normal, double offset);
 
     void rebuild_bounds();
 
@@ -203,8 +203,8 @@ struct Shape3D {
 
 struct MassData3D {
     double         mass = 0.0; // kg
-    math::Matrix3d inertia{};  // kg*m2, about center, local axes
-    vector3d       center{};   // meters, local body space
+    linalg::Matrix3d inertia{};  // kg*m2, about center, local axes
+    linalg::vector3d       center{};   // meters, local body space
 
     static MassData3D combine(const MassData3D* parts, std::size_t n);
 };
@@ -222,32 +222,32 @@ MassData3D compute_capsule_mass(const CapsuleShape3D& c, double density);
 MassData3D compute_hull_mass(const HullShape& h, double density);
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, vector3d>::type
-convert_velocity_vec(const vector3d& v, FromU from, ToU to) {
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, linalg::vector3d>::type
+convert_velocity_vec(const linalg::vector3d& v, FromU from, ToU to) {
     return { convert_velocity_scalar(v.x, from, to), convert_velocity_scalar(v.y, from, to), convert_velocity_scalar(v.z, from, to) };
 }
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, vector3d>::type
-convert_angular_velocity_vec(const vector3d& v, FromU from, ToU to) {
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, linalg::vector3d>::type
+convert_angular_velocity_vec(const linalg::vector3d& v, FromU from, ToU to) {
     return { convert_angular_velocity_scalar(v.x, from, to), convert_angular_velocity_scalar(v.y, from, to), convert_angular_velocity_scalar(v.z, from, to) };
 }
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, vector3d>::type
-convert_force_vec(const vector3d& v, FromU from, ToU to) {
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, linalg::vector3d>::type
+convert_force_vec(const linalg::vector3d& v, FromU from, ToU to) {
     return { convert_force_scalar(v.x, from, to), convert_force_scalar(v.y, from, to), convert_force_scalar(v.z, from, to) };
 }
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, vector3d>::type
-convert_torque_vec(const vector3d& v, FromU from, ToU to) {
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, linalg::vector3d>::type
+convert_torque_vec(const linalg::vector3d& v, FromU from, ToU to) {
     return { convert_torque_scalar(v.x, from, to), convert_torque_scalar(v.y, from, to), convert_torque_scalar(v.z, from, to) };
 }
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, vector3d>::type
-convert_position_vec(const vector3d& v, FromU from, ToU to) {
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, linalg::vector3d>::type
+convert_position_vec(const linalg::vector3d& v, FromU from, ToU to) {
     return { convert_distance_scalar(v.x, from, to), convert_distance_scalar(v.y, from, to), convert_distance_scalar(v.z, from, to) };
 }
 
@@ -409,29 +409,29 @@ public:
     );
 
 public:
-    vector3d position() const noexcept { return m_transform.position; }
+    linalg::vector3d position() const noexcept { return m_transform.position; }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
-    vector3d position(U distance_unit) const noexcept {
+    linalg::vector3d position(U distance_unit) const noexcept {
         return detail::convert_position_vec(m_transform.position, units::distance::meter, distance_unit);
     }
 
-    void set_position(const vector3d& pos) noexcept { m_transform.position = pos; }
+    void set_position(const linalg::vector3d& pos) noexcept { m_transform.position = pos; }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
-    void set_position(const vector3d& pos, U distance_unit) noexcept {
+    void set_position(const linalg::vector3d& pos, U distance_unit) noexcept {
         m_transform.position = detail::convert_position_vec(pos, distance_unit, units::distance::meter);
     }
 
 public:
-    const QuatD& orientation() const noexcept { return m_transform.orientation; }
+    const linalg::QuatD& orientation() const noexcept { return m_transform.orientation; }
 
-    void set_orientation(const QuatD& q) noexcept {
+    void set_orientation(const linalg::QuatD& q) noexcept {
         m_transform.set_orientation(q);
         m_world_inertia_dirty = true;
     }
 
-    void set_rotation(const vector3d& axis, double angle, bool in_rad = true) noexcept;
+    void set_rotation(const linalg::vector3d& axis, double angle, bool in_rad = true) noexcept;
 
     // {roll (about X), pitch (about Y), yaw (about Z)}
     std::array<double, 3> euler_angles(bool in_rad = true) const noexcept;
@@ -439,71 +439,71 @@ public:
     void set_euler_angles(double roll, double pitch, double yaw, bool in_rad = true) noexcept;
 
 public:
-    vector3d linear_velocity() const noexcept { return m_linear_velocity; }
+    linalg::vector3d linear_velocity() const noexcept { return m_linear_velocity; }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_VELOCITY, int>::type = 0>
-    vector3d linear_velocity(U unit) const noexcept {
+    linalg::vector3d linear_velocity(U unit) const noexcept {
         return detail::convert_velocity_vec(m_linear_velocity, units::velocity::meters_per_second, unit);
     }
 
-    void set_linear_velocity(const vector3d& v) noexcept {
+    void set_linear_velocity(const linalg::vector3d& v) noexcept {
         m_linear_velocity = v;
         if (!vec3::is_zero(v)) wake();
     }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_VELOCITY, int>::type = 0>
-    void set_linear_velocity(const vector3d& v, U unit) noexcept {
+    void set_linear_velocity(const linalg::vector3d& v, U unit) noexcept {
         set_linear_velocity(detail::convert_velocity_vec(v, unit, units::velocity::meters_per_second));
     }
 
 public:
     // World-space angular velocity (rad/s); its direction is the spin axis.
-    vector3d angular_velocity() const noexcept { return m_angular_velocity; }
+    linalg::vector3d angular_velocity() const noexcept { return m_angular_velocity; }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_ANGULAR_VELOCITY, int>::type = 0>
-    vector3d angular_velocity(U unit) const noexcept {
+    linalg::vector3d angular_velocity(U unit) const noexcept {
         static constexpr auto rad_per_s = units::angle::radian / units::time::second;
         return detail::convert_angular_velocity_vec(m_angular_velocity, rad_per_s, unit);
     }
 
-    void set_angular_velocity(const vector3d& w) noexcept {
+    void set_angular_velocity(const linalg::vector3d& w) noexcept {
         m_angular_velocity = w;
         if (!vec3::is_zero(w)) wake();
     }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_ANGULAR_VELOCITY, int>::type = 0>
-    void set_angular_velocity(const vector3d& w, U unit) noexcept {
+    void set_angular_velocity(const linalg::vector3d& w, U unit) noexcept {
         static constexpr auto rad_per_s = units::angle::radian / units::time::second;
         set_angular_velocity(detail::convert_angular_velocity_vec(w, unit, rad_per_s));
     }
 
 public:
-    vector3d force() const noexcept { return m_force; }
+    linalg::vector3d force() const noexcept { return m_force; }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_FORCE, int>::type = 0>
-    vector3d force(U force_unit) const noexcept {
+    linalg::vector3d force(U force_unit) const noexcept {
         return detail::convert_force_vec(m_force, units::force::newton, force_unit);
     }
 
-    void set_force(const vector3d& f) noexcept { m_force = f; }
+    void set_force(const linalg::vector3d& f) noexcept { m_force = f; }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_FORCE, int>::type = 0>
-    void set_force(const vector3d& f, U unit) noexcept {
+    void set_force(const linalg::vector3d& f, U unit) noexcept {
         m_force = detail::convert_force_vec(f, unit, units::force::newton);
     }
 
 public:
-    vector3d torque() const noexcept { return m_torque; }
+    linalg::vector3d torque() const noexcept { return m_torque; }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_TORQUE, int>::type = 0>
-    vector3d torque(U unit) const noexcept {
+    linalg::vector3d torque(U unit) const noexcept {
         return detail::convert_torque_vec(m_torque, units::torque::newton_meter, unit);
     }
 
-    void set_torque(const vector3d& t) noexcept { m_torque = t; }
+    void set_torque(const linalg::vector3d& t) noexcept { m_torque = t; }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_TORQUE, int>::type = 0>
-    void set_torque(const vector3d& t, U torque_unit) noexcept {
+    void set_torque(const linalg::vector3d& t, U torque_unit) noexcept {
         m_torque = detail::convert_torque_vec(t, torque_unit, units::torque::newton_meter);
     }
 
@@ -557,19 +557,19 @@ public:
     }
 
 public:
-    const math::Matrix3d& inertia(double gravity = MassSpec3D::STANDARD_GRAVITY) const noexcept {
+    const linalg::Matrix3d& inertia(double gravity = MassSpec3D::STANDARD_GRAVITY) const noexcept {
         ensure_mass_uptodate(gravity);
         return m_inertia;
     }
 
-    const math::Matrix3d& inv_inertia_local(double gravity = MassSpec3D::STANDARD_GRAVITY) const noexcept {
+    const linalg::Matrix3d& inv_inertia_local(double gravity = MassSpec3D::STANDARD_GRAVITY) const noexcept {
         ensure_mass_uptodate(gravity);
         return m_inv_inertia;
     }
 
-    const math::Matrix3d& inv_inertia_world() const noexcept;
+    const linalg::Matrix3d& inv_inertia_world() const noexcept;
 
-    vector3d apply_inv_inertia(const vector3d& v) const noexcept { return vec3::mul(inv_inertia_world(), v); }
+    linalg::vector3d apply_inv_inertia(const linalg::vector3d& v) const noexcept { return vec3::mul(inv_inertia_world(), v); }
 
 public:
     double shape_volume() const noexcept {
@@ -578,13 +578,13 @@ public:
     }
 
 public:
-    vector3d local_center() const noexcept {
+    linalg::vector3d local_center() const noexcept {
         ensure_mass_uptodate();
         return m_local_center;
     }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
-    vector3d local_center(U length_unit) const noexcept {
+    linalg::vector3d local_center(U length_unit) const noexcept {
         ensure_mass_uptodate();
         return detail::convert_position_vec(m_local_center, units::distance::meter, length_unit);
     }
@@ -637,21 +637,21 @@ public:
     void   set_gravity_scale(double s) noexcept { m_gravity_scale = s; }
 
 public:
-    void apply_force(const vector3d& f) {
+    void apply_force(const linalg::vector3d& f) {
         if (!has(PhysicsFlags::LinearForces)) return;
         m_force += f;
         wake();
     }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_FORCE, int>::type = 0>
-    void apply_force(const vector3d& f, U unit) {
+    void apply_force(const linalg::vector3d& f, U unit) {
         apply_force(detail::convert_force_vec(f, unit, units::force::newton));
     }
 
-    void apply_force_at(const vector3d& f, const vector3d& world_point);
+    void apply_force_at(const linalg::vector3d& f, const linalg::vector3d& world_point);
 
     template <class FU, class PU, typename std::enable_if<is_fizmo_unit_v<FU> && is_fizmo_unit_v<PU> && FU::dimension() == units::DIMENSION_FORCE && PU::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
-    void apply_force_at(const vector3d& f, FU f_unit, const vector3d& world_point, PU p_unit) {
+    void apply_force_at(const linalg::vector3d& f, FU f_unit, const linalg::vector3d& world_point, PU p_unit) {
         apply_force_at(
             detail::convert_force_vec(f, f_unit, units::force::newton),
             detail::convert_position_vec(world_point, p_unit, units::distance::meter)
@@ -659,36 +659,36 @@ public:
     }
 
 public:
-    void apply_torque(const vector3d& t) {
+    void apply_torque(const linalg::vector3d& t) {
         if (!has(PhysicsFlags::Torque)) return;
         m_torque += t;
         wake();
     }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_TORQUE, int>::type = 0>
-    void apply_torque(const vector3d& t, U torque_unit) {
+    void apply_torque(const linalg::vector3d& t, U torque_unit) {
         apply_torque(detail::convert_torque_vec(t, torque_unit, units::torque::newton_meter));
     }
 
 public:
-    void apply_linear_impulse(const vector3d& impulse);
+    void apply_linear_impulse(const linalg::vector3d& impulse);
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_IMPULSE, int>::type = 0>
-    void apply_linear_impulse(const vector3d& impulse, U impulse_unit) {
+    void apply_linear_impulse(const linalg::vector3d& impulse, U impulse_unit) {
         double f = detail::convert_impulse_scalar(1.0, impulse_unit, units::impulse::newton_second);
         apply_linear_impulse(impulse * f);
     }
 
-    void apply_impulse_at(const vector3d& impulse, const vector3d& world_point);
+    void apply_impulse_at(const linalg::vector3d& impulse, const linalg::vector3d& world_point);
 
-    void apply_angular_impulse(const vector3d& impulse);
+    void apply_angular_impulse(const linalg::vector3d& impulse);
 
 public:
-    void integrate_forces(double dt, const vector3d& gravity);
+    void integrate_forces(double dt, const linalg::vector3d& gravity);
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_ACCELERATION, int>::type = 0>
-    void integrate_forces(double dt, const vector3d& gravity, U grav_accel_unit) {
-        vector3d g = {
+    void integrate_forces(double dt, const linalg::vector3d& gravity, U grav_accel_unit) {
+        linalg::vector3d g = {
             static_cast<double>(units::convert(gravity.x, grav_accel_unit, units::acceleration::meters_per_second_squared)),
             static_cast<double>(units::convert(gravity.y, grav_accel_unit, units::acceleration::meters_per_second_squared)),
             static_cast<double>(units::convert(gravity.z, grav_accel_unit, units::acceleration::meters_per_second_squared))
@@ -700,11 +700,11 @@ public:
 
     void integrate_velocities(double dt);
 
-    void apply_position_correction(const vector3d& d_center, const vector3d& d_rotation);
+    void apply_position_correction(const linalg::vector3d& d_center, const linalg::vector3d& d_rotation);
 
     void clear_forces() {
-        m_force;
-        m_torque;
+        m_force = {};
+        m_torque = {};
     }
 
     void wake() { if (!m_is_awake) { m_is_awake = true; m_sleep_timer = 0.0; }}
@@ -724,28 +724,28 @@ public:
 
     AABB3D compute_body_aabb() const;
 
-    vector3d world_center() const noexcept {
+    linalg::vector3d world_center() const noexcept {
         ensure_mass_uptodate();
         return m_transform.apply(m_local_center);
     }
 
     template <class U, typename std::enable_if<is_fizmo_unit_v<U> && U::dimension() == units::DIMENSION_LENGTH, int>::type = 0>
-    vector3d world_center(U distance_unit) const noexcept {
+    linalg::vector3d world_center(U distance_unit) const noexcept {
         return detail::convert_position_vec(world_center(), units::distance::meter, distance_unit);
     }
 
-    vector3d get_world_point(const vector3d& local)  const noexcept { return m_transform.apply(local); }
-    vector3d get_local_point(const vector3d& world)  const noexcept { return m_transform.apply_inverse(world); }
-    vector3d get_world_vector(const vector3d& local) const noexcept { return m_transform.rotate(local); }
-    vector3d get_local_vector(const vector3d& world) const noexcept { return m_transform.rotate_inverse(world); }
+    linalg::vector3d get_world_point(const linalg::vector3d& local)  const noexcept { return m_transform.apply(local); }
+    linalg::vector3d get_local_point(const linalg::vector3d& world)  const noexcept { return m_transform.apply_inverse(world); }
+    linalg::vector3d get_world_vector(const linalg::vector3d& local) const noexcept { return m_transform.rotate(local); }
+    linalg::vector3d get_local_vector(const linalg::vector3d& world) const noexcept { return m_transform.rotate_inverse(world); }
 
-    vector3d get_velocity_at(const vector3d& world_point) const noexcept {
+    linalg::vector3d get_velocity_at(const linalg::vector3d& world_point) const noexcept {
         return m_linear_velocity + vec3::cross(m_angular_velocity, world_point - world_center());
     }
 
     template <class PU, class VU, typename std::enable_if<is_fizmo_unit_v<PU> && is_fizmo_unit_v<VU> && PU::dimension() == units::DIMENSION_LENGTH && VU::dimension() == units::DIMENSION_VELOCITY, int>::type = 0>
-    vector3d get_velocity_at(const vector3d& world_point, PU position_distance_unit, VU velocity_unit) const noexcept {
-        vector3d wp_si = detail::convert_position_vec(world_point, position_distance_unit, units::distance::meter);
+    linalg::vector3d get_velocity_at(const linalg::vector3d& world_point, PU position_distance_unit, VU velocity_unit) const noexcept {
+        linalg::vector3d wp_si = detail::convert_position_vec(world_point, position_distance_unit, units::distance::meter);
         return detail::convert_velocity_vec(get_velocity_at(wp_si), units::velocity::meters_per_second, velocity_unit);
     }
 
@@ -757,13 +757,13 @@ public:
     }
 
 private:
-    vector3d mask_rotation(vector3d w) const noexcept;
+    linalg::vector3d mask_rotation(linalg::vector3d w) const noexcept;
 
-    vector3d mask_translation(vector3d d) const noexcept;
+    linalg::vector3d mask_translation(linalg::vector3d d) const noexcept;
 
     static bool validate_frozen(FrozenProperty f) noexcept;
 
-    void set_inertia(const math::Matrix3d& I) const noexcept;
+    void set_inertia(const linalg::Matrix3d& I) const noexcept;
 
     void recompute_mass_data(double gravity = MassSpec3D::STANDARD_GRAVITY) const;
 
@@ -788,11 +788,11 @@ private:
     Transform3D     m_transform;
     mutable Sweep3D m_sweep;
 
-    vector3d m_linear_velocity{};   // m/s
-    vector3d m_angular_velocity{};  // rad/s, world space
-    vector3d m_force{};             // N
-    vector3d m_torque{};            // N*m
-    vector3d m_gyro_half{};         // half of this step's gyroscopic change in w (see integrate_gyroscopic)
+    linalg::vector3d m_linear_velocity{};   // m/s
+    linalg::vector3d m_angular_velocity{};  // rad/s, world space
+    linalg::vector3d m_force{};             // N
+    linalg::vector3d m_torque{};            // N*m
+    linalg::vector3d m_gyro_half{};         // half of this step's gyroscopic change in w (see integrate_gyroscopic)
 
     mutable double  m_density      = 1000.0; // kg/m3
     FrozenProperty  m_frozen       = FrozenProperty::None;
@@ -801,11 +801,11 @@ private:
     mutable bool           m_mass_dirty  = true;
     mutable double         m_mass        = 0.0;  // kg
     mutable double         m_inv_mass    = 0.0;  // 1/kg
-    mutable math::Matrix3d m_inertia{};          // kg*m2, body axes about the center of mass
-    mutable math::Matrix3d m_inv_inertia{};      // 1/(kg*m2), body axes
-    mutable math::Matrix3d m_inv_inertia_world{};
+    mutable linalg::Matrix3d m_inertia{};          // kg*m2, body axes about the center of mass
+    mutable linalg::Matrix3d m_inv_inertia{};      // 1/(kg*m2), body axes
+    mutable linalg::Matrix3d m_inv_inertia_world{};
     mutable bool           m_world_inertia_dirty = true;
-    mutable vector3d       m_local_center{};     // m
+    mutable linalg::vector3d       m_local_center{};     // m
 
     double m_linear_damping    = 0.0;   // 1/s
     double m_angular_damping   = 0.0;   // 1/s

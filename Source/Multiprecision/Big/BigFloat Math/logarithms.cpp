@@ -1,7 +1,6 @@
 #include "fizmo_library.hpp"
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace detail {
 
@@ -11,7 +10,7 @@ void ln_shift(BigUInt& v, std::int64_t s) {
 }
 
 fixed_approx ln_fixed(const BigFloat& x, std::size_t bits) {
-    using constants::bfdetail::unit;
+    using multiprecision::constants::bfdetail::unit;
     fixed_approx out;
     const BigUInt&     m = x.significand();
     const std::size_t  L = m.bit_length();
@@ -78,7 +77,7 @@ fixed_approx ln_fixed(const BigFloat& x, std::size_t bits) {
         out.neg = zneg;
     } else {
         const std::size_t S  = N + B;
-        const BigFloat    l2 = constants::ln2(BigFloatContext(S + 4, RoundingMode::nearest_even));
+        const BigFloat    l2 = multiprecision::constants::ln2(BigFloatContext(S + 4, RoundingMode::nearest_even));
         BigUInt Q = l2.significand();
         ln_shift(Q, l2.exponent() + static_cast<std::int64_t>(S));
         Q = Q * BigUInt(absE);
@@ -101,7 +100,7 @@ BigFloat ln_finite(const BigFloat& x, const BigFloatContext& ctx) {
 
     for (;;) {
         fixed_approx a = ln_fixed(x, p + extra);
-        if (a.capped || constants::bfdetail::round_is_safe(a.mag, p, a.err_bits + 1)) { return BigFloat(std::move(a.mag), a.neg, a.scale).rounded(ctx); }
+        if (a.capped || multiprecision::constants::bfdetail::round_is_safe(a.mag, p, a.err_bits + 1)) { return BigFloat(std::move(a.mag), a.neg, a.scale).rounded(ctx); }
         extra = extra * 2 + 16;
     }
 }
@@ -217,11 +216,9 @@ bool log_special(ln_kind a, ln_kind b, BigFloat& out) {
 
 } // namespace detail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat ln(const BigFloat& x, const BigFloatContext& ctx) {
@@ -240,11 +237,9 @@ BigFloat ln(const BigInt& x, const BigFloatContext& ctx) {
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 namespace detail {
 
@@ -256,7 +251,7 @@ BigFloat log_scaled(const BigFloat& x, BigFloat (*inv_const)(const BigFloatConte
         const BigFloatContext wc(ctx.precision + guard, RoundingMode::nearest_even);
         const BigFloat v = BigFloat::mul(ln(x, wc), inv_const(wc), wc);
         if (!v.is_finite()) return v;
-        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err)) return v.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err)) return v.rounded(ctx);
         if (log_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
         guard *= 2;
     }
@@ -270,7 +265,7 @@ BigFloat log_ratio(const BigFloat& x, const BigFloat& b, const BigFloatContext& 
         const BigFloatContext wc(ctx.precision + guard, RoundingMode::nearest_even);
         const BigFloat v = BigFloat::div(ln(x, wc), ln(b, wc), wc);
         if (!v.is_finite()) return v;
-        if (constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err)) return v.rounded(ctx);
+        if (multiprecision::constants::bfdetail::round_is_safe(v.significand(), ctx.precision, err)) return v.rounded(ctx);
         std::int64_t n = 0;
         if (log_nearest_int(v, wc, n) && log_pow_matches(b, n, x)) return BigFloat(n).rounded(ctx);
         if (log_guard_exhausted(ctx.precision, guard)) return v.rounded(ctx);
@@ -280,11 +275,9 @@ BigFloat log_ratio(const BigFloat& x, const BigFloat& b, const BigFloatContext& 
 
 } // namespace detail
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo
 
 namespace fizmo {
-namespace multiprecision {
 namespace math {
 
 BigFloat log2(const BigFloat& x, const BigFloatContext& ctx) {
@@ -295,7 +288,7 @@ BigFloat log2(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_infinite())  return BigFloat::infinity();
     std::int64_t k = 0;
     if (detail::log2_exact(x, k)) return BigFloat(k).rounded(ctx);
-    return detail::log_scaled(x, &constants::inv_ln2, ctx);
+    return detail::log_scaled(x, &multiprecision::constants::inv_ln2, ctx);
 }
 
 BigFloat log2(const BigInt& x, const BigFloatContext& ctx) {
@@ -312,7 +305,7 @@ BigFloat log10(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_infinite())  return BigFloat::infinity();
     std::int64_t k = 0;
     if (detail::log10_exact(x, k)) return BigFloat(k).rounded(ctx);
-    return detail::log_scaled(x, &constants::inv_ln10, ctx);
+    return detail::log_scaled(x, &multiprecision::constants::inv_ln10, ctx);
 }
 
 BigFloat log10(const BigInt& x, const BigFloatContext& ctx) {
@@ -332,5 +325,4 @@ BigFloat log(const BigFloat& x, const BigFloat& base, const BigFloatContext& ctx
 }
 
 } // namespace math
-} // namespace multiprecision
 } // namespace fizmo

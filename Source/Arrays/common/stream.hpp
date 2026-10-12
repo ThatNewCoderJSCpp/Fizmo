@@ -40,6 +40,8 @@ inline std::ostream& print_sequence(std::ostream& os, const char* open, const T*
 } // namespace detail
 } // namespace arrays
 
+namespace collections {
+
 template <class T>
 inline std::ostream& operator<<(std::ostream& os, const ArrayView<T>& view) { return arrays::detail::print_sequence(os, "ArrayView[\n", view.data(), view.size()); }
 
@@ -78,6 +80,7 @@ inline bool operator>(const SmallVector<T, N>& a, const SmallVector<T, M>& b) { 
 template <class T, std::size_t N, std::size_t M>
 inline bool operator>=(const SmallVector<T, N>& a, const SmallVector<T, M>& b) { return a.compare(b) >= 0; }
 
+} // namespace collections
 } // namespace fizmo
 
 #endif // FIZMO_ARRAYS_STREAM_HPP
