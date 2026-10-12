@@ -9,26 +9,26 @@ namespace fizmo {
 namespace math {
 
 template <std::size_t TB, std::size_t MB>
-OPTIONAL_CPP14_CONSTEXPR floatmp<TB, MB, sign::is_signed> abs(const floatmp<TB, MB, sign::is_signed>& x) noexcept {
-    using F = floatmp<TB, MB, sign::is_signed>;
+OPTIONAL_CPP14_CONSTEXPR fizmo::multiprecision::floatmp<TB, MB, fizmo::multiprecision::sign::is_signed> abs(const fizmo::multiprecision::floatmp<TB, MB, fizmo::multiprecision::sign::is_signed>& x) noexcept {
+    using F = fizmo::multiprecision::floatmp<TB, MB, fizmo::multiprecision::sign::is_signed>;
     if (x.is_nan())       return F::nan();
     if (x.is_undefined()) return F::undefined();
     return x.is_negative() ? -x : x;
 }
 
 template <std::size_t TB, std::size_t MB>
-constexpr floatmp<TB, MB, sign::is_unsigned> abs(const floatmp<TB, MB, sign::is_unsigned>& x) noexcept {
+constexpr fizmo::multiprecision::floatmp<TB, MB, fizmo::multiprecision::sign::is_unsigned> abs(const fizmo::multiprecision::floatmp<TB, MB, fizmo::multiprecision::sign::is_unsigned>& x) noexcept {
     return x;
 }
 
 template <std::size_t Bits>
-OPTIONAL_CPP14_CONSTEXPR integer<Bits, sign::is_signed> abs(const integer<Bits, sign::is_signed>& x) noexcept {
-    if (x.is_undefined()) return integer<Bits, sign::is_signed>::undefined();
+OPTIONAL_CPP14_CONSTEXPR fizmo::multiprecision::integer<Bits, fizmo::multiprecision::sign::is_signed> abs(const fizmo::multiprecision::integer<Bits, fizmo::multiprecision::sign::is_signed>& x) noexcept {
+    if (x.is_undefined()) return fizmo::multiprecision::integer<Bits, fizmo::multiprecision::sign::is_signed>::undefined();
     return x.is_negative() ? -x : x;
 }
 
 template <std::size_t Bits>
-constexpr integer<Bits, sign::is_unsigned> abs(const integer<Bits, sign::is_unsigned>& x) noexcept {
+constexpr fizmo::multiprecision::integer<Bits, fizmo::multiprecision::sign::is_unsigned> abs(const fizmo::multiprecision::integer<Bits, fizmo::multiprecision::sign::is_unsigned>& x) noexcept {
     return x; 
 }
 
