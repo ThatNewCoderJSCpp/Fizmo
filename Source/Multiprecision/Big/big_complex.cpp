@@ -23,6 +23,11 @@ namespace fizmo {
 namespace multiprecision {
 namespace bcdetail {
 
+context_state& context_tls() noexcept {
+    static thread_local context_state s = { false, BigComplexContext() };
+    return s;
+}
+
 dyadic dy_of(const BF& x) {
     if (x.is_zero()) return dyadic(BigUInt::zero(), 0, x.signbit());
     return dyadic(x.significand(), x.exponent(), x.signbit());

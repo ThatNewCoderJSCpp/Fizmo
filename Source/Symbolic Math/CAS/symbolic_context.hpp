@@ -120,10 +120,7 @@ private:
     EvaluationPolicy default_policy_;
 };
 
-inline SymbolicContext& global_context() {
-    static SymbolicContext ctx;
-    return ctx;
-}
+SymbolicContext& global_context();
 
 } // namespace cas
 } // namespace math

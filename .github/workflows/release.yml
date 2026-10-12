@@ -10,9 +10,9 @@ permissions:
   contents: write
 
 jobs:
-  linux:
-    name: Linux x86_64
-    runs-on: ubuntu-22.04
+  version:
+    name: Check the version
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -26,33 +26,86 @@ jobs:
             exit 1
           fi
 
+  linux:
+    name: Linux ${{ matrix.arch }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config \
+          sudo apt-get install -y ninja-build pkg-config rpm \
             libx11-dev libxft-dev libxrender-dev libfontconfig1-dev libfreetype-dev \
             libssl-dev libpango1.0-dev libcairo2-dev zlib1g-dev libjpeg-dev \
             libvulkan-dev libgl-dev
 
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_PACKAGE_PLATFORM=linux-x86_64
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_PACKAGE_PLATFORM=linux-${{ matrix.arch }}
 
       - name: Build
         run: cmake --build build -j 4
 
       - name: Package
         working-directory: build
-        run: cpack
+        run: cpack -G "TGZ;TXZ;ZIP;DEB;RPM"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: fizmo-linux-x86_64
-          path: build/fizmo-*.tar.gz
+          name: fizmo-linux-${{ matrix.arch }}
+          path: |
+            build/fizmo-*.tar.gz
+            build/fizmo-*.tar.xz
+            build/fizmo-*.zip
+            build/fizmo-*.deb
+            build/fizmo-*.rpm
           if-no-files-found: error
 
-  windows:
+  linux-i686:
+    name: Linux i686
+    needs: version
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and package in a 32-bit container
+        run: |
+          docker run --rm --platform linux/386 -v "$PWD:/src" -w /src i386/debian:bookworm bash -euo pipefail -c '
+            apt-get update
+            apt-get install -y --no-install-recommends ca-certificates g++ cmake ninja-build pkg-config file rpm dpkg-dev \
+              libx11-dev libxft-dev libxrender-dev libfontconfig-dev libfreetype-dev \
+              libssl-dev libpango1.0-dev libcairo2-dev zlib1g-dev libjpeg-dev \
+              libvulkan-dev libgl-dev
+            cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_PACKAGE_PLATFORM=linux-i686
+            cmake --build build -j 4
+            cd build
+            cpack -G "TGZ;TXZ;ZIP;DEB;RPM"
+          '
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fizmo-linux-i686
+          path: |
+            build/fizmo-*.tar.gz
+            build/fizmo-*.tar.xz
+            build/fizmo-*.zip
+            build/fizmo-*.deb
+            build/fizmo-*.rpm
+          if-no-files-found: error
+
+  mingw:
     name: Windows ${{ matrix.platform }}
-    runs-on: windows-latest
+    needs: version
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
@@ -60,9 +113,15 @@ jobs:
           - msystem: MINGW64
             prefix: mingw-w64-x86_64
             platform: windows-mingw64
+            runner: windows-latest
           - msystem: UCRT64
             prefix: mingw-w64-ucrt-x86_64
             platform: windows-ucrt64
+            runner: windows-latest
+          - msystem: CLANGARM64
+            prefix: mingw-w64-clang-aarch64
+            platform: windows-clangarm64
+            runner: windows-11-arm
     defaults:
       run:
         shell: msys2 {0}
@@ -74,21 +133,17 @@ jobs:
           msystem: ${{ matrix.msystem }}
           update: true
           install: >-
-            ${{ matrix.prefix }}-gcc
+            ${{ matrix.prefix }}-cc
             ${{ matrix.prefix }}-cmake
             ${{ matrix.prefix }}-ninja
             ${{ matrix.prefix }}-zlib
             ${{ matrix.prefix }}-libjpeg-turbo
             ${{ matrix.prefix }}-vulkan-headers
 
-      - name: Check the version matches the tag
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Install NSIS
+        shell: pwsh
         run: |
-          version=$(sed -n 's/^ *VERSION \([0-9][0-9.]*\).*/\1/p' CMakeLists.txt | head -n 1)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::CMakeLists.txt says VERSION $version but the tag is $GITHUB_REF_NAME"
-            exit 1
-          fi
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) { choco install nsis -y --no-progress }
 
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_PACKAGE_PLATFORM=${{ matrix.platform }}
@@ -98,18 +153,84 @@ jobs:
 
       - name: Package
         working-directory: build
-        run: cpack
+        run: |
+          export PATH="$PATH:/c/Program Files (x86)/NSIS"
+          cpack -G "ZIP;7Z;NSIS"
 
       - uses: actions/upload-artifact@v4
         with:
           name: fizmo-${{ matrix.platform }}
-          path: build/fizmo-*.zip
+          path: |
+            build/fizmo-*.zip
+            build/fizmo-*.7z
+            build/fizmo-*.exe
+          if-no-files-found: error
+
+  msvc:
+    name: Windows MSVC ${{ matrix.arch }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Install dependencies with vcpkg
+        run: |
+          $vcpkg = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkg -or -not (Test-Path "$vcpkg\vcpkg.exe")) {
+            git clone --depth 1 https://github.com/microsoft/vcpkg "$env:RUNNER_TEMP\vcpkg"
+            & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+            $vcpkg = "$env:RUNNER_TEMP\vcpkg"
+          }
+          $triplet = "${{ matrix.arch }}-windows-static-md"
+          & "$vcpkg\vcpkg.exe" install "zlib:$triplet" "libjpeg-turbo:$triplet" "vulkan-headers:$triplet"
+          "VCPKG_ROOT_DIR=$vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "VCPKG_TRIPLET=$triplet" | Out-File -FilePath $env:GITHUB_ENV -Append
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) { choco install nsis -y --no-progress }
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT_DIR/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET="$env:VCPKG_TRIPLET"
+          -DFIZMO_PACKAGE_PLATFORM=windows-msvc-${{ matrix.arch }}
+
+      - name: Build
+        run: cmake --build build -j 4
+
+      - name: Package
+        working-directory: build
+        run: |
+          $env:PATH = "$env:PATH;${env:ProgramFiles(x86)}\NSIS"
+          cpack -G "ZIP;7Z;NSIS"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fizmo-windows-msvc-${{ matrix.arch }}
+          path: |
+            build/fizmo-*.zip
+            build/fizmo-*.7z
+            build/fizmo-*.exe
           if-no-files-found: error
 
   publish:
     name: Attach packages to the release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, windows]
+    needs: [linux, linux-i686, mingw, msvc]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

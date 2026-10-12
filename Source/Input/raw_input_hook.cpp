@@ -5,6 +5,15 @@ namespace fizmo {
 namespace input {
 namespace detail {
 
+std::vector<RawInputHookEntry>& raw_input_hooks() {
+    static std::vector<RawInputHookEntry> hooks;
+    return hooks;
+}
+
+void add_raw_input_hook(RawInputHook hook, void* context) {
+    raw_input_hooks().push_back({ hook, context });
+}
+
 void remove_raw_input_hook(void* context) {
     auto& hooks = raw_input_hooks();
     for (auto it = hooks.begin(); it != hooks.end();) {

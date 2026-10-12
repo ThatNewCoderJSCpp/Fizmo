@@ -56,10 +56,7 @@ struct BigFloatContext {
         return BigFloatContext(precision + guard_bits, rounding_mode);
     }
 
-    static BigFloatContext& current() noexcept {
-        static thread_local BigFloatContext ctx;
-        return ctx;
-    }
+    static BigFloatContext& current() noexcept;
 
     static void set_current(const BigFloatContext& c) noexcept { current() = c; }
 };

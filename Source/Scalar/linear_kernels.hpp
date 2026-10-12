@@ -542,7 +542,9 @@ inline Vec matrix_pow(const Vec& m, std::size_t n, long long e, const BigFloatCo
     if (e == 0) return identity(n);
     Vec base = e < 0 ? inverse_working(m, n, widen(c, 16)) : m;
     unsigned long long k = e < 0 ? static_cast<unsigned long long>(-(e + 1)) + 1ULL : static_cast<unsigned long long>(e);
-    const BigFloatContext w = widen(c, 2 * (64 - static_cast<std::size_t>(__builtin_clzll(k | 1ULL))) + 16);
+    std::size_t bits = 1;
+    for (unsigned long long t = k >> 1; t != 0ULL; t >>= 1) ++bits;
+    const BigFloatContext w = widen(c, 2 * bits + 16);
     Vec result = identity(n);
     bool first = true;
 

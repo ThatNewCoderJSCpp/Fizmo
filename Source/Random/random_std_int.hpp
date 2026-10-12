@@ -47,10 +47,7 @@ public:
     }
 };
 
-inline RNG& thread_rng() noexcept {
-    static thread_local RNG rng;
-    return rng;
-}
+RNG& thread_rng() noexcept;
 
 } // namespace detail
 

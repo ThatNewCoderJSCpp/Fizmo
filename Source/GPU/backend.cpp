@@ -5,6 +5,11 @@ namespace fizmo {
 namespace gpu {
 namespace detail {
 
+std::uint64_t next_object_id() noexcept {
+    static std::atomic<std::uint64_t> counter{ 0 };
+    return ++counter;
+}
+
 std::uint32_t PipelineLayoutImpl::array_capacity(std::uint32_t group, std::uint32_t binding) const noexcept {
     if (group >= groups.size() || !groups[group]) return 0;
     const BindGroupLayoutEntry* e = groups[group]->find(binding);

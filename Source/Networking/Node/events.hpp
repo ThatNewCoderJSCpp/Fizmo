@@ -27,10 +27,7 @@ void report_unhandled_error(const std::string& source, const std::error_code& ec
 
 namespace detail {
 
-inline ListenerId next_listener_id() noexcept {
-    static std::atomic<ListenerId> ids{0};
-    return ++ids;
-}
+ListenerId next_listener_id() noexcept;
 
 template <typename T>
 struct callable_traits : callable_traits<decltype(&T::operator())> {};

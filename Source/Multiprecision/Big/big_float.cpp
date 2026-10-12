@@ -3,6 +3,11 @@
 namespace fizmo {
 namespace multiprecision {
 
+BigFloatContext& BigFloatContext::current() noexcept {
+    static thread_local BigFloatContext ctx;
+    return ctx;
+}
+
 ScopedContext::ScopedContext(std::size_t prec) noexcept : m_saved(BigFloatContext::current()) {
     BigFloatContext::current() = BigFloatContext(prec, m_saved.rounding_mode);
 }

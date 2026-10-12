@@ -62,6 +62,6 @@ else()
     message(STATUS "fizmo: multiplication cutoffs from an earlier measurement: ${_fizmo_lines}")
 endif()
 
-target_include_directories(fizmo PUBLIC
+target_include_directories(fizmo_headers INTERFACE
     $<BUILD_INTERFACE:${FIZMO_GENERATED_DIR}>
     $<INSTALL_INTERFACE:include/fizmo/generated>)

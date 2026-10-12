@@ -166,6 +166,15 @@ auto AssetPaths::operator=(const AssetPaths& o) -> AssetPaths& {
     return *this;
 }
 
+AssetPaths& AssetPaths::instance() {
+    static AssetPaths a = [] {
+        AssetPaths p;
+        p.add_defaults();
+        return p;
+    }();
+    return a;
+}
+
 void AssetPaths::add_defaults() {
     const std::string env = detail::env("FIZMO_ASSET_PATH");
 #if defined(OS_WINDOWS)

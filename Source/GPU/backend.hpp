@@ -13,10 +13,7 @@ namespace fizmo {
 namespace gpu {
 namespace detail {
 
-inline std::uint64_t next_object_id() noexcept {
-    static std::atomic<std::uint64_t> counter{ 0 };
-    return ++counter;
-}
+std::uint64_t next_object_id() noexcept;
 
 struct Object {
     const std::uint64_t id = next_object_id();

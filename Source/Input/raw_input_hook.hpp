@@ -16,14 +16,9 @@ struct RawInputHookEntry {
     void*        context = nullptr;
 };
 
-inline std::vector<RawInputHookEntry>& raw_input_hooks() {
-    static std::vector<RawInputHookEntry> hooks;
-    return hooks;
-}
+std::vector<RawInputHookEntry>& raw_input_hooks();
 
-inline void add_raw_input_hook(RawInputHook hook, void* context) {
-    raw_input_hooks().push_back({ hook, context });
-}
+void add_raw_input_hook(RawInputHook hook, void* context);
 
 void remove_raw_input_hook(void* context);
 

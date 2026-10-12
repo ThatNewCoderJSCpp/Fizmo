@@ -17,6 +17,11 @@
 namespace fizmo {
 namespace detail {
 
+RNG& thread_rng() noexcept {
+    static thread_local RNG rng;
+    return rng;
+}
+
 void os_random_bytes(void* buffer, std::size_t length) {
     if (length == 0) return;
 
@@ -72,7 +77,7 @@ void os_random_bytes(void* buffer, std::size_t length) {
 }
 
 std::uint64_t RNG::rdtsc() noexcept {
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
     return __rdtsc();
 #elif defined(__x86_64__)
     std::uint32_t hi, lo;

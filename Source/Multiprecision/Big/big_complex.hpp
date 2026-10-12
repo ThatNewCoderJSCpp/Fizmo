@@ -103,10 +103,7 @@ struct context_state {
     BigComplexContext ctx;
 };
 
-inline context_state& context_tls() noexcept {
-    static thread_local context_state s = { false, BigComplexContext() };
-    return s;
-}
+context_state& context_tls() noexcept;
 
 } // namespace bcdetail
 
@@ -137,7 +134,7 @@ namespace bcdetail {
 using BF  = BigFloat;
 using BFC = BigFloatContext;
 
-constexpr std::size_t k_exact = std::size_t(1) << 60;
+constexpr std::size_t k_exact = std::numeric_limits<std::size_t>::max() >> 4;
 
 struct dyadic {
     BigUInt      mag;

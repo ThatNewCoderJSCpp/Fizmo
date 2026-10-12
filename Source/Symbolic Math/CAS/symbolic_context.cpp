@@ -4,6 +4,11 @@ namespace fizmo {
 namespace math {
 namespace cas {
 
+SymbolicContext& global_context() {
+    static SymbolicContext ctx;
+    return ctx;
+}
+
 SymbolicContext::SymbolicContext(std::size_t arena_block_size) : arena_(arena_block_size),
           mgr_(arena_, vars_),
           simp_(mgr_),

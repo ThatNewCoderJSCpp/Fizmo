@@ -4,6 +4,21 @@
 namespace fizmo {
 namespace system {
 
+int& JobSystem::worker_index() noexcept {
+    static thread_local int index = -1;
+    return index;
+}
+
+const JobSystem*& JobSystem::worker_owner() noexcept {
+    static thread_local const JobSystem* owner = nullptr;
+    return owner;
+}
+
+JobSystem& JobSystem::instance() {
+    static JobSystem jobs;
+    return jobs;
+}
+
 void JobSystem::enqueue(std::shared_ptr<detail::Job> job) {
     const int self = current_worker();
     const std::size_t target = self >= 0 ? static_cast<std::size_t>(self) : m_next.fetch_add(1, std::memory_order_relaxed) % m_workers.size();

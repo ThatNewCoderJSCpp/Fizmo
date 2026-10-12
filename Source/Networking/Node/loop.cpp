@@ -138,6 +138,11 @@ void report_unhandled_error(const std::string& source, const std::error_code& ec
 
 namespace detail {
 
+ListenerId next_listener_id() noexcept {
+    static std::atomic<ListenerId> ids{0};
+    return ++ids;
+}
+
 async::Resolver& default_resolver() {
     Runtime& rt = runtime();
     std::lock_guard<std::mutex> lk(rt.resolver_mutex);

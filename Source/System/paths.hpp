@@ -100,14 +100,7 @@ private:
 public:
     AssetPaths() = default;
 
-    static AssetPaths& instance() {
-        static AssetPaths a = [] {
-            AssetPaths p;
-            p.add_defaults();
-            return p;
-        }();
-        return a;
-    }
+    static AssetPaths& instance();
 
     AssetPaths(const AssetPaths& o) { std::lock_guard<std::mutex> g(o.m_lock); m_roots = o.m_roots; }
     AssetPaths& operator=(const AssetPaths& o);

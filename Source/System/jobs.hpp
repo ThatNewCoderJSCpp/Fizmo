@@ -72,15 +72,9 @@ private:
     std::atomic<std::size_t>             m_next{ 0 };
     std::atomic<bool>                    m_stop{ false };
 
-    static int& worker_index() noexcept {
-        static thread_local int index = -1;
-        return index;
-    }
+    static int& worker_index() noexcept;
 
-    static const JobSystem*& worker_owner() noexcept {
-        static thread_local const JobSystem* owner = nullptr;
-        return owner;
-    }
+    static const JobSystem*& worker_owner() noexcept;
 
     int current_worker() const noexcept { return worker_owner() == this ? worker_index() : -1; }
 
@@ -108,10 +102,7 @@ public:
     JobSystem(const JobSystem&) = delete;
     JobSystem& operator=(const JobSystem&) = delete;
 
-    static JobSystem& instance() {
-        static JobSystem jobs;
-        return jobs;
-    }
+    static JobSystem& instance();
 
     std::size_t thread_count() const noexcept { return m_threads.size(); }
     std::size_t pending() const noexcept { return m_in_flight.load(std::memory_order_acquire); }
