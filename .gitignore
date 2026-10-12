@@ -2,6 +2,6 @@
 **/build
 **/tests
 **/output
-**/todo.txt
+**/*.txt
 **/examples
 **/.vscode
