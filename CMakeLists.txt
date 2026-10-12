@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.2.14
+    VERSION 0.2.15
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -26,11 +26,18 @@ else()
     set(FIZMO_BUILD_STATIC_DEFAULT ON)
     set(FIZMO_BUILD_SHARED_DEFAULT OFF)
 endif()
+if(MSVC AND NOT FIZMO_SHARED)
+    set(FIZMO_BUILD_STATIC_DEFAULT ON)
+    set(FIZMO_BUILD_SHARED_DEFAULT OFF)
+endif()
 option(FIZMO_BUILD_STATIC "Build the static library (fizmo::fizmo_static)" ${FIZMO_BUILD_STATIC_DEFAULT})
 option(FIZMO_BUILD_SHARED "Build the shared library (fizmo::fizmo_shared)" ${FIZMO_BUILD_SHARED_DEFAULT})
 
 if(FIZMO_SHARED)
     set(FIZMO_BUILD_SHARED ON)
+    if(MSVC)
+        message(WARNING "fizmo exports more than 65535 symbols, which an MSVC DLL import library cannot hold; linking fizmo.dll is expected to fail with LNK1189")
+    endif()
 else()
     set(FIZMO_BUILD_STATIC ON)
 endif()
