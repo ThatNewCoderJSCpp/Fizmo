@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.2.12
+    VERSION 0.2.13
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -126,7 +126,14 @@ if(FIZMO_BUILD_SHARED)
         SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
         WINDOWS_EXPORT_ALL_SYMBOLS ON)
     if(MINGW)
-        target_link_options(${FIZMO_SHARED_TARGET} PRIVATE -Wl,--exclude-libs,ALL)
+        include(CheckCXXSourceCompiles)
+        set(_fizmo_saved_link_options "${CMAKE_REQUIRED_LINK_OPTIONS}")
+        set(CMAKE_REQUIRED_LINK_OPTIONS "-Wl,--exclude-libs,ALL")
+        check_cxx_source_compiles("int main() { return 0; }" FIZMO_LINKER_HAS_EXCLUDE_LIBS)
+        set(CMAKE_REQUIRED_LINK_OPTIONS "${_fizmo_saved_link_options}")
+        if(FIZMO_LINKER_HAS_EXCLUDE_LIBS)
+            target_link_options(${FIZMO_SHARED_TARGET} PRIVATE -Wl,--exclude-libs,ALL)
+        endif()
     endif()
     list(APPEND FIZMO_LIBRARY_TARGETS ${FIZMO_SHARED_TARGET})
 endif()

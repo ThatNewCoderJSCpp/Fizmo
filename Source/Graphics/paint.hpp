@@ -244,7 +244,10 @@ public:
 public:
     constexpr bool has_fill() const noexcept { return m_style == PaintStyle::Fill || m_style == PaintStyle::FillAndStroke; }
     constexpr bool has_stroke() const noexcept { return (m_style == PaintStyle::Stroke || m_style == PaintStyle::FillAndStroke) && m_stroke_width > 0; }
-    constexpr bool is_full_sweep() const noexcept { return std::abs(m_end_angle - m_start_angle) >= 360.0; }
+    constexpr bool is_full_sweep() const noexcept {
+        const double sweep = m_end_angle - m_start_angle;
+        return (sweep < 0.0 ? -sweep : sweep) >= 360.0;
+    }
     bool has_fill_gradient()   const noexcept { return m_fill_gradient != nullptr; }
     bool has_stroke_gradient() const noexcept { return m_stroke_gradient != nullptr; }
 };

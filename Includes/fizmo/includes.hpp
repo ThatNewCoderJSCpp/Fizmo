@@ -51,9 +51,6 @@
         #ifndef FIZMO_MISC
             #define FIZMO_MISC
         #endif
-        #ifndef FIZMO_CHEMISTRY
-            #define FIZMO_CHEMISTRY
-        #endif
         #ifndef FIZMO_MATRICES
             #define FIZMO_MATRICES
         #endif
@@ -110,10 +107,6 @@
 
         #if defined(FIZMO_STRING) || defined(FIZMO_STR)
             #include "../string.hpp"
-        #endif
-
-        #if defined(FIZMO_CHEMISTRY) || defined(FIZMO_CHEM)
-            #include "../chemistry.hpp"
         #endif
 
         #ifdef FIZMO_MATRICES
