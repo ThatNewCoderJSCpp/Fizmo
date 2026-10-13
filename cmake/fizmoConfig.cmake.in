@@ -1,5 +1,16 @@
 @PACKAGE_INIT@
 
+set(_fizmo_known_components core net graphics)
+set(FIZMO_DEPENDENCY_COMPONENTS "")
+foreach(_fizmo_component IN LISTS fizmo_FIND_COMPONENTS)
+    if(_fizmo_component IN_LIST _fizmo_known_components)
+        list(APPEND FIZMO_DEPENDENCY_COMPONENTS ${_fizmo_component})
+    endif()
+endforeach()
+if(NOT FIZMO_DEPENDENCY_COMPONENTS)
+    set(FIZMO_DEPENDENCY_COMPONENTS ${_fizmo_known_components})
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/fizmoDependencies.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/fizmoTargets.cmake")
 
@@ -11,6 +22,16 @@ endif()
 if(TARGET fizmo::fizmo_shared)
     set(fizmo_shared_FOUND TRUE)
 endif()
+
+foreach(_fizmo_component IN LISTS _fizmo_known_components)
+    if(TARGET fizmo::${_fizmo_component} AND _fizmo_component IN_LIST FIZMO_DEPENDENCY_COMPONENTS)
+        set(fizmo_${_fizmo_component}_FOUND TRUE)
+    else()
+        set(fizmo_${_fizmo_component}_FOUND FALSE)
+    endif()
+endforeach()
+unset(_fizmo_component)
+unset(_fizmo_known_components)
 
 if(NOT TARGET fizmo::fizmo)
     if(NOT DEFINED FIZMO_SHARED)

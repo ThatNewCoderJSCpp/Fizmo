@@ -55,6 +55,18 @@ jobs:
       - name: Build
         run: cmake --build build -j 4
 
+      - name: Check each component links with only its own system libraries
+        working-directory: build
+        run: |
+          c++ -shared -o core_check.so -Wl,--whole-archive libfizmo_core.a -Wl,--no-whole-archive \
+            -Wl,-z,defs -pthread -ldl -lm
+          c++ -shared -o net_check.so -Wl,--whole-archive libfizmo_net.a -Wl,--no-whole-archive libfizmo_core.a \
+            -Wl,-z,defs -lssl -lcrypto -pthread -ldl -lm
+          c++ -shared -o graphics_check.so -Wl,--whole-archive libfizmo_graphics.a -Wl,--no-whole-archive libfizmo_core.a \
+            -Wl,-z,defs -lz -ljpeg -lX11 -lXft -lXrender -lfontconfig -lfreetype \
+            $(pkg-config --libs pangocairo pangoft2 pango cairo gobject-2.0 glib-2.0) -pthread -ldl -lm
+          rm -f core_check.so net_check.so graphics_check.so
+
       - name: Package
         working-directory: build
         run: cpack -G "TGZ;TXZ;ZIP;DEB;RPM"

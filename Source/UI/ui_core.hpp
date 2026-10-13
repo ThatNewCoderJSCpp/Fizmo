@@ -579,11 +579,6 @@ private:
     void draw_tooltip(Painter& p, const std::string& text);
 };
 
-inline Widget::~Widget() {
-    if (m_ui) m_ui->forget(this);
-    for (auto& c : m_children) c->m_parent = nullptr;
-}
-
 inline void Widget::set_ui_tree(Ui* ui) noexcept {
     if (m_ui && m_ui != ui) m_ui->forget(this);
     m_ui = ui;

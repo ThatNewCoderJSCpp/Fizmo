@@ -878,6 +878,11 @@ Size Widget::text_size(const std::string& s, double size, bool bold) const {
     return Size{ static_cast<float>(cps * sz * 0.55), static_cast<float>(sz * 1.25) };
 }
 
+Widget::~Widget() {
+    if (m_ui) m_ui->forget(this);
+    for (auto& c : m_children) c->m_parent = nullptr;
+}
+
 Widget* Widget::hit_test(float x, float y) {
     if (!m_visible || !bounds().contains(x, y)) return nullptr;
     const Rect clip = content_clip();

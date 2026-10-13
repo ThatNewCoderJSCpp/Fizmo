@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.2.16
+    VERSION 0.2.17
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -58,34 +58,41 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aa
     target_compile_options(fizmo_headers INTERFACE $<$<COMPILE_LANGUAGE:CXX>:-Wno-psabi>)
 endif()
 
-add_library(fizmo_objects OBJECT)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoSources.cmake)
-target_sources(fizmo_objects PRIVATE ${FIZMO_SOURCES})
-target_include_directories(fizmo_objects PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
-target_link_libraries(fizmo_objects PUBLIC fizmo_headers)
-set_target_properties(fizmo_objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoTuning.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoUnicode.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoDependencies.cmake)
 
 option(FIZMO_PCH "Use a precompiled header while building the fizmo library" ON)
-if(FIZMO_PCH)
-    target_precompile_headers(fizmo_objects PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmo_pch.hpp)
-endif()
-
 option(FIZMO_UNITY_BUILD "Compile the fizmo library sources in batches" OFF)
-if(FIZMO_UNITY_BUILD)
-    set_target_properties(fizmo_objects PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE 16)
-endif()
-
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoDependencies.cmake)
-target_link_libraries(fizmo_objects PRIVATE ${FIZMO_DEPENDENCY_TARGETS})
 
 find_path(FIZMO_VULKAN_INCLUDE_DIR vulkan/vulkan.h)
 if(NOT FIZMO_VULKAN_INCLUDE_DIR)
     message(FATAL_ERROR "fizmo: the Vulkan headers (vulkan/vulkan.h) were not found. Install the Vulkan headers package or set FIZMO_VULKAN_INCLUDE_DIR.")
 endif()
-target_include_directories(fizmo_objects SYSTEM PRIVATE ${FIZMO_VULKAN_INCLUDE_DIR})
+
+set(FIZMO_OBJECT_TARGETS fizmo_core_objects fizmo_net_objects fizmo_graphics_objects)
+
+function(fizmo_add_objects target)
+    add_library(${target} OBJECT ${ARGN})
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
+    target_include_directories(${target} SYSTEM PRIVATE ${FIZMO_VULKAN_INCLUDE_DIR})
+    target_link_libraries(${target} PUBLIC fizmo_headers PRIVATE ${FIZMO_DEPENDENCY_TARGETS})
+    set_target_properties(${target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    if(FIZMO_UNITY_BUILD)
+        set_target_properties(${target} PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE 16)
+    endif()
+endfunction()
+
+fizmo_add_objects(fizmo_core_objects ${FIZMO_CORE_SOURCES})
+fizmo_add_objects(fizmo_net_objects ${FIZMO_NET_SOURCES})
+fizmo_add_objects(fizmo_graphics_objects ${FIZMO_GRAPHICS_SOURCES})
+
+if(FIZMO_PCH)
+    target_precompile_headers(fizmo_core_objects PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmo_pch.hpp)
+    target_precompile_headers(fizmo_net_objects REUSE_FROM fizmo_core_objects)
+    target_precompile_headers(fizmo_graphics_objects REUSE_FROM fizmo_core_objects)
+endif()
 
 if(FIZMO_SHARED)
     set(FIZMO_STATIC_TARGET fizmo_static)
@@ -96,8 +103,15 @@ else()
 endif()
 
 function(fizmo_add_library target type)
-    add_library(${target} ${type} $<TARGET_OBJECTS:fizmo_objects>)
+    add_library(${target} ${type}
+        $<TARGET_OBJECTS:fizmo_core_objects>
+        $<TARGET_OBJECTS:fizmo_net_objects>
+        $<TARGET_OBJECTS:fizmo_graphics_objects>)
     target_link_libraries(${target} PUBLIC fizmo_headers PRIVATE ${FIZMO_DEPENDENCY_TARGETS})
+    fizmo_add_interface_dirs(${target})
+endfunction()
+
+function(fizmo_add_interface_dirs target)
     target_include_directories(${target} PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Includes>
         $<BUILD_INTERFACE:${FIZMO_GENERATED_DIR}>
@@ -147,6 +161,31 @@ endif()
 
 add_library(fizmo::fizmo ALIAS fizmo)
 
+option(FIZMO_BUILD_COMPONENTS "Build fizmo::core, fizmo::net and fizmo::graphics, static libraries that each link only the system libraries they use" ON)
+set(FIZMO_COMPONENT_TARGETS "")
+
+if(FIZMO_BUILD_COMPONENTS)
+    add_library(fizmo_core STATIC $<TARGET_OBJECTS:fizmo_core_objects>)
+    target_link_libraries(fizmo_core PUBLIC fizmo_headers PRIVATE ${FIZMO_CORE_DEPENDENCY_TARGETS})
+
+    add_library(fizmo_net STATIC $<TARGET_OBJECTS:fizmo_net_objects>)
+    target_link_libraries(fizmo_net PUBLIC fizmo_core PRIVATE ${FIZMO_NET_DEPENDENCY_TARGETS})
+
+    add_library(fizmo_graphics STATIC $<TARGET_OBJECTS:fizmo_graphics_objects>)
+    target_link_libraries(fizmo_graphics PUBLIC fizmo_core PRIVATE ${FIZMO_GRAPHICS_DEPENDENCY_TARGETS})
+
+    foreach(_fizmo_component core net graphics)
+        fizmo_add_interface_dirs(fizmo_${_fizmo_component})
+        set_target_properties(fizmo_${_fizmo_component} PROPERTIES
+            OUTPUT_NAME fizmo_${_fizmo_component}
+            EXPORT_NAME ${_fizmo_component}
+            POSITION_INDEPENDENT_CODE ON)
+        add_library(fizmo::${_fizmo_component} ALIAS fizmo_${_fizmo_component})
+        list(APPEND FIZMO_COMPONENT_TARGETS fizmo_${_fizmo_component})
+    endforeach()
+    unset(_fizmo_component)
+endif()
+
 option(FIZMO_BUILD_SHADER_TOOL "Build fizmo-shaders, which turns GLSL into fizmo shader headers and bundles" ON)
 if(FIZMO_BUILD_SHADER_TOOL)
     add_executable(fizmo-shaders tools/fizmo_shaders.cpp)
@@ -170,7 +209,7 @@ if(FIZMO_BUILD_SHADER_TOOL)
 
 #endif // FIZMO_TOOL_PATHS_HPP
 ")
-    target_include_directories(fizmo_objects PRIVATE "${FIZMO_GENERATED_DIR}/tools/$<CONFIG>")
+    target_include_directories(fizmo_graphics_objects PRIVATE "${FIZMO_GENERATED_DIR}/tools/$<CONFIG>")
 endif()
 
 option(FIZMO_BUILD_TOOLS "Build the fizmo command line tools" OFF)
@@ -199,7 +238,7 @@ if(PROJECT_IS_TOP_LEVEL OR CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
     set(FIZMO_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/fizmo)
 
-    install(TARGETS fizmo_headers ${FIZMO_LIBRARY_TARGETS} EXPORT fizmoTargets
+    install(TARGETS fizmo_headers ${FIZMO_LIBRARY_TARGETS} ${FIZMO_COMPONENT_TARGETS} EXPORT fizmoTargets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
