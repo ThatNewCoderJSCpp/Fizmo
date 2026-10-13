@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.2.17
+    VERSION 0.2.18
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -71,8 +71,6 @@ if(NOT FIZMO_VULKAN_INCLUDE_DIR)
     message(FATAL_ERROR "fizmo: the Vulkan headers (vulkan/vulkan.h) were not found. Install the Vulkan headers package or set FIZMO_VULKAN_INCLUDE_DIR.")
 endif()
 
-set(FIZMO_OBJECT_TARGETS fizmo_core_objects fizmo_net_objects fizmo_graphics_objects)
-
 function(fizmo_add_objects target)
     add_library(${target} OBJECT ${ARGN})
     target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
@@ -84,15 +82,18 @@ function(fizmo_add_objects target)
     endif()
 endfunction()
 
-fizmo_add_objects(fizmo_core_objects ${FIZMO_CORE_SOURCES})
-fizmo_add_objects(fizmo_net_objects ${FIZMO_NET_SOURCES})
-fizmo_add_objects(fizmo_graphics_objects ${FIZMO_GRAPHICS_SOURCES})
+set(FIZMO_ALL_OBJECTS "")
 
-if(FIZMO_PCH)
-    target_precompile_headers(fizmo_core_objects PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmo_pch.hpp)
-    target_precompile_headers(fizmo_net_objects REUSE_FROM fizmo_core_objects)
-    target_precompile_headers(fizmo_graphics_objects REUSE_FROM fizmo_core_objects)
-endif()
+foreach(_fizmo_component IN LISTS FIZMO_COMPONENTS)
+    fizmo_add_objects(fizmo_${_fizmo_component}_objects ${FIZMO_COMPONENT_SOURCES_${_fizmo_component}})
+    list(APPEND FIZMO_ALL_OBJECTS $<TARGET_OBJECTS:fizmo_${_fizmo_component}_objects>)
+
+    if(FIZMO_PCH AND _fizmo_component STREQUAL "core")
+        target_precompile_headers(fizmo_core_objects PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmo_pch.hpp)
+    elseif(FIZMO_PCH)
+        target_precompile_headers(fizmo_${_fizmo_component}_objects REUSE_FROM fizmo_core_objects)
+    endif()
+endforeach()
 
 if(FIZMO_SHARED)
     set(FIZMO_STATIC_TARGET fizmo_static)
@@ -103,10 +104,7 @@ else()
 endif()
 
 function(fizmo_add_library target type)
-    add_library(${target} ${type}
-        $<TARGET_OBJECTS:fizmo_core_objects>
-        $<TARGET_OBJECTS:fizmo_net_objects>
-        $<TARGET_OBJECTS:fizmo_graphics_objects>)
+    add_library(${target} ${type} ${FIZMO_ALL_OBJECTS})
     target_link_libraries(${target} PUBLIC fizmo_headers PRIVATE ${FIZMO_DEPENDENCY_TARGETS})
     fizmo_add_interface_dirs(${target})
 endfunction()
@@ -161,20 +159,31 @@ endif()
 
 add_library(fizmo::fizmo ALIAS fizmo)
 
-option(FIZMO_BUILD_COMPONENTS "Build fizmo::core, fizmo::net and fizmo::graphics, static libraries that each link only the system libraries they use" ON)
+option(FIZMO_BUILD_COMPONENTS "Build each fizmo component (fizmo::core, fizmo::net, fizmo::graphics, ...) as a static library that links only what it uses" ON)
 set(FIZMO_COMPONENT_TARGETS "")
 
 if(FIZMO_BUILD_COMPONENTS)
-    add_library(fizmo_core STATIC $<TARGET_OBJECTS:fizmo_core_objects>)
-    target_link_libraries(fizmo_core PUBLIC fizmo_headers PRIVATE ${FIZMO_CORE_DEPENDENCY_TARGETS})
+    foreach(_fizmo_component IN LISTS FIZMO_COMPONENTS)
+        add_library(fizmo_${_fizmo_component} STATIC $<TARGET_OBJECTS:fizmo_${_fizmo_component}_objects>)
 
-    add_library(fizmo_net STATIC $<TARGET_OBJECTS:fizmo_net_objects>)
-    target_link_libraries(fizmo_net PUBLIC fizmo_core PRIVATE ${FIZMO_NET_DEPENDENCY_TARGETS})
+        if(_fizmo_component STREQUAL "core")
+            target_link_libraries(fizmo_core PUBLIC fizmo_headers PRIVATE ${FIZMO_CORE_DEPENDENCY_TARGETS})
+        else()
+            set(_fizmo_uses "")
+            foreach(_fizmo_use IN LISTS FIZMO_COMPONENT_USES_${_fizmo_component})
+                list(APPEND _fizmo_uses fizmo_${_fizmo_use})
+            endforeach()
+            target_link_libraries(fizmo_${_fizmo_component} PUBLIC ${_fizmo_uses})
+        endif()
 
-    add_library(fizmo_graphics STATIC $<TARGET_OBJECTS:fizmo_graphics_objects>)
-    target_link_libraries(fizmo_graphics PUBLIC fizmo_core PRIVATE ${FIZMO_GRAPHICS_DEPENDENCY_TARGETS})
+        if(_fizmo_component STREQUAL "net")
+            target_link_libraries(fizmo_net PRIVATE ${FIZMO_NET_DEPENDENCY_TARGETS})
+        elseif(_fizmo_component STREQUAL "graphics")
+            target_link_libraries(fizmo_graphics PRIVATE ${FIZMO_GRAPHICS_DEPENDENCY_TARGETS})
+        endif()
+    endforeach()
 
-    foreach(_fizmo_component core net graphics)
+    foreach(_fizmo_component IN LISTS FIZMO_COMPONENTS)
         fizmo_add_interface_dirs(fizmo_${_fizmo_component})
         set_target_properties(fizmo_${_fizmo_component} PROPERTIES
             OUTPUT_NAME fizmo_${_fizmo_component}
@@ -184,6 +193,8 @@ if(FIZMO_BUILD_COMPONENTS)
         list(APPEND FIZMO_COMPONENT_TARGETS fizmo_${_fizmo_component})
     endforeach()
     unset(_fizmo_component)
+    unset(_fizmo_use)
+    unset(_fizmo_uses)
 endif()
 
 option(FIZMO_BUILD_SHADER_TOOL "Build fizmo-shaders, which turns GLSL into fizmo shader headers and bundles" ON)

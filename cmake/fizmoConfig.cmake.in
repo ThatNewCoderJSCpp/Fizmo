@@ -1,6 +1,6 @@
 @PACKAGE_INIT@
 
-set(_fizmo_known_components core net graphics)
+set(_fizmo_known_components @FIZMO_COMPONENTS@)
 set(FIZMO_DEPENDENCY_COMPONENTS "")
 foreach(_fizmo_component IN LISTS fizmo_FIND_COMPONENTS)
     if(_fizmo_component IN_LIST _fizmo_known_components)

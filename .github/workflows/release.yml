@@ -55,17 +55,26 @@ jobs:
       - name: Build
         run: cmake --build build -j 4
 
-      - name: Check each component links with only its own system libraries
+      - name: Check each component links with only the components and system libraries it declares
         working-directory: build
         run: |
-          c++ -shared -o core_check.so -Wl,--whole-archive libfizmo_core.a -Wl,--no-whole-archive \
-            -Wl,-z,defs -pthread -ldl -lm
-          c++ -shared -o net_check.so -Wl,--whole-archive libfizmo_net.a -Wl,--no-whole-archive libfizmo_core.a \
-            -Wl,-z,defs -lssl -lcrypto -pthread -ldl -lm
-          c++ -shared -o graphics_check.so -Wl,--whole-archive libfizmo_graphics.a -Wl,--no-whole-archive libfizmo_core.a \
-            -Wl,-z,defs -lz -ljpeg -lX11 -lXft -lXrender -lfontconfig -lfreetype \
-            $(pkg-config --libs pangocairo pangoft2 pango cairo gobject-2.0 glib-2.0) -pthread -ldl -lm
-          rm -f core_check.so net_check.so graphics_check.so
+          check() {
+            name=$1
+            shift
+            c++ -shared -o check.so -Wl,--whole-archive libfizmo_$name.a -Wl,--no-whole-archive "$@" -Wl,-z,defs -pthread -ldl -lm
+            rm -f check.so
+          }
+          check core
+          check random libfizmo_core.a
+          check crypto libfizmo_random.a libfizmo_core.a
+          check string libfizmo_random.a libfizmo_core.a
+          for c in statistics physics symbolic time collections system util; do
+            check $c libfizmo_core.a
+          done
+          check net libfizmo_crypto.a libfizmo_random.a libfizmo_core.a -lssl -lcrypto
+          check graphics libfizmo_system.a libfizmo_util.a libfizmo_core.a \
+            -lz -ljpeg -lX11 -lXft -lXrender -lfontconfig -lfreetype \
+            $(pkg-config --libs pangocairo pangoft2 pango cairo gobject-2.0 glib-2.0)
 
       - name: Package
         working-directory: build
