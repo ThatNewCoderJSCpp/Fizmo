@@ -130,6 +130,8 @@ public:
 
     floatmp(const char* str) noexcept : m_is_negative(false), m_data() { if (!parse_string(str)) *this = undefined(); }
 
+    constexpr const floatmp& as_signed_core() const noexcept { return *this; }
+
     template <std::size_t TB2, std::size_t MB2, sign S2>
     OPTIONAL_CPP14_CONSTEXPR floatmp(const floatmp<TB2, MB2, S2>& other) noexcept : m_is_negative(false), m_data() {
         if (other.is_zero())      { *this = zero(other.is_negative()); return; }
