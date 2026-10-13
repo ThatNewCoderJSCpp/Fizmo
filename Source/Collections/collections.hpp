@@ -8,6 +8,7 @@
 #include "hash_map.hpp"
 #include "sorted_tree.hpp"
 #include "sorted_map.hpp"
+#include "btree.hpp"
 #include "frozen.hpp"
 #include "bytes.hpp"
 #include "range.hpp"
