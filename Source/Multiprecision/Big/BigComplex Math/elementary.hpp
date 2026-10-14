@@ -303,8 +303,9 @@ inline BF log_modulus(const BC& z, log_base base, const BFC& cr) {
 
 inline BC ln_impl(const BC& z, std::int64_t branch, log_base base, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     const BFC cr = ctx.real(), ci = ctx.imaginary();
-    if (z.is_zero())     return BC(BF::infinity(true), scaled_argument(direction(z), branch, base, ci));
+    if (z.is_zero())     return BC::undefined();
     if (z.is_infinite()) return BC(BF::infinity(),     scaled_argument(direction(z), branch, base, ci));
     return BC(log_modulus(z, base, cr), scaled_argument(z, branch, base, ci));
 }
@@ -320,13 +321,13 @@ inline bool exp_at(const BF& a, const BF& b, const BFC& wc, work& r) {
         r.exact_re = a.is_zero() || r.re.is_zero();
         r.exact_im = true;
         r.loss_re  = loss;
-        return !r.re.is_nan() && !r.re.is_undefined();
+        return !r.re.is_unordered();
     }
 
     const BF s = math::sin(b, wc), c = math::cos(b, wc);
     if (!s.is_finite() || !c.is_finite()) return false;
     const BF E = math::exp(a, wc);
-    if (E.is_nan() || E.is_undefined()) return false;
+    if (E.is_unordered()) return false;
 
     if (E.is_infinite()) {
         r.re = BF::infinity(c.signbit());
@@ -344,6 +345,7 @@ inline bool exp_at(const BF& a, const BF& b, const BFC& wc, work& r) {
 
 inline BC exp_eval(const BC& z, const BFC& cr, const BFC& ci) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     const BF& a = z.real();
     const BF& b = z.imaginary();
     if (b.is_infinite()) return BC::undefined();
@@ -363,6 +365,7 @@ inline BC exp_eval(const BC& z, const BFC& cr, const BFC& ci) {
 
 inline BC sqrt_eval(const BC& z, const BFC& cr, const BFC& ci) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     const BF&  a  = z.real();
     const BF&  b  = z.imaginary();
     const bool bn = b.signbit();
@@ -446,15 +449,16 @@ inline BC infinite_power(const BC& z, const BF& y, std::int64_t branch) {
 }
 
 inline BC pow_int_eval(const BC& z, const BigInt& n, const BFC& cr, const BFC& ci) {
-    if (z.is_undefined() || n.is_nan() || n.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
+    if (z.is_undefined() || n.is_unordered()) return BC::undefined();
     const bool nzero = n.magnitude().is_zero();
 
     if (z.is_zero()) {
-        if (nzero) return BC::undefined();
-        return n.is_negative() ? BC(BF::infinity(), BF::zero()) : BC::zero();
+        if (nzero) return BC::indeterminate();
+        return n.is_negative() ? BC::undefined() : BC::zero();
     }
 
-    if (nzero) return BC(BF::one(), BF::zero());
+    if (nzero) return z.is_infinite() ? BC::indeterminate() : BC(BF::one(), BF::zero());
     std::int64_t ni = 0;
 
     if (!detail::pw_to_i64(n, ni)) {                            
@@ -523,17 +527,19 @@ inline BC pow_int_eval(const BC& z, const BigInt& n, const BFC& cr, const BFC& c
 }
 
 inline BC pow_real_eval(const BC& z, const BF& y, std::int64_t branch, const BFC& cr, const BFC& ci) {
-    if (z.is_undefined() || y.is_nan() || y.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
+    if (z.is_undefined() || y.is_unordered()) return BC::undefined();
     if (y.is_integer()) return pow_int_eval(z, y.get_integer_part(), cr, ci);  
 
     if (y.is_infinite()) {
+        if (z.imaginary().is_zero() && detail::is_exactly_one(z.real())) return BC::indeterminate();
         const BF::ordering o = BC::compare_magnitude(z, BF::one());
         if (o == BF::ordering::unordered) return BC::undefined();
         const bool shrink = y.signbit() ? (o == BF::ordering::greater) : (o == BF::ordering::less);
         return shrink ? BC::zero() : BC::undefined();
     }
 
-    if (z.is_zero())     return y.signbit() ? BC(BF::infinity(), BF::zero()) : BC::zero();
+    if (z.is_zero())     return y.signbit() ? BC::undefined() : BC::zero();
     if (z.is_infinite()) return infinite_power(z, y, branch);
     const BF& a = z.real();
     const BF& b = z.imaginary();
@@ -567,10 +573,11 @@ inline BC pow_real_eval(const BC& z, const BF& y, std::int64_t branch, const BFC
 }
 
 inline BC nth_root_eval(const BC& z, const BigInt& n, std::int64_t branch, const BFC& cr, const BFC& ci) {
-    if (z.is_undefined() || n.is_nan() || n.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
+    if (z.is_undefined() || n.is_unordered()) return BC::undefined();
     if (n.magnitude().is_zero()) return BC::undefined();
     const bool nneg = n.is_negative();
-    if (z.is_zero()) return nneg ? BC(BF::infinity(), BF::zero()) : BC::zero();
+    if (z.is_zero()) return nneg ? BC::undefined() : BC::zero();
     std::int64_t ni    = 0;
     const bool   small = detail::pw_to_i64(n, ni);
     if (small && ni == 1)  return z.rounded(BCC(cr, ci));
@@ -601,6 +608,7 @@ inline BC nth_root_eval(const BC& z, const BigInt& n, std::int64_t branch, const
 
 inline BC pow_complex_eval(const BC& z, const BC& w, std::int64_t branch, const BFC& cr, const BFC& ci) {
     if (z.is_undefined() || w.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate() || w.is_indeterminate()) return BC::indeterminate();
     if (w.imaginary().is_zero()) return pow_real_eval(z, w.real(), branch, cr, ci);
     if (w.is_infinite() || z.is_infinite()) return BC::undefined();
 
@@ -686,7 +694,7 @@ inline bool hyp_at(hyp_kind k, bool recip, const BF& a, const BF& b, std::size_t
     const BF  s  = math::sin(b, wc), c = math::cos(b, wc);
     if (!s.is_finite() || !c.is_finite()) return false;
     const BF sh = math::sinh(a, wc), ch = math::cosh(a, wc);
-    if (sh.is_nan() || sh.is_undefined() || ch.is_nan() || ch.is_undefined()) return false;
+    if (sh.is_unordered() || ch.is_unordered()) return false;
     const bool huge = !sh.is_finite() || !ch.is_finite() || (k == hyp_kind::tanh_v && top_of(sh) > BF::exp_max / 2 - 16);
 
     if (huge) {
@@ -745,11 +753,13 @@ inline BC hyp_eval(hyp_kind k, bool recip, const BF& a, const BF& b, const BFC& 
 
 inline BC hyperbolic(hyp_kind k, bool recip, const BC& z, const BFC& cr, const BFC& ci) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     return hyp_eval(k, recip, z.real(), z.imaginary(), cr, ci);
 }
 
 inline BC circular(hyp_kind k, bool recip, const BC& z, const BFC& cr, const BFC& ci) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     const BF  a = -z.imaginary();
     const BF& b = z.real();
     if (k == hyp_kind::cosh_v) return hyp_eval(k, recip, a, b, cr, ci);

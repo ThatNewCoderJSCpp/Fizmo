@@ -316,6 +316,7 @@ BigFloat carlson_rc(const BigFloat& x, const BigFloat& y, const BigFloatContext&
     using namespace csdetail;
     if (x.is_nan() || y.is_nan())             return BigFloat::nan();
     if (x.is_undefined() || y.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate() || y.is_indeterminate()) return BigFloat::indeterminate();
     if (cs_neg(x))                            return BigFloat::nan();
     if (y.is_zero())                          return BigFloat::infinity();
     if (x.is_infinite() || y.is_infinite())   return BigFloat::zero();

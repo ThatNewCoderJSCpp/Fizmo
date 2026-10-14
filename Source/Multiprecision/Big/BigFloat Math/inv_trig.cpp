@@ -162,6 +162,7 @@ namespace math {
 BigFloat arcsin(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::nan();
     if (x.is_zero())      return x;
     const BigFloat::ordering c = BigFloat::compare(x.abs(), BigFloat::one());
@@ -173,6 +174,7 @@ BigFloat arcsin(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat arccos(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::nan();
     if (x.is_zero())      return multiprecision::constants::half_pi(ctx);
     const BigFloat::ordering c = BigFloat::compare(x.abs(), BigFloat::one());
@@ -184,6 +186,7 @@ BigFloat arccos(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat arctan(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return multiprecision::constants::half_pi(ctx).with_sign(x.signbit());
     if (x.is_zero())      return x;
     return detail::iv_dispatch(detail::iv_sel::atan_v, x, ctx);
@@ -192,6 +195,7 @@ BigFloat arctan(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat arccot(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return x.signbit() ? multiprecision::constants::pi(ctx) : BigFloat::zero();
     if (x.is_zero())      return multiprecision::constants::half_pi(ctx);
     return detail::iv_dispatch(detail::iv_sel::acot_v, x, ctx);
@@ -200,6 +204,7 @@ BigFloat arccot(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat arcsec(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return multiprecision::constants::half_pi(ctx);
     if (x.is_zero())      return BigFloat::nan();
     const BigFloat::ordering c = BigFloat::compare(x.abs(), BigFloat::one());
@@ -211,6 +216,7 @@ BigFloat arcsec(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat arccsc(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::zero(x.signbit());
     if (x.is_zero())      return BigFloat::nan();
     const BigFloat::ordering c = BigFloat::compare(x.abs(), BigFloat::one());
@@ -222,6 +228,7 @@ BigFloat arccsc(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat atan2(const BigFloat& y, const BigFloat& x, const BigFloatContext& ctx) {
     if (y.is_nan()       || x.is_nan())       return BigFloat::nan();
     if (y.is_undefined() || x.is_undefined()) return BigFloat::undefined();
+    if (y.is_indeterminate() || x.is_indeterminate()) return BigFloat::indeterminate();
 
     if (y.is_infinite()) {
         if (x.is_infinite()) return BigFloat::undefined();          

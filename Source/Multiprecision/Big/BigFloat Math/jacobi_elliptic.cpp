@@ -201,6 +201,7 @@ cs_val jc_raw(jc_fn f, const BF& u, const BF& m, std::size_t want) {
 
 BF jc_public(jc_fn f, const BF& u, const BF& m, const BFC& ctx) {
     if (u.is_nan() || m.is_nan())             return BF::nan();
+    if (u.is_indeterminate() || m.is_indeterminate()) return BF::indeterminate();
     if (u.is_undefined() || m.is_undefined()) return BF::undefined();
     if (m.is_infinite())                      return BF::undefined();
     const bool m1  = jc_is_one(m);

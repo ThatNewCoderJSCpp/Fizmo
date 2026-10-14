@@ -37,6 +37,7 @@ namespace math {
 BigFloat gudermannian(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_zero())      return x;
     const bool     neg = x.signbit();
     const BigFloat ax  = x.abs();
@@ -57,6 +58,7 @@ BigFloat gudermannian(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat inv_gudermannian(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::nan();
     if (x.is_zero())      return x;
     const bool     neg = x.signbit();

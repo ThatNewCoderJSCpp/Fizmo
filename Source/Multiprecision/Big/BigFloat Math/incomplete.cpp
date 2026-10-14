@@ -352,7 +352,7 @@ RV beta_i(const RV& x, const BF& a, const BF& b, std::size_t w, bool complement)
 
 namespace igdetail {
 
-bool bad(const BF& v) { return v.is_nan() || v.is_undefined(); }
+bool bad(const BF& v) { return v.is_unordered(); }
 
 BF bad_of(const BF& a) { return a.is_nan() ? BF::nan() : BF::undefined(); }
 

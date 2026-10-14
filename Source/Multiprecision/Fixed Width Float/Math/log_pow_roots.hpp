@@ -15,9 +15,11 @@ namespace math {
     typename std::enable_if<std::is_floating_point<T>::value, T>::type                                             \
     NAME(T v) noexcept { return std::NAME(v); }
 
-#define FIZMO_FW_BIG_1(NAME, BIG)                                                                                  \
+#define FIZMO_FW_BIG_1(NAME, BIG, FILTER)                                                                          \
     template <std::size_t TB, std::size_t MB, fizmo::multiprecision::sign S>                                                              \
     fizmo::multiprecision::floatmp<TB, MB, S> NAME(const fizmo::multiprecision::floatmp<TB, MB, S>& x) {                                                         \
+        fizmo::multiprecision::floatmp<TB, MB, S> early;                                                           \
+        if (edetail::FILTER(x, early)) return early;                                                               \
         const BigFloat a(x);                                                                                       \
         return bdetail::eval<fizmo::multiprecision::floatmp<TB, MB, S>>([&a](const fizmo::multiprecision::BigFloatContext& c) { return BIG(a, c); });           \
     }                                                                                                              \
@@ -33,14 +35,14 @@ FIZMO_FW_NATIVE_1(log)
 FIZMO_FW_NATIVE_1(sqrt)
 FIZMO_FW_NATIVE_1(cbrt)
 
-FIZMO_FW_BIG_1(exp, exp)
-FIZMO_FW_BIG_1(pow2, pow2)
-FIZMO_FW_BIG_1(pow10, pow10)
-FIZMO_FW_BIG_1(log, ln)
-FIZMO_FW_BIG_1(log2, log2)
-FIZMO_FW_BIG_1(log10, log10)
-FIZMO_FW_BIG_1(sqrt, sqrt)
-FIZMO_FW_BIG_1(cbrt, cbrt)
+FIZMO_FW_BIG_1(exp, exp, no_domain_filter)
+FIZMO_FW_BIG_1(pow2, pow2, no_domain_filter)
+FIZMO_FW_BIG_1(pow10, pow10, no_domain_filter)
+FIZMO_FW_BIG_1(log, ln, log_domain_filter)
+FIZMO_FW_BIG_1(log2, log2, log_domain_filter)
+FIZMO_FW_BIG_1(log10, log10, log_domain_filter)
+FIZMO_FW_BIG_1(sqrt, sqrt, sqrt_domain_filter)
+FIZMO_FW_BIG_1(cbrt, cbrt, no_domain_filter)
 
 #undef FIZMO_FW_NATIVE_1
 #undef FIZMO_FW_BIG_1

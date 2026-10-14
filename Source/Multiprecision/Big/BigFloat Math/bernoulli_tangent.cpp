@@ -248,6 +248,7 @@ BigFloat bernoulli_float(std::size_t k, const BigFloatContext& ctx) {
     if (n > detail::bn_index_cap) return BigFloat::undefined();
     BigUInt num = tangent_number(n);
     if (num.is_undefined()) return BigFloat::undefined();
+    if (num.is_indeterminate()) return BigFloat::indeterminate();
     num.mul_small_mutable(static_cast<std::uint64_t>(k));
     BigUInt den = constants::bfdetail::unit(k);
     den.sub_small_mutable(1);

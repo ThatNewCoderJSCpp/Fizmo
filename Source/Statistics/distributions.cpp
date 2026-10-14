@@ -728,7 +728,7 @@ bool valid(const Dist& d) {
 }
 
 BigFloat pdf(const Dist& d, const BigFloat& x, const BigFloatContext& ctx) {
-    if (!valid(d) || x.is_nan() || x.is_undefined()) return BF::nan();
+    if (!valid(d) || x.is_unordered()) return BF::nan();
     if (x.is_infinite()) return BF::zero();
     return math::tracked::drive(ctx, [&](std::size_t w) { return ddetail::pdf_rv(d, x, w); });
 }
@@ -740,14 +740,14 @@ BigFloat log_pdf(const Dist& d, const BigFloat& x, const BigFloatContext& ctx) {
 }
 
 BigFloat cdf(const Dist& d, const BigFloat& x, bool upper, const BigFloatContext& ctx) {
-    if (!valid(d) || x.is_nan() || x.is_undefined()) return BF::nan();
+    if (!valid(d) || x.is_unordered()) return BF::nan();
     if (x.is_infinite()) return (x.signbit() != upper) ? BF::zero() : BF::one();
     return math::tracked::drive(ctx, [&](std::size_t w) { return ddetail::cdf_rv(d, ddetail::X(x), upper, w); });
 }
 
 BigFloat between(const Dist& d, const BigFloat& lo_in, const BigFloat& hi_in, const BigFloatContext& ctx) {
     using namespace ddetail;
-    if (!valid(d) || lo_in.is_nan() || hi_in.is_nan() || lo_in.is_undefined() || hi_in.is_undefined()) return BF::nan();
+    if (!valid(d) || lo_in.is_unordered() || hi_in.is_unordered()) return BF::nan();
     BF lo = lo_in, hi = hi_in;
 
     if (discrete(d)) {
@@ -772,7 +772,7 @@ BigFloat between(const Dist& d, const BigFloat& lo_in, const BigFloat& hi_in, co
 
 BigFloat outside(const Dist& d, const BigFloat& lo_in, const BigFloat& hi_in, const BigFloatContext& ctx) {
     using namespace ddetail;
-    if (!valid(d) || lo_in.is_nan() || hi_in.is_nan() || lo_in.is_undefined() || hi_in.is_undefined()) return BF::nan();
+    if (!valid(d) || lo_in.is_unordered() || hi_in.is_unordered()) return BF::nan();
     BF lo = lo_in, hi = hi_in;
 
     if (discrete(d)) {
@@ -792,7 +792,7 @@ BigFloat outside(const Dist& d, const BigFloat& lo_in, const BigFloat& hi_in, co
 
 BigFloat quantile(const Dist& d, const BigFloat& p, bool upper, const BigFloatContext& ctx) {
     using namespace ddetail;
-    if (!valid(d) || p.is_nan() || p.is_undefined()) return BF::nan();
+    if (!valid(d) || p.is_unordered()) return BF::nan();
     if (p.signbit() && !p.is_zero()) return BF::nan();
     if (cmp(p, BF::one()) > 0) return BF::nan();
     if (discrete(d)) return discrete_quantile(d, p, upper).v;

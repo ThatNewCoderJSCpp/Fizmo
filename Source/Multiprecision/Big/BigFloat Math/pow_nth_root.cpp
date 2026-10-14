@@ -16,7 +16,7 @@ std::int64_t pw_mul_sat(std::int64_t a, std::int64_t b) noexcept {
 }
 
 bool pw_to_i64(const BigInt& n, std::int64_t& out) {
-    if (n.is_nan() || n.is_undefined())   return false;
+    if (n.is_unordered())   return false;
     if (n.magnitude().bit_length() > 62)  return false;
     const std::uint64_t b = n.get_lowest_bits();
     out = n.is_negative() ? -static_cast<std::int64_t>(b) : static_cast<std::int64_t>(b);
@@ -132,7 +132,7 @@ BigFloat exp_log_core(const BigFloat& ax, const BigFloat& y, log_op op, bool neg
         const BigFloatContext pc(64, RoundingMode::nearest_even);
         const BigFloat l = ln(ax, pc);
         const BigFloat t = (op == log_op::multiply) ? BigFloat::mul(y, l, pc) : BigFloat::div(l, y, pc);
-        if (t.is_nan() || t.is_undefined()) return t;
+        if (t.is_unordered()) return t;
         const std::int64_t E = t.get_exp_base2();
         if (E != BigFloat::exp_none && E != BigFloat::exp_inf && E > 0) extra = (E > 4096) ? 4096 : static_cast<std::size_t>(E);
     }
@@ -143,7 +143,7 @@ BigFloat exp_log_core(const BigFloat& ax, const BigFloat& y, log_op op, bool neg
         const BigFloatContext wc(ctx.precision + guard + extra, RoundingMode::nearest_even);
         const BigFloat l = ln(ax, wc);
         const BigFloat t = (op == log_op::multiply) ? BigFloat::mul(y, l, wc) : BigFloat::div(l, y, wc);
-        if (t.is_nan() || t.is_undefined()) return t;
+        if (t.is_unordered()) return t;
         const BigFloat r = exp(t, wc);
         if (!r.is_finite() || r.is_zero()) return r.with_sign(neg_result);
         if (multiprecision::constants::bfdetail::round_is_safe(r.significand(), ctx.precision, err)) return r.with_sign(neg_result).rounded(ctx);
@@ -209,15 +209,16 @@ namespace math {
 BigFloat pow(const BigFloat& x, const BigInt& n, const BigFloatContext& ctx) {
     if (x.is_nan()       || n.is_nan())       return BigFloat::nan();
     if (x.is_undefined() || n.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate() || n.is_indeterminate()) return BigFloat::indeterminate();
     const bool nzero = n.magnitude().is_zero();
     const bool neg   = x.signbit() && n.is_odd();
     
     if (x.is_zero()) {
-        if (nzero) return BigFloat::undefined();                                 
-        return n.is_negative() ? BigFloat::infinity(neg) : BigFloat::zero(neg); 
+        if (nzero) return BigFloat::indeterminate();
+        return n.is_negative() ? BigFloat::undefined() : BigFloat::zero(neg);
     }
 
-    if (nzero)       return BigFloat::one();
+    if (nzero)       return x.is_infinite() ? BigFloat::indeterminate() : BigFloat::one();
     if (x.is_infinite()) return n.is_negative() ? BigFloat::zero(neg) : BigFloat::infinity(neg);
     const BigFloat ax = x.abs();
     std::int64_t   ni = 0;
@@ -235,14 +236,24 @@ BigFloat pow(const BigFloat& x, const BigInt& n, const BigFloatContext& ctx) {
 BigFloat pow(const BigFloat& x, const BigFloat& y, const BigFloatContext& ctx) {
     if (x.is_nan()       || y.is_nan())       return BigFloat::nan();
     if (x.is_undefined() || y.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate() || y.is_indeterminate()) return BigFloat::indeterminate();
+
+    if (y.is_infinite()) {
+        const BigFloat ax = x.abs();
+        if (detail::is_exactly_one(ax)) return BigFloat::indeterminate();
+        if (x.is_zero()) return y.is_negative() ? BigFloat::undefined() : BigFloat::zero();
+        const bool grows = (ax > BigFloat::one()) != y.is_negative();
+        if (!grows) return BigFloat::zero();
+        return x.is_negative() ? BigFloat::undefined() : BigFloat::infinity();
+    }
 
     if (y.is_integer()) {                      
         const BigInt n = y.get_integer_part();
-        if (!n.is_nan() && !n.is_undefined()) return pow(x, n, ctx);
+        if (!n.is_unordered()) return pow(x, n, ctx);
     }
 
     if (detail::pw_strictly_negative(x)) return BigFloat::nan();   
-    if (x.is_zero())     return y.is_negative() ? BigFloat::infinity() : BigFloat::zero();
+    if (x.is_zero())     return y.is_negative() ? BigFloat::undefined() : BigFloat::zero();
     if (x.is_infinite()) return y.is_negative() ? BigFloat::zero()     : BigFloat::infinity();
     if (y.is_infinite()) return detail::pw_extreme(x, y.is_negative(), false);
     if (detail::is_exactly_one(x)) return BigFloat::one();
@@ -254,6 +265,7 @@ BigFloat pow(const BigFloat& x, const BigFloat& y, const BigFloatContext& ctx) {
 BigFloat pow2(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return x.is_negative() ? BigFloat::zero() : BigFloat::infinity();
     if (x.is_zero())      return BigFloat::one();
 
@@ -285,6 +297,7 @@ BigFloat pow2(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat pow10(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return x.is_negative() ? BigFloat::zero() : BigFloat::infinity();
     if (x.is_zero())      return BigFloat::one();
     const BigFloat ten(static_cast<std::uint64_t>(10));
@@ -319,10 +332,11 @@ BigFloat pow10(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat nth_root(const BigFloat& x, const BigInt& n, const BigFloatContext& ctx) {
     if (x.is_nan()       || n.is_nan())       return BigFloat::nan();
     if (x.is_undefined() || n.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate() || n.is_indeterminate()) return BigFloat::indeterminate();
     if (n.magnitude().is_zero())              return BigFloat::undefined();
     if (detail::pw_strictly_negative(x) && n.is_even()) return BigFloat::nan();
     const bool neg = x.signbit() && n.is_odd();
-    if (x.is_zero())     return n.is_negative() ? BigFloat::infinity(neg) : BigFloat::zero(neg);
+    if (x.is_zero())     return n.is_negative() ? BigFloat::undefined() : BigFloat::zero(neg);
     if (x.is_infinite()) return n.is_negative() ? BigFloat::zero(neg)     : BigFloat::infinity(neg);
     std::int64_t ni = 0;
     if (!detail::pw_to_i64(n, ni)) return BigFloat::one(neg);  
@@ -332,16 +346,17 @@ BigFloat nth_root(const BigFloat& x, const BigInt& n, const BigFloatContext& ctx
 BigFloat nth_root(const BigFloat& x, const BigFloat& y, const BigFloatContext& ctx) {
     if (x.is_nan()       || y.is_nan())       return BigFloat::nan();
     if (x.is_undefined() || y.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate() || y.is_indeterminate()) return BigFloat::indeterminate();
     if (y.is_zero())                          return BigFloat::undefined();
 
     if (y.is_integer()) {                       
         const BigInt n = y.get_integer_part();
-        if (!n.is_nan() && !n.is_undefined()) return nth_root(x, n, ctx);
+        if (!n.is_unordered()) return nth_root(x, n, ctx);
     }
 
+    if (y.is_infinite()) return (x.is_zero() || x.is_infinite()) ? BigFloat::indeterminate() : BigFloat::one();
     if (detail::pw_strictly_negative(x)) return BigFloat::nan();   
-    if (x.is_zero())     return y.is_negative() ? BigFloat::infinity() : BigFloat::zero();
-    if (y.is_infinite()) return x.is_infinite() ? BigFloat::undefined() : BigFloat::one();
+    if (x.is_zero())     return y.is_negative() ? BigFloat::undefined() : BigFloat::zero();
     if (x.is_infinite()) return y.is_negative() ? BigFloat::zero() : BigFloat::infinity();
     if (detail::is_exactly_one(x)) return BigFloat::one();
     return detail::exp_log_core(x, y, detail::log_op::divide, false, ctx);

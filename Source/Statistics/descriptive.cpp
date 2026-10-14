@@ -82,7 +82,7 @@ void sort_values(std::vector<BF>& d) {
 BigFloat sum(const std::vector<BigFloat>& data, const BigFloatContext& ctx) {
     BigFloat acc = BigFloat::zero();
     for (const BigFloat& v : data) {
-        if (v.is_nan() || v.is_undefined()) return BigFloat::nan();
+        if (v.is_unordered()) return BigFloat::nan();
         acc = desc::eadd(acc, v);
     }
     return acc.rounded(ctx);

@@ -247,7 +247,7 @@ BF finish(const RV& r, const BFC& c, bool last, bool& done) {
         return BF::nan();
     }
 
-    if (r.v.is_nan() || r.v.is_undefined()) {
+    if (r.v.is_unordered()) {
         done = true;
         return r.v;
     }

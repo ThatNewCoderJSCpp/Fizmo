@@ -16,7 +16,7 @@ inline BigFloat fractional_part(const BigUInt& x)  { return x.is_undefined() ? B
 BigFloat fractional_part(const BigInt& x);
 
 inline bool is_integer(const BigUInt& x)  { return !x.is_undefined(); }
-inline bool is_integer(const BigInt& x)   { return !(x.is_nan() || x.is_undefined()); }
+inline bool is_integer(const BigInt& x)   { return !(x.is_unordered()); }
 inline bool is_integer(const BigFloat& x) { return x.is_integer(); }
 
 inline bool is_even(const BigUInt& x) { return x.is_even(); }
@@ -76,7 +76,7 @@ inline bool is_infinite(const BigInt& x)   { return false; }
 inline bool is_infinite(const BigFloat& x) { return x.is_infinite(); }
 
 inline bool is_finite(const BigUInt& x)  { return !x.is_undefined(); }
-inline bool is_finite(const BigInt& x)   { return !(x.is_nan() || x.is_undefined()); }
+inline bool is_finite(const BigInt& x)   { return !(x.is_unordered()); }
 inline bool is_finite(const BigFloat& x) { return x.is_finite(); }
 
 } // namespace math

@@ -49,7 +49,7 @@ void evaluate(F&& f, T& re, T& im, bool composite) {
     for (int round = 0; round < 6; ++round) {
         v = f(BigComplexContext(w));
 
-        if (v.is_undefined()) {
+        if (v.is_unordered()) {
             re = scalar::nan<T>();
             im = scalar::nan<T>();
             return;
@@ -112,7 +112,7 @@ public:
     Complex(const std::complex<U>& c) : m_real(convert(c.real())), m_imaginary(convert(c.imag())) {}
 
     explicit Complex(const multiprecision::BigComplex& z) {
-        if (z.is_undefined()) {
+        if (z.is_unordered()) {
             m_real = scalar::nan<T>();
             m_imaginary = scalar::nan<T>();
             return;

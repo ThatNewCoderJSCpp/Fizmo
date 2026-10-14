@@ -259,7 +259,7 @@ inline BigFloat as_float(const R& x) { return BigFloat(x); }
 
 class BigComplex {
 public:
-    enum class fpclass : std::uint8_t { finite = 0, infinite, undefined };
+    enum class fpclass : std::uint8_t { finite = 0, infinite, undefined, indeterminate };
     using ordering = BigFloat::ordering;
 
 private:
@@ -326,7 +326,7 @@ private:
     static BigComplexContext sign_ctx() noexcept { return BigComplexContext(8); }
 
     bool argument_defined() const noexcept {
-        return !is_undefined() && !is_zero() && !(m_real.is_infinite() && m_imaginary.is_infinite());
+        return !is_unordered() && !is_zero() && !(m_real.is_infinite() && m_imaginary.is_infinite());
     }
 
     const BigFloat& principal_at(const BigFloatContext& wc) const;
@@ -374,6 +374,7 @@ public:
     static BigComplex one()       { return BigComplex(BigFloat::one()); }
     static BigComplex i()         { return BigComplex(BigFloat::zero(), BigFloat::one()); }
     static BigComplex undefined() { return BigComplex(BigFloat::undefined(), BigFloat::undefined()); }
+    static BigComplex indeterminate() { return BigComplex(BigFloat::indeterminate(), BigFloat::indeterminate()); }
 
 public:
     const BigFloat& real()      const noexcept { return m_real; }
@@ -387,6 +388,8 @@ public:
 
     bool is_nan()       const noexcept { return false; }
     bool is_undefined() const noexcept { return classify() == fpclass::undefined; }
+    bool is_indeterminate() const noexcept { return classify() == fpclass::indeterminate; }
+    bool is_unordered() const noexcept { return is_undefined() || is_indeterminate(); }
     bool is_infinite()  const noexcept { return classify() == fpclass::infinite; }
     bool is_finite()    const noexcept { return m_real.is_finite() && m_imaginary.is_finite(); }
     bool is_special()   const noexcept { return !is_finite(); }
@@ -647,6 +650,7 @@ FIZMO_BIGCOMPLEX_BRANCH_FN(arg)
 
 template <typename C, bcdetail_fn::if_complex<C> = 0> inline bool is_nan(const C&)         { return false; }
 template <typename C, bcdetail_fn::if_complex<C> = 0> inline bool is_undefined(const C& z) { return z.is_undefined(); }
+template <typename C, bcdetail_fn::if_complex<C> = 0> inline bool is_indeterminate(const C& z) { return z.is_indeterminate(); }
 template <typename C, bcdetail_fn::if_complex<C> = 0> inline bool is_infinite(const C& z)  { return z.is_infinite(); }
 template <typename C, bcdetail_fn::if_complex<C> = 0> inline bool is_finite(const C& z)    { return z.is_finite(); }
 template <typename C, bcdetail_fn::if_complex<C> = 0> inline bool is_zero(const C& z)      { return z.is_zero(); }

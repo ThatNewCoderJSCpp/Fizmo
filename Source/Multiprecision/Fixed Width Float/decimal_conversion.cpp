@@ -288,6 +288,9 @@ parsed_decimal parse(const char* s) {
     while (ws(*s)) ++s;
     if (*s == '-') { p.negative = true; ++s; } else if (*s == '+') ++s;
 
+    auto word = [&](const char* w) { std::size_t i = 0; for (; w[i]; ++i) if (lower(s[i]) != w[i]) return false; return true; };
+    if (word("undefined"))     { p.ok = true; p.is_undefined = true; return p; }
+    if (word("indeterminate")) { p.ok = true; p.is_indeterminate = true; return p; }
     if (lower(s[0]) == 'n' && lower(s[1]) == 'a' && lower(s[2]) == 'n') { p.ok = true; p.is_nan = true; return p; }
     if (lower(s[0]) == 'i' && lower(s[1]) == 'n' && lower(s[2]) == 'f') { p.ok = true; p.is_inf = true; return p; }
     if (s[0] == '\xE2' && s[1] == '\x88' && s[2] == '\x9E') { p.ok = true; p.is_inf = true; return p; }

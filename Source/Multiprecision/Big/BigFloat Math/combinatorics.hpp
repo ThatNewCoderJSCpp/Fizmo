@@ -28,7 +28,7 @@ static const std::uint64_t cb_loop_cap = 1ull << 16;
 
 inline BFC           cb_ctx(std::size_t p)      { return BFC(BFC::clamp_precision(p), RoundingMode::nearest_even); }
 inline std::uint64_t cb_uabs(std::int64_t n)    { return (n < 0) ? static_cast<std::uint64_t>(-(n + 1)) + 1u : static_cast<std::uint64_t>(n); }
-inline bool          cb_bad(const BF& x)        { return x.is_nan() || x.is_undefined(); }
+inline bool          cb_bad(const BF& x)        { return x.is_unordered(); }
 inline BF            cb_nan_of(const BF& x)     { return x.is_nan() ? BF::nan() : BF::undefined(); }
 inline bool          cb_nonpos(const BF& x)     { return x.is_zero() || x.signbit(); }
 

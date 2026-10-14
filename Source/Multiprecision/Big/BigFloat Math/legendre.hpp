@@ -54,11 +54,13 @@ BigFloat legendre_chi(const BigFloat& x, const BigFloat& s, const BigFloatContex
     inline BigFloat FN(const BigInt& x, std::int64_t n, const BigFloatContext& c) {                           \
         if (x.is_nan())       return BigFloat::nan();                                                         \
         if (x.is_undefined()) return BigFloat::undefined();                                                   \
+        if (x.is_indeterminate()) return BigFloat::indeterminate();                                                   \
         return FN(BigFloat(x), n, c);                                                                         \
     }                                                                                                         \
     inline BigFloat FN(const BigInt& x, std::int64_t n) { return FN(x, n, BigFloatContext::current()); }      \
     inline BigFloat FN(const BigUInt& x, std::int64_t n, const BigFloatContext& c) {                          \
         if (x.is_undefined()) return BigFloat::undefined();                                                   \
+        if (x.is_indeterminate()) return BigFloat::indeterminate();                                                   \
         return FN(BigFloat(x), n, c);                                                                         \
     }                                                                                                         \
     inline BigFloat FN(const BigUInt& x, std::int64_t n) { return FN(x, n, BigFloatContext::current()); }     \

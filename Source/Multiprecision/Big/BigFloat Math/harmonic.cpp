@@ -38,6 +38,7 @@ BigFloat hm_exact(std::uint64_t n, const BigFloatContext& ctx) {
     BigUInt T, Q;
     hm_split(1, n + 1, T, Q);
     if (T.is_undefined() || Q.is_undefined()) return BigFloat::undefined();
+    if (T.is_indeterminate() || Q.is_indeterminate()) return BigFloat::indeterminate();
     return BigFloat::div(BigFloat(T), BigFloat(Q), ctx);                 
 }
 
@@ -87,6 +88,7 @@ namespace math {
 BigFloat harmonic(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return x.signbit() ? BigFloat::undefined() : x;
     if (x.is_zero())      return x;
     std::uint64_t n = 0;

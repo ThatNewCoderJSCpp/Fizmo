@@ -108,6 +108,8 @@ public:
     const BigUInt& magnitude()    const noexcept { return m_mag; }
     bool           is_nan()       const noexcept { return m_mag.is_undefined() && m_neg;  }
     bool           is_undefined() const noexcept { return m_mag.is_undefined() && !m_neg; }
+    bool           is_unordered() const noexcept { return m_mag.is_undefined(); }
+    bool           is_indeterminate() const noexcept { return false; }
     bool           is_finite()    const noexcept { return !m_mag.is_undefined(); }
     bool           is_negative()  const noexcept { return is_finite() && m_neg; }
     bool           is_positive()  const noexcept { return is_finite() && !m_neg && !m_mag.is_zero(); }

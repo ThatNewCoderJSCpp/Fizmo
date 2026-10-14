@@ -136,6 +136,7 @@ BC loggamma_negative_axis(const BC& z, const BCC& ctx) {
 } // namespace
 
 BC log_gamma(const BC& z, const BCC& ctx) {
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (z.is_undefined() || !z.is_finite()) return BC::undefined();
     if (pole(z)) return BC::undefined();
     if (z.imaginary().is_zero()) {
@@ -181,6 +182,7 @@ Approx gamma_right(const CX& z, std::size_t w) {
 } // namespace
 
 BC gamma(const BC& z, const BCC& ctx) {
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (z.is_undefined() || !z.is_finite()) return BC::undefined();
     if (pole(z)) return BC::undefined();
     if (z.imaginary().is_zero()) return BC(math::gamma(z.real(), ctx.real()), BF::zero());
@@ -209,6 +211,7 @@ CX sum3(const CX& a, const CX& b, const CX& c, std::size_t w, bool sub_c) { retu
 } // namespace
 
 BC log_beta(const BC& a, const BC& b, const BCC& ctx) {
+    if (!(a.is_undefined() || b.is_undefined()) && (a.is_indeterminate() || b.is_indeterminate())) return BC::indeterminate();
     if (a.is_undefined() || b.is_undefined() || !a.is_finite() || !b.is_finite()) return BC::undefined();
     if (a.imaginary().is_zero() && b.imaginary().is_zero() && !a.real().signbit() && !b.real().signbit()) {
         return BC(math::log_beta(a.real(), b.real(), ctx.real()), BF::zero());
@@ -225,6 +228,7 @@ BC log_beta(const BC& a, const BC& b, const BCC& ctx) {
 }
 
 BC beta(const BC& a, const BC& b, const BCC& ctx) {
+    if (!(a.is_undefined() || b.is_undefined()) && (a.is_indeterminate() || b.is_indeterminate())) return BC::indeterminate();
     if (a.is_undefined() || b.is_undefined() || !a.is_finite() || !b.is_finite()) return BC::undefined();
     if (a.imaginary().is_zero() && b.imaginary().is_zero()) return BC(math::beta(a.real(), b.real(), ctx.real()), BF::zero());
     const BC s = BC::add(a, b, BCC(BFC::max_prec / 8));
@@ -346,6 +350,7 @@ Approx polygamma_right(unsigned n, const CX& z, std::size_t w) {
 
 BC polygamma(const BC& z, int n, const BCC& ctx) {
     if (n == -1) return log_gamma(z, ctx);
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (n < -1 || z.is_undefined() || !z.is_finite()) return BC::undefined();
     if (pole(z)) return BC::undefined();
     if (z.imaginary().is_zero()) return BC(math::polygamma(z.real(), n, ctx.real()), BF::zero());
@@ -383,6 +388,7 @@ BC trigamma(const BC& z, const BCC& ctx) { return polygamma(z, 1, ctx); }
 
 BC harmonic(const BC& z, const BCC& ctx) {
     if (z.imaginary().is_zero() && z.is_finite()) return BC(math::harmonic(z.real(), ctx.real()), BF::zero());
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (z.is_undefined() || !z.is_finite()) return BC::undefined();
     const BC z1 = BC::add(z, BC::one(), BCC(BFC::max_prec / 8));
     if (pole(z1)) return BC::undefined();
@@ -462,18 +468,21 @@ BC product_ratio(const BC& x, std::int64_t n, bool falling, const BCC& ctx) {
 } // namespace
 
 BC rising_pochhammer(const BC& x, std::int64_t n, const BCC& ctx) {
+    if (x.is_indeterminate()) return BC::indeterminate();
     if (x.is_undefined() || !x.is_finite()) return BC::undefined();
     if (x.imaginary().is_zero()) return BC(math::rising_pochhammer(x.real(), n, ctx.real()), BF::zero());
     return product_ratio(x, n, false, ctx);
 }
 
 BC falling_pochhammer(const BC& x, std::int64_t n, const BCC& ctx) {
+    if (x.is_indeterminate()) return BC::indeterminate();
     if (x.is_undefined() || !x.is_finite()) return BC::undefined();
     if (x.imaginary().is_zero()) return BC(math::falling_pochhammer(x.real(), n, ctx.real()), BF::zero());
     return product_ratio(x, n, true, ctx);
 }
 
 BC rising_pochhammer(const BC& x, const BC& a, const BCC& ctx) {
+    if (!(x.is_undefined() || a.is_undefined()) && (x.is_indeterminate() || a.is_indeterminate())) return BC::indeterminate();
     if (x.is_undefined() || a.is_undefined() || !x.is_finite() || !a.is_finite()) return BC::undefined();
     if (x.imaginary().is_zero() && a.imaginary().is_zero()) return BC(math::rising_pochhammer(x.real(), a.real(), ctx.real()), BF::zero());
     if (a.imaginary().is_zero() && a.real().is_integer() && a.real().get_exp_base2() < 62) {
@@ -483,6 +492,7 @@ BC rising_pochhammer(const BC& x, const BC& a, const BCC& ctx) {
 }
 
 BC falling_pochhammer(const BC& x, const BC& a, const BCC& ctx) {
+    if (!(x.is_undefined() || a.is_undefined()) && (x.is_indeterminate() || a.is_indeterminate())) return BC::indeterminate();
     if (x.is_undefined() || a.is_undefined() || !x.is_finite() || !a.is_finite()) return BC::undefined();
     if (x.imaginary().is_zero() && a.imaginary().is_zero()) return BC(math::falling_pochhammer(x.real(), a.real(), ctx.real()), BF::zero());
     if (a.imaginary().is_zero() && a.real().is_integer() && a.real().get_exp_base2() < 62) {
@@ -492,6 +502,7 @@ BC falling_pochhammer(const BC& x, const BC& a, const BCC& ctx) {
 }
 
 BC combination(const BC& x, std::int64_t k, const BCC& ctx) {
+    if (x.is_indeterminate()) return BC::indeterminate();
     if (x.is_undefined() || !x.is_finite()) return BC::undefined();
     if (x.imaginary().is_zero()) return BC(math::combination(x.real(), k, ctx.real()), BF::zero());
     if (k < 0) return BC::zero();
@@ -505,6 +516,7 @@ BC combination(const BC& x, std::int64_t k, const BCC& ctx) {
 }
 
 BC combination(const BC& x, const BC& k, const BCC& ctx) {
+    if (!(x.is_undefined() || k.is_undefined()) && (x.is_indeterminate() || k.is_indeterminate())) return BC::indeterminate();
     if (x.is_undefined() || k.is_undefined() || !x.is_finite() || !k.is_finite()) return BC::undefined();
     if (x.imaginary().is_zero() && k.imaginary().is_zero()) return BC(math::combination(x.real(), k.real(), ctx.real()), BF::zero());
     if (k.imaginary().is_zero() && k.real().is_integer() && k.real().get_exp_base2() < 62) {

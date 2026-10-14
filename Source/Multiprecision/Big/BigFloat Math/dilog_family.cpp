@@ -69,6 +69,7 @@ namespace math {
 BigFloat rogers_l(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_zero())      return x;
 
     if (x.is_infinite()) {                                                                  
@@ -85,6 +86,7 @@ BigFloat rogers_l(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat rogers_l_normalized(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_zero())      return x;
     if (x.is_infinite())  return x.signbit() ? BigFloat::one(true) : BigFloat(static_cast<std::uint64_t>(2));
     if (BigFloat::compare(x, BigFloat::one()) == BigFloat::ordering::equal) return BigFloat::one();
@@ -102,6 +104,7 @@ BigFloat rogers_l_normalized(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat spence_function(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return x.signbit() ? BigFloat::nan() : BigFloat::infinity();
     if (BigFloat::compare(x, -BigFloat::one()) == BigFloat::ordering::less) { return BigFloat::nan(); } 
     return -polylog(-x, BigFloat(static_cast<std::uint64_t>(2)), ctx);
@@ -110,6 +113,7 @@ BigFloat spence_function(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat spence_integral(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return x.signbit() ? BigFloat::nan() : BigFloat::infinity(true);   
     if (x.signbit() && !x.is_zero()) return BigFloat::nan();
     return polylog(hzdetail::hz_xadd(BigFloat::one(), x, true), BigFloat(static_cast<std::uint64_t>(2)), ctx);

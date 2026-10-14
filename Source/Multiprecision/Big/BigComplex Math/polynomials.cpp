@@ -70,6 +70,7 @@ CV flip(const CV& a, bool f) { return f ? CV{neg(a.v), a.er, a.ei} : a; }
 template <class Body>
 BC poly(const BC& z, std::uint64_t deg, std::int64_t c0, bool f, const BCC& ctx, Body body) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (deg == 0) return BC(BF(f ? -c0 : c0).rounded(ctx.real()), BF::zero());
     if (!z.is_finite()) return BC::undefined();
     return drive(ctx, [&](std::size_t wp) { return approx(flip(body(wp), f)); });
@@ -160,6 +161,7 @@ BC legendre_p(const BC& z, std::int64_t n, const BCC& ctx) {
 
 BC legendre_q(const BC& z, std::int64_t n, const BCC& ctx) {
     if (z.imaginary().is_zero() && z.real().is_finite()) return BC(math::legendre_q(z.real(), n, ctx.real()), BF::zero());
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (z.is_undefined() || n < 0) return BC::undefined();
     const std::uint64_t k = static_cast<std::uint64_t>(n);
     if (!z.is_finite()) return BC::zero();

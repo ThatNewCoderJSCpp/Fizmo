@@ -8,6 +8,7 @@ BigFloat min(const BigFloat& a, const BigFloat& b) {
 
     if (c == BigFloat::ordering::unordered) {
         if (a.is_undefined() || b.is_undefined()) return BigFloat::undefined();
+        if (a.is_indeterminate() || b.is_indeterminate()) return BigFloat::indeterminate();
         return BigFloat::nan();
     }
 
@@ -19,6 +20,7 @@ BigFloat max(const BigFloat& a, const BigFloat& b) {
 
     if (c == BigFloat::ordering::unordered) {
         if (a.is_undefined() || b.is_undefined()) return BigFloat::undefined();
+        if (a.is_indeterminate() || b.is_indeterminate()) return BigFloat::indeterminate();
         return BigFloat::nan();
     }
 
@@ -50,6 +52,7 @@ BigFloat clamp(
 
     if (bounds == BigFloat::ordering::unordered) {
         if (lo.is_undefined() || hi.is_undefined()) return BigFloat::undefined();
+        if (lo.is_indeterminate() || hi.is_indeterminate()) return BigFloat::indeterminate();
         return BigFloat::nan();
     }
 
@@ -58,6 +61,7 @@ BigFloat clamp(
 
     if (lower == BigFloat::ordering::unordered) {
         if (x.is_undefined()) return BigFloat::undefined();
+        if (x.is_indeterminate()) return BigFloat::indeterminate();
         return BigFloat::nan();
     }
 
@@ -66,6 +70,7 @@ BigFloat clamp(
 
     if (upper == BigFloat::ordering::unordered) {
         if (x.is_undefined()) return BigFloat::undefined();
+        if (x.is_indeterminate()) return BigFloat::indeterminate();
         return BigFloat::nan();
     }
 

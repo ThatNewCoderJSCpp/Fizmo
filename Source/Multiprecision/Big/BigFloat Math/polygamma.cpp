@@ -25,6 +25,7 @@ BigFloat pg_coeff(unsigned n, std::size_t j, const BigFloatContext& tc) {
         const BigFloatContext hc(BigFloatContext::clamp_precision(tc.precision + 32), RoundingMode::nearest_even);
         BigUInt num = multiprecision::constants::tangent_number(j);
         if (num.is_undefined()) return BigFloat::undefined();
+        if (num.is_indeterminate()) return BigFloat::indeterminate();
         if (n > 0) num = num * fact_range(2 * static_cast<std::uint64_t>(j), 2 * static_cast<std::uint64_t>(j) + n);
         BigUInt den = multiprecision::constants::bfdetail::unit(2 * j);
         den.sub_small_mutable(1);
@@ -736,6 +737,7 @@ namespace math {
 BigFloat digamma(const BigFloat& z, const BigFloatContext& ctx) {
     if (z.is_nan())       return BigFloat::nan();
     if (z.is_undefined()) return BigFloat::undefined();
+    if (z.is_indeterminate()) return BigFloat::indeterminate();
     if (z.is_infinite())  return z.signbit() ? BigFloat::undefined() : z;
     return pgdetail::pg_drive(0, z, ctx);
 }
@@ -743,6 +745,7 @@ BigFloat digamma(const BigFloat& z, const BigFloatContext& ctx) {
 BigFloat trigamma(const BigFloat& z, const BigFloatContext& ctx) {
     if (z.is_nan())       return BigFloat::nan();
     if (z.is_undefined()) return BigFloat::undefined();
+    if (z.is_indeterminate()) return BigFloat::indeterminate();
     if (z.is_infinite())  return z.signbit() ? BigFloat::undefined() : BigFloat::zero();
     return pgdetail::pg_drive(1, z, ctx);
 }
@@ -750,6 +753,7 @@ BigFloat trigamma(const BigFloat& z, const BigFloatContext& ctx) {
 BigFloat polygamma(const BigFloat& x, int n, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (n == 0) return digamma(x, ctx);
     if (n == 1) return trigamma(x, ctx);
 

@@ -26,7 +26,7 @@ struct RV {
     RV() : v(BF::zero()) {}
     RV(BF value, double err = ninf) : v(std::move(value)), e(err) {}
 
-    bool ok() const { return e != pinf && !v.is_nan() && !v.is_undefined(); }
+    bool ok() const { return e != pinf && !v.is_unordered(); }
 };
 
 inline RV failed() { return RV(BF::zero(), pinf); }

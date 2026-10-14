@@ -24,6 +24,7 @@ inline BigFloat sqrt(const BigFloat& x) { return sqrt(x, BigFloatContext::curren
 
 inline BigFloat sqrt(const BigUInt& x, const BigFloatContext& ctx) {
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     return sqrt(BigFloat(x), ctx);
 }
 
@@ -39,6 +40,7 @@ inline BigFloat cbrt(const BigFloat& x) { return cbrt(x, BigFloatContext::curren
 
 inline BigFloat cbrt(const BigUInt& x, const BigFloatContext& ctx) {
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     return cbrt(BigFloat(x), ctx);
 }
 

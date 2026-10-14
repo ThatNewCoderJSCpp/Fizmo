@@ -194,6 +194,7 @@ Approx swap_i(Approx a, bool times_i) {
 
 BC erf(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) return BC(math::erf(z.real(), ctx.real()), BF::zero());
     if (imag_axis(z)) return BC(BF::zero(), math::erfi(z.imaginary(), ctx.imaginary()));
     if (!z.is_finite()) return BC::undefined();
@@ -203,6 +204,7 @@ BC erf(const BC& z, const BCC& ctx) {
 
 BC erfc(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) return BC(math::erfc(z.real(), ctx.real()), BF::zero());
     if (imag_axis(z)) return BC(BF::one(), -math::erfi(z.imaginary(), ctx.imaginary()));
     if (!z.is_finite()) return BC::undefined();
@@ -212,6 +214,7 @@ BC erfc(const BC& z, const BCC& ctx) {
 
 BC erfi(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) return BC(math::erfi(z.real(), ctx.real()), BF::zero());
     if (imag_axis(z)) return BC(BF::zero(), math::erf(z.imaginary(), ctx.imaginary()));
     if (!z.is_finite()) return BC::undefined();
@@ -221,6 +224,7 @@ BC erfi(const BC& z, const BCC& ctx) {
 
 BC generalized_erf(const BC& z, const BC& b, const BCC& ctx) {
     if (z.is_undefined() || b.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate() || b.is_indeterminate()) return BC::indeterminate();
     if (z == b) return BC::zero();
     if (real_axis(z) && real_axis(b)) return BC(math::generalized_erf(z.real(), b.real(), ctx.real()), BF::zero());
     if (!z.is_finite() || !b.is_finite()) return BC::undefined();
@@ -415,6 +419,7 @@ BC inverse(const CX& Y, const CX* C, const BCC& ctx, bool rotate) {
 } // namespace
 
 BC inv_erf(const BC& y, const BCC& ctx) {
+    if (y.is_indeterminate()) return BC::indeterminate();
     if (y.is_undefined() || !y.is_finite()) return BC::undefined();
     if (real_axis(y) && BF::compare(y.real().abs(), BF::one()) != BF::ordering::greater) return BC(math::inv_erf(y.real(), ctx.real()), BF::zero());
     if (imag_axis(y)) return BC(BF::zero(), math::inv_erfi(y.imaginary(), ctx.imaginary()));
@@ -422,6 +427,7 @@ BC inv_erf(const BC& y, const BCC& ctx) {
 }
 
 BC inv_erfc(const BC& c, const BCC& ctx) {
+    if (c.is_indeterminate()) return BC::indeterminate();
     if (c.is_undefined() || !c.is_finite()) return BC::undefined();
     if (real_axis(c) && !c.real().signbit() && BF::compare(c.real(), BF(static_cast<std::int64_t>(2))) != BF::ordering::greater) {
         return BC(math::inv_erfc(c.real(), ctx.real()), BF::zero());
@@ -433,6 +439,7 @@ BC inv_erfc(const BC& c, const BCC& ctx) {
 }
 
 BC inv_erfi(const BC& v, const BCC& ctx) {
+    if (v.is_indeterminate()) return BC::indeterminate();
     if (v.is_undefined() || !v.is_finite()) return BC::undefined();
     if (real_axis(v)) return BC(math::inv_erfi(v.real(), ctx.real()), BF::zero());
     if (imag_axis(v) && BF::compare(v.imaginary().abs(), BF::one()) != BF::ordering::greater) return BC(BF::zero(), math::inv_erf(v.imaginary(), ctx.imaginary()));
@@ -522,6 +529,7 @@ Approx fresnel_raw(const CX& z, bool s_kind, std::size_t w) {
 
 BC fresnel_c(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) return BC(math::fresnel_c(z.real(), ctx.real()), BF::zero());
     if (imag_axis(z)) return BC(BF::zero(), math::fresnel_c(z.imaginary(), ctx.imaginary()));
     if (!z.is_finite()) return BC::undefined();
@@ -531,6 +539,7 @@ BC fresnel_c(const BC& z, const BCC& ctx) {
 
 BC fresnel_s(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) return BC(math::fresnel_s(z.real(), ctx.real()), BF::zero());
     if (imag_axis(z)) return BC(BF::zero(), -math::fresnel_s(z.imaginary(), ctx.imaginary()));
     if (!z.is_finite()) return BC::undefined();

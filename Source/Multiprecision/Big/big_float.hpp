@@ -110,7 +110,7 @@ struct any_big_complex_mp<T, R...> : std::integral_constant<bool, is_big_complex
 
 class BigFloat {
 public:
-    enum class fpclass : std::uint8_t { finite = 0, infinite, nan, undefined };
+    enum class fpclass : std::uint8_t { finite = 0, infinite, nan, undefined, indeterminate };
     enum class ordering : std::int8_t { less = -1, equal = 0, greater = 1, unordered = 2 };
 
     static constexpr std::int64_t exp_max         = std::int64_t(1) << 48;
@@ -227,6 +227,7 @@ public:
     BigFloat(const floatmp<TB, MB, S>& v) : BigFloat() {
         if (v.is_nan())       { *this = nan();                     return; }
         if (v.is_undefined()) { *this = undefined();               return; }
+        if (v.is_indeterminate()) { *this = indeterminate();       return; }
         if (v.is_infinite())  { *this = infinity(v.is_negative()); return; }
         if (v.is_zero())      { *this = zero(v.is_negative());     return; }
         const auto fx = v.frexp_signed();
@@ -250,6 +251,12 @@ public:
     static BigFloat negative_infinity()        { return infinity(true);  }
     static BigFloat nan()                      { return BigFloat(raw_tag{}, BigUInt::zero(), false, 0, fpclass::nan); }
     static BigFloat undefined()                { return BigFloat(raw_tag{}, BigUInt::zero(), false, 0, fpclass::undefined); }
+    static BigFloat indeterminate()            { return BigFloat(raw_tag{}, BigUInt::zero(), false, 0, fpclass::indeterminate); }
+    static BigFloat unordered_of(const BigFloat& a, const BigFloat& b) {
+        return (a.is_undefined()     || b.is_undefined())     ? undefined()
+             : (a.is_indeterminate() || b.is_indeterminate()) ? indeterminate()
+             : nan();
+    }
 
     static BigFloat ldexp(const BigUInt& mag, bool neg, std::int64_t exp) { return BigFloat(mag, neg, exp); }
     static BigFloat ldexp(BigUInt&& mag, bool neg, std::int64_t exp)      { return BigFloat(std::move(mag), neg, exp); }
@@ -277,6 +284,8 @@ public:
 
     bool is_nan()           const noexcept { return m_cls == fpclass::nan; }
     bool is_undefined()     const noexcept { return m_cls == fpclass::undefined; }
+    bool is_indeterminate() const noexcept { return m_cls == fpclass::indeterminate; }
+    bool is_unordered()     const noexcept { return m_cls == fpclass::nan || m_cls == fpclass::undefined || m_cls == fpclass::indeterminate; }
     bool is_infinite()      const noexcept { return m_cls == fpclass::infinite; }
     bool is_finite()        const noexcept { return m_cls == fpclass::finite; }
     bool is_special()       const noexcept { return m_cls != fpclass::finite; }
@@ -310,6 +319,7 @@ public:
         using sstore_t = typename F::sstore_t;
         if (m_cls == fpclass::nan)       return F::nan();
         if (m_cls == fpclass::undefined) return F::undefined();
+        if (m_cls == fpclass::indeterminate) return F::indeterminate();
         if (m_neg && !is_fizmo_signed_v<F>) return F::zero();
         if (m_cls == fpclass::infinite)  return F::infinity(m_neg);
         if (m_mag.is_zero())             return F::zero(m_neg);
@@ -370,9 +380,9 @@ public:
 
     BigFloat with_sign(bool neg) const;
 
-    BigFloat& negate_mutable()          noexcept { if (m_cls != fpclass::nan && m_cls != fpclass::undefined) m_neg = !m_neg; return *this; }
-    BigFloat& abs_mutable()             noexcept { if (m_cls != fpclass::nan && m_cls != fpclass::undefined) m_neg = false;  return *this; }
-    BigFloat& set_sign_mutable(bool n)  noexcept { if (m_cls != fpclass::nan && m_cls != fpclass::undefined) m_neg = n;      return *this; }
+    BigFloat& negate_mutable()          noexcept { if (!is_unordered()) m_neg = !m_neg; return *this; }
+    BigFloat& abs_mutable()             noexcept { if (!is_unordered()) m_neg = false;  return *this; }
+    BigFloat& set_sign_mutable(bool n)  noexcept { if (!is_unordered()) m_neg = n;      return *this; }
 
     static BigFloat copysign(const BigFloat& x, const BigFloat& y) { return x.with_sign(y.signbit()); }
     

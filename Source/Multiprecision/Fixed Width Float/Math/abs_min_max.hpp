@@ -10,9 +10,7 @@ namespace math {
 
 template <std::size_t TB, std::size_t MB>
 OPTIONAL_CPP14_CONSTEXPR fizmo::multiprecision::floatmp<TB, MB, fizmo::multiprecision::sign::is_signed> abs(const fizmo::multiprecision::floatmp<TB, MB, fizmo::multiprecision::sign::is_signed>& x) noexcept {
-    using F = fizmo::multiprecision::floatmp<TB, MB, fizmo::multiprecision::sign::is_signed>;
-    if (x.is_nan())       return F::nan();
-    if (x.is_undefined()) return F::undefined();
+    if (x.is_unordered()) return x;
     return x.is_negative() ? -x : x;
 }
 

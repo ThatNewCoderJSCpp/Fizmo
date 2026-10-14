@@ -145,6 +145,7 @@ namespace math {
 BigFloat legendre_p(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     const std::uint64_t k   = (n < 0) ? pldetail::pl_abs(n) - 1 : static_cast<std::uint64_t>(n);
     const BigFloat      one = BigFloat::one();
     const bool          odd = (k & 1u) != 0;
@@ -163,6 +164,7 @@ BigFloat legendre_p(const BigFloat& x, std::int64_t n, const BigFloatContext& ct
 BigFloat legendre_q(const BigFloat& x, std::int64_t n, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (n < 0)            return BigFloat::undefined();                                  
     const std::uint64_t k    = static_cast<std::uint64_t>(n);
     const bool          flip = x.signbit() && (k % 2 == 0);                              
@@ -208,6 +210,7 @@ BigFloat legendre_chi(const BigFloat& x, const BigFloat& s, const BigFloatContex
     using ztdetail::zt_val;
     if (x.is_nan()       || s.is_nan())       return BigFloat::nan();
     if (x.is_undefined() || s.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate() || s.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_zero()) return x;
     const BigFloat           one = BigFloat::one();
     const BigFloat::ordering ca  = x.is_infinite() ? BigFloat::ordering::greater : BigFloat::compare(x.abs(), one);

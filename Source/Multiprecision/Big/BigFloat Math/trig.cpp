@@ -49,7 +49,7 @@ bool tg_sincos_raw(const BigFloat& x, std::size_t want, BigFloat& sx, BigFloat& 
         const BigFloatContext wc(w, RoundingMode::nearest_even);
         const BigFloat  q  = BigFloat::mul(x, multiprecision::constants::two_inv_pi(wc), wc);
         BigInt          k  = q.get_integer_part();
-        if (k.is_nan() || k.is_undefined()) return false;
+        if (k.is_unordered()) return false;
         BigFloat        kb(k);
         const BigFloat  half(BigUInt::one(), false, -1);
         const BigFloat  frac = BigFloat::sub(q, kb, wc);
@@ -161,6 +161,7 @@ namespace math {
 BigFloat sin(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::undefined();  
     if (x.is_zero())      return x;                       
     return detail::tg_dispatch(x, detail::trig_sel::sin_v, ctx);
@@ -218,6 +219,7 @@ namespace math {
 BigFloat cos(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::undefined();
     if (x.is_zero())      return BigFloat::one();
     return detail::tg_dispatch(x, detail::trig_sel::cos_v, ctx);
@@ -226,6 +228,7 @@ BigFloat cos(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat tan(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::undefined();
     if (x.is_zero())      return x;
     return detail::tg_dispatch(x, detail::trig_sel::tan_v, ctx);
@@ -234,6 +237,7 @@ BigFloat tan(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat cot(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::undefined();
     if (x.is_zero())      return BigFloat::infinity(x.signbit());
     return detail::tg_dispatch(x, detail::trig_sel::cot_v, ctx);
@@ -242,6 +246,7 @@ BigFloat cot(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat sec(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::undefined();
     if (x.is_zero())      return BigFloat::one();
     return detail::tg_dispatch(x, detail::trig_sel::sec_v, ctx);
@@ -250,6 +255,7 @@ BigFloat sec(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat csc(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::undefined();
     if (x.is_zero())      return BigFloat::infinity(x.signbit());
     return detail::tg_dispatch(x, detail::trig_sel::csc_v, ctx);
@@ -258,6 +264,7 @@ BigFloat csc(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat sinc(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::zero();     
     if (x.is_zero())      return BigFloat::one();
     return detail::sinc_finite(x, ctx);
@@ -266,6 +273,7 @@ BigFloat sinc(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat normalized_sinc(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::zero();
     if (x.is_zero())      return BigFloat::one();
     return detail::normalized_sinc_finite(x, ctx);

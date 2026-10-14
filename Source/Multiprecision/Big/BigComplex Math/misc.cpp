@@ -21,6 +21,7 @@ CX one_plus_sq(const CX& t, bool minus) {
 
 BC sinc(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) return real_result(math::sinc(z.real(), ctx.real()));
     if (!z.is_finite()) return BC::undefined();
     if (imag_axis(z)) {
@@ -43,6 +44,7 @@ BC sinc(const BC& z, const BCC& ctx) {
 
 BC normalized_sinc(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) return real_result(math::normalized_sinc(z.real(), ctx.real()));
     if (!z.is_finite()) return BC::undefined();
     const CX Z = cx(z);
@@ -68,6 +70,7 @@ BC normalized_sinc(const BC& z, const BCC& ctx) {
 
 BC gudermannian(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) return real_result(math::gudermannian(z.real(), ctx.real()));
     if (!z.is_finite()) return BC::undefined();
     if (imag_axis(z)) {
@@ -89,6 +92,7 @@ BC gudermannian(const BC& z, const BCC& ctx) {
 
 BC inv_gudermannian(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) {
         const BF r = math::inv_gudermannian(z.real(), wctx(ctx.real_precision + 2));
         if (r.is_finite()) return real_result(math::inv_gudermannian(z.real(), ctx.real()));
@@ -109,6 +113,7 @@ BC inv_gudermannian(const BC& z, const BCC& ctx) {
 }
 
 BC log(const BC& z, const BC& base, const BCC& ctx) {
+    if (!(z.is_undefined() || base.is_undefined()) && (z.is_indeterminate() || base.is_indeterminate())) return BC::indeterminate();
     if (z.is_undefined() || base.is_undefined() || !z.is_finite() || !base.is_finite()) return BC::undefined();
     if (base.is_zero() || z.is_zero() || base == BC::one()) return BC::undefined();
     if (z == base) return BC::one();
@@ -130,6 +135,7 @@ namespace {
 
 BC pow_base(const BC& z, bool ten, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) return real_result(ten ? math::pow10(z.real(), ctx.real()) : math::pow2(z.real(), ctx.real()));
     if (!z.is_finite()) return BC::undefined();
     const CX Z = cx(z);

@@ -390,6 +390,7 @@ inline BC ic_acot_eval(const BF& a, const BF& b, const BFC& cr, const BFC& ci) {
 #define FIZMO_CX_INV_DIRECT(NAME, EVAL)                                                          \
     inline BC NAME(const BC& z, const BFC& cr, const BFC& ci) {                                  \
         if (z.is_undefined()) return BC::undefined();                                            \
+        if (z.is_indeterminate()) return BC::indeterminate();                                            \
         return EVAL(z.real(), z.imaginary(), cr, ci);                                            \
     }
 
@@ -406,16 +407,19 @@ FIZMO_CX_INV_DIRECT(arccoth_eval, ic_acoth_eval)
 
 inline BC arcsinh_eval(const BC& z, const BFC& cr, const BFC& ci) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     return ic_rot(ic_asin_eval(-z.imaginary(), z.real(), mirrored(ci), cr));
 }
 
 inline BC arccsch_eval(const BC& z, const BFC& cr, const BFC& ci) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     return ic_rot(ic_acsc_eval(z.imaginary(), -z.real(), mirrored(ci), cr));
 }
 
 inline BC arccosh_eval(const BC& z, const BFC& cr, const BFC& ci) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     const BF& a = z.real();
     const BF& b = z.imaginary();
 
@@ -430,6 +434,7 @@ inline BC arccosh_eval(const BC& z, const BFC& cr, const BFC& ci) {
 
 inline BC arcsech_eval(const BC& z, const BFC& cr, const BFC& ci) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     const BF& a = z.real();
     const BF& b = z.imaginary();
 

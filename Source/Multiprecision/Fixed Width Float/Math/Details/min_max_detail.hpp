@@ -60,16 +60,14 @@ template <class T> struct empty_fold<T, 2> { static OPTIONAL_CPP14_CONSTEXPR T g
 template <std::size_t TB, std::size_t MB, fizmo::multiprecision::sign S>
 OPTIONAL_CPP14_CONSTEXPR fizmo::multiprecision::floatmp<TB, MB, S> min2(const fizmo::multiprecision::floatmp<TB, MB, S>& a, const fizmo::multiprecision::floatmp<TB, MB, S>& b) noexcept {
     using F = fizmo::multiprecision::floatmp<TB, MB, S>;
-    if (a.is_nan()       || b.is_nan())       return F::nan();
-    if (a.is_undefined() || b.is_undefined()) return F::undefined();
+    if (a.is_unordered() || b.is_unordered()) return (a.is_undefined() || b.is_undefined()) ? F::undefined() : (a.is_indeterminate() || b.is_indeterminate()) ? F::indeterminate() : F::nan();
     return (b < a) ? b : a;
 }
 
 template <std::size_t TB, std::size_t MB, fizmo::multiprecision::sign S>
 OPTIONAL_CPP14_CONSTEXPR fizmo::multiprecision::floatmp<TB, MB, S> max2(const floatmp<TB, MB, S>& a, const fizmo::multiprecision::floatmp<TB, MB, S>& b) noexcept {
     using F = fizmo::multiprecision::floatmp<TB, MB, S>;
-    if (a.is_nan()       || b.is_nan())       return F::nan();
-    if (a.is_undefined() || b.is_undefined()) return F::undefined();
+    if (a.is_unordered() || b.is_unordered()) return (a.is_undefined() || b.is_undefined()) ? F::undefined() : (a.is_indeterminate() || b.is_indeterminate()) ? F::indeterminate() : F::nan();
     return (a < b) ? b : a;
 }
 

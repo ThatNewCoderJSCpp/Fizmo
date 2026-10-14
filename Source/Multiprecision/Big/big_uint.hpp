@@ -242,6 +242,7 @@ public:
 public:
     bool        is_zero()      const noexcept { return m_data.size() == 1 && m_data[0] == 0; }
     bool        is_undefined() const noexcept { return m_data.empty(); }
+    bool        is_indeterminate() const noexcept { return false; }
     std::size_t limb_count()   const noexcept { return m_data.size(); }
 
     std::uint64_t get_lowest_bits() const noexcept { return m_data.front(); }

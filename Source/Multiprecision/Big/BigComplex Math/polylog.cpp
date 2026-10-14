@@ -280,6 +280,7 @@ Approx polylog_core(const CX& s, const CX& z, std::size_t w) {
 }
 
 BC polylog(const BC& z, const BC& s, const BCC& ctx) {
+    if (!(z.is_undefined() || s.is_undefined()) && (z.is_indeterminate() || s.is_indeterminate())) return BC::indeterminate();
     if (z.is_undefined() || s.is_undefined() || !z.is_finite() || !s.is_finite()) return BC::undefined();
     if (z.is_zero()) return BC::zero();
     const bool sreal = s.imaginary().is_zero();
@@ -341,6 +342,7 @@ Approx rogers_core(const CX& z, std::size_t w) {
 } // namespace
 
 BC rogers_l(const BC& z, const BCC& ctx) {
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (z.is_undefined() || !z.is_finite()) return BC::undefined();
     if (z.imaginary().is_zero()) {
         const BF x = z.real();
@@ -351,6 +353,7 @@ BC rogers_l(const BC& z, const BCC& ctx) {
 }
 
 BC rogers_l_normalized(const BC& z, const BCC& ctx) {
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (z.is_undefined() || !z.is_finite()) return BC::undefined();
     if (z.imaginary().is_zero()) {
         const BF x = z.real();
@@ -366,6 +369,7 @@ BC rogers_l_normalized(const BC& z, const BCC& ctx) {
 }
 
 BC legendre_chi(const BC& z, const BC& s, const BCC& ctx) {
+    if (!(z.is_undefined() || s.is_undefined()) && (z.is_indeterminate() || s.is_indeterminate())) return BC::indeterminate();
     if (z.is_undefined() || s.is_undefined() || !z.is_finite() || !s.is_finite()) return BC::undefined();
     if (z.imaginary().is_zero() && s.imaginary().is_zero()) {
         const BF r = math::legendre_chi(z.real(), s.real(), wctx(ctx.real_precision + 2));
@@ -391,6 +395,7 @@ BC legendre_chi(const BC& z, const BC& s, const BCC& ctx) {
 }
 
 BC clausen(const BC& theta, std::int64_t s, const BCC& ctx) {
+    if (theta.is_indeterminate()) return BC::indeterminate();
     if (theta.is_undefined() || !theta.is_finite()) return BC::undefined();
     if (theta.imaginary().is_zero()) return BC(math::clausen(theta.real(), s, ctx.real()), BF::zero());
     const CX T = cx(theta);
@@ -487,6 +492,7 @@ Approx debye_tail_core(const CX& x, std::uint64_t n, std::size_t w) {
 } // namespace
 
 BC debye_integral(const BC& x, std::int64_t n, const BCC& ctx) {
+    if (x.is_indeterminate()) return BC::indeterminate();
     if (x.is_undefined() || !x.is_finite() || n < 1) return BC::undefined();
     if (x.imaginary().is_zero() && !x.real().signbit()) return BC(math::debye_integral(x.real(), n, ctx.real()), BF::zero());
     const CX X = cx(x);
@@ -498,6 +504,7 @@ BC debye_integral(const BC& x, std::int64_t n, const BCC& ctx) {
 }
 
 BC debye_tail(const BC& x, std::int64_t n, const BCC& ctx) {
+    if (x.is_indeterminate()) return BC::indeterminate();
     if (x.is_undefined() || !x.is_finite() || n < 1) return BC::undefined();
     if (x.imaginary().is_zero() && !x.real().signbit()) return BC(math::debye_tail(x.real(), n, ctx.real()), BF::zero());
     const CX X = cx(x);
@@ -505,6 +512,7 @@ BC debye_tail(const BC& x, std::int64_t n, const BCC& ctx) {
 }
 
 BC debye(const BC& x, std::int64_t n, const BCC& ctx) {
+    if (x.is_indeterminate()) return BC::indeterminate();
     if (x.is_undefined() || !x.is_finite() || n < 1) return BC::undefined();
     if (x.imaginary().is_zero() && !x.real().signbit()) return BC(math::debye(x.real(), n, ctx.real()), BF::zero());
     const CX X = cx(x);

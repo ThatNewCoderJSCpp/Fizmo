@@ -268,6 +268,7 @@ BC axis_log_shift(const BF& v, bool negative, const BCC& ctx) {
 
 BC sin_integral(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) return BC(math::sin_integral(z.real(), ctx.real()), BF::zero());
     if (imag_axis(z)) return BC(BF::zero(), math::sinh_integral(z.imaginary(), ctx.imaginary()));
     if (!z.is_finite()) return BC::undefined();
@@ -277,6 +278,7 @@ BC sin_integral(const BC& z, const BCC& ctx) {
 
 BC sinh_integral(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) return BC(math::sinh_integral(z.real(), ctx.real()), BF::zero());
     if (imag_axis(z)) return BC(BF::zero(), math::sin_integral(z.imaginary(), ctx.imaginary()));
     if (!z.is_finite()) return BC::undefined();
@@ -286,6 +288,7 @@ BC sinh_integral(const BC& z, const BCC& ctx) {
 
 BC cos_integral(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) {
         if (!z.real().signbit() || z.real().is_zero()) return BC(math::cos_integral(z.real().abs(), ctx.real()), BF::zero());
         if (!z.real().is_finite()) return BC::undefined();
@@ -302,6 +305,7 @@ BC cos_integral(const BC& z, const BCC& ctx) {
 
 BC cosh_integral(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) {
         if (!z.real().signbit() || z.real().is_zero()) return BC(math::cosh_integral(z.real().abs(), ctx.real()), BF::zero());
         if (!z.real().is_finite()) return BC::undefined();
@@ -318,6 +322,7 @@ BC cosh_integral(const BC& z, const BCC& ctx) {
 
 BC exp_integral(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z)) return BC(math::exp_integral(z.real(), ctx.real()), BF::zero());
     if (!z.is_finite()) return BC::undefined();
     const CX Z = cx(z);
@@ -326,6 +331,7 @@ BC exp_integral(const BC& z, const BCC& ctx) {
 
 BC exp_integral_generalized(const BC& z, std::int64_t n, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z) && (n <= 0 || !z.real().signbit() || z.real().is_zero() || !z.real().is_finite())) {
         return BC(math::exp_integral_generalized(z.real(), n, ctx.real()), BF::zero());
     }
@@ -397,6 +403,7 @@ Approx li_n_raw(const CX& z, std::int64_t n, std::size_t w) {
 
 BC log_integral(const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z) && (!z.real().signbit() || z.real().is_zero())) return BC(math::log_integral(z.real(), ctx.real()), BF::zero());
     if (!z.is_finite()) return BC::undefined();
     const CX Z = cx(z);
@@ -405,6 +412,7 @@ BC log_integral(const BC& z, const BCC& ctx) {
 
 BC log_integral_generalized(const BC& z, std::int64_t n, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (real_axis(z) && (!z.real().signbit() || z.real().is_zero())) return BC(math::log_integral_generalized(z.real(), n, ctx.real()), BF::zero());
     if (!z.is_finite()) return BC::undefined();
     if (n == 0) return BC(z.real().rounded(ctx.real()), z.imaginary().rounded(ctx.imaginary()));

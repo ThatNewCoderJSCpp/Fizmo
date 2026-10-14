@@ -357,6 +357,7 @@ std::vector<Approx> hurwitz_shifted(const CX& s, const CX& a, std::size_t K, std
 }
 
 BC hurwitz_zeta(const BC& s, const BC& a, const BCC& ctx) {
+    if (!(s.is_undefined() || a.is_undefined()) && (s.is_indeterminate() || a.is_indeterminate())) return BC::indeterminate();
     if (s.is_undefined() || a.is_undefined() || !s.is_finite() || !a.is_finite()) return BC::undefined();
     if (is_one_bc(s) || real_nonpos_int(a)) return BC::undefined();
     if (s.imaginary().is_zero() && a.imaginary().is_zero() && !a.real().signbit()) {
@@ -367,6 +368,7 @@ BC hurwitz_zeta(const BC& s, const BC& a, const BCC& ctx) {
 }
 
 BC riemann_zeta(const BC& s, const BCC& ctx) {
+    if (s.is_indeterminate()) return BC::indeterminate();
     if (s.is_undefined() || !s.is_finite()) return BC::undefined();
     if (s.imaginary().is_zero()) return BC(math::riemann_zeta(s.real(), ctx.real()), BF::zero());
     const CX S = cx(s);
@@ -382,6 +384,7 @@ BC riemann_zeta(const BC& s, const BCC& ctx) {
 }
 
 BC riemann_chi(const BC& s, const BCC& ctx) {
+    if (s.is_indeterminate()) return BC::indeterminate();
     if (s.is_undefined() || !s.is_finite()) return BC::undefined();
     if (s.imaginary().is_zero()) return BC(math::riemann_chi(s.real(), ctx.real()), BF::zero());
     const CX S = cx(s);
@@ -395,6 +398,7 @@ BC riemann_chi(const BC& s, const BCC& ctx) {
 }
 
 BC riemann_xi(const BC& s, const BCC& ctx) {
+    if (s.is_indeterminate()) return BC::indeterminate();
     if (s.is_undefined() || !s.is_finite()) return BC::undefined();
     if (s.imaginary().is_zero()) return BC(math::riemann_xi(s.real(), ctx.real()), BF::zero());
     const CX S0 = cx(s);
@@ -438,18 +442,21 @@ BC zeta_times(const BC& s, bool eta, const BCC& ctx) {
 } // namespace
 
 BC dirichlet_eta(const BC& s, const BCC& ctx) {
+    if (s.is_indeterminate()) return BC::indeterminate();
     if (s.is_undefined() || !s.is_finite()) return BC::undefined();
     if (s.imaginary().is_zero()) return BC(math::dirichlet_eta(s.real(), ctx.real()), BF::zero());
     return zeta_times(s, true, ctx);
 }
 
 BC dirichlet_lambda(const BC& s, const BCC& ctx) {
+    if (s.is_indeterminate()) return BC::indeterminate();
     if (s.is_undefined() || !s.is_finite()) return BC::undefined();
     if (s.imaginary().is_zero()) return BC(math::dirichlet_lambda(s.real(), ctx.real()), BF::zero());
     return zeta_times(s, false, ctx);
 }
 
 BC dirichlet_beta(const BC& s, const BCC& ctx) {
+    if (s.is_indeterminate()) return BC::indeterminate();
     if (s.is_undefined() || !s.is_finite()) return BC::undefined();
     if (s.imaginary().is_zero()) return BC(math::dirichlet_beta(s.real(), ctx.real()), BF::zero());
     const CX S0 = cx(s);

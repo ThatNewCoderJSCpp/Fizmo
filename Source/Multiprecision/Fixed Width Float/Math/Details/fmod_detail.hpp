@@ -57,10 +57,10 @@ rem_parts<F> rem_split(const F& x, const F& y) noexcept {
     using G = typename F::guard_t;
     rem_parts<F> p;
     p.mag = G::zero(); p.xneg = x.is_negative(); p.yneg = y.is_negative();
-    p.q_odd = false; p.done = true; p.early = F::nan();
-    if (x.is_undefined() || y.is_undefined()) { p.early = F::undefined(); return p; }
-    if (x.is_nan() || y.is_nan())             { return p; }
-    if (y.is_zero() || x.is_infinite())       { return p; }
+    p.q_odd = false; p.done = true; p.early = F::undefined();
+    if (x.is_unordered() || y.is_unordered()) { p.early = edetail::unordered_of(x, y); return p; }
+    if (y.is_zero())                          { p.early = x.is_zero() ? F::indeterminate() : F::undefined(); return p; }
+    if (x.is_infinite())                      { return p; }
     if (x.is_zero() || y.is_infinite())       { p.early = x; return p; }
     p.done = false;
     p.mag  = fmod_core(multiprecision::fmath::float_cast<G>(math::abs(x)),

@@ -21,6 +21,7 @@ BigFloat ac_once(ac_kind k, std::uint64_t n, std::size_t wp, std::size_t& lost) 
     const std::size_t   N        = wp + 4;
     BigUInt v = bfdetail::sqrt_int_fixed(r, N);          
     if (v.is_undefined()) return BigFloat::undefined();
+    if (v.is_indeterminate()) return BigFloat::indeterminate();
     BigUInt t = bfdetail::unit(N);
     if (is_ratio) t.mul_small_mutable(q);
     v.add_mutable(t);

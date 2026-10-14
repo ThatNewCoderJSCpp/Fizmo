@@ -180,10 +180,12 @@ namespace multiprecision {
 BigComplex::cache_t::cache_t() : real_sq(), imaginary_sq(), norm(), norm_k(0), have_sq(false), have_norm(false), norm_exact(false), branch_k(0) {}
 
 void BigComplex::normalize() {
-    const bool bad = m_real.is_nan() || m_real.is_undefined() || m_imaginary.is_nan() || m_imaginary.is_undefined();
+    const bool bad = m_real.is_unordered() || m_imaginary.is_unordered();
     if (!bad) return;
-    if (!m_real.is_undefined())      m_real      = BigFloat::undefined();
-    if (!m_imaginary.is_undefined()) m_imaginary = BigFloat::undefined();
+    const bool undef = m_real.is_nan() || m_real.is_undefined() || m_imaginary.is_nan() || m_imaginary.is_undefined();
+    const BigFloat fill = undef ? BigFloat::undefined() : BigFloat::indeterminate();
+    if (m_real.classify()      != fill.classify()) m_real      = fill;
+    if (m_imaginary.classify() != fill.classify()) m_imaginary = fill;
 }
 
 void BigComplex::ensure_squares() const {
@@ -295,6 +297,7 @@ void BigComplex::swap(BigComplex& o) noexcept {
 
 auto BigComplex::classify() const noexcept -> fpclass {
     if (m_real.is_nan() || m_real.is_undefined() || m_imaginary.is_nan() || m_imaginary.is_undefined()) return fpclass::undefined;
+    if (m_real.is_indeterminate() || m_imaginary.is_indeterminate()) return fpclass::indeterminate;
     if (m_real.is_infinite()  || m_imaginary.is_infinite()) return fpclass::infinite;
     return fpclass::finite;
 }
@@ -302,6 +305,7 @@ auto BigComplex::classify() const noexcept -> fpclass {
 auto BigComplex::magnitude_squared(const BigFloatContext& ctx) const -> BigFloat {
     switch (classify()) {
         case fpclass::undefined: return BigFloat::undefined();
+        case fpclass::indeterminate: return BigFloat::indeterminate();
         case fpclass::infinite:  return BigFloat::infinity();
         default: break;
     }
@@ -317,6 +321,7 @@ auto BigComplex::magnitude_squared(const BigFloatContext& ctx) const -> BigFloat
 auto BigComplex::magnitude_squared_exact() const -> BigFloat {
     switch (classify()) {
         case fpclass::undefined: return BigFloat::undefined();
+        case fpclass::indeterminate: return BigFloat::indeterminate();
         case fpclass::infinite:  return BigFloat::infinity();
         default: break;
     }
@@ -328,6 +333,7 @@ auto BigComplex::magnitude_squared_exact() const -> BigFloat {
 auto BigComplex::magnitude(const BigFloatContext& ctx) const -> BigFloat {
     switch (classify()) {
         case fpclass::undefined: return BigFloat::undefined();
+        case fpclass::indeterminate: return BigFloat::indeterminate();
         case fpclass::infinite:  return BigFloat::infinity();
         default: break;
     }
@@ -348,6 +354,7 @@ auto BigComplex::magnitude(const BigFloatContext& ctx) const -> BigFloat {
 
 auto BigComplex::argument(const BigFloatContext& ctx) const -> BigFloat {
     if (is_undefined()) return BigFloat::undefined();
+    if (is_indeterminate()) return BigFloat::indeterminate();
     cache_t& c = cache();
     if (c.arg_r.hit(ctx)) return c.arg_r.value;
     return c.arg_r.put(math::atan2(m_imaginary, m_real, ctx), ctx);
@@ -401,7 +408,7 @@ auto BigComplex::compare_argument(const BigComplex& a, const BigComplex& b) -> o
 }
 
 auto BigComplex::compare_argument(const BigComplex& a, const BigFloat& theta) -> ordering {
-    if (!a.argument_defined() || theta.is_nan() || theta.is_undefined()) return ordering::unordered;
+    if (!a.argument_defined() || theta.is_unordered()) return ordering::unordered;
     if (theta.is_infinite()) return theta.signbit() ? ordering::greater : ordering::less;
     const BigComplex  ba = a.is_infinite() ? a.boxed() : BigComplex();
     const BigComplex& da = a.is_infinite() ? ba : a;
@@ -425,7 +432,7 @@ auto BigComplex::compare_argument(const BigComplex& a, const BigFloat& theta) ->
 }
 
 auto BigComplex::compare_magnitude(const BigComplex& a, const BigComplex& b) -> ordering {
-    if (a.is_undefined() || b.is_undefined()) return ordering::unordered;
+    if (a.is_unordered() || b.is_unordered()) return ordering::unordered;
     if (&a == &b) return ordering::equal;
     const bool ai = a.is_infinite(), bi = b.is_infinite();
     if (ai || bi) return (ai && bi) ? ordering::equal : (ai ? ordering::greater : ordering::less);
@@ -441,7 +448,7 @@ auto BigComplex::compare_magnitude(const BigComplex& a, const BigComplex& b) -> 
 }
 
 auto BigComplex::compare_magnitude(const BigComplex& a, const BigFloat& r) -> ordering {
-    if (a.is_undefined() || r.is_nan() || r.is_undefined()) return ordering::unordered;
+    if (a.is_unordered() || r.is_unordered()) return ordering::unordered;
     if (r.is_negative() && !r.is_zero()) return ordering::greater;
     if (r.is_infinite()) return a.is_infinite() ? ordering::equal : ordering::less;
     if (a.is_infinite()) return ordering::greater;
@@ -569,6 +576,7 @@ auto BigComplex::rounded(const BigComplexContext& ctx) const -> BigComplex {
 
 auto BigComplex::square(const BigComplexContext& ctx) const -> BigComplex {
     if (is_undefined()) return undefined();
+    if (is_indeterminate()) return indeterminate();
     if (is_infinite())  { const BigComplex t(*this); return mul(*this, t, ctx); }
     const BigFloatContext cr = ctx.real(), ci = ctx.imaginary();
     ensure_squares();
@@ -601,9 +609,10 @@ auto BigComplex::sub(const BigComplex& z, const BigComplex& w, const BigComplexC
 
 auto BigComplex::mul(const BigComplex& z, const BigComplex& w, const BigComplexContext& ctx) -> BigComplex {
     if (z.is_undefined() || w.is_undefined()) return undefined();
+    if (z.is_indeterminate() || w.is_indeterminate()) return indeterminate();
 
     if (z.is_infinite() || w.is_infinite()) {
-        if (z.is_zero() || w.is_zero()) return undefined();
+        if (z.is_zero() || w.is_zero()) return indeterminate();
         const BigComplex s = mul_finite(z.boxed(), w.boxed(), sign_ctx());
         return BigComplex(bcdetail::to_infinity(s.m_real), bcdetail::to_infinity(s.m_imaginary));
     }
@@ -614,13 +623,10 @@ auto BigComplex::mul(const BigComplex& z, const BigComplex& w, const BigComplexC
 
 auto BigComplex::div(const BigComplex& z, const BigComplex& w, const BigComplexContext& ctx) -> BigComplex {
     if (z.is_undefined() || w.is_undefined()) return undefined();
+    if (z.is_indeterminate() || w.is_indeterminate()) return indeterminate();
     const bool zi = z.is_infinite(), wi = w.is_infinite();
-    if (zi && wi) return undefined();
-
-    if (w.is_zero()) {
-        if (z.is_zero()) return undefined();
-        return BigComplex(bcdetail::to_infinity(z.m_real), bcdetail::to_infinity(z.m_imaginary));
-    }
+    if (zi && wi) return indeterminate();
+    if (w.is_zero()) return z.is_zero() ? indeterminate() : undefined();
 
     if (zi) {
         const BigComplex s = div_finite(z.boxed(), w, sign_ctx());

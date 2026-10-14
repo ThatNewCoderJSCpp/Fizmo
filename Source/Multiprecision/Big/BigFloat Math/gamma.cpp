@@ -123,6 +123,7 @@ BigFloat gm_stirling_coeff(std::size_t j, const BigFloatContext& tc) {
         const BigFloatContext hc(BigFloatContext::clamp_precision(tc.precision + 32), RoundingMode::nearest_even);
         const BigUInt num = multiprecision::constants::tangent_number(j);
         if (num.is_undefined()) return BigFloat::undefined();
+        if (num.is_indeterminate()) return BigFloat::indeterminate();
         BigUInt den = multiprecision::constants::bfdetail::unit(2 * j);
         den.sub_small_mutable(1);
         den.mul_small_mutable(static_cast<std::uint64_t>(2 * j - 1));
@@ -406,6 +407,7 @@ BigFloat gm_gamma_pos(const BigFloat& z, const BigFloatContext& wc) {
 BigFloat gm_frac(const BigFloat& z, const BigFloatContext& wc) {
     const BigInt t = z.get_integer_part();
     if (t.is_undefined()) return BigFloat::undefined();
+    if (t.is_indeterminate()) return BigFloat::indeterminate();
     BigFloat r = BigFloat::sub(z, BigFloat(t), wc);
     if (r.signbit() && !r.is_zero()) r = BigFloat::add(r, BigFloat::one(), wc);
     return r;
@@ -588,6 +590,7 @@ int gamma_sign(const BigFloat& z, const BigFloatContext& ctx) {
 BigFloat log_abs_gamma(const BigFloat& z, const BigFloatContext& ctx) {
     if (z.is_nan())       return BigFloat::nan();
     if (z.is_undefined()) return BigFloat::undefined();
+    if (z.is_indeterminate()) return BigFloat::indeterminate();
     if (z.is_infinite())  return z.signbit() ? BigFloat::undefined() : z;
     std::uint64_t k = 0;
 
@@ -614,6 +617,7 @@ BigFloat log_gamma(const BigFloat& z, const BigFloatContext& ctx) {
 BigFloat gamma(const BigFloat& z, const BigFloatContext& ctx) {
     if (z.is_nan())       return BigFloat::nan();
     if (z.is_undefined()) return BigFloat::undefined();
+    if (z.is_indeterminate()) return BigFloat::indeterminate();
     if (z.is_infinite())  return z.signbit() ? BigFloat::undefined() : z;
     std::uint64_t k = 0;
 

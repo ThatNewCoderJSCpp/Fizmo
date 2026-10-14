@@ -324,6 +324,7 @@ BC real_regularized(const BF& a, const BF& x, bool lower, const BCC& ctx) {
 
 BC incomplete(const BC& a, const BC& z, Kind kind, bool regularized, const BCC& ctx) {
     if (a.is_undefined() || z.is_undefined()) return BC::undefined();
+    if (a.is_indeterminate() || z.is_indeterminate()) return BC::indeterminate();
     if (!a.is_finite() || !z.is_finite()) return BC::undefined();
     std::int64_t pn = 0;
     const bool pole = nonpositive_integer(a, pn);
@@ -386,6 +387,7 @@ Approx fib_raw(const CX& z, bool luc, std::size_t w) {
 }
 
 BC fib_complex(const BC& z, bool luc, const BCC& ctx) {
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (z.is_undefined() || !z.is_finite()) return BC::undefined();
     if (z.imaginary().is_zero()) {
         const BF v = luc ? math::lucas(z.real(), ctx.real()) : math::fibonacci(z.real(), ctx.real());

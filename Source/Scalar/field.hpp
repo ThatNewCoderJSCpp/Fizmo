@@ -194,7 +194,7 @@ struct field<BigFloat, void> {
     template <class F>
     static std::vector<BigFloat> eval_vec(const context_type& c, std::size_t count, F&& f) { return ziv_vector(BigTarget(c), count, std::forward<F>(f)); }
 
-    static bool is_nan(const BigFloat& x) { return x.is_nan() || x.is_undefined(); }
+    static bool is_nan(const BigFloat& x) { return x.is_unordered(); }
     static bool is_inf(const BigFloat& x) { return x.is_infinite(); }
     static bool is_finite(const BigFloat& x) { return x.is_finite(); }
     static bool is_zero(const BigFloat& x) { return x.is_zero(); }

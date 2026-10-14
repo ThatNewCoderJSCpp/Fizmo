@@ -262,6 +262,7 @@ namespace math {
 BigFloat riemann_zeta(const BigFloat& s, const BigFloatContext& ctx) {
     if (s.is_nan())       return BigFloat::nan();
     if (s.is_undefined()) return BigFloat::undefined();
+    if (s.is_indeterminate()) return BigFloat::indeterminate();
     if (s.is_infinite())  return s.signbit() ? BigFloat::undefined() : BigFloat::one();
     const BigFloat one  = BigFloat::one();
     const BigFloat half = one.scaled_pow2(-1);
@@ -312,6 +313,7 @@ BigFloat riemann_zeta(const BigFloat& s, const BigFloatContext& ctx) {
 BigFloat riemann_xi(const BigFloat& s, const BigFloatContext& ctx) {
     if (s.is_nan())       return BigFloat::nan();
     if (s.is_undefined()) return BigFloat::undefined();
+    if (s.is_indeterminate()) return BigFloat::indeterminate();
     if (s.is_infinite())  return BigFloat::infinity();
     const BigFloat one  = BigFloat::one();
     const BigFloat half = one.scaled_pow2(-1);
@@ -345,6 +347,7 @@ BigFloat riemann_xi(const BigFloat& s, const BigFloatContext& ctx) {
 BigFloat riemann_chi(const BigFloat& s, const BigFloatContext& ctx) {
     if (s.is_nan())       return BigFloat::nan();
     if (s.is_undefined()) return BigFloat::undefined();
+    if (s.is_indeterminate()) return BigFloat::indeterminate();
     if (s.is_infinite())  return BigFloat::undefined();                                               // oscillates
     const BigFloat           half = BigFloat::one().scaled_pow2(-1);
     const BigFloat::ordering ch   = BigFloat::compare(s, half);

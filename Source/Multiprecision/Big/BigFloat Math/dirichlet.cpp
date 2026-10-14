@@ -150,6 +150,7 @@ namespace math {
 BigFloat dirichlet_eta(const BigFloat& s, const BigFloatContext& ctx) {
     if (s.is_nan())       return BigFloat::nan();
     if (s.is_undefined()) return BigFloat::undefined();
+    if (s.is_indeterminate()) return BigFloat::indeterminate();
     if (s.is_infinite())  return s.signbit() ? BigFloat::undefined() : BigFloat::one();
     const BigFloat one  = BigFloat::one();
     const BigFloat half = one.scaled_pow2(-1);
@@ -191,6 +192,7 @@ BigFloat dirichlet_eta(const BigFloat& s, const BigFloatContext& ctx) {
 BigFloat dirichlet_lambda(const BigFloat& s, const BigFloatContext& ctx) {
     if (s.is_nan())       return BigFloat::nan();
     if (s.is_undefined()) return BigFloat::undefined();
+    if (s.is_indeterminate()) return BigFloat::indeterminate();
     if (s.is_infinite())  return s.signbit() ? BigFloat::undefined() : BigFloat::one();
     const BigFloat one = BigFloat::one();
     bool          fits = false, even = false;
@@ -238,6 +240,7 @@ BigFloat dirichlet_lambda(const BigFloat& s, const BigFloatContext& ctx) {
 BigFloat dirichlet_beta(const BigFloat& s, const BigFloatContext& ctx) {
     if (s.is_nan())       return BigFloat::nan();
     if (s.is_undefined()) return BigFloat::undefined();
+    if (s.is_indeterminate()) return BigFloat::indeterminate();
     if (s.is_infinite())  return s.signbit() ? BigFloat::undefined() : BigFloat::one();
     const BigFloat one  = BigFloat::one();
     const BigFloat half = one.scaled_pow2(-1);

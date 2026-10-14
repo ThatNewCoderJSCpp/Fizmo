@@ -377,7 +377,7 @@ bool bad_input(std::initializer_list<const BC*> v) {
     return false;
 }
 
-bool usable(const BF& r) { return !r.is_nan() && !r.is_undefined() && r.is_finite(); }
+bool usable(const BF& r) { return !r.is_unordered() && r.is_finite(); }
 
 } // namespace
 

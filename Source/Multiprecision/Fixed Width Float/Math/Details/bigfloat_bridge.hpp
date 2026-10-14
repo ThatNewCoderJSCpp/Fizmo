@@ -89,7 +89,7 @@ inline std::int64_t top_exponent(const fizmo::multiprecision::BigFloat& r) noexc
 
 template <class F>
 F finish(const fizmo::multiprecision::BigFloat& r) {
-    if (!is_fizmo_signed_v<F> && r.signbit() && !r.is_nan() && !r.is_undefined() && !r.is_zero()) return F::nan();
+    if (!is_fizmo_signed_v<F> && r.signbit() && !r.is_unordered() && !r.is_zero()) return F::nan();
     return r.template to_floatmp<F>();
 }
 

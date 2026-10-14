@@ -138,6 +138,7 @@ public:
         if (other.is_infinite())  { *this = infinity(other.is_negative()); return; }
         if (other.is_nan())       { *this = nan(); return; }
         if (other.is_undefined()) { *this = undefined(); return; }
+        if (other.is_indeterminate()) { *this = indeterminate(); return; }
         const auto fx   = other.frexp_signed();
         const auto srcM = std::get<0>(fx);
         const auto srcE = std::get<1>(fx);
@@ -173,7 +174,7 @@ public:
     OPTIONAL_CPP14_CONSTEXPR void set_sign(bool n)               noexcept { m_is_negative = n; }
 
     OPTIONAL_CPP14_CONSTEXPR sstore_t get_unbiased_exponent() const noexcept {
-        if (is_zero() || is_nan() || is_undefined()) return sstore_t::undefined();
+        if (is_zero() || is_unordered()) return sstore_t::undefined();
         if (is_infinite()) return m_is_negative ? sstore_t::min() : sstore_t::max();
 
         if (is_subnormal()) {
@@ -204,11 +205,17 @@ public:
         return get_biased_exponent() == max_biased_exponent && get_mantissa() == ((one() << (MantissaBits - 1)) | store_t(std::uint64_t(2))) && !m_is_negative;
     }
 
+    OPTIONAL_CPP14_CONSTEXPR bool is_indeterminate() const noexcept {
+        return get_biased_exponent() == max_biased_exponent && get_mantissa() == ((one() << (MantissaBits - 1)) | store_t(std::uint64_t(3))) && !m_is_negative;
+    }
+
+    OPTIONAL_CPP14_CONSTEXPR bool is_unordered() const noexcept { return is_nan() || is_undefined() || is_indeterminate(); }
+
     OPTIONAL_CPP14_CONSTEXPR bool is_normalized() const noexcept {
         return !(get_biased_exponent().is_zero() || get_biased_exponent() == max_biased_exponent);
     }
 
-    OPTIONAL_CPP14_CONSTEXPR bool is_finite() const noexcept { return !(is_undefined() || is_infinite() || is_nan()); }
+    OPTIONAL_CPP14_CONSTEXPR bool is_finite() const noexcept { return !(is_unordered() || is_infinite()); }
 
 public:
     static OPTIONAL_CPP14_CONSTEXPR floatmp zero(bool neg = false) noexcept {
@@ -233,6 +240,16 @@ public:
         return floatmp(raw_tag{}, false, (max_biased_exponent << static_cast<std::size_t>(MantissaBits)) | ((one() << (MantissaBits - 1)) | store_t(std::uint64_t(2))));
     }
 
+    static OPTIONAL_CPP14_CONSTEXPR floatmp indeterminate() noexcept {
+        return floatmp(raw_tag{}, false, (max_biased_exponent << static_cast<std::size_t>(MantissaBits)) | ((one() << (MantissaBits - 1)) | store_t(std::uint64_t(3))));
+    }
+
+    static OPTIONAL_CPP14_CONSTEXPR floatmp unordered_result(const floatmp& a, const floatmp& b) noexcept {
+        return (a.is_undefined()     || b.is_undefined())     ? undefined()
+             : (a.is_indeterminate() || b.is_indeterminate()) ? indeterminate()
+             : nan();
+    }
+
     static OPTIONAL_CPP14_CONSTEXPR floatmp min() noexcept {
         return floatmp(raw_tag{}, false, one() << static_cast<std::size_t>(MantissaBits));
     }
@@ -255,7 +272,7 @@ public:
 
 public:
     OPTIONAL_CPP14_CONSTEXPR bool operator==(const floatmp& o) const noexcept {
-        return (is_nan() || o.is_nan() || is_undefined() || o.is_undefined()) ? false
+        return (is_unordered() || o.is_unordered()) ? false
              : (is_zero() && o.is_zero())                                     ? true
              : (m_is_negative == o.m_is_negative && m_data == o.m_data);
     }
@@ -263,7 +280,7 @@ public:
     OPTIONAL_CPP14_CONSTEXPR bool operator!=(const floatmp& o) const noexcept { return !(*this == o); }
 
     OPTIONAL_CPP14_CONSTEXPR bool operator<(const floatmp& o) const noexcept {
-        return (is_nan() || o.is_nan() || is_undefined() || o.is_undefined()) ? false
+        return (is_unordered() || o.is_unordered()) ? false
              : is_negative_infinity()                                         ? !o.is_negative_infinity()
              : o.is_positive_infinity()                                       ? !is_positive_infinity()
              : (is_positive_infinity() || o.is_negative_infinity())           ? false
@@ -273,15 +290,15 @@ public:
     }
 
     OPTIONAL_CPP14_CONSTEXPR bool operator<=(const floatmp& o) const noexcept {
-        return (is_nan() || o.is_nan() || is_undefined() || o.is_undefined()) ? false : (*this < o || *this == o);
+        return (is_unordered() || o.is_unordered()) ? false : (*this < o || *this == o);
     }
 
     OPTIONAL_CPP14_CONSTEXPR bool operator>(const floatmp& o)  const noexcept {
-        return (is_nan() || o.is_nan() || is_undefined() || o.is_undefined()) ? false : !(*this <= o);
+        return (is_unordered() || o.is_unordered()) ? false : !(*this <= o);
     }
 
     OPTIONAL_CPP14_CONSTEXPR bool operator>=(const floatmp& o) const noexcept {
-        return (is_nan() || o.is_nan() || is_undefined() || o.is_undefined()) ? false : !(*this < o);
+        return (is_unordered() || o.is_unordered()) ? false : !(*this < o);
     }
 
     template <std::size_t TB2, std::size_t MB2, sign S2>
@@ -298,7 +315,7 @@ public:
 
 public:
     OPTIONAL_CPP14_CONSTEXPR floatmp operator-() const noexcept {
-        return (is_nan() || is_undefined()) ? *this : floatmp(raw_tag{}, !m_is_negative, m_data);
+        return is_unordered() ? *this : floatmp(raw_tag{}, !m_is_negative, m_data);
     }
 
     constexpr floatmp operator+() const noexcept { return *this; }
@@ -308,7 +325,7 @@ public:
     OPTIONAL_CPP14_CONSTEXPR floatmp operator--(int) noexcept { floatmp r(*this); --(*this); return r; }
 
     OPTIONAL_CPP14_CONSTEXPR floatmp& negate() noexcept { 
-        if (is_nan() || is_undefined()) return *this;
+        if (is_unordered()) return *this;
         m_is_negative = !m_is_negative; 
         return *this; 
     }
@@ -318,19 +335,17 @@ public:
     OPTIONAL_CPP14_CONSTEXPR floatmp operator-(const floatmp& o) const noexcept { return add_impl(*this, -o); }
 
     OPTIONAL_CPP14_CONSTEXPR floatmp operator*(const floatmp& o) const noexcept {
-        if (is_nan() || o.is_nan()) return nan();
-        if (is_undefined() || o.is_undefined()) return undefined();
-        if (is_infinite())   { if (o.is_zero()) return undefined(); return infinity(m_is_negative != o.m_is_negative); }
-        if (o.is_infinite()) { if (is_zero())  return undefined(); return infinity(m_is_negative != o.m_is_negative); }
+        if (is_unordered() || o.is_unordered()) return unordered_result(*this, o);
+        if (is_infinite())   { if (o.is_zero()) return indeterminate(); return infinity(m_is_negative != o.m_is_negative); }
+        if (o.is_infinite()) { if (is_zero())  return indeterminate(); return infinity(m_is_negative != o.m_is_negative); }
         if (is_zero() || o.is_zero()) return zero(m_is_negative != o.m_is_negative);
         return multiply_finite(o);
     }
 
     OPTIONAL_CPP14_CONSTEXPR floatmp operator/(const floatmp& o) const noexcept {
-        if (is_nan() || o.is_nan()) return nan();
-        if (is_undefined() || o.is_undefined()) return undefined();
-        if (o.is_zero())   { if (is_zero()) return undefined(); return infinity(m_is_negative != o.m_is_negative); }
-        if (is_infinite()) { if (o.is_infinite()) return undefined(); return infinity(m_is_negative != o.m_is_negative); }
+        if (is_unordered() || o.is_unordered()) return unordered_result(*this, o);
+        if (o.is_zero())   return is_zero() ? indeterminate() : undefined();
+        if (is_infinite()) { if (o.is_infinite()) return indeterminate(); return infinity(m_is_negative != o.m_is_negative); }
         if (o.is_infinite() || is_zero()) return zero(m_is_negative != o.m_is_negative);
         return divide_finite(o);
     }
@@ -377,6 +392,7 @@ public:
         if (is_zero())      return { store_t(), sstore_t(0) };
         if (is_nan())       return { get_mantissa() | (one() << static_cast<std::size_t>(MantissaBits)), sstore_t::max() };
         if (is_undefined()) return { get_mantissa() | (one() << static_cast<std::size_t>(MantissaBits)), sstore_t::min() };
+        if (is_indeterminate()) return { get_mantissa() | (one() << static_cast<std::size_t>(MantissaBits)), sstore_t::undefined() };
         if (is_infinite())  return { store_t(), m_is_negative ? sstore_t::min() : sstore_t::max() };
         if (is_subnormal()) return { get_mantissa(), min_exponent };
         return { get_mantissa() | (one() << static_cast<std::size_t>(MantissaBits)), get_unbiased_exponent() };
@@ -395,7 +411,7 @@ public:
 
 public:
     OPTIONAL_CPP14_CONSTEXPR floatmp get_integer_part() const noexcept {
-        if (is_nan() || is_undefined() || is_infinite() || is_zero()) return *this;
+        if (is_unordered() || is_infinite() || is_zero()) return *this;
         const sstore_t exp = get_unbiased_exponent();
         if (exp < sstore_t(0)) return zero(m_is_negative);                      
         if (exp >= sstore_t(mantissa_index)) return *this;     
@@ -407,7 +423,7 @@ public:
     }
 
     OPTIONAL_CPP14_CONSTEXPR store_t get_integer_part_as_int() const noexcept {
-        if (is_nan() || is_undefined() || is_zero()) return store_t();
+        if (is_unordered() || is_zero()) return store_t();
         if (is_infinite()) return store_t::max();
         const sstore_t exp = get_unbiased_exponent();
         if (exp < sstore_t(0)) return store_t();
@@ -418,7 +434,7 @@ public:
     }
 
     OPTIONAL_CPP14_CONSTEXPR floatmp get_fractional_part() const noexcept {
-        if (is_nan() || is_undefined()) return *this;
+        if (is_unordered()) return *this;
         if (is_infinite()) return zero(m_is_negative);
         if (is_zero())     return *this;
         const sstore_t exp = get_unbiased_exponent();
@@ -436,7 +452,7 @@ public:
     }
 
     OPTIONAL_CPP14_CONSTEXPR store_t get_fractional_part_as_int() const noexcept {
-        if (is_nan() || is_undefined() || is_infinite() || is_zero()) return store_t();
+        if (is_unordered() || is_infinite() || is_zero()) return store_t();
         bool s = false; sstore_t e2; store_t mfull;
         decompose(*this, s, e2, mfull);                      
         const sstore_t E = e2 + sstore_t(mantissa_index);
@@ -455,7 +471,7 @@ public:
 
 public:
     OPTIONAL_CPP14_CONSTEXPR sstore_t approximate_exponent_base10() const noexcept {
-        if (is_zero() || is_nan() || is_undefined()) return sstore_t::undefined();
+        if (is_zero() || is_unordered()) return sstore_t::undefined();
         if (is_infinite()) return m_is_negative ? sstore_t::min() : sstore_t::max();
         const sstore_t NUM(std::uint64_t(30102999566ull));
         const sstore_t DEN(std::uint64_t(100000000000ull));
@@ -474,6 +490,7 @@ public:
     std::string to_string(long long sig = 0) const {
         if (is_nan()) return "nan";
         if (is_undefined()) return "undefined";
+        if (is_indeterminate()) return "indeterminate";
         if (is_infinite()) return m_is_negative ? "-\u221e" : "\u221e";
         if (is_zero()) return m_is_negative ? "-0" : "0";
         const long long limit = sig > 0 ? sig : default_significant_digits();
@@ -486,6 +503,7 @@ public:
     std::string to_scientific_string(long long sig = 0) const {
         if (is_nan())       return "nan";
         if (is_undefined()) return "undefined";
+        if (is_indeterminate()) return "indeterminate";
         if (is_infinite())  return m_is_negative ? "-\u221e" : "\u221e";
         if (is_zero())      return m_is_negative ? "-0e+0" : "0e+0";
         const fdetail::decimal::digits_result dr = decimal_digits(sig);
@@ -541,11 +559,10 @@ private:
     }
 
     static OPTIONAL_CPP14_CONSTEXPR floatmp add_impl(const floatmp& a, const floatmp& b) noexcept {
-        if (a.is_undefined() || b.is_undefined()) return undefined();
-        if (a.is_nan() || b.is_nan()) return nan();
+        if (a.is_unordered() || b.is_unordered()) return unordered_result(a, b);
 
         if (a.is_infinite() || b.is_infinite()) {
-            if (a.is_infinite() && b.is_infinite() && (a.m_is_negative != b.m_is_negative)) return nan();
+            if (a.is_infinite() && b.is_infinite() && (a.m_is_negative != b.m_is_negative)) return indeterminate();
             return a.is_infinite() ? a : b;
         }
 
@@ -704,6 +721,8 @@ private:
         if (!p.ok) return false;
         m_is_negative = p.negative;
         if (p.is_nan) { *this = nan(); return true; }
+        if (p.is_undefined) { *this = undefined(); return true; }
+        if (p.is_indeterminate) { *this = indeterminate(); return true; }
         if (p.is_inf) { *this = infinity(p.negative); return true; }
         if (p.digits.is_zero()) { *this = zero(p.negative); return true; }
         const long long dexp = p.exponent10;

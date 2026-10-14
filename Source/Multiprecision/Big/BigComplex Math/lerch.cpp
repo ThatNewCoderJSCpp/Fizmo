@@ -421,6 +421,7 @@ bool real_nonpos_int(const BC& a) {
 
 BC lerch_transcendent(const BC& z, const BC& s, const BC& a, const BCC& ctx) {
     if (z.is_undefined() || s.is_undefined() || a.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate() || s.is_indeterminate() || a.is_indeterminate()) return BC::indeterminate();
     if (!z.is_finite() || !s.is_finite() || !a.is_finite()) return BC::undefined();
     if (real_nonpos_int(a)) return BC::undefined();
     const CX Z = cx(z), S = cx(s), A = cx(a);

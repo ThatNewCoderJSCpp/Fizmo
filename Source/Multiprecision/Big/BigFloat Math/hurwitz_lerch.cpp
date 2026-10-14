@@ -493,6 +493,7 @@ BigFloat hurwitz_zeta(const BigFloat& s, const BigFloat& a, const BigFloatContex
     using namespace hzdetail;
     if (s.is_nan()       || a.is_nan())       return BigFloat::nan();
     if (s.is_undefined() || a.is_undefined()) return BigFloat::undefined();
+    if (s.is_indeterminate() || a.is_indeterminate()) return BigFloat::indeterminate();
     if (a.is_zero() || a.signbit())           return BigFloat::nan();
     const BigFloat one = BigFloat::one();
     if (a.is_infinite()) return (BigFloat::compare(s, one) == BigFloat::ordering::greater) ? BigFloat::zero() : BigFloat::undefined();
@@ -530,6 +531,7 @@ BigFloat lerch_transcendent(const BigFloat& z, const BigFloat& s, const BigFloat
     using namespace hzdetail;
     if (z.is_nan()       || s.is_nan()       || a.is_nan())       return BigFloat::nan();
     if (z.is_undefined() || s.is_undefined() || a.is_undefined()) return BigFloat::undefined();
+    if (z.is_indeterminate() || s.is_indeterminate() || a.is_indeterminate()) return BigFloat::indeterminate();
     if (a.is_zero() || a.signbit())                              return BigFloat::nan();
     if (a.is_infinite() || z.is_infinite())                      return BigFloat::undefined();
     const BigFloat           one = BigFloat::one();

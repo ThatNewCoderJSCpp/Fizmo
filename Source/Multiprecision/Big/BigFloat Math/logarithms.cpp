@@ -167,7 +167,7 @@ bool log_nearest_int(const BigFloat& v, const BigFloatContext& wc, std::int64_t&
     const std::int64_t e2 = v.get_exp_base2();
     if (e2 != BigFloat::exp_none && e2 > 40) return false;
     const BigInt i = v.get_integer_part();
-    if (i.is_nan() || i.is_undefined())      return false;
+    if (i.is_unordered())      return false;
     if (i.magnitude().bit_length() > 40)     return false;
     const std::uint64_t bits = i.get_lowest_bits();
     const std::int64_t  k    = i.is_negative() ? -static_cast<std::int64_t>(bits) : static_cast<std::int64_t>(bits);
@@ -188,7 +188,8 @@ bool log_nearest_int(const BigFloat& v, const BigFloatContext& wc, std::int64_t&
 ln_kind classify_ln(const BigFloat& v) {
     if (v.is_nan())        return ln_kind::nan_v;
     if (v.is_undefined())  return ln_kind::undef_v;
-    if (v.is_zero())       return ln_kind::neg_inf;    
+    if (v.is_indeterminate()) return ln_kind::indet_v;
+    if (v.is_zero())       return ln_kind::undef_v;
     if (v.is_negative())   return ln_kind::nan_v;
     if (v.is_infinite())   return ln_kind::pos_inf;
     if (is_exactly_one(v)) return ln_kind::pos_zero;  
@@ -198,18 +199,19 @@ ln_kind classify_ln(const BigFloat& v) {
 bool log_special(ln_kind a, ln_kind b, BigFloat& out) {
     if (a == ln_kind::nan_v   || b == ln_kind::nan_v)   { out = BigFloat::nan();       return true; }
     if (a == ln_kind::undef_v || b == ln_kind::undef_v) { out = BigFloat::undefined(); return true; }
+    if (a == ln_kind::indet_v || b == ln_kind::indet_v) { out = BigFloat::indeterminate(); return true; }
     const bool a_inf  = (a == ln_kind::neg_inf) || (a == ln_kind::pos_inf);
     const bool b_inf  = (b == ln_kind::neg_inf) || (b == ln_kind::pos_inf);
     const bool a_zero = (a == ln_kind::pos_zero);
     const bool b_zero = (b == ln_kind::pos_zero);
-    if (a_inf  && b_inf)  { out = BigFloat::undefined(); return true; }   
-    if (a_zero && b_zero) { out = BigFloat::undefined(); return true; }   
+    if (a_inf  && b_inf)  { out = BigFloat::indeterminate(); return true; }
+    if (a_zero && b_zero) { out = BigFloat::indeterminate(); return true; }
     const bool aneg = (a == ln_kind::neg_inf) || (a == ln_kind::neg_finite);
     const bool bneg = (b == ln_kind::neg_inf) || (b == ln_kind::neg_finite);
     const bool neg  = (aneg != bneg);
     if (a_inf)  { out = BigFloat::infinity(neg); return true; }  
     if (b_inf)  { out = BigFloat::zero(neg);     return true; }  
-    if (b_zero) { out = BigFloat::infinity(neg); return true; }  
+    if (b_zero) { out = BigFloat::undefined();   return true; }
     if (a_zero) { out = BigFloat::zero(neg);     return true; }  
     return false;
 }
@@ -224,7 +226,8 @@ namespace math {
 BigFloat ln(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
-    if (x.is_zero())      return BigFloat::infinity(true); 
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
+    if (x.is_zero())      return BigFloat::undefined();
     if (x.is_negative())  return BigFloat::nan();
     if (x.is_infinite())  return BigFloat::infinity();
     return detail::ln_finite(x, ctx);
@@ -233,6 +236,7 @@ BigFloat ln(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat ln(const BigInt& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     return ln(BigFloat(x), ctx);
 }
 
@@ -283,7 +287,8 @@ namespace math {
 BigFloat log2(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
-    if (x.is_zero())      return BigFloat::infinity(true);
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
+    if (x.is_zero())      return BigFloat::undefined();
     if (x.is_negative())  return BigFloat::nan();
     if (x.is_infinite())  return BigFloat::infinity();
     std::int64_t k = 0;
@@ -294,13 +299,15 @@ BigFloat log2(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat log2(const BigInt& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     return log2(BigFloat(x), ctx);
 }
 
 BigFloat log10(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
-    if (x.is_zero())      return BigFloat::infinity(true);
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
+    if (x.is_zero())      return BigFloat::undefined();
     if (x.is_negative())  return BigFloat::nan();
     if (x.is_infinite())  return BigFloat::infinity();
     std::int64_t k = 0;
@@ -311,6 +318,7 @@ BigFloat log10(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat log10(const BigInt& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     return log10(BigFloat(x), ctx);
 }
 

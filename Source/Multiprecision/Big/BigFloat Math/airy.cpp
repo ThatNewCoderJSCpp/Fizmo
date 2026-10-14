@@ -335,6 +335,7 @@ std::size_t ay_guard0(ay_kind k, const BF& x, std::size_t prec) {
 BF ay_public(ay_kind k, const BF& x, const BFC& ctx) {
     if (x.is_nan())       return BF::nan();
     if (x.is_undefined()) return BF::undefined();
+    if (x.is_indeterminate()) return BF::indeterminate();
 
     if (x.is_infinite()) {
         if (x.signbit()) return BF::zero();                                                   

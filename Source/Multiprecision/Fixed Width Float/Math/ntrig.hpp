@@ -25,8 +25,8 @@ namespace math {
                                                                                                                    \
     template <std::size_t TB, std::size_t MB, fizmo::multiprecision::sign S>                                                              \
     fizmo::multiprecision::floatmp<TB, MB, S> NAME(const fizmo::multiprecision::floatmp<TB, MB, S>& x) {                                                         \
-        if (x.is_undefined())                 return fizmo::multiprecision::floatmp<TB, MB, S>::undefined();                              \
-        if (x.is_nan() || x.is_infinite())    return fizmo::multiprecision::floatmp<TB, MB, S>::nan();                                    \
+        if (x.is_unordered())                 return x;                                                                                   \
+        if (x.is_infinite())                  return fizmo::multiprecision::floatmp<TB, MB, S>::undefined();                              \
         const BigFloat a(x);                                                                                       \
         return bdetail::eval<fizmo::multiprecision::floatmp<TB, MB, S>>([&a](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, c); });          \
     }

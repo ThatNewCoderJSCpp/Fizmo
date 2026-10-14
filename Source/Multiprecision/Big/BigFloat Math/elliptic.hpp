@@ -42,9 +42,10 @@ cs_val el_complete_raw(el_kind kind, const BF& n, const BF& m, std::size_t want)
 
 cs_val el_incomplete_raw(el_kind kind, const BF& phi, const BF& n, const BF& m, std::size_t want);
 
-inline bool el_bad(const BF& x) { return x.is_nan() || x.is_undefined(); }
+inline bool el_bad(const BF& x) { return x.is_unordered(); }
 inline BF   el_bad_of(const BF& x, const BF& y, const BF& z) {
     if (x.is_nan() || y.is_nan() || z.is_nan()) return BF::nan();
+    if (x.is_indeterminate() || y.is_indeterminate() || z.is_indeterminate()) return BF::indeterminate();
     return BF::undefined();
 }
 

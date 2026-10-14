@@ -121,6 +121,7 @@ namespace math {
 BigFloat arcsinh(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return x;
     if (x.is_zero())      return x;
     return detail::ih_dispatch(detail::ih_sel::asinh_v, x, ctx);
@@ -129,6 +130,7 @@ BigFloat arcsinh(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat arccosh(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return x.signbit() ? BigFloat::nan() : BigFloat::infinity();
     const BigFloat::ordering c = BigFloat::compare(x, BigFloat::one());
     if (c == BigFloat::ordering::less)  return BigFloat::nan();
@@ -139,6 +141,7 @@ BigFloat arccosh(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat arctanh(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::nan();
     if (x.is_zero())      return x;
     const BigFloat::ordering c = BigFloat::compare(x.abs(), BigFloat::one());
@@ -150,6 +153,7 @@ BigFloat arctanh(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat arccoth(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::zero(x.signbit());
     if (x.is_zero())      return BigFloat::nan();
     const BigFloat::ordering c = BigFloat::compare(x.abs(), BigFloat::one());
@@ -161,6 +165,7 @@ BigFloat arccoth(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat arcsech(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::nan();
     if (x.is_zero())      return BigFloat::infinity();             
     if (x.is_negative())  return BigFloat::nan();
@@ -173,6 +178,7 @@ BigFloat arcsech(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat arccsch(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::zero(x.signbit());
     if (x.is_zero())      return BigFloat::infinity(x.signbit());
     return detail::ih_dispatch(detail::ih_sel::acsch_v, x, ctx);

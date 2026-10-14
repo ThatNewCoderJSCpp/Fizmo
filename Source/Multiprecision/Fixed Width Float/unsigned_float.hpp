@@ -12,7 +12,7 @@ class floatmp<TotalBits, MantissaBits, sign::is_unsigned> {
     core v;
 
     static OPTIONAL_CPP14_CONSTEXPR floatmp wrap(core c) noexcept {
-        floatmp r; r.v = (c.is_negative() && !c.is_nan() && !c.is_undefined()) ? core::zero(false) : c;
+        floatmp r; r.v = (c.is_negative() && !c.is_unordered()) ? core::zero(false) : c;
         if (r.v.is_negative()) r.v.set_sign(false);
         return r;
     }
@@ -49,6 +49,8 @@ public:
     OPTIONAL_CPP14_CONSTEXPR bool is_infinite()  const noexcept { return v.is_infinite(); }
     OPTIONAL_CPP14_CONSTEXPR bool is_nan()       const noexcept { return v.is_nan(); }
     OPTIONAL_CPP14_CONSTEXPR bool is_undefined() const noexcept { return v.is_undefined(); }
+    OPTIONAL_CPP14_CONSTEXPR bool is_indeterminate() const noexcept { return v.is_indeterminate(); }
+    OPTIONAL_CPP14_CONSTEXPR bool is_unordered() const noexcept { return v.is_unordered(); }
     OPTIONAL_CPP14_CONSTEXPR bool is_finite()    const noexcept { return v.is_finite(); }
 
 public:
@@ -59,6 +61,7 @@ public:
 public:
     static OPTIONAL_CPP14_CONSTEXPR floatmp nan()       noexcept { return wrap(core::nan());           }
     static OPTIONAL_CPP14_CONSTEXPR floatmp undefined() noexcept { return wrap(core::undefined());     }
+    static OPTIONAL_CPP14_CONSTEXPR floatmp indeterminate() noexcept { return wrap(core::indeterminate()); }
     static OPTIONAL_CPP14_CONSTEXPR floatmp min()       noexcept { return wrap(core::min());           }
     static OPTIONAL_CPP14_CONSTEXPR floatmp max()       noexcept { return wrap(core::max());           }
     static OPTIONAL_CPP14_CONSTEXPR floatmp epsilon()   noexcept { return wrap(core::epsilon());       }

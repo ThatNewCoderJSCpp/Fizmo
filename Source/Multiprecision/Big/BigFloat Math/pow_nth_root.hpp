@@ -59,11 +59,13 @@ BigFloat pow10(const BigFloat& x, const BigFloatContext& ctx);
     inline BigFloat FN(const BigInt& x, const BigFloatContext& c) {                    \
         if (x.is_nan())       return BigFloat::nan();                                 \
         if (x.is_undefined()) return BigFloat::undefined();                           \
+        if (x.is_indeterminate()) return BigFloat::indeterminate();                           \
         return FN(BigFloat(x), c);                                                    \
     }                                                                                 \
     inline BigFloat FN(const BigInt& x) { return FN(x, BigFloatContext::current()); }  \
     inline BigFloat FN(const BigUInt& x, const BigFloatContext& c) {                   \
         if (x.is_undefined()) return BigFloat::undefined();                           \
+        if (x.is_indeterminate()) return BigFloat::indeterminate();                           \
         return FN(BigFloat(x), c);                                                    \
     }                                                                                 \
     inline BigFloat FN(const BigUInt& x) { return FN(x, BigFloatContext::current()); } \

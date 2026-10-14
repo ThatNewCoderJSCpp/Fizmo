@@ -150,6 +150,7 @@ Approx halley(const CX& z, const CX& w0, std::size_t w) {
 } // namespace
 
 BC lambert_w(const BC& z, std::int64_t k, const BCC& ctx) {
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (z.is_undefined() || !z.is_finite()) return BC::undefined();
     if (z.imaginary().is_zero() && z.imaginary().signbit()) {
         if (k == 0 && !z.real().signbit()) return BC(math::lambert_w(z.real(), 0, ctx.real()), BF::zero());
@@ -157,7 +158,7 @@ BC lambert_w(const BC& z, std::int64_t k, const BCC& ctx) {
     }
     if (z.imaginary().is_zero() && (k == 0 || k == -1)) {
         const BF r = math::lambert_w(z.real(), k, wctx(32));
-        if (!r.is_nan() && !r.is_undefined()) return BC(math::lambert_w(z.real(), k, ctx.real()), BF::zero());
+        if (!r.is_unordered()) return BC(math::lambert_w(z.real(), k, ctx.real()), BF::zero());
     }
     if (z.is_zero()) return k == 0 ? BC::zero() : BC::undefined();
     const CX Z  = cx(z);

@@ -159,6 +159,7 @@ bool BigFloat::parse_string(const char* s) {
     if (s[i] == '+' || s[i] == '-') { neg = (s[i] == '-'); ++i; }
     if (word_is(s + i, "nan"))       { *this = nan();         return true; }
     if (word_is(s + i, "undefined")) { *this = undefined();   return true; }
+    if (word_is(s + i, "indeterminate")) { *this = indeterminate(); return true; }
     if (word_is(s + i, "inf") || word_is(s + i, "infinity")) { *this = infinity(neg); return true; }
     BigUInt   mag  = BigUInt::zero();
     long long frac = 0;
@@ -331,12 +332,11 @@ auto BigFloat::mul_finite(
 }
 
 auto BigFloat::add_signed_impl(const BigFloat& a, const BigFloat& b, bool flip_b, const BigFloatContext& ctx) -> BigFloat {
-    if (a.is_nan()       || b.is_nan())       return nan();
-    if (a.is_undefined() || b.is_undefined()) return undefined();
+    if (a.is_unordered() || b.is_unordered()) return unordered_of(a, b);
     const bool bneg = flip_b ? !b.m_neg : b.m_neg;
 
     if (a.is_infinite() || b.is_infinite()) {
-        if (a.is_infinite() && b.is_infinite()) return (a.m_neg == bneg) ? infinity(a.m_neg) : undefined();
+        if (a.is_infinite() && b.is_infinite()) return (a.m_neg == bneg) ? infinity(a.m_neg) : indeterminate();
         return a.is_infinite() ? infinity(a.m_neg) : infinity(bneg);
     }
 
@@ -506,23 +506,23 @@ std::string BigFloat::approximate_string() const {
 
 auto BigFloat::mantissa() const -> BigInt {
     if (m_cls == fpclass::nan)       return BigInt::nan();
-    if (m_cls == fpclass::undefined) return BigInt::undefined();
+    if (m_cls == fpclass::undefined || m_cls == fpclass::indeterminate) return BigInt::undefined();
     return BigInt::from_magnitude(m_mag, m_neg);
 }
 
 int BigFloat::sign() const noexcept {
-    if (m_cls == fpclass::nan || m_cls == fpclass::undefined) return 0;
+    if (is_unordered()) return 0;
     if (is_zero()) return 0;
     return m_neg ? -1 : 1;
 }
 
 auto BigFloat::abs() const -> BigFloat {
-    if (m_cls == fpclass::nan || m_cls == fpclass::undefined) return *this;
+    if (is_unordered()) return *this;
     return BigFloat(raw_tag{}, m_mag, false, m_exp, m_cls);
 }
 
 auto BigFloat::with_sign(bool neg) const -> BigFloat {
-    if (m_cls == fpclass::nan || m_cls == fpclass::undefined) return *this;
+    if (is_unordered()) return *this;
     return BigFloat(raw_tag{}, m_mag, neg, m_exp, m_cls);
 }
 
@@ -559,10 +559,10 @@ auto BigFloat::compare(const BigFloat& a, const BigFloat& b) noexcept -> orderin
 }
 
 int BigFloat::total_order(const BigFloat& a, const BigFloat& b) noexcept {
-    const int ra = a.is_undefined() ? 0 : (a.is_nan() ? 1 : 2);
-    const int rb = b.is_undefined() ? 0 : (b.is_nan() ? 1 : 2);
+    const int ra = a.is_undefined() ? 0 : (a.is_indeterminate() ? 1 : (a.is_nan() ? 2 : 3));
+    const int rb = b.is_undefined() ? 0 : (b.is_indeterminate() ? 1 : (b.is_nan() ? 2 : 3));
     if (ra != rb) return (ra < rb) ? -1 : 1;
-    if (ra != 2)  return 0;
+    if (ra != 3)  return 0;
     const ordering o = compare(a, b);
     if (o == ordering::less)    return -1;
     if (o == ordering::greater) return 1;
@@ -643,7 +643,7 @@ auto BigFloat::scale2_mutable(std::int64_t n) -> BigFloat& {
 
 auto BigFloat::get_integer_part() const -> BigInt {
     if (m_cls == fpclass::nan)       return BigInt::nan();
-    if (m_cls == fpclass::undefined) return BigInt::undefined();
+    if (m_cls == fpclass::undefined || m_cls == fpclass::indeterminate) return BigInt::undefined();
     if (m_cls == fpclass::infinite)  return BigInt::undefined();
     if (m_mag.is_zero() || m_exp == 0) return BigInt::from_magnitude(m_mag, m_neg);
 
@@ -697,21 +697,19 @@ auto BigFloat::scaled_pow2(std::int64_t k) const -> BigFloat {
 }
 
 auto BigFloat::reciprocal(const BigFloatContext& ctx) const -> BigFloat {
-    if (m_cls == fpclass::nan)       return nan();
-    if (m_cls == fpclass::undefined) return undefined();
+    if (is_unordered())              return *this;
     if (m_cls == fpclass::infinite)  return zero(m_neg);     
     if (m_mag.is_undefined())        return undefined();
-    if (m_mag.is_zero())             return infinity(m_neg); 
+    if (m_mag.is_zero())             return undefined();
     return reciprocal_finite(m_mag, m_neg, m_exp, ctx);
 }
 
 auto BigFloat::mul(const BigFloat& a, const BigFloat& b, const BigFloatContext& ctx) -> BigFloat {
-    if (a.is_nan()       || b.is_nan())       return nan();
-    if (a.is_undefined() || b.is_undefined()) return undefined();
+    if (a.is_unordered() || b.is_unordered()) return unordered_of(a, b);
     const bool neg = (a.m_neg != b.m_neg);
 
     if (a.is_infinite() || b.is_infinite()) {
-        if (a.is_zero() || b.is_zero()) return undefined();   
+        if (a.is_zero() || b.is_zero()) return indeterminate();
         return infinity(neg);
     }
 
@@ -720,12 +718,11 @@ auto BigFloat::mul(const BigFloat& a, const BigFloat& b, const BigFloatContext& 
 }
 
 auto BigFloat::div(const BigFloat& a, const BigFloat& b, const BigFloatContext& ctx) -> BigFloat {
-    if (a.is_nan()       || b.is_nan())       return nan();
-    if (a.is_undefined() || b.is_undefined()) return undefined();
+    if (a.is_unordered() || b.is_unordered()) return unordered_of(a, b);
     const bool neg = (a.m_neg != b.m_neg);
-    if (a.is_infinite()) return b.is_infinite() ? undefined() : infinity(neg);
+    if (b.is_zero())     return a.is_zero() ? indeterminate() : undefined();
+    if (a.is_infinite()) return b.is_infinite() ? indeterminate() : infinity(neg);
     if (b.is_infinite()) return zero(neg);
-    if (b.is_zero())     return a.is_zero() ? undefined() : infinity(neg);
     if (a.is_zero())     return zero(neg);
     return divide_finite(a.m_mag, a.m_neg, a.m_exp, b.m_mag, b.m_neg, b.m_exp, ctx);
 }
@@ -733,6 +730,7 @@ auto BigFloat::div(const BigFloat& a, const BigFloat& b, const BigFloatContext& 
 std::string BigFloat::to_string_scientific(std::size_t max_digits, std::size_t digits) const {
     if (is_nan())       return "nan";
     if (is_undefined()) return "undefined";
+    if (is_indeterminate()) return "indeterminate";
     if (is_infinite())  return m_neg ? "-\u221e" : "\u221e";
     if (digits == 0) digits = BigFloatContext::current().dps();
     if (digits == 0) digits = 1;
@@ -755,6 +753,7 @@ std::string BigFloat::to_string_scientific(std::size_t max_digits, std::size_t d
 std::string BigFloat::to_string(std::size_t max_digits, std::int64_t scientific_notation_exp, std::size_t digits) const {
     if (is_nan())       return "nan";
     if (is_undefined()) return "undefined";
+    if (is_indeterminate()) return "indeterminate";
     if (is_infinite())  return m_neg ? "-\u221e" : "\u221e";
     if (is_zero())      return m_neg ? "-0" : "0";
     if (digits == 0) digits = BigFloatContext::current().dps();
@@ -782,7 +781,7 @@ bool operator>=(const BigFloat& a, const BigFloat& b) noexcept {
 
 template <class F>
 F BigFloat::to_std_float() const {
-    if (m_cls == fpclass::nan || m_cls == fpclass::undefined) return std::numeric_limits<F>::quiet_NaN();
+    if (is_unordered()) return std::numeric_limits<F>::quiet_NaN();
     if (m_cls == fpclass::infinite) return m_neg ? -std::numeric_limits<F>::infinity() : std::numeric_limits<F>::infinity();
     if (m_mag.is_zero()) return m_neg ? -F(0) : F(0);
     const std::int64_t digits = std::numeric_limits<F>::digits;

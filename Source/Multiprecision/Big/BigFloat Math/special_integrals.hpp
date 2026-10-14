@@ -127,7 +127,7 @@ zt_val sp_debye_raw(int kind, const BF& x, std::uint64_t n, std::size_t want);
 
 BF sp_neg_constant(const BFC& ctx, BF (*fn)(const BFC&));
 
-inline bool sp_bad(const BF& x) { return x.is_nan() || x.is_undefined(); }
+inline bool sp_bad(const BF& x) { return x.is_unordered(); }
 
 } // namespace spdetail
 

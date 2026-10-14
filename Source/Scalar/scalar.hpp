@@ -63,7 +63,7 @@ template <class T, if_std<T> = 0>
 bool is_nan(const T& x) noexcept { return std::isnan(x); }
 
 template <class T, if_fixed<T> = 0>
-bool is_nan(const T& x) noexcept { return x.is_nan() || x.is_undefined(); }
+bool is_nan(const T& x) noexcept { return x.is_unordered(); }
 
 template <class T, if_std<T> = 0>
 bool is_inf(const T& x) noexcept { return std::isinf(x); }
@@ -115,8 +115,8 @@ bool identical(const T& a, const T& b) noexcept {
 
 inline bool identical(const BigFloat& a, const BigFloat& b) {
     if (!a.is_finite() || !b.is_finite()) {
-        if (a.is_nan() != b.is_nan() || a.is_undefined() != b.is_undefined()) return false;
-        if (a.is_nan() || a.is_undefined()) return true;
+        if (a.is_nan() != b.is_nan() || a.is_undefined() != b.is_undefined() || a.is_indeterminate() != b.is_indeterminate()) return false;
+        if (a.is_unordered()) return true;
     }
 
     return BigFloat::compare(a, b) == BigFloat::ordering::equal && a.signbit() == b.signbit();

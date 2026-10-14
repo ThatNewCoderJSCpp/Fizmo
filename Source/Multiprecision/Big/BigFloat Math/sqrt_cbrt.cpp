@@ -110,6 +110,7 @@ namespace math {
 BigFloat sqrt(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_zero())      return x;                       
     if (x.is_negative())  return BigFloat::nan();
     if (x.is_infinite())  return x;
@@ -119,12 +120,14 @@ BigFloat sqrt(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat sqrt(const BigInt& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     return sqrt(BigFloat(x), ctx);
 }
 
 BigFloat cbrt(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_zero() || x.is_infinite()) return x;
     return detail::cbrt_finite(x, ctx);
 }
@@ -132,6 +135,7 @@ BigFloat cbrt(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat cbrt(const BigInt& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     return cbrt(BigFloat(x), ctx);
 }
 

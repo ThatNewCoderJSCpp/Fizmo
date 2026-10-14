@@ -12,6 +12,31 @@ namespace edetail {
 template <class F>
 F inf_signed(bool neg) noexcept { return (neg && !is_fizmo_signed_v<F>) ? F::zero() : F::infinity(neg); }
 
+template <class F>
+F unordered_of(const F& a, const F& b) noexcept {
+    return (a.is_undefined()     || b.is_undefined())     ? F::undefined()
+         : (a.is_indeterminate() || b.is_indeterminate()) ? F::indeterminate()
+         : F::nan();
+}
+
+template <class F>
+bool no_domain_filter(const F&, F&) noexcept { return false; }
+
+template <class F>
+bool log_domain_filter(const F& x, F& out) noexcept {
+    if (x.is_unordered()) { out = x;              return true; }
+    if (x.is_zero())      { out = F::undefined(); return true; }
+    if (x.is_negative())  { out = F::nan();       return true; }
+    return false;
+}
+
+template <class F>
+bool sqrt_domain_filter(const F& x, F& out) noexcept {
+    if (x.is_unordered())                  { out = x;        return true; }
+    if (x.is_negative() && !x.is_zero())   { out = F::nan(); return true; }
+    return false;
+}
+
 template <class G>
 bool is_integral_value(const G& x) noexcept {
     return x.is_finite() && x.get_fractional_part().is_zero();
@@ -71,18 +96,16 @@ F widen(const fizmo::multiprecision::integer<B, S>& n) noexcept {
 
 template <class F>
 F log_run(const F& a, const F& b, const BigFloat& x, const BigFloat& y) {
-    if (a.is_undefined() || b.is_undefined()) return F::undefined();
-    if (a.is_nan()       || b.is_nan())       return F::nan();
+    if (a.is_unordered() || b.is_unordered()) return edetail::unordered_of(a, b);
+    if (a.is_zero()      || b.is_zero())      return F::undefined();
     if (a.is_negative()  || b.is_negative())  return F::nan();
     const F one(1);
-    if (b == one) return (a == one) ? F::undefined() : F::nan();
-    const bool a_inf = a.is_zero() || a.is_infinite();
-    const bool b_inf = b.is_zero() || b.is_infinite();
-    if (a_inf && b_inf) return F::undefined();
+    if (b == one) return (a == one) ? F::indeterminate() : F::undefined();
+    if (a.is_infinite() && b.is_infinite()) return F::indeterminate();
 
-    if (a_inf || b_inf) {
+    if (a.is_infinite() || b.is_infinite()) {
         const bool neg = (a < one) != (b < one);
-        return a_inf ? edetail::inf_signed<F>(neg) : F::zero(neg);
+        return a.is_infinite() ? edetail::inf_signed<F>(neg) : F::zero(neg);
     }
 
     if (a == b) return one;
@@ -178,22 +201,23 @@ R int_pow(const R& a, const E& e) noexcept {
 template <class F>
 F pow_run(const F& a, const F& b, const BigFloat& x, const BigFloat& y) {
     const F one(1);
-    if (a.is_undefined() || b.is_undefined()) return F::undefined();
-    if (a.is_nan()       || b.is_nan())       return F::nan();
-    if (b.is_zero())                          return one;
-    if (a == one)                             return one;
-    if (b == one)                             return a;
+    if (a.is_unordered() || b.is_unordered()) return edetail::unordered_of(a, b);
+    if (b.is_zero())                           return (a.is_zero() || a.is_infinite()) ? F::indeterminate() : one;
+    if (a == one)                              return b.is_infinite() ? F::indeterminate() : one;
+    if (b == one)                              return a;
 
     if (b.is_infinite()) {
         const F m = math::abs(a);
-        if (m == one) return one;
-        return ((m > one) != b.is_negative()) ? F::infinity() : F::zero();
+        if (m == one) return F::indeterminate();
+        const bool grows = (m > one) != b.is_negative();
+        if (grows && a.is_negative()) return F::undefined();
+        return grows ? F::infinity() : F::zero();
     }
 
     const bool aneg = a.is_negative();
     const bool bint = edetail::is_integral_value(b);
     const bool rneg = aneg && bint && edetail::odd_integer(b);
-    if (a.is_zero())     return b.is_negative() ? edetail::signed_root(F::infinity(), rneg) : edetail::signed_root(F::zero(),     rneg);
+    if (a.is_zero())     return b.is_negative() ? F::undefined() : edetail::signed_root(F::zero(), rneg);
     if (a.is_infinite()) return b.is_negative() ? edetail::signed_root(F::zero(),     rneg) : edetail::signed_root(F::infinity(), rneg);
     if (aneg && !bint)   return F::nan();
     return bdetail::eval<F>([&](const fizmo::multiprecision::BigFloatContext& c) { return pow(x, y, c); });
@@ -260,7 +284,7 @@ read_degree(T v) noexcept {
 template <std::size_t TB, std::size_t MB, fizmo::multiprecision::sign S>
 degree read_degree(const fizmo::multiprecision::floatmp<TB, MB, S>& v) noexcept {
     degree d;
-    if (v.is_undefined() || v.is_nan()) { d.bad = true; return d; }
+    if (v.is_unordered()) { d.bad = true; return d; }
     if (!edetail::is_integral_value(v)) return d;
     d.is_int = true;
     d.odd    = edetail::odd_integer(v);
@@ -272,16 +296,16 @@ degree read_degree(const fizmo::multiprecision::floatmp<TB, MB, S>& v) noexcept 
 template <class F, class N>
 F root_run(const F& x, const N& deg, const BigFloat& a, const BigFloat& n) {
     const degree d = read_degree(deg);
-    if (x.is_undefined())    return F::undefined();
-    if (x.is_nan() || d.bad) return F::nan();
+    if (x.is_unordered())    return x;
+    if (d.bad)               return widen<F>(deg);
     const bool xneg = x.is_negative();
 
     if (!d.is_int) {
         const F fd = widen<F>(deg);
         if (!fd.is_finite()) return F(1);
-        if (fd.is_zero())    return F::nan();
+        if (fd.is_zero())    return F::undefined();
         if (xneg)            return F::nan();
-        if (x.is_zero())     return fd.is_negative() ? F::infinity() : F::zero();
+        if (x.is_zero())     return fd.is_negative() ? F::undefined() : F::zero();
         if (x.is_infinite()) return fd.is_negative() ? F::zero() : F::infinity();
         if (x == F(1))       return F(1);
         return bdetail::eval<F>([&](const fizmo::multiprecision::BigFloatContext& c) { return nth_root(a, n, c); });
@@ -296,8 +320,8 @@ F root_run(const F& x, const N& deg, const BigFloat& a, const BigFloat& n) {
         return bdetail::eval<F>([&](const fizmo::multiprecision::BigFloatContext& c) { return nth_root(a, n, c); });
     }
 
-    if (d.n == 0) return F::nan();
-    if (x.is_zero())     return (d.n > 0) ? F::zero(rneg) : edetail::signed_root(F::infinity(), rneg);
+    if (d.n == 0) return F::undefined();
+    if (x.is_zero())     return (d.n > 0) ? F::zero(rneg) : F::undefined();
     if (x.is_infinite()) return (d.n > 0) ? edetail::signed_root(F::infinity(), rneg) : F::zero(rneg);
     if (d.n == 1) return x;
     return bdetail::eval<F>([&](const fizmo::multiprecision::BigFloatContext& c) { return nth_root(a, n, c); });

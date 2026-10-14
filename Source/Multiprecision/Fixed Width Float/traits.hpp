@@ -238,6 +238,7 @@ public:
     static constexpr bool         has_infinity    = true;
     static constexpr bool         has_quiet_nan   = true;
     static constexpr bool         has_undefined   = true;
+    static constexpr bool         has_indeterminate = true;
     static constexpr bool         has_denorm      = true;
     static constexpr bool         has_signed_zero = is_signed_float;
     static constexpr bool         is_exact        = false;
@@ -253,6 +254,7 @@ public:
     static value_type infinity()  noexcept { return value_type::infinity();  }
     static value_type nan()       noexcept { return value_type::nan();       }
     static value_type undefined() noexcept { return value_type::undefined(); }
+    static value_type indeterminate() noexcept { return value_type::indeterminate(); }
 
     static value_type lowest()      noexcept { return fdetail::float_lowest<value_type, S>::get(); }
     static value_type round_error() noexcept { return value_type(0.5); }

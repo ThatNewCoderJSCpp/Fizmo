@@ -80,6 +80,8 @@ struct parsed_decimal {
     bool      negative = false;
     bool      is_nan = false;
     bool      is_inf = false;
+    bool      is_undefined = false;
+    bool      is_indeterminate = false;
     bignum    digits;
     long long digit_count = 0;
     long long exponent10 = 0;

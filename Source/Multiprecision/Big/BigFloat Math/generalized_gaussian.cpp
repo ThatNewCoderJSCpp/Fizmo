@@ -66,6 +66,7 @@ namespace math {
 BigFloat generalized_gaussian_moment(const BigFloat& power, const BigFloat& rate, const BigFloat& shape, const BigFloatContext& ctx) {
     if (power.is_nan()       || rate.is_nan()       || shape.is_nan())       return BigFloat::nan();
     if (power.is_undefined() || rate.is_undefined() || shape.is_undefined()) return BigFloat::undefined();
+    if (power.is_indeterminate() || rate.is_indeterminate() || shape.is_indeterminate()) return BigFloat::indeterminate();
     if (power.is_infinite()  || shape.is_infinite())                         return BigFloat::undefined();
     if (shape.is_zero())                                                     return BigFloat::infinity();
     const BigFloat a1 = ggdetail::gg_plus_one(power);

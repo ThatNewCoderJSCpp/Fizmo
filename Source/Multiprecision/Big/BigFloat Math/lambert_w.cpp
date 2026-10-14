@@ -189,6 +189,7 @@ namespace math {
 BigFloat lambert_w(const BigFloat& x, std::int64_t k, const BigFloatContext& ctx) {
     using namespace lwdetail;
     if (x.is_nan())         return BigFloat::nan();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_undefined())   return BigFloat::undefined();
     if (k != 0 && k != -1)  return BigFloat::nan();
     const bool lower = (k == -1);

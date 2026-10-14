@@ -348,6 +348,7 @@ BigFloat polylog(const BigFloat& z, const BigFloat& s, const BigFloatContext& ct
     using hzdetail::hz_drive;
     if (s.is_nan()       || z.is_nan())       return BigFloat::nan();
     if (s.is_undefined() || z.is_undefined()) return BigFloat::undefined();
+    if (s.is_indeterminate() || z.is_indeterminate()) return BigFloat::indeterminate();
     if (s.is_infinite()) return s.signbit() ? BigFloat::undefined() : z.rounded(ctx);    
     if (z.is_zero())     return z;
     if (z.is_infinite()) return (z.signbit() && !s.signbit() && !s.is_zero()) ? BigFloat::infinity(true) : BigFloat::undefined();

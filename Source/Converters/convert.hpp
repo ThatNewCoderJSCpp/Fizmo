@@ -150,7 +150,7 @@ inline BigFloat apply_exact(const rmap& m, const BigFloat& x, const BigFloatCont
 }
 
 inline BigFloat apply_special(const rmap& m, const BigFloat& x) {
-    if (x.is_nan() || x.is_undefined()) return x;
+    if (x.is_unordered()) return x;
     if (!m.r.n.is_zero()) {
         if (m.r.d.is_zero()) return BigFloat::nan();
         return BigFloat::div(BigFloat(m.p.n * m.r.d), BigFloat(m.p.d * m.r.n), BigFloatContext(64, RoundingMode::nearest_even));

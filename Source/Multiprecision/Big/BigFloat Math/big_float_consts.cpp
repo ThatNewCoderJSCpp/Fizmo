@@ -155,6 +155,7 @@ BigFloat materialize(fixed_fn gen, fixed_cache& cache, bool neg, const BigFloatC
             BigUInt v = gen(work + slack);
             v.shift_right_mutable(slack);
             if (v.is_undefined()) return BigFloat::undefined();
+            if (v.is_indeterminate()) return BigFloat::indeterminate();
             cache.value = std::move(v);
             cache.bits  = work;
         }

@@ -60,6 +60,7 @@ inline bool log_guard_exhausted(std::size_t prec, std::size_t guard) {
 enum class ln_kind : std::uint8_t {
     nan_v,        // v < 0, or v is nan
     undef_v,      // v is undefined
+    indet_v,
     neg_inf,      // v == 0
     neg_finite,   // 0 < v < 1
     pos_zero,     // v == 1
@@ -79,6 +80,7 @@ inline BigFloat ln(const BigFloat& x) { return ln(x, BigFloatContext::current())
 
 inline BigFloat ln(const BigUInt& x, const BigFloatContext& ctx) {
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     return ln(BigFloat(x), ctx);
 }
 
@@ -100,6 +102,7 @@ inline BigFloat log2(const BigFloat& x) { return log2(x, BigFloatContext::curren
 
 inline BigFloat log2(const BigUInt& x, const BigFloatContext& ctx) {
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     return log2(BigFloat(x), ctx);
 }
 
@@ -115,6 +118,7 @@ inline BigFloat log10(const BigFloat& x) { return log10(x, BigFloatContext::curr
 
 inline BigFloat log10(const BigUInt& x, const BigFloatContext& ctx) {
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     return log10(BigFloat(x), ctx);
 }
 

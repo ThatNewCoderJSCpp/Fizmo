@@ -303,6 +303,7 @@ Approx eval(kind k, const CX& z, std::size_t w) {
 
 BC airy_public(kind k, const BC& z, const BCC& ctx) {
     if (z.is_undefined()) return BC::undefined();
+    if (z.is_indeterminate()) return BC::indeterminate();
     if (z.imaginary().is_zero()) {
         BF r;
         switch (k) {

@@ -231,6 +231,7 @@ namespace math {
 BigFloat erf(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::one(x.signbit());
     if (x.is_zero())      return x;
     const BigFloat ax = x.abs();
@@ -241,6 +242,7 @@ BigFloat erf(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat erfc(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return x.signbit() ? BigFloat(static_cast<std::uint64_t>(2)) : BigFloat::zero();
     if (x.is_zero())      return BigFloat::one();
     const BigFloat ax = x.abs();
@@ -260,6 +262,7 @@ BigFloat erfc(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat erfi(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return x;
     if (x.is_zero())      return x;
     return detail::ef_dispatch(detail::ef_kind::erfi_v, x.abs(), ctx).with_sign(x.signbit());
@@ -397,6 +400,7 @@ namespace math {
 BigFloat inv_erf(const BigFloat& y, const BigFloatContext& ctx) {
     if (y.is_nan())       return BigFloat::nan();
     if (y.is_undefined()) return BigFloat::undefined();
+    if (y.is_indeterminate()) return BigFloat::indeterminate();
     if (y.is_infinite())  return BigFloat::nan();
     if (y.is_zero())      return y;
     const BigFloat           ay = y.abs();
@@ -418,6 +422,7 @@ BigFloat inv_erf(const BigFloat& y, const BigFloatContext& ctx) {
 BigFloat inv_erfc(const BigFloat& z, const BigFloatContext& ctx) {
     if (z.is_nan())       return BigFloat::nan();
     if (z.is_undefined()) return BigFloat::undefined();
+    if (z.is_indeterminate()) return BigFloat::indeterminate();
     if (z.is_infinite())  return BigFloat::nan();
     if (z.is_negative())  return BigFloat::nan();
     if (z.is_zero())      return BigFloat::infinity();
@@ -440,6 +445,7 @@ BigFloat inv_erfc(const BigFloat& z, const BigFloatContext& ctx) {
 BigFloat inv_erfi(const BigFloat& y, const BigFloatContext& ctx) {
     if (y.is_nan())       return BigFloat::nan();
     if (y.is_undefined()) return BigFloat::undefined();
+    if (y.is_indeterminate()) return BigFloat::indeterminate();
     if (y.is_infinite())  return y;
     if (y.is_zero())      return y;
     const BigFloat ay = y.abs();
@@ -513,6 +519,7 @@ namespace math {
 BigFloat generalized_erf(const BigFloat& x, const BigFloat& base, const BigFloatContext& ctx) {
     if (x.is_nan()       || base.is_nan())       return BigFloat::nan();
     if (x.is_undefined() || base.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate() || base.is_indeterminate()) return BigFloat::indeterminate();
     if (BigFloat::compare(x, base) == BigFloat::ordering::equal) return BigFloat::zero();
     if (x.is_infinite() && base.is_infinite())   return BigFloat(static_cast<std::uint64_t>(2)).with_sign(x.signbit());
     return detail::ef_gen_diff(x, base, ctx);

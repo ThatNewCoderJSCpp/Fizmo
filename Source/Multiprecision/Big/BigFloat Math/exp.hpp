@@ -46,6 +46,7 @@ inline BigFloat exp(const BigFloat& x) {
 
 inline BigFloat exp(const BigUInt& x, const BigFloatContext& ctx) {
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     return exp(BigFloat(x), ctx);
 }
 

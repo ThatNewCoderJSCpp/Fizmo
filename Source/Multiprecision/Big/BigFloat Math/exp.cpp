@@ -45,7 +45,7 @@ BigFloat exp_finite(const BigFloat& x, const BigFloatContext& ctx) {
     const BigFloat        q  = BigFloat::mul(x, multiprecision::constants::inv_ln2(kc), kc);
     const BigFloat        hq = BigFloat::add(q, BigFloat(BigUInt::one(), q.signbit(), -1), kc);
     const BigInt          k  = hq.get_integer_part();           
-    if (k.is_nan() || k.is_undefined()) return BigFloat::undefined();
+    if (k.is_unordered()) return BigFloat::undefined();
     const std::uint64_t   ak = k.magnitude().is_zero() ? 0 : k.get_lowest_bits();
     const std::int64_t    ik = k.is_negative() ? -static_cast<std::int64_t>(ak) : static_cast<std::int64_t>(ak);
     const BigFloat        kb(k);
@@ -83,6 +83,7 @@ namespace math {
 BigFloat exp(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return x.is_negative() ? BigFloat::zero() : BigFloat::infinity();
     if (x.is_zero())      return BigFloat::one();
     return detail::exp_finite(x, ctx);
@@ -91,6 +92,7 @@ BigFloat exp(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat exp(const BigInt& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     return exp(BigFloat(x), ctx);
 }
 

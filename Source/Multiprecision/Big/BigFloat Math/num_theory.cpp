@@ -6,6 +6,7 @@ namespace math {
 BigFloat fmod(const BigFloat& x, const BigFloat& y) {
     if (x.is_nan() || y.is_nan()) return BigFloat::nan();
     if (x.is_undefined() || y.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate() || y.is_indeterminate()) return BigFloat::indeterminate();
     if (y.is_zero()) return BigFloat::undefined();
     if (x.is_infinite()) return BigFloat::undefined();
     if (x.is_zero() || y.is_infinite()) return x;
@@ -14,7 +15,7 @@ BigFloat fmod(const BigFloat& x, const BigFloat& y) {
     ScopedContext extended(ctx.extended(guard));
     const BigFloat q = x / y;
     const BigInt qi = q.get_integer_part();
-    if (qi.is_nan() || qi.is_undefined()) return BigFloat::undefined();
+    if (qi.is_unordered()) return BigFloat::undefined();
     const BigFloat tq(qi);
     return x - tq * y;
 }
@@ -42,12 +43,12 @@ BigUInt lcm(const BigUInt& a, const BigUInt& b) {
 }
 
 BigFloat trunc(const BigFloat& x) {
-    if (x.is_nan() || x.is_undefined() || x.is_infinite() || x.is_zero()) return x;
+    if (x.is_unordered() || x.is_infinite() || x.is_zero()) return x;
     return BigFloat(x.get_integer_part());
 }
 
 BigFloat round(const BigFloat& x) {
-    if (x.is_nan() || x.is_undefined() || x.is_infinite() || x.is_zero()) return x;
+    if (x.is_unordered() || x.is_infinite() || x.is_zero()) return x;
     const BigFloat t = trunc(x);
     const BigFloat fraction = x - t;
     const BigFloat half("0.5");
@@ -57,13 +58,13 @@ BigFloat round(const BigFloat& x) {
 }
 
 BigFloat floor(const BigFloat& x) {
-    if (x.is_nan() || x.is_undefined() || x.is_infinite() || x.is_zero()) return x;
+    if (x.is_unordered() || x.is_infinite() || x.is_zero()) return x;
     const BigFloat t = trunc(x);
     return x < t ? t - BigFloat(1) : t;
 }
 
 BigFloat ceiling(const BigFloat& x) {
-    if (x.is_nan() || x.is_undefined() || x.is_infinite() || x.is_zero()) return x;
+    if (x.is_unordered() || x.is_infinite() || x.is_zero()) return x;
     const BigFloat t = trunc(x);
     return x > t ? t + BigFloat(1) : t;
 }

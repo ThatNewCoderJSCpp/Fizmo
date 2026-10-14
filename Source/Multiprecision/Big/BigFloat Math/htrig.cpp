@@ -91,6 +91,7 @@ namespace math {
 BigFloat sinh(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return x;
     if (x.is_zero())      return x;
     return detail::hy_dispatch(x, detail::hyp_sel::sinh_v, ctx);
@@ -99,6 +100,7 @@ BigFloat sinh(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat cosh(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::infinity();
     if (x.is_zero())      return BigFloat::one();
     return detail::hy_dispatch(x, detail::hyp_sel::cosh_v, ctx);
@@ -107,6 +109,7 @@ BigFloat cosh(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat tanh(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::one(x.signbit());
     if (x.is_zero())      return x;
     return detail::hy_dispatch(x, detail::hyp_sel::tanh_v, ctx);
@@ -115,6 +118,7 @@ BigFloat tanh(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat coth(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::one(x.signbit());
     if (x.is_zero())      return BigFloat::infinity(x.signbit());
     return detail::hy_dispatch(x, detail::hyp_sel::coth_v, ctx);
@@ -123,6 +127,7 @@ BigFloat coth(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat sech(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::zero();
     if (x.is_zero())      return BigFloat::one();
     return detail::hy_dispatch(x, detail::hyp_sel::sech_v, ctx);
@@ -131,6 +136,7 @@ BigFloat sech(const BigFloat& x, const BigFloatContext& ctx) {
 BigFloat csch(const BigFloat& x, const BigFloatContext& ctx) {
     if (x.is_nan())       return BigFloat::nan();
     if (x.is_undefined()) return BigFloat::undefined();
+    if (x.is_indeterminate()) return BigFloat::indeterminate();
     if (x.is_infinite())  return BigFloat::zero(x.signbit());
     if (x.is_zero())      return BigFloat::infinity(x.signbit());
     return detail::hy_dispatch(x, detail::hyp_sel::csch_v, ctx);
