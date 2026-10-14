@@ -19,6 +19,7 @@ set(FIZMO_COMPONENT_DIRS_net         Networking)
 set(FIZMO_COMPONENT_DIRS_graphics    GPU Graphics Images Input OpenGL Text UI Vulkan Windows)
 
 set(FIZMO_COMPONENT_FILES_graphics System/hot_reload.cpp)
+set(FIZMO_COMPONENT_FILES_core Arrays/common/memory/windows/allocator.cpp)
 
 set(FIZMO_COMPONENT_USES_core        "")
 set(FIZMO_COMPONENT_USES_random      core)
