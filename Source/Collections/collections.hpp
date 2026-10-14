@@ -5,6 +5,7 @@
 #include "hash.hpp"
 #include "span.hpp"
 #include "deque.hpp"
+#include "linked_list.hpp"
 #include "hash_map.hpp"
 #include "sorted_tree.hpp"
 #include "sorted_map.hpp"
