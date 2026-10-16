@@ -73,8 +73,8 @@ struct GPUSample {
     std::string          backend;
     std::string          device_name;
     FrameSummary         frames;
-    windows::GpuTimings  timings;
-    windows::GpuMemory   renderer_memory;
+    graphics::GpuTimings  timings;
+    graphics::GpuMemory   renderer_memory;
     std::uint64_t        mesh_bytes = 0;
 
     const GPUAdapterSample* active() const noexcept;
@@ -95,15 +95,15 @@ private:
     bool                m_have_caps   = false;
     gpu::Caps           m_caps;
     std::string         m_backend;
-    windows::GpuTimings m_timings;
-    windows::GpuMemory  m_renderer_memory;
+    graphics::GpuTimings m_timings;
+    graphics::GpuMemory  m_renderer_memory;
     std::uint64_t       m_mesh_bytes  = 0;
     std::atomic<bool>   m_memory_due{ true };
     bool                m_enable_gpu_timing = true;
 
-    void frame_hook(const windows::Renderer& r, const windows::FrameStats&);
+    void frame_hook(const graphics::Renderer& r, const graphics::FrameStats&);
 
-    void renderer_attached(windows::Renderer& r);
+    void renderer_attached(graphics::Renderer& r);
 
     int match_active(const gpu::Caps& c) const;
 

@@ -2,7 +2,7 @@
 #define FIZMO_WINDOW_BASE_HPP
 
 #include "../window_events.hpp"
-#include "../../Graphics/color.hpp"
+#include "../../Colors/color.hpp"
 #include "../../Images/Bitmap/image.hpp"
 #include "../window_types.hpp"
 #include <string>
@@ -30,7 +30,8 @@ public:
     virtual bool create(unsigned int width, unsigned int height, const std::string& title) noexcept = 0;
     virtual void poll_events() noexcept = 0;
     virtual bool is_open() const noexcept = 0;
-    virtual void set_background_color(const fizmo::graphics::Color& color) noexcept = 0;
+    virtual void close() noexcept {}
+    virtual void set_background_color(const fizmo::colors::Color& color) noexcept = 0;
     virtual void invalidate() noexcept = 0;
     virtual void* native_handle() const noexcept = 0;
     virtual void set_paint_callback(std::function<void(void*)> cb) noexcept = 0;

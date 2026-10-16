@@ -3,7 +3,7 @@
 
 #include "window.hpp"
 #include "renderer.hpp"
-#include "input_manager.hpp"
+#include "../Input/input_manager.hpp"
 #include "../Input/gamepad.hpp"
 #include <functional>
 #include <vector>
@@ -23,10 +23,10 @@ private:
     static constexpr double kMaxDelta  = 0.25;
 
 private:
-    Window          m_window;
-    Renderer        m_renderer;
-    graphics::Color m_clear_color;
-    InputManager    m_input;
+    Window                m_window;
+    graphics::Renderer    m_renderer;
+    colors::Color         m_clear_color;
+    input::InputManager   m_input;
     input::GamepadManager m_gamepads;
 
     TimePoint   m_time_start;
@@ -36,16 +36,16 @@ private:
     double      m_fps_avg     = 0.0;
     std::size_t m_frame_count = 0;
 
-    std::function<void(double dt)>          m_on_update;
-    std::function<void(Renderer&)>          m_on_render;
-    std::function<void(const WindowEvent&)> m_on_event;
-    std::function<void(Application&)>       m_on_startup;
-    std::function<void()>                   m_on_shutdown;
+    std::function<void(double dt)>           m_on_update;
+    std::function<void(graphics::Renderer&)> m_on_render;
+    std::function<void(const WindowEvent&)>  m_on_event;
+    std::function<void(Application&)>        m_on_startup;
+    std::function<void()>                    m_on_shutdown;
 
     bool m_running    = false;
     bool m_auto_clear = true;
 
-    double m_max_fps = 0.0;
+    double    m_max_fps = 0.0;
     TimePoint m_next_frame;
 
 public:
@@ -53,7 +53,7 @@ public:
         unsigned int width,
         unsigned int height,
         const std::string& title,
-        const graphics::Color& background = graphics::Color()
+        const colors::Color& background = colors::Color()
     ) noexcept
         : m_window(width, height, title, background)
         , m_renderer(m_window)
@@ -65,25 +65,25 @@ public:
     Application& operator=(const Application&) = delete;
 
     void on_update(std::function<void(double dt)> fn)         noexcept { m_on_update   = std::move(fn); }
-    void on_render(std::function<void(Renderer&)> fn)         noexcept { m_on_render   = std::move(fn); }
+    void on_render(std::function<void(graphics::Renderer&)> fn)         noexcept { m_on_render   = std::move(fn); }
     void on_event(std::function<void(const WindowEvent&)> fn) noexcept { m_on_event    = std::move(fn); }
     void on_startup(std::function<void(Application&)> fn)     noexcept { m_on_startup  = std::move(fn); }
     void on_shutdown(std::function<void()> fn)                noexcept { m_on_shutdown = std::move(fn); }
 
     Window&       window()   noexcept { return m_window; }
-    Renderer&     renderer() noexcept { return m_renderer; }
-    InputManager& input()    noexcept { return m_input; }
+    graphics::Renderer&     renderer() noexcept { return m_renderer; }
+    input::InputManager& input()    noexcept { return m_input; }
     input::GamepadManager& gamepads() noexcept { return m_gamepads; }
 
     const Window&       window()   const noexcept { return m_window; }
-    const Renderer&     renderer() const noexcept { return m_renderer; }
-    const InputManager& input()    const noexcept { return m_input; }
+    const graphics::Renderer&     renderer() const noexcept { return m_renderer; }
+    const input::InputManager& input()    const noexcept { return m_input; }
 
     unsigned int width()  const noexcept { return m_window.width(); }
     unsigned int height() const noexcept { return m_window.height(); }
 
     void set_auto_clear(bool v) noexcept { m_auto_clear = v; }
-    void set_clear_color(const graphics::Color& c) noexcept { m_clear_color = c; }
+    void set_clear_color(const colors::Color& c) noexcept { m_clear_color = c; }
 
     void   set_max_fps(double fps) noexcept { m_max_fps = fps > 0.0 ? fps : 0.0; m_next_frame = Clock::now(); }
     double max_fps() const noexcept { return m_max_fps; }

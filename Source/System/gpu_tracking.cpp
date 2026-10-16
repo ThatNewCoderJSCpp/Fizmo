@@ -16,7 +16,7 @@ auto GPUSample::primary() const noexcept -> const GPUAdapterSample* {
     return adapters.empty() ? nullptr : &adapters.front();
 }
 
-void GPUTracking::frame_hook(const windows::Renderer& r, const windows::FrameStats&) {
+void GPUTracking::frame_hook(const graphics::Renderer& r, const graphics::FrameStats&) {
     std::lock_guard<std::mutex> lk(m_renderer_mutex);
     if (!r.is_bound()) return;
     if (!m_have_caps) {
@@ -31,7 +31,7 @@ void GPUTracking::frame_hook(const windows::Renderer& r, const windows::FrameSta
     }
 }
 
-void GPUTracking::renderer_attached(windows::Renderer& r) {
+void GPUTracking::renderer_attached(graphics::Renderer& r) {
     if (m_enable_gpu_timing && !r.gpu_timing()) r.set_gpu_timing(true);
     std::lock_guard<std::mutex> lk(m_renderer_mutex);
     m_have_caps = false;
@@ -437,9 +437,9 @@ std::string GPUTracking::report() const {
 
     if (s.timings.valid) {
         r += "  passes  ";
-        for (std::size_t p = 0; p < windows::GpuTimings::PASSES; ++p) {
+        for (std::size_t p = 0; p < graphics::GpuTimings::PASSES; ++p) {
             if (s.timings.pass_ms[p] <= 0.0) continue;
-            r += std::string(" ") + windows::gpu_pass_name(static_cast<windows::GpuPass>(p)) + " " + detail::fixed(s.timings.pass_ms[p], 2);
+            r += std::string(" ") + graphics::gpu_pass_name(static_cast<graphics::GpuPass>(p)) + " " + detail::fixed(s.timings.pass_ms[p], 2);
         }
         r += " ms\n";
     }

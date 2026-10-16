@@ -191,9 +191,9 @@ void Painter::line(float x1, float y1, float x2, float y2, const Color& c, float
     if (len <= 1e-6f) return;
     const float hw = std::max(0.5f, width * m_scale * 0.5f);
     const float nx = -dy / len * hw, ny = dx / len * hw;
-    const windows::RenderPoint pts[4] = {
-        windows::RenderPoint(ax + nx, ay + ny), windows::RenderPoint(bx + nx, by + ny),
-        windows::RenderPoint(bx - nx, by - ny), windows::RenderPoint(ax - nx, ay - ny)
+    const graphics::RenderPoint pts[4] = {
+        graphics::RenderPoint(ax + nx, ay + ny), graphics::RenderPoint(bx + nx, by + ny),
+        graphics::RenderPoint(bx - nx, by - ny), graphics::RenderPoint(ax - nx, ay - ny)
     };
     m_r->draw_polygon(pts, 4, graphics::Paint::fill(fade(c)));
 }
@@ -221,10 +221,10 @@ void Painter::stroke_circle(float cx, float cy, float radius, const Color& c, fl
 
 void Painter::fill_triangle(Point a, Point b, Point c, const Color& col) {
     if (col.alpha() == 0) return;
-    const windows::RenderPoint pts[3] = {
-        windows::RenderPoint((a.x + m_ox) * m_scale, (a.y + m_oy) * m_scale),
-        windows::RenderPoint((b.x + m_ox) * m_scale, (b.y + m_oy) * m_scale),
-        windows::RenderPoint((c.x + m_ox) * m_scale, (c.y + m_oy) * m_scale)
+    const graphics::RenderPoint pts[3] = {
+        graphics::RenderPoint((a.x + m_ox) * m_scale, (a.y + m_oy) * m_scale),
+        graphics::RenderPoint((b.x + m_ox) * m_scale, (b.y + m_oy) * m_scale),
+        graphics::RenderPoint((c.x + m_ox) * m_scale, (c.y + m_oy) * m_scale)
     };
     m_r->draw_polygon(pts, 3, graphics::Paint::fill(fade(col)));
 }
@@ -732,7 +732,7 @@ void Ui::update(double dt) {
     run_deferred();
 }
 
-void Ui::layout(windows::Renderer& r) {
+void Ui::layout(graphics::Renderer& r) {
     m_renderer = &r;
     if (m_auto_scale && m_window && m_window->dpi_scale() > 0.0f && std::abs(m_window->dpi_scale() - m_scale) > 1e-3f) { m_scale = m_window->dpi_scale(); m_text_cache.clear(); }
     m_viewport = Size{ r.viewport_width() / m_scale, r.viewport_height() / m_scale };
@@ -748,7 +748,7 @@ void Ui::layout(windows::Renderer& r) {
     }
 }
 
-void Ui::draw(windows::Renderer& r) {
+void Ui::draw(graphics::Renderer& r) {
     const Clock::time_point now = Clock::now();
     if (!m_updated) update(m_have_last_draw ? std::chrono::duration<double>(now - m_last_draw).count() : 0.0);
     m_last_draw = now;

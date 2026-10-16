@@ -1,8 +1,8 @@
 #ifndef FIZMO_GPU_TEXT_HPP
 #define FIZMO_GPU_TEXT_HPP
 
-#include "../../Basic/fizmo_defines.hpp"
-#include "../../Text/rich_text.hpp"
+#include "../../../Basic/fizmo_defines.hpp"
+#include "../../../Text/rich_text.hpp"
 
 #include <algorithm>
 #include <climits>
@@ -27,7 +27,7 @@
 #endif
 
 namespace fizmo {
-namespace windows {
+namespace graphics {
 namespace detail {
 namespace gfx {
 
@@ -1019,7 +1019,7 @@ public:
         cairo_glyph_t g{ glyph, 0.0, 0.0 };
         cairo_text_extents_t e;
         cairo_scaled_font_glyph_extents(sf, &g, 1, &e);
-        if (e.width <= 0.0 || e.height <= 0.0) return true;              // blank glyph
+        if (e.width <= 0.0 || e.height <= 0.0) return true;             
         const int x0 = static_cast<int>(std::floor(e.x_bearing)) - 1;
         const int y0 = static_cast<int>(std::floor(e.y_bearing)) - 1;
         const int x1 = static_cast<int>(std::ceil(e.x_bearing + e.width)) + 1;
@@ -1045,7 +1045,7 @@ public:
             for (int x = 0; x < w; ++x) {
                 const std::uint32_t px = row[x];
                 const std::uint32_t a = px >> 24, r = (px >> 16) & 0xFF, gg = (px >> 8) & 0xFF, b = px & 0xFF;
-                if (r != a || gg != a || b != a) { color = true; break; }   // white text is (a,a,a,a) premultiplied
+                if (r != a || gg != a || b != a) { color = true; break; }
             }
         }
 
@@ -1162,7 +1162,7 @@ struct TextCmd {
     enum class Kind : std::uint8_t { Rect, Glyph, Wave };
 
     Kind            kind  = Kind::Rect;
-    graphics::Color color;              
+    colors::Color color;              
     float           x = 0.0f, y = 0.0f; 
     float           w = 0.0f, h = 0.0f; 
     std::uint32_t   face  = 0;
@@ -1204,7 +1204,7 @@ struct TextDrawList {
 
 namespace text_detail {
 
-inline graphics::Color fade(graphics::Color c, float opacity) noexcept {
+inline colors::Color fade(colors::Color c, float opacity) noexcept {
     if (opacity < 1.0f) c.set_alpha(static_cast<std::uint8_t>(c.alpha() * std::max(0.0f, opacity) + 0.5f));
     return c;
 }
@@ -1214,7 +1214,7 @@ struct Segment {
     float         x0, x1, baseline;  
 };
 
-inline void add_rect(TextDrawList& out, float x, float y, float w, float h, const graphics::Color& c) {
+inline void add_rect(TextDrawList& out, float x, float y, float w, float h, const colors::Color& c) {
     if (w <= 0.0f || h <= 0.0f || c.alpha() == 0) return;
     TextCmd cmd;
     cmd.kind = TextCmd::Kind::Rect;
@@ -1223,7 +1223,7 @@ inline void add_rect(TextDrawList& out, float x, float y, float w, float h, cons
     out.cmds.push_back(cmd);
 }
 
-inline void add_line(TextDrawList& out, float x0, float x1, float y, float t, text::DecorationStyle style, const graphics::Color& c) {
+inline void add_line(TextDrawList& out, float x0, float x1, float y, float t, text::DecorationStyle style, const colors::Color& c) {
     const float len = x1 - x0;
     if (len <= 0.0f || c.alpha() == 0) return;
 
@@ -1269,7 +1269,7 @@ inline void add_line(TextDrawList& out, float x0, float x1, float y, float t, te
 
 inline void add_decorations(
     TextDrawList& out, const Segment& s, const text::TextStyle& style, const FaceMetrics& m,
-    float rise, float ox, float oy, const graphics::Color& color
+    float rise, float ox, float oy, const colors::Color& color
 ) {
     const bool under  = style.is_underlined() || text::has_decoration(style.decoration(), text::TextDecoration::DoubleUnderline);
     const bool dbl    = text::has_decoration(style.decoration(), text::TextDecoration::DoubleUnderline);
@@ -1432,7 +1432,7 @@ inline bool build_text_draw_list(TextEngine& engine, const text::RichText& rt, f
     auto style_of = [&](std::uint32_t span) -> const text::TextStyle& { return prepared.styles[prepared.spans[span].style]; };
     auto opacity_of = [&](std::uint32_t span) { const auto& s = style_of(span); return s.has_opacity() ? s.opacity() : 1.0f; };
 
-    auto emit_glyphs = [&](std::uint32_t line, std::uint32_t span, float ox, float oy, const graphics::Color& c) {
+    auto emit_glyphs = [&](std::uint32_t line, std::uint32_t span, float ox, float oy, const colors::Color& c) {
         if (c.alpha() == 0) return;
         const float rise = prepared.spans[span].rise;
 
@@ -1462,14 +1462,14 @@ inline bool build_text_draw_list(TextEngine& engine, const text::RichText& rt, f
         const auto& sh = st.shadow();
         const float ox = static_cast<float>(sh.offset_x), oy = static_cast<float>(sh.offset_y);
         const float blur = static_cast<float>(std::max(0.0, sh.blur));
-        const graphics::Color base_c = fade(sh.color, opacity_of(s.span));
-        const graphics::Color deco = base_c;
+        const colors::Color base_c = fade(sh.color, opacity_of(s.span));
+        const colors::Color deco = base_c;
 
         if (blur < 0.5f) {
             emit_glyphs(s.line, s.span, ox, oy, base_c);
             add_decorations(out, s, st, engine.face_metrics(s.face), prepared.spans[s.span].rise, ox, oy, deco);
         } else {
-            const graphics::Color ring = fade(base_c, 0.22f);
+            const colors::Color ring = fade(base_c, 0.22f);
             emit_glyphs(s.line, s.span, ox, oy, fade(base_c, 0.45f));
             for (int k = 0; k < 8; ++k) {
                 const float a = k * 0.78539816f;
@@ -1483,7 +1483,7 @@ inline bool build_text_draw_list(TextEngine& engine, const text::RichText& rt, f
         if (!st.has_outline_color() || !st.has_outline_width() || st.outline_width() <= 0.0) continue;
         const float r = static_cast<float>(st.outline_width());
         const int steps = r <= 1.5f ? 8 : 16;
-        const graphics::Color c = fade(st.outline_color().value(), opacity_of(s.span));
+        const colors::Color c = fade(st.outline_color().value(), opacity_of(s.span));
 
         for (float rr = r; rr > 0.0f; rr -= 1.5f) {
             for (int k = 0; k < steps; ++k) {
@@ -1495,14 +1495,14 @@ inline bool build_text_draw_list(TextEngine& engine, const text::RichText& rt, f
 
     for (const Segment& s : segs) {
         const text::TextStyle& st = style_of(s.span);
-        const graphics::Color fg = st.has_fg_color() ? st.fg_color().value() : graphics::Color(0, 0, 0, 255);
+        const colors::Color fg = st.has_fg_color() ? st.fg_color().value() : colors::Color(0, 0, 0, 255);
         emit_glyphs(s.line, s.span, 0.0f, 0.0f, fade(fg, opacity_of(s.span)));
     }
 
     for (const Segment& s : segs) {
         const text::TextStyle& st = style_of(s.span);
-        const graphics::Color fg = st.has_fg_color() ? st.fg_color().value() : graphics::Color(0, 0, 0, 255);
-        const graphics::Color c = fade(st.has_decoration_color() ? st.decoration_color().value() : fg, opacity_of(s.span));
+        const colors::Color fg = st.has_fg_color() ? st.fg_color().value() : colors::Color(0, 0, 0, 255);
+        const colors::Color c = fade(st.has_decoration_color() ? st.decoration_color().value() : fg, opacity_of(s.span));
         add_decorations(out, s, st, engine.face_metrics(s.face), prepared.spans[s.span].rise, 0.0f, 0.0f, c);
     }
 
@@ -1520,7 +1520,7 @@ inline bool build_text_draw_list(TextEngine& engine, const text::RichText& rt, f
 
 } // namespace gfx
 } // namespace detail
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo
 
 #endif // FIZMO_GPU_TEXT_HPP

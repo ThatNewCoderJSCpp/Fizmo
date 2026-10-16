@@ -16,6 +16,7 @@
 #include "Big/BigFloat Math/physical_constants.hpp"
 
 #include "Fixed Width Float/Math/special_functions.hpp"
+#include "Fixed Width Float/Math/rounding.hpp"
 #include "Fixed Width Float/Math/special_constants.hpp"
 #include "Fixed Width Float/Math/physical_constants.hpp"
 

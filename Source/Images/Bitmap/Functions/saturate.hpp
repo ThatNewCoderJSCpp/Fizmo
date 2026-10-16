@@ -2,7 +2,7 @@
 #define FIZMO_IMAGE_FUNCTIONS_SATURATION_HPP
 
 #include "../image.hpp"
-#include "../../../Graphics/hsl_color.hpp"
+#include "../../../Colors/hsl_color.hpp"
 #include "../../../Util Hpp/util_functions.hpp"
 
 namespace fizmo {

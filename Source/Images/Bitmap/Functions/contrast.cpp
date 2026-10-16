@@ -11,11 +11,11 @@ BitmapImage adjust_contrast(const BitmapImage& source, double factor) noexcept {
     
     for (unsigned int y = 0; y < source.height(); y++) {
         for (unsigned int x = 0; x < source.width(); x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             const unsigned int newRed = static_cast<unsigned int>(midpoint + (pixel.red() - midpoint) * factor);
             const unsigned int newGreen = static_cast<unsigned int>(midpoint + (pixel.green() - midpoint) * factor);
             const unsigned int newBlue = static_cast<unsigned int>(midpoint + (pixel.blue() - midpoint) * factor);
-            result.set_pixel(x, y, fizmo::graphics::Color(newRed, newGreen, newBlue));
+            result.set_pixel(x, y, fizmo::colors::Color(newRed, newGreen, newBlue));
         }
     }
     
@@ -40,12 +40,12 @@ BitmapImage adjust_contrast(
     
     for (unsigned int y = y_1; y < y_2; y++) {
         for (unsigned int x = x_1; x < x_2; x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             const unsigned int newRed = static_cast<unsigned int>(midpoint + (pixel.red() - midpoint) * factor);
             const unsigned int newGreen = static_cast<unsigned int>(midpoint + (pixel.green() - midpoint) * factor);
             const unsigned int newBlue = static_cast<unsigned int>(midpoint + (pixel.blue() - midpoint) * factor);
             
-            result.set_pixel(x, y, fizmo::graphics::Color(
+            result.set_pixel(x, y, fizmo::colors::Color(
                 newRed, newGreen, newBlue
             ));
         }

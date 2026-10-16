@@ -2,7 +2,7 @@
 #define FIZMO_IMAGE_FUNCTIONS_HUE_ROTATE_HPP
 
 #include "../image.hpp"
-#include "../../../Graphics/hsl_color.hpp"
+#include "../../../Colors/hsl_color.hpp"
 #include "../../../Basic/constants.hpp"
 
 namespace fizmo {

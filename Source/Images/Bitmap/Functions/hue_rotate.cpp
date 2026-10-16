@@ -11,11 +11,11 @@ BitmapImage rotate_hue(const BitmapImage& source, const double degrees) noexcept
     
     for (unsigned int y = 0; y < source.height(); y++) {
         for (unsigned int x = 0; x < source.width(); x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
-            fizmo::graphics::HSLColor hsl(pixel);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
+            fizmo::colors::HSLColor hsl(pixel);
             const double new_hue = hsl.hue() + adjusted_degrees;
             hsl.set_hue(new_hue); 
-            const fizmo::graphics::Color& rotated(hsl);
+            const fizmo::colors::Color& rotated(hsl);
             result.set_pixel(x, y, rotated);
         }
     }
@@ -41,11 +41,11 @@ BitmapImage rotate_hue(
     
     for (unsigned int y = y_1; y < y_2; y++) {
         for (unsigned int x = x_1; x < x_2; x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
-            fizmo::graphics::HSLColor hsl(pixel);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
+            fizmo::colors::HSLColor hsl(pixel);
             const double new_hue = hsl.hue() + adjusted_degrees;
             hsl.set_hue(new_hue); 
-            const fizmo::graphics::Color& rotated(hsl);
+            const fizmo::colors::Color& rotated(hsl);
             result.set_pixel(x, y, rotated);
         }
     }
@@ -68,8 +68,8 @@ BitmapImage create_hue_wheel(const unsigned int size) noexcept {
                 double angle = std::atan2(dy, dx) * (180.0 / fizmo::constants::PI<double>);
                 if (angle < 0) angle += 360.0;
                 const double saturation = (distance / radius) * 100.0;
-                const fizmo::graphics::HSLColor hsl(angle, saturation, 50.0);
-                wheel.set_pixel(x, y, fizmo::graphics::Color(hsl));
+                const fizmo::colors::HSLColor hsl(angle, saturation, 50.0);
+                wheel.set_pixel(x, y, fizmo::colors::Color(hsl));
             }
         }
     }

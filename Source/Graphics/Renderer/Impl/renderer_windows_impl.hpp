@@ -2,7 +2,7 @@
 #define FIZMO_RENDERER_WINDOWS_IMPL_HPP
 
 #include "renderer_base.hpp"
-#include "../../Basic/fizmo_defines.hpp"
+#include "../../../Basic/fizmo_defines.hpp"
 
 #ifdef OS_WINDOWS
     #if defined(_MSC_VER)
@@ -11,7 +11,7 @@
 #endif
 
 namespace fizmo {
-namespace windows {
+namespace graphics {
 namespace detail {
 
 #ifdef OS_WINDOWS
@@ -89,7 +89,7 @@ private:
         return m_scratch_bits + static_cast<std::size_t>(row) * m_scratch_w * 4;
     }
 
-    static void put_premul_bgra(std::uint8_t* d, const graphics::Color& c) noexcept {
+    static void put_premul_bgra(std::uint8_t* d, const colors::Color& c) noexcept {
         const unsigned int a = c.alpha();
         d[0] = static_cast<std::uint8_t>((c.blue()  * a + 127u) / 255u);
         d[1] = static_cast<std::uint8_t>((c.green() * a + 127u) / 255u);
@@ -111,7 +111,7 @@ private:
         );
     }
 
-    static COLORREF to_cr(const graphics::Color& c) noexcept {
+    static COLORREF to_cr(const colors::Color& c) noexcept {
         return RGB(c.red(), c.green(), c.blue());
     }
 
@@ -186,7 +186,7 @@ public:
         BitBlt(static_cast<HDC>(paint_dc), 0, 0, m_width, m_height, m_back_dc, 0, 0, SRCCOPY);
     }
 
-    void clear(const graphics::Color& color) noexcept override {
+    void clear(const colors::Color& color) noexcept override {
         if (!m_back_dc) return;
         HBRUSH brush = CreateSolidBrush(to_cr(color));
         RECT rect = { 0, 0, static_cast<LONG>(m_width), static_cast<LONG>(m_height) };
@@ -208,7 +208,7 @@ public:
         SelectClipRgn(m_back_dc, NULL);
     }
 
-    void draw_pixel(int x, int y, const graphics::Color& color) noexcept override {
+    void draw_pixel(int x, int y, const colors::Color& color) noexcept override {
         if (!m_back_dc) return;
         SetPixel(m_back_dc, x, y, to_cr(color));
     }
@@ -338,7 +338,7 @@ public:
 
     void draw_pixel_buffer(
         int dx, int dy, unsigned int dw, unsigned int dh,
-        const graphics::Color* pixels, unsigned int pw, unsigned int ph,
+        const colors::Color* pixels, unsigned int pw, unsigned int ph,
         bool smooth, std::uint64_t /*version*/
     ) noexcept override {
         if (!m_back_dc || !pixels || pw == 0 || ph == 0 || dw == 0 || dh == 0) return;
@@ -346,7 +346,7 @@ public:
 
         for (unsigned int r = 0; r < ph; ++r) {
             std::uint8_t* row = scratch_row(r);
-            const graphics::Color* src = pixels + static_cast<std::size_t>(r) * pw;
+            const colors::Color* src = pixels + static_cast<std::size_t>(r) * pw;
             for (unsigned int c = 0; c < pw; ++c) put_premul_bgra(row + c * 4, src[c]);
         }
 
@@ -580,7 +580,7 @@ private:
 #endif // OS_WINDOWS
 
 } // namespace detail
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo
 
 #endif // FIZMO_RENDERER_WINDOWS_IMPL_HPP

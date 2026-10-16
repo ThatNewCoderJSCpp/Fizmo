@@ -18,7 +18,7 @@ BitmapImage blur(const BitmapImage& source, const unsigned int radius) noexcept 
                     int ny = y + dy;
                     
                     if (nx >= 0 && nx < source.width() && ny >= 0 && ny < source.height()) {
-                        fizmo::graphics::Color pixel = source.get_pixel(nx, ny);
+                        fizmo::colors::Color pixel = source.get_pixel(nx, ny);
                         totalR += pixel.red();
                         totalG += pixel.green();
                         totalB += pixel.blue();
@@ -27,7 +27,7 @@ BitmapImage blur(const BitmapImage& source, const unsigned int radius) noexcept 
                 }
             }
             
-            result.set_pixel(x, y, fizmo::graphics::Color(
+            result.set_pixel(x, y, fizmo::colors::Color(
                 totalR / count,
                 totalG / count,
                 totalB / count
@@ -64,7 +64,7 @@ BitmapImage blur(
                     int ny = y + dy;
 
                     if (nx >= 0 && nx < source.width() && ny >= 0 && ny < source.height()) {
-                        fizmo::graphics::Color pixel = source.get_pixel(nx, ny);
+                        fizmo::colors::Color pixel = source.get_pixel(nx, ny);
                         totalR += pixel.red();
                         totalG += pixel.green();
                         totalB += pixel.blue();
@@ -73,7 +73,7 @@ BitmapImage blur(
                 }
             }
 
-            result.set_pixel(x, y, fizmo::graphics::Color(
+            result.set_pixel(x, y, fizmo::colors::Color(
                 totalR / count,
                 totalG / count,
                 totalB / count

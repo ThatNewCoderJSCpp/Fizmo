@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace fizmo {
-namespace windows {
+namespace graphics {
 namespace detail {
 namespace gfx {
 
@@ -289,7 +289,7 @@ inline void stroke_polyline(
 
 } // namespace gfx
 } // namespace detail
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo
 
 #endif // FIZMO_GPU_GEOMETRY_HPP

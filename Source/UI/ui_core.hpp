@@ -2,10 +2,10 @@
 #define FIZMO_UI_CORE_HPP
 
 #include "../Windows/window.hpp"
-#include "../Windows/renderer.hpp"
+#include "../Graphics/Renderer/renderer.hpp"
 #include "../Input/keys.hpp"
 #include "../Input/input_types.hpp"
-#include "../Graphics/color.hpp"
+#include "../Colors/color.hpp"
 #include "../Graphics/gradient.hpp"
 #include "../Graphics/paint.hpp"
 #include "../Text/text_style.hpp"
@@ -28,7 +28,7 @@
 namespace fizmo {
 namespace ui {
 
-using graphics::Color;
+using colors::Color;
 
 struct Point {
     float x = 0.0f, y = 0.0f;
@@ -284,7 +284,7 @@ public:
 
 class Painter {
 private:
-    windows::Renderer*                  m_r = nullptr;
+    graphics::Renderer*                  m_r = nullptr;
     float                               m_scale = 1.0f;
     float                               m_ox = 0.0f, m_oy = 0.0f;
     std::vector<Point>                  m_offsets;
@@ -312,11 +312,11 @@ private:
     Pix pix(const Rect& r) const noexcept;
 
 public:
-    Painter(windows::Renderer& r, float scale) noexcept : m_r(&r), m_scale(scale > 0.0f ? scale : 1.0f), m_software(!r.is_gpu()) {}
+    Painter(graphics::Renderer& r, float scale) noexcept : m_r(&r), m_scale(scale > 0.0f ? scale : 1.0f), m_software(!r.is_gpu()) {}
 
     bool software() const noexcept { return m_software; }
 
-    windows::Renderer& renderer() noexcept { return *m_r; }
+    graphics::Renderer& renderer() noexcept { return *m_r; }
     float scale() const noexcept { return m_scale; }
     Point offset() const noexcept { return Point{ m_ox, m_oy }; }
 
@@ -386,7 +386,7 @@ private:
     Theme                                     m_theme;
     float                                     m_scale = 1.0f;
     windows::Window*                          m_window = nullptr;
-    windows::Renderer*                        m_renderer = nullptr;
+    graphics::Renderer*                        m_renderer = nullptr;
     std::unique_ptr<Widget>                   m_root;
     std::vector<Overlay>                      m_overlays;
     std::vector<std::unique_ptr<Widget>>      m_graveyard;
@@ -477,7 +477,7 @@ public:
     void set_auto_scale(bool on) noexcept { m_auto_scale = on; }
     Size viewport() const noexcept { return m_viewport; }
     windows::Window* window() const noexcept { return m_window; }
-    windows::Renderer* renderer() const noexcept { return m_renderer; }
+    graphics::Renderer* renderer() const noexcept { return m_renderer; }
     double time() const noexcept { return m_time; }
     Point mouse() const noexcept { return Point{ m_mouse_x, m_mouse_y }; }
 
@@ -569,9 +569,9 @@ public:
 
     void update(double dt);
 
-    void layout(windows::Renderer& r);
+    void layout(graphics::Renderer& r);
 
-    void draw(windows::Renderer& r);
+    void draw(graphics::Renderer& r);
 
 private:
     void draw_overlays(Widget* w, Painter& p);

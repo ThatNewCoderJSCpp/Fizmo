@@ -2,7 +2,7 @@
 #include "raster_3d.hpp"
 
 namespace fizmo {
-namespace windows {
+namespace graphics {
 namespace detail {
 
 Mat4f mat4_mul(const Mat4f& a, const Mat4f& b) noexcept {
@@ -33,7 +33,7 @@ void SoftwareRasterizer3D::set_light(const graphics::Light3D& l) noexcept {
     m_diffuse = l.diffuse;
 }
 
-void SoftwareRasterizer3D::lines(const linalg::vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test) {
+void SoftwareRasterizer3D::lines(const linalg::vector3d* pts, std::size_t count, const colors::Color& color, float width, bool depth_test) {
     if (!pts || m_w <= 0 || m_h <= 0) return;
     const float a = color.alpha() / 255.0f;
     const float rgba[4] = { color.red() / 255.0f * a, color.green() / 255.0f * a, color.blue() / 255.0f * a, a };
@@ -196,7 +196,7 @@ void SoftwareRasterizer3D::expand_quad(const graphics::CompactVertex3D* c, const
     const linalg::vector3d a = c[0].position(), b = c[1].position(), d = c[3].position();
     const linalg::vector3d n = c[0].normal();
     const bool tint = c[0].variation > 0 && c[0].face != graphics::CellFace::None;
-    const graphics::Color base = c[0].color();
+    const colors::Color base = c[0].color();
     float corner[4][3];
     for (int k = 0; k < 4; ++k) corner_factor(c[k], model, material_lit, corner[k]);
 
@@ -206,12 +206,12 @@ void SoftwareRasterizer3D::expand_quad(const graphics::CompactVertex3D* c, const
         return top + (bottom - top) * t;
     };
 
-    auto lit_color = [&](const graphics::Color& col, double s, double t) {
+    auto lit_color = [&](const colors::Color& col, double s, double t) {
         auto ch = [&](std::uint8_t v, int k) {
             const double r = v * factor(s, t, k);
             return static_cast<std::uint8_t>(r < 0.0 ? 0.0 : (r > 255.0 ? 255.0 : r + 0.5));
         };
-        return graphics::Color(ch(col.red(), 0), ch(col.green(), 1), ch(col.blue(), 2), col.alpha());
+        return colors::Color(ch(col.red(), 0), ch(col.green(), 1), ch(col.blue(), 2), col.alpha());
     };
 
     auto emit = [&](double s0, double s1, double t0, double t1) {
@@ -230,7 +230,7 @@ void SoftwareRasterizer3D::expand_quad(const graphics::CompactVertex3D* c, const
                 static_cast<std::int32_t>(std::floor(mid.z)) + o[2], c[0].variation);
         }
 
-        const graphics::Color col = graphics::cell_tinted(base, delta, 255);
+        const colors::Color col = graphics::cell_tinted(base, delta, 255);
         const linalg::vector3d vn{ 0.0, 0.0, 0.0 };
         const graphics::Vertex3D w0(p00, vn, lit_color(col, s0, t0)), w1(p10, vn, lit_color(col, s1, t0));
         const graphics::Vertex3D w2(p11, vn, lit_color(col, s1, t1)), w3(p01, vn, lit_color(col, s0, t1));
@@ -253,16 +253,16 @@ int SoftwareRasterizer3D::axis_of(const linalg::vector3d& e) noexcept {
     return ax >= ay && ax >= az ? 0 : (ay >= az ? 1 : 2);
 }
 
-void SoftwareRasterizer3D::resolve(std::vector<graphics::Color>& out) const {
+void SoftwareRasterizer3D::resolve(std::vector<colors::Color>& out) const {
     const std::size_t n = m_depth.size();
     out.resize(n);
 
     for (std::size_t i = 0; i < n; ++i) {
         const float* c = &m_color[i * 4];
         const float a = c[3];
-        if (a <= 0.0f) { out[i] = graphics::Color(0, 0, 0, 0); continue; }
+        if (a <= 0.0f) { out[i] = colors::Color(0, 0, 0, 0); continue; }
         const float inv = 1.0f / a;
-        out[i] = graphics::Color(to8(c[0] * inv), to8(c[1] * inv), to8(c[2] * inv), to8(a));
+        out[i] = colors::Color(to8(c[0] * inv), to8(c[1] * inv), to8(c[2] * inv), to8(a));
     }
 }
 
@@ -410,7 +410,7 @@ void SoftwareRasterizer3D::raster(const ClipVertex& A, const ClipVertex& B, cons
             if (tex) {
                 const float u = (w0 * v[0]->u + w1 * v[1]->u + w2 * v[2]->u) * iw;
                 const float vv = (w0 * v[0]->v + w1 * v[1]->v + w2 * v[2]->v) * iw;
-                const graphics::Color t = tex->sample(u * tw, vv * th);
+                const colors::Color t = tex->sample(u * tw, vv * th);
                 const float ta = t.alpha() / 255.0f;
                 c[0] *= t.red() / 255.0f * ta; c[1] *= t.green() / 255.0f * ta; c[2] *= t.blue() / 255.0f * ta; c[3] *= ta;
             }
@@ -443,7 +443,7 @@ void SoftwareRasterizer3D::flat_triangle(const Screen& a, const Screen& b, const
             const float b1 = ((s[2].x - fx) * (s[0].y - fy) - (s[0].x - fx) * (s[2].y - fy)) * inv_area;
             const float b2 = 1.0f - b0 - b1;
             if (b0 < 0.0f || b1 < 0.0f || b2 < 0.0f) continue;
-            const float z = b0 * a.z + b1 * b.z + b2 * c.z - 2e-5f;   // small bias so lines on surfaces win
+            const float z = b0 * a.z + b1 * b.z + b2 * c.z - 2e-5f;  
             const std::size_t idx = static_cast<std::size_t>(py) * static_cast<std::size_t>(m_w) + static_cast<std::size_t>(px);
             if (depth_test && z >= m_depth[idx]) continue;
             float col[4] = { rgba[0], rgba[1], rgba[2], rgba[3] };
@@ -473,5 +473,5 @@ void SoftwareRasterizer3D::blend(std::size_t idx, const float c[4], graphics::Bl
 }
 
 } // namespace detail
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo

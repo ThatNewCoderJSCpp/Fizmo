@@ -2,7 +2,7 @@
 #include "asset_manager.hpp"
 
 namespace fizmo {
-namespace graphics {
+namespace game {
 
 std::string AssetManager::key_of(const std::filesystem::path& p) {
     std::error_code ec;
@@ -77,10 +77,10 @@ auto AssetManager::image(const std::string& name) -> ImagePtr {
     return ptr;
 }
 
-auto AssetManager::texture(const std::string& name, SampleFilter filter, WrapMode wrap) -> Texture {
+auto AssetManager::texture(const std::string& name, graphics::SampleFilter filter, graphics::WrapMode wrap) -> graphics::Texture {
     ImagePtr img = image(name);
-    if (!img) return Texture();
-    return Texture(std::shared_ptr<const images::BitmapImage>(img), filter, wrap);
+    if (!img) return graphics::Texture();
+    return graphics::Texture(std::shared_ptr<const images::BitmapImage>(img), filter, wrap);
 }
 
 auto AssetManager::text(const std::string& name) -> TextPtr {
@@ -107,10 +107,10 @@ auto AssetManager::json_file(const std::string& name) -> std::shared_ptr<json::V
     });
 }
 
-auto AssetManager::atlas(const std::string& name, SampleFilter filter) -> std::shared_ptr<TextureAtlas> {
-    return load<TextureAtlas>(name, [filter](const std::filesystem::path& p, std::string& err) -> std::shared_ptr<TextureAtlas> {
-        auto a = std::make_shared<TextureAtlas>();
-        if (!TextureAtlas::load(p, *a, &err, filter)) return nullptr;
+auto AssetManager::atlas(const std::string& name, graphics::SampleFilter filter) -> std::shared_ptr<graphics::TextureAtlas> {
+    return load<graphics::TextureAtlas>(name, [filter](const std::filesystem::path& p, std::string& err) -> std::shared_ptr<graphics::TextureAtlas> {
+        auto a = std::make_shared<graphics::TextureAtlas>();
+        if (!graphics::TextureAtlas::load(p, *a, &err, filter)) return nullptr;
         return a;
     });
 }
@@ -187,5 +187,5 @@ auto AssetManager::stats() const -> AssetStats {
     return s;
 }
 
-} // namespace graphics
+} // namespace game
 } // namespace fizmo

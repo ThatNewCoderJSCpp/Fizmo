@@ -2,11 +2,11 @@
 #define FIZMO_RENDERER_GPU_IMPL_HPP
 
 #include "renderer_base.hpp"
-#include "../../Basic/fizmo_defines.hpp"
+#include "../../../Basic/fizmo_defines.hpp"
 
 #if defined(OS_WINDOWS) || defined(OS_LINUX)
 
-#include "../../GPU/include.hpp"
+#include "../../../GPU/include.hpp"
 #include "gpu_geometry.hpp"
 #include "gpu_common.hpp"
 #include "gpu_text.hpp"
@@ -14,7 +14,7 @@
 #include "gpu_shaders_extra.hpp"
 #include "../raster_3d.hpp"
 
-#include "../../Basic/constants.hpp"
+#include "../../../Basic/constants.hpp"
 
 #include <algorithm>
 #include <array>
@@ -33,11 +33,11 @@
 #endif
 
 namespace fizmo {
-namespace windows {
+namespace graphics {
 namespace detail {
 
 class RendererImplGPU : public RendererImplBase {
-    static_assert(sizeof(graphics::Color) == 4, "graphics::Color must be 4 packed bytes (r, g, b, a)");
+    static_assert(sizeof(colors::Color) == 4, "colors::Color must be 4 packed bytes (r, g, b, a)");
 
 private:
     static constexpr std::uint32_t kFramesInFlight   = 2;
@@ -554,7 +554,7 @@ private:
     std::vector<SpriteGpu>                           m_sprites;
     std::vector<SpriteAtlasPage>                     m_sprite_pages;
     std::unordered_map<const void*, SpriteAtlasEntry> m_sprite_entries;
-    std::vector<graphics::Color>                     m_sprite_border;
+    std::vector<colors::Color>                     m_sprite_border;
     bool                                             m_sprite_atlas       = true;
     bool                                             m_sprite_atlas_reset = false;
     std::uint64_t                                    m_sprite_reset_serial = 0;
@@ -847,7 +847,7 @@ public:
     void present() noexcept override { flush(); }
     void paint(void*) noexcept override { flush(); }
 
-    void clear(const graphics::Color& color) noexcept override {
+    void clear(const colors::Color& color) noexcept override {
         if (!m_ready) return;
         if (m_active_target && !m_clip_active) {
             auto it = m_rts.find(m_active_target);
@@ -896,7 +896,7 @@ public:
         m_scissor = { { 0, 0 }, { m_width, m_height } };
     }
 
-    void draw_pixel(int x, int y, const graphics::Color& color) noexcept override {
+    void draw_pixel(int x, int y, const colors::Color& color) noexcept override {
         if (!m_ready) return;
         Brush b;
         if (!solid_brush(color, 1.0f, b)) return;
@@ -1073,7 +1073,7 @@ public:
     }
 
     void draw_texture_quad_tinted(
-        const RenderPoint quad[4], const graphics::Texture& tex, const graphics::Color& tint,
+        const RenderPoint quad[4], const graphics::Texture& tex, const colors::Color& tint,
         float opacity, const graphics::TextureRect& src
     ) noexcept override {
         if (!m_ready || !quad || !tex.valid() || src.is_empty()) return;
@@ -1106,7 +1106,7 @@ public:
             count -= count % 3;
             Batch& batch = batch_for(view, sampler);
             for (std::size_t i = 0; i < count; ++i) {
-                const graphics::Color& c = v[i].color;
+                const colors::Color& c = v[i].color;
                 m_vertices.push_back({ v[i].x, v[i].y, view == &m_white ? 0.5f : v[i].u, view == &m_white ? 0.5f : v[i].v, gfx::pack_premul(c.red(), c.green(), c.blue(), c.alpha()), 0, { 0, 0, 0, 0 } });
             }
             batch.count += static_cast<std::uint32_t>(count);
@@ -1192,7 +1192,7 @@ public:
 
     void draw_pixel_buffer(
         int dx, int dy, unsigned int dw, unsigned int dh,
-        const graphics::Color* pixels,
+        const colors::Color* pixels,
         unsigned int pw, unsigned int ph, bool smooth, std::uint64_t version
     ) noexcept override {
         if (!m_ready || !pixels || pw == 0 || ph == 0 || dw == 0 || dh == 0) return;
@@ -1317,7 +1317,7 @@ public:
             for (unsigned int y = 0; y < m_height; ++y) {
                 for (unsigned int x = 0; x < m_width; ++x) {
                     const std::uint8_t* p = &rgba[(static_cast<std::size_t>(y) * m_width + x) * 4];
-                    img.set_pixel(x, y, graphics::Color(p[0], p[1], p[2], 255));
+                    img.set_pixel(x, y, colors::Color(p[0], p[1], p[2], 255));
                 }
             }
 
@@ -1328,7 +1328,7 @@ public:
         }
     }
 
-    bool begin_target(const graphics::RenderTarget& rt, const graphics::Color* clear) noexcept override {
+    bool begin_target(const graphics::RenderTarget& rt, const colors::Color* clear) noexcept override {
         if (!m_ready || m_in_3d || !rt.valid() || target_busy(rt.id())) return false;
 
         try {
@@ -1421,7 +1421,7 @@ public:
                     const std::uint8_t* p = &rgba[(static_cast<std::size_t>(y) * r.width + x) * 4];
                     const unsigned int al = p[3];
                     auto un = [al](unsigned int c) { return static_cast<std::uint8_t>(al == 0 ? 0 : std::min(255u, (c * 255u + al / 2) / al)); };
-                    img.set_pixel(x, y, graphics::Color(un(p[0]), un(p[1]), un(p[2]), static_cast<std::uint8_t>(al)));
+                    img.set_pixel(x, y, colors::Color(un(p[0]), un(p[1]), un(p[2]), static_cast<std::uint8_t>(al)));
                 }
             }
 
@@ -1608,7 +1608,7 @@ public:
         } catch (...) {}
     }
 
-    void draw_lines_3d(const linalg::vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test) noexcept override {
+    void draw_lines_3d(const linalg::vector3d* pts, std::size_t count, const colors::Color& color, float width, bool depth_test) noexcept override {
         if (m_ready && !m_has_3d) { RendererImplBase::draw_lines_3d(pts, count, color, width, depth_test); return; }
         if (!m_ready || !m_in_3d || !pts || count < 2 || color.alpha() == 0) return;
 
@@ -1887,7 +1887,7 @@ private:
         put_bits(d.push[31], material_flags(mat));
     }
 
-    static void rgb_into(float* out, const graphics::Color& c, float scale) noexcept {
+    static void rgb_into(float* out, const colors::Color& c, float scale) noexcept {
         for (int k = 0; k < 3; ++k) out[k] = graphics::detail::light_channel(c, k) * scale;
     }
 
@@ -3573,7 +3573,7 @@ private:
         return false;
     }
 
-    static bool solid_brush(const graphics::Color& c, float opacity, Brush& out) noexcept {
+    static bool solid_brush(const colors::Color& c, float opacity, Brush& out) noexcept {
         const std::uint8_t a = gfx::scale_alpha(c.alpha(), opacity);
         if (a == 0) return false;
         out = Brush{};
@@ -3619,7 +3619,7 @@ private:
         std::uint8_t* dst = &m_ramp_pixels[static_cast<std::size_t>(row) * 256 * 4];
 
         for (int i = 0; i < 256; ++i) {
-            const graphics::Color c = g.color_at(i / 255.0);
+            const colors::Color c = g.color_at(i / 255.0);
             const unsigned int a = c.alpha();
             dst[i * 4 + 0] = gfx::mul8(c.red(), a);
             dst[i * 4 + 1] = gfx::mul8(c.green(), a);
@@ -3643,12 +3643,12 @@ private:
         return offset;
     }
 
-    std::size_t push_staging_premul(const graphics::Color* px, std::size_t count) {
+    std::size_t push_staging_premul(const colors::Color* px, std::size_t count) {
         const std::size_t offset = staging_reserve(count * 4);
         std::uint8_t* dst = m_staging.data() + offset;
 
         for (std::size_t i = 0; i < count; ++i, dst += 4) {
-            const graphics::Color& c = px[i];
+            const colors::Color& c = px[i];
             const unsigned int a = c.alpha();
 
             if (a == 255) {
@@ -3676,7 +3676,7 @@ private:
     }
 
     const gpu::Texture* texture_for(
-        const void* key, const graphics::Color* pixels, unsigned int w, unsigned int h,
+        const void* key, const colors::Color* pixels, unsigned int w, unsigned int h,
         std::uint64_t version, const graphics::Texture* owner
     ) {
         const std::size_t count = static_cast<std::size_t>(w) * h;
@@ -3752,13 +3752,13 @@ private:
 
     void upload_sprite_entry(const SpriteAtlasEntry& e, const images::BitmapImage& img) {
         const unsigned int w = e.w, h = e.h, bw = w + 2, bh = h + 2;
-        const graphics::Color* src = img.pixels().data();
+        const colors::Color* src = img.pixels().data();
         m_sprite_border.resize(static_cast<std::size_t>(bw) * bh);
 
         for (unsigned int by = 0; by < bh; ++by) {
             const unsigned int sy = by == 0 ? 0 : (by > h ? h - 1 : by - 1);
-            const graphics::Color* row = src + static_cast<std::size_t>(sy) * w;
-            graphics::Color* dst = &m_sprite_border[static_cast<std::size_t>(by) * bw];
+            const colors::Color* row = src + static_cast<std::size_t>(sy) * w;
+            colors::Color* dst = &m_sprite_border[static_cast<std::size_t>(by) * bw];
             dst[0] = row[0];
             std::copy(row, row + w, dst + 1);
             dst[bw - 1] = row[w - 1];
@@ -4331,7 +4331,7 @@ private:
         if (std::find(m_target_order.begin(), m_target_order.end(), id) == m_target_order.end()) m_target_order.push_back(id);
     }
 
-    void clear_target(TargetRes& r, const graphics::Color& c) {
+    void clear_target(TargetRes& r, const colors::Color& c) {
         for (Batch& b : m_batches) if (b.target == m_active_target) b.count = 0;
         const float a = c.alpha() / 255.0f;
         r.clear = true;
@@ -5230,7 +5230,7 @@ private:
 };
 
 } // namespace detail
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo
 
 #endif // OS_WINDOWS || OS_LINUX

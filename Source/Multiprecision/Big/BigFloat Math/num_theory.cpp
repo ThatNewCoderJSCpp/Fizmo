@@ -47,26 +47,37 @@ BigFloat trunc(const BigFloat& x) {
     return BigFloat(x.get_integer_part());
 }
 
+namespace {
+
+BigFloatContext exact_context(const BigFloat& x) {
+    const std::int64_t e = x.exponent();
+    const std::size_t whole = e > 0 ? static_cast<std::size_t>(e) : 0;
+    return BigFloatContext(BigFloatContext::clamp_precision(x.significand().bit_length() + whole + 4), RoundingMode::nearest_even);
+}
+
+}
+
 BigFloat round(const BigFloat& x) {
     if (x.is_unordered() || x.is_infinite() || x.is_zero()) return x;
+    const BigFloatContext ctx = exact_context(x);
     const BigFloat t = trunc(x);
-    const BigFloat fraction = x - t;
+    const BigFloat fraction = BigFloat::sub(x, t, ctx);
     const BigFloat half("0.5");
-    if (fraction >= half) return t + BigFloat(1);
-    if (fraction <= -half) return t - BigFloat(1);
+    if (fraction >= half) return BigFloat::add(t, BigFloat(1), ctx);
+    if (fraction <= -half) return BigFloat::sub(t, BigFloat(1), ctx);
     return t;
 }
 
 BigFloat floor(const BigFloat& x) {
     if (x.is_unordered() || x.is_infinite() || x.is_zero()) return x;
     const BigFloat t = trunc(x);
-    return x < t ? t - BigFloat(1) : t;
+    return x < t ? BigFloat::sub(t, BigFloat(1), exact_context(x)) : t;
 }
 
 BigFloat ceiling(const BigFloat& x) {
     if (x.is_unordered() || x.is_infinite() || x.is_zero()) return x;
     const BigFloat t = trunc(x);
-    return x > t ? t + BigFloat(1) : t;
+    return x > t ? BigFloat::add(t, BigFloat(1), exact_context(x)) : t;
 }
 
 } // namespace math

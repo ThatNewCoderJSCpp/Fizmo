@@ -9,9 +9,9 @@ BitmapImage adjust_brightness(const BitmapImage& source, const int adjustment) n
     
     for (unsigned int y = 0; y < source.height(); y++) {
         for (unsigned int x = 0; x < source.width(); x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             
-            result.set_pixel(x, y, fizmo::graphics::Color(
+            result.set_pixel(x, y, fizmo::colors::Color(
                 pixel.red() + adjustment,
                 pixel.green() + adjustment,
                 pixel.blue() + adjustment
@@ -38,9 +38,9 @@ BitmapImage adjust_brightness(
     
     for (unsigned int y = y_1; y < y_2; y++) {
         for (unsigned int x = x_1; x < x_2; x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             
-            result.set_pixel(x, y, fizmo::graphics::Color(
+            result.set_pixel(x, y, fizmo::colors::Color(
                 pixel.red() + adjustment,
                 pixel.green() + adjustment,
                 pixel.blue() + adjustment

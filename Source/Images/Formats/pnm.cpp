@@ -207,7 +207,7 @@ bool encode_pnm(const BitmapImage& img, std::vector<std::uint8_t>& out, bool alp
     out.assign(header.begin(), header.end());
     out.reserve(out.size() + static_cast<std::size_t>(w) * h * (alpha ? 4 : 3));
 
-    for (const graphics::Color& c : img.pixels()) {
+    for (const colors::Color& c : img.pixels()) {
         out.push_back(c.red());
         out.push_back(c.green());
         out.push_back(c.blue());

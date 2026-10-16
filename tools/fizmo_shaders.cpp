@@ -30,8 +30,8 @@ constexpr int         kVersion2D      = 330;
 constexpr int         kVersion3D      = 410;
 constexpr int         kVersionCompute = 430;
 
-const char* const kExtraNamespace = "fizmo::windows::detail::extra_glsl";
-const char* const kSpirvNamespace = "::fizmo::windows::detail::gfx";
+const char* const kExtraNamespace = "fizmo::graphics::detail::extra_glsl";
+const char* const kSpirvNamespace = "::fizmo::graphics::detail::gfx";
 const char* const kDepthFixup     = "#ifdef FIZMO_GL_DEPTH_FIXUP\n    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;\n#endif\n";
 
 const std::set<std::string> kShaders2D = { "draw2d.vert", "draw2d.frag", "present.vert", "present.frag", "upscale.frag" };
@@ -740,7 +740,7 @@ void find_renderer_shaders(const std::string& text, std::vector<std::tuple<std::
 
 void renderer_mode(const Options& args) {
     const fs::path root = args.source_dir;
-    const fs::path impl = root / "Source" / "Windows" / "Renderer Impl";
+    const fs::path impl = root / "Source" / "Graphics" / "Renderer" / "Impl";
     const fs::path output = impl / "gl_shaders.hpp";
     const std::string cross = tool("SPIRV_CROSS", "spirv-cross");
     std::vector<Entry> entries;
@@ -769,12 +769,12 @@ void renderer_mode(const Options& args) {
 
     if (entries.empty()) fail("no shaders found");
     std::vector<std::string> out = { "#ifndef FIZMO_GL_SHADERS_HPP", "#define FIZMO_GL_SHADERS_HPP", "" };
-    out.push_back("#include \"../../GPU/types.hpp\"");
+    out.push_back("#include \"../../../GPU/types.hpp\"");
     out.push_back("#include \"gpu_shaders.hpp\"");
     out.push_back("#include \"gpu_shaders_3d.hpp\"");
     out.push_back("#include <cstdint>");
     out.push_back("");
-    const std::vector<std::string> names = { "fizmo", "windows", "detail", "glsl" };
+    const std::vector<std::string> names = { "fizmo", "graphics", "detail", "glsl" };
     open_namespaces(out, names);
     for (const Entry& e : entries) emit_shader(out, e, std::string(kSpirvNamespace) + "::" + e.symbol);
     close_namespaces(out, names);
@@ -798,7 +798,7 @@ void renderer_mode(const Options& args) {
     std::sort(extra_args.shaders.begin(), extra_args.shaders.end());
     extra_args.output          = (impl / "gpu_shaders_extra.hpp").string();
     extra_args.ns              = kExtraNamespace;
-    extra_args.include         = "\"../../GPU/types.hpp\"";
+    extra_args.include         = "\"../../../GPU/types.hpp\"";
     extra_args.gl_version      = kVersion2D;
     extra_args.compute_version = kVersionCompute;
     extra_args.guard           = "FIZMO_GPU_SHADERS_EXTRA_HPP";

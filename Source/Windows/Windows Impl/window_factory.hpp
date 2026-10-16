@@ -10,7 +10,7 @@ namespace fizmo {
 namespace windows {
 namespace detail {
 
-std::unique_ptr<ImplBase> make_window_impl(IWindowEventHandler* handler, const graphics::Color& background);
+std::unique_ptr<ImplBase> make_window_impl(IWindowEventHandler* handler, const colors::Color& background);
 std::vector<MonitorInfo> platform_monitors();
 
 } // namespace detail

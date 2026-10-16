@@ -1,15 +1,15 @@
 #ifndef FIZMO_RENDERER_BASE_HPP
 #define FIZMO_RENDERER_BASE_HPP
 
-#include "../../Graphics/color.hpp"
-#include "../../Graphics/paint.hpp"
-#include "../../Graphics/texture.hpp"
-#include "../../Graphics/render_target.hpp"
-#include "../../Graphics/draw_types_2d.hpp"
-#include "../../Text/text_style.hpp"
-#include "../../Text/rich_text.hpp"
+#include "../../../Colors/color.hpp"
+#include "../../paint.hpp"
+#include "../../texture.hpp"
+#include "../../render_target.hpp"
+#include "../../draw_types_2d.hpp"
+#include "../../../Text/text_style.hpp"
+#include "../../../Text/rich_text.hpp"
 #include "../raster_3d.hpp"
-#include "../../GPU/types.hpp"
+#include "../../../GPU/types.hpp"
 #include <cctype>
 #include <algorithm>
 #include <cmath>
@@ -30,7 +30,7 @@ class CommandList;
 class Texture;
 } // namespace gpu
 
-namespace windows {
+namespace graphics {
 
 enum class GpuPassStage : std::uint8_t { BeforeTargets = 0, AfterTargets, AfterScene };
 
@@ -128,10 +128,10 @@ public:
     virtual void resize(unsigned int width, unsigned int height) noexcept = 0;
     virtual void begin_frame() noexcept = 0;
     virtual void present() noexcept = 0;
-    virtual void clear(const graphics::Color& color) noexcept = 0;
+    virtual void clear(const colors::Color& color) noexcept = 0;
     virtual void set_clip_rect(int x, int y, unsigned int w, unsigned int h, RectOrigin origin = RectOrigin::TopLeft) noexcept = 0;
     virtual void reset_clip_rect() noexcept = 0;
-    virtual void draw_pixel(int x, int y, const graphics::Color& color) noexcept = 0;
+    virtual void draw_pixel(int x, int y, const colors::Color& color) noexcept = 0;
     virtual void draw_line(int x1, int y1, int x2, int y2, const graphics::Paint& paint) noexcept = 0;
     virtual void paint(void* paint_dc) noexcept = 0;
     virtual void draw_rect(int x, int y, unsigned int w, unsigned int h, const graphics::Paint& paint) noexcept = 0;
@@ -176,7 +176,7 @@ public:
 
     virtual void draw_pixel_buffer(
         int dx, int dy, unsigned int dw, unsigned int dh,
-        const graphics::Color* pixels, unsigned int pw, unsigned int ph,
+        const colors::Color* pixels, unsigned int pw, unsigned int ph,
         bool /*smooth*/, std::uint64_t /*version*/
     ) noexcept {
         if (!pixels || pw == 0 || ph == 0 || dw == 0 || dh == 0) return;
@@ -205,7 +205,7 @@ public:
             const graphics::BlendMode saved = blend_mode();
             if (s.blend != saved) set_blend_mode(s.blend);
             if (s.r == 255 && s.g == 255 && s.b == 255) draw_texture_quad(quad, *s.texture, s.a / 255.0f, s.source);
-            else draw_texture_quad_tinted(quad, *s.texture, graphics::Color(s.r, s.g, s.b, 255), s.a / 255.0f, s.source);
+            else draw_texture_quad_tinted(quad, *s.texture, colors::Color(s.r, s.g, s.b, 255), s.a / 255.0f, s.source);
             if (s.blend != saved) set_blend_mode(saved);
         }
     }
@@ -222,7 +222,7 @@ public:
             for (int k = 0; k < 3; ++k) { r += v[i + k].color.red(); g += v[i + k].color.green(); b += v[i + k].color.blue(); a += v[i + k].color.alpha(); }
             if (a == 0) continue;
             const RenderPoint tri[3] = { { v[i].x, v[i].y }, { v[i + 1].x, v[i + 1].y }, { v[i + 2].x, v[i + 2].y } };
-            const graphics::Color c(static_cast<std::uint8_t>(r / 3), static_cast<std::uint8_t>(g / 3), static_cast<std::uint8_t>(b / 3), static_cast<std::uint8_t>(a / 3));
+            const colors::Color c(static_cast<std::uint8_t>(r / 3), static_cast<std::uint8_t>(g / 3), static_cast<std::uint8_t>(b / 3), static_cast<std::uint8_t>(a / 3));
             draw_polygon(tri, 3, graphics::Paint::fill(c));
         }
     }
@@ -250,11 +250,11 @@ public:
         const RenderPoint quad[4], const graphics::Texture& tex,
         float opacity, const graphics::TextureRect& src
     ) noexcept {
-        draw_texture_quad_tinted(quad, tex, graphics::Color(255, 255, 255, 255), opacity, src);
+        draw_texture_quad_tinted(quad, tex, colors::Color(255, 255, 255, 255), opacity, src);
     }
 
     virtual void draw_texture_quad_tinted(
-        const RenderPoint quad[4], const graphics::Texture& tex, const graphics::Color& tint,
+        const RenderPoint quad[4], const graphics::Texture& tex, const colors::Color& tint,
         float opacity, const graphics::TextureRect& src
     ) noexcept {
         if (!quad || !tex.valid() || src.is_empty() || opacity <= 0.0f) return;
@@ -280,7 +280,7 @@ public:
 
         try {
             images::BitmapImage img(bw, bh);
-            const graphics::Color clear(0, 0, 0, 0);
+            const colors::Color clear(0, 0, 0, 0);
 
             for (unsigned int row = 0; row < bh; ++row) {
                 const double qy = (y0 + static_cast<int>(row)) + 0.5 - quad[0].y;
@@ -292,8 +292,8 @@ public:
 
                     if (s < 0.0 || s >= 1.0 || t < 0.0 || t >= 1.0) { img.set_pixel(col, row, clear); continue; }
 
-                    graphics::Color c = tex.sample(src.x + s * src.w, src.y + t * src.h);
-                    if (tinted) c = graphics::Color(static_cast<std::uint8_t>((c.red() * tint.red() + 127) / 255), static_cast<std::uint8_t>((c.green() * tint.green() + 127) / 255), static_cast<std::uint8_t>((c.blue() * tint.blue() + 127) / 255), c.alpha());
+                    colors::Color c = tex.sample(src.x + s * src.w, src.y + t * src.h);
+                    if (tinted) c = colors::Color(static_cast<std::uint8_t>((c.red() * tint.red() + 127) / 255), static_cast<std::uint8_t>((c.green() * tint.green() + 127) / 255), static_cast<std::uint8_t>((c.blue() * tint.blue() + 127) / 255), c.alpha());
                     if (opacity < 1.0f) c.set_alpha(static_cast<std::uint8_t>(c.alpha() * opacity + 0.5f));
                     img.set_pixel(col, row, c);
                 }
@@ -344,7 +344,7 @@ public:
 
     virtual bool capture(images::BitmapImage& /*out*/) noexcept { return false; }
 
-    virtual bool begin_target(const graphics::RenderTarget&, const graphics::Color*) noexcept { return false; }
+    virtual bool begin_target(const graphics::RenderTarget&, const colors::Color*) noexcept { return false; }
     virtual void end_target() noexcept {}
     virtual std::uint64_t active_target() const noexcept { return 0; }
     virtual void draw_target(int, int, unsigned int, unsigned int, const graphics::RenderTarget&, float, const graphics::TextureRect&) noexcept {}
@@ -444,7 +444,7 @@ public:
         } catch (...) {}
     }
 
-    virtual void draw_lines_3d(const linalg::vector3d* pts, std::size_t count, const graphics::Color& color, float width, bool depth_test) noexcept {
+    virtual void draw_lines_3d(const linalg::vector3d* pts, std::size_t count, const colors::Color& color, float width, bool depth_test) noexcept {
         if (!m_in_3d || !pts || count < 2) return;
         try { m_soft3d->lines(pts, count, color, width, depth_test); } catch (...) {}
     }
@@ -495,8 +495,8 @@ public:
                 for (std::size_t k = 0; k < per; ++k) {
                     graphics::Vertex3D v = verts[mesh.indexed() ? idx[k] : k];
                     v.x = v.x * in.scale + in.x; v.y = v.y * in.scale + in.y; v.z = v.z * in.scale + in.z;
-                    const graphics::Color c = v.color();
-                    v.set_color(graphics::Color(static_cast<std::uint8_t>(c.red() * tint[0] + 0.5f), static_cast<std::uint8_t>(c.green() * tint[1] + 0.5f),
+                    const colors::Color c = v.color();
+                    v.set_color(colors::Color(static_cast<std::uint8_t>(c.red() * tint[0] + 0.5f), static_cast<std::uint8_t>(c.green() * tint[1] + 0.5f),
                                                 static_cast<std::uint8_t>(c.blue() * tint[2] + 0.5f), static_cast<std::uint8_t>(c.alpha() * tint[3] + 0.5f)));
                     m_instance_scratch.push_back(v);
                     m_instance_lights.push_back(in.light);
@@ -512,7 +512,7 @@ protected:
     graphics::SceneLighting3D             m_scene_lighting;
     bool                                  m_in_3d = false;
     std::unique_ptr<SoftwareRasterizer3D> m_soft3d;
-    std::vector<graphics::Color>          m_soft3d_pixels;
+    std::vector<colors::Color>          m_soft3d_pixels;
     std::uint64_t                         m_soft3d_version = 0;
     const std::uint64_t                   m_epoch = next_content_version();
     std::vector<graphics::Vertex3D>       m_instance_scratch;
@@ -732,7 +732,7 @@ private:
 };
 
 } // namespace detail
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo
 
 #endif // FIZMO_RENDERER_BASE_HPP

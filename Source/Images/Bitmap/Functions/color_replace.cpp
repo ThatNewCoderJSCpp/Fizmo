@@ -4,12 +4,12 @@
 namespace fizmo {
 namespace images {
 
-BitmapImage replace_color(const BitmapImage& source, const fizmo::graphics::Color& old_color, const fizmo::graphics::Color& new_color) noexcept {
+BitmapImage replace_color(const BitmapImage& source, const fizmo::colors::Color& old_color, const fizmo::colors::Color& new_color) noexcept {
     BitmapImage result(source);
     
     for (unsigned int y = 0; y < source.height(); y++) {
         for (unsigned int x = 0; x < source.width(); x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             if (pixel == old_color) {
                 result.set_pixel(x, y, new_color);
             }
@@ -23,7 +23,7 @@ BitmapImage replace_color(
     const BitmapImage& source, 
     unsigned int x1, unsigned int y1, 
     unsigned int x2, unsigned int y2,
-    const fizmo::graphics::Color& old_color, const fizmo::graphics::Color& new_color
+    const fizmo::colors::Color& old_color, const fizmo::colors::Color& new_color
 ) noexcept {
     if (x1 > x2) { std::swap(x1, x2); }
     if (y1 > y2) { std::swap(y1, y2); }
@@ -35,7 +35,7 @@ BitmapImage replace_color(
     
     for (unsigned int y = y_1; y < y_2; y++) {
         for (unsigned int x = x_1; x < x_2; x++) {
-            fizmo::graphics::Color pixel = source.get_pixel(x, y);
+            fizmo::colors::Color pixel = source.get_pixel(x, y);
             if (pixel == old_color) {
                 result.set_pixel(x, y, new_color);
             }

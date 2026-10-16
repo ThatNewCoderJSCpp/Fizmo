@@ -17,14 +17,14 @@ MathImageFormat resolve_image_format(MathImageFormat format, std::string_view pa
     return f == MathImageFormat::Auto ? MathImageFormat::Png : f;
 }
 
-images::BitmapImage flatten_image(const images::BitmapImage& src, const graphics::Color& matte) {
+images::BitmapImage flatten_image(const images::BitmapImage& src, const colors::Color& matte) {
     images::BitmapImage out(src.width(), src.height());
     for (unsigned y = 0; y < src.height(); ++y) {
         for (unsigned x = 0; x < src.width(); ++x) {
-            const graphics::Color c = src.get_pixel(x, y);
+            const colors::Color c = src.get_pixel(x, y);
             const unsigned a = c.alpha();
             const auto mix = [a](unsigned fg, unsigned bg) { return static_cast<std::uint8_t>((fg * a + bg * (255u - a) + 127u) / 255u); };
-            out.set_pixel(x, y, graphics::Color(mix(c.red(), matte.red()), mix(c.green(), matte.green()), mix(c.blue(), matte.blue()), 255));
+            out.set_pixel(x, y, colors::Color(mix(c.red(), matte.red()), mix(c.green(), matte.green()), mix(c.blue(), matte.blue()), 255));
         }
     }
     return out;

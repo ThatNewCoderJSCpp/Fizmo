@@ -2,7 +2,7 @@
 #define FIZMO_TEXT_STYLE_HPP
 
 #include "util.hpp"
-#include "../Graphics/optional_color.hpp"
+#include "../Colors/optional_color.hpp"
 
 namespace fizmo {
 namespace text {
@@ -10,7 +10,7 @@ namespace text {
 class TextStyle {
 public:
     constexpr TextStyle() noexcept = default;
-    constexpr TextStyle(double size_px, const graphics::Color& color) noexcept : m_size(size_px), m_fg_color(color) {}
+    constexpr TextStyle(double size_px, const colors::Color& color) noexcept : m_size(size_px), m_fg_color(color) {}
 
 public:
     Font font()                const noexcept { return m_font;                }
@@ -94,13 +94,13 @@ public:
     }
 
 public:
-    const graphics::OptionalColor& fg_color()          const noexcept { return m_fg_color; }
-    void set_fg_color(const graphics::Color& c)              noexcept { m_fg_color.set(c); }
+    const colors::OptionalColor& fg_color()          const noexcept { return m_fg_color; }
+    void set_fg_color(const colors::Color& c)              noexcept { m_fg_color.set(c); }
     bool has_fg_color()                                const noexcept { return m_fg_color.is_set(); }
     void clear_fg_color()                                    noexcept { m_fg_color.clear(); }
 
-    const graphics::OptionalColor& bg_color()          const noexcept { return m_bg_color; }
-    void set_bg_color(const graphics::Color& c)              noexcept { m_bg_color.set(c); }
+    const colors::OptionalColor& bg_color()          const noexcept { return m_bg_color; }
+    void set_bg_color(const colors::Color& c)              noexcept { m_bg_color.set(c); }
     bool has_bg_color()                                const noexcept { return m_bg_color.is_set(); }
     void clear_bg_color()                                    noexcept { m_bg_color.clear(); }
 
@@ -137,8 +137,8 @@ public:
     void clear_decoration_style()                               noexcept { m_deco_style_set = false; }
 
 public:
-    const graphics::OptionalColor& decoration_color()    const noexcept { return m_deco_color; }
-    void set_decoration_color(const graphics::Color& c)        noexcept { m_deco_color.set(c); }
+    const colors::OptionalColor& decoration_color()    const noexcept { return m_deco_color; }
+    void set_decoration_color(const colors::Color& c)        noexcept { m_deco_color.set(c); }
     bool has_decoration_color()                          const noexcept { return m_deco_color.is_set(); }
     void clear_decoration_color()                              noexcept { m_deco_color.clear(); }
 
@@ -187,8 +187,8 @@ public:
     void  clear_opacity()                    noexcept { m_opacity_set = false; }
 
 public:
-    const graphics::OptionalColor& outline_color()     const noexcept { return m_outline_color; }
-    void set_outline_color(const graphics::Color& c)         noexcept { m_outline_color.set(c); }
+    const colors::OptionalColor& outline_color()     const noexcept { return m_outline_color; }
+    void set_outline_color(const colors::Color& c)         noexcept { m_outline_color.set(c); }
     bool has_outline_color()                           const noexcept { return m_outline_color.is_set(); }
     void clear_outline_color()                               noexcept { m_outline_color.clear(); }
 
@@ -202,7 +202,7 @@ public:
         double offset_x = 0.0;
         double offset_y = 0.0;
         double blur     = 0.0;
-        graphics::Color color{0, 0, 0, 128};
+        colors::Color color{0, 0, 0, 128};
 
         constexpr bool operator==(const TextShadow& o) const noexcept {
             return offset_x == o.offset_x && offset_y == o.offset_y
@@ -214,7 +214,7 @@ public:
     const TextShadow& shadow()                         const noexcept { return m_shadow; }
     void set_shadow(const TextShadow& s)                     noexcept { m_shadow = s; m_shadow_set = true; }
 
-    void set_shadow(double ox, double oy, double blur, const graphics::Color& c = graphics::Color(0,0,0,128)) noexcept {
+    void set_shadow(double ox, double oy, double blur, const colors::Color& c = colors::Color(0,0,0,128)) noexcept {
         m_shadow = {ox, oy, blur, c};
         m_shadow_set = true;
     }
@@ -305,13 +305,13 @@ private:
     bool           m_weight_set     = false;
     FontSlant      m_slant          = FontSlant::Normal;
     bool           m_slant_set      = false;
-    graphics::OptionalColor  m_fg_color;
-    graphics::OptionalColor  m_bg_color;
+    colors::OptionalColor  m_fg_color;
+    colors::OptionalColor  m_bg_color;
     TextDecoration m_decoration     = TextDecoration::None;
     bool           m_decoration_set = false;
     DecorationStyle m_deco_style    = DecorationStyle::Solid;
     bool           m_deco_style_set = false;
-    graphics::OptionalColor  m_deco_color;
+    colors::OptionalColor  m_deco_color;
     double         m_letter_spacing = detail::kUnsetSpacing;
     double         m_word_spacing   = detail::kUnsetSpacing;
     double         m_line_height    = detail::kUnsetDouble;
@@ -321,7 +321,7 @@ private:
     bool           m_transform_set  = false;
     float          m_opacity        = 1.0f;
     bool           m_opacity_set    = false;
-    graphics::OptionalColor  m_outline_color;
+    colors::OptionalColor  m_outline_color;
     double         m_outline_width  = detail::kUnsetDouble;
     TextShadow     m_shadow;
     bool           m_shadow_set     = false;

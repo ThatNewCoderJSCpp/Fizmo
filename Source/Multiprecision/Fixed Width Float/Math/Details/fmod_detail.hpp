@@ -7,47 +7,42 @@ namespace fizmo {
 namespace math {
 namespace edetail {
 
-// b == 2^eb exactly: the remainder is just the scaled fractional part. O(1).
 template <class G>
 G fmod_pow2(const G& a, const typename G::sstore_t& eb, bool& q_odd) noexcept {
     using S = typename G::sstore_t;
-    const G t = multiprecision::fmath::scalb(a, S(0) - eb);            // a / 2^eb
-    q_odd = odd_integer(t);                            // false when ulp(t) > 1, which is correct
+    const G t = multiprecision::fmath::scalb(a, S(0) - eb);            
+    q_odd = odd_integer(t);                            
     const G f = t.get_fractional_part();
     return f.is_zero() ? G::zero() : multiprecision::fmath::scalb(f, eb);
 }
 
-// a, b finite and strictly positive. Returns a mod b in [0, b), exactly.
-// q_odd receives the parity of trunc(a / b), needed for round-to-even in remainder().
 template <class G>
 G fmod_core(const G& a, const G& b, bool& q_odd) noexcept {
     using S = typename G::sstore_t;
     q_odd = false;
     if (a < b) return a;
     S ea, eb; G fa, fb;
-    multiprecision::fmath::split_pow2(a, fa, ea);                      // fa, fb in [1, 2)
+    multiprecision::fmath::split_pow2(a, fa, ea);                     
     multiprecision::fmath::split_pow2(b, fb, eb);
     if (fb == G(1)) return fmod_pow2(a, eb, q_odd);
     const long long d = root_exp_ll<G>(ea) - root_exp_ll<G>(eb);
     G r = fa;
 
     for (long long i = d; i >= 0; --i) {
-        if (!(r < fb)) {                               // both in [1, 2): subtraction is exact
+        if (!(r < fb)) {                              
             r = r - fb;
             if (i == 0) q_odd = true;
         }
-        if (r.is_zero()) break;                        // remaining quotient bits are all zero
+        if (r.is_zero()) break;                        
         if (i > 0) r = multiprecision::fmath::scalb_i(r, 1);
     }
 
     return multiprecision::fmath::scalb(r, eb);
 }
 
-// ---- shared special-case handling ---------------------------------------
-
 template <class F>
 struct rem_parts {
-    typename F::guard_t mag;                           // |x| mod |y|, in [0, |y|)
+    typename F::guard_t mag;                           
     bool xneg, yneg, q_odd, done;
     F    early;
 };
@@ -68,8 +63,6 @@ rem_parts<F> rem_split(const F& x, const F& y) noexcept {
     return p;
 }
 
-// ---- the four variants ---------------------------------------------------
-
 template <class F>
 F fmod_run(const F& x, const F& y) noexcept {
     const rem_parts<F> p = rem_split(x, y);
@@ -84,12 +77,11 @@ F remainder_run(const F& x, const F& y) noexcept {
     if (p.done) return p.early;
     const G gy    = multiprecision::fmath::float_cast<G>(math::abs(y));
     const G twice = multiprecision::fmath::scalb_i(p.mag, 1);
-    const bool up = (twice > gy) || (twice == gy && p.q_odd);      // ties to even
+    const bool up = (twice > gy) || (twice == gy && p.q_odd);     
     const G r     = up ? (gy - p.mag) : p.mag;
     return signed_root(multiprecision::fmath::float_cast<F>(r), p.xneg != up);
 }
 
-// Result carries the sign of y and lies in [0, |y|).
 template <class F>
 F mod_floor_run(const F& x, const F& y) noexcept {
     using G = typename F::guard_t;
@@ -98,12 +90,11 @@ F mod_floor_run(const F& x, const F& y) noexcept {
     if (p.mag.is_zero() || p.xneg == p.yneg)
         return signed_root(multiprecision::fmath::float_cast<F>(p.mag), p.yneg && !p.mag.is_zero());
     const G gy = multiprecision::fmath::float_cast<G>(math::abs(y));
-    const F r  = multiprecision::fmath::float_cast<F>(gy - p.mag);                 // complement, at guard precision
-    if (!(r < math::abs(y))) return F::zero(p.yneg);               // rounded up to |y|: clamp
+    const F r  = multiprecision::fmath::float_cast<F>(gy - p.mag);               
+    if (!(r < math::abs(y))) return F::zero(p.yneg);              
     return signed_root(r, p.yneg);
 }
 
-// Always non-negative. Differs from mod_floor only when y < 0.
 template <class F>
 F mod_euclid_run(const F& x, const F& y) noexcept {
     using G = typename F::guard_t;

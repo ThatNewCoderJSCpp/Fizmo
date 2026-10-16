@@ -2,7 +2,7 @@
 #define FIZMO_SYSTEM_TRACKER_HPP
 
 #include "common.hpp"
-#include "../Windows/game_loop.hpp"
+#include "../Game/game_loop.hpp"
 #include <condition_variable>
 #include <deque>
 #include <thread>
@@ -26,14 +26,14 @@ private:
     double              m_gpu_max     = 0.0;
 
 public:
-    void add(const windows::FrameStats& s);
+    void add(const graphics::FrameStats& s);
 
     FrameSummary take(double seconds);
 };
 
-class Relay : public windows::FrameObserver {
+class Relay : public graphics::FrameObserver {
 public:
-    using FrameFn = std::function<void(const windows::Renderer&, const windows::FrameStats&)>;
+    using FrameFn = std::function<void(const graphics::Renderer&, const graphics::FrameStats&)>;
     using StopFn  = std::function<void()>;
 
 private:
@@ -47,9 +47,9 @@ public:
 
     void reset() noexcept;
 
-    void on_frame(const windows::Renderer& r, const windows::FrameStats& s) noexcept override;
+    void on_frame(const graphics::Renderer& r, const graphics::FrameStats& s) noexcept override;
 
-    void on_unbind(const windows::Renderer&) noexcept override {
+    void on_unbind(const graphics::Renderer&) noexcept override {
         std::lock_guard<std::mutex> lk(m_mutex);
         if (!m_unbind) return;
         try { m_unbind(); } catch (...) {}
@@ -151,7 +151,7 @@ private:
         if (m_relay) return;
         m_relay = std::make_shared<Relay>();
         m_relay->bind(
-            [this](const windows::Renderer& r, const windows::FrameStats& s) {
+            [this](const graphics::Renderer& r, const graphics::FrameStats& s) {
                 {
                     std::lock_guard<std::mutex> lk(m_frame_mutex);
                     m_frames.add(s);
@@ -181,8 +181,8 @@ protected:
         return m_frames.take(seconds);
     }
 
-    void frame_hook(const windows::Renderer&, const windows::FrameStats&) {}
-    void renderer_attached(windows::Renderer&) {}
+    void frame_hook(const graphics::Renderer&, const graphics::FrameStats&) {}
+    void renderer_attached(graphics::Renderer&) {}
 
 public:
     Tracker(const Tracker&) = delete;
@@ -334,7 +334,7 @@ public:
         start();
     }
 
-    void attach(windows::Renderer& renderer) {
+    void attach(graphics::Renderer& renderer) {
         ensure_relay();
         renderer.add_frame_observer(m_relay);
         self().renderer_attached(renderer);
@@ -346,7 +346,7 @@ public:
         attach(app.renderer());
     }
 
-    void attach(windows::GameLoop& loop) { attach(loop.app()); }
+    void attach(game::GameLoop& loop) { attach(loop.app()); }
 
     void detach() noexcept {
         if (!m_relay) return;

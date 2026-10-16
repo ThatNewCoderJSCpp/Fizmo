@@ -15,9 +15,6 @@ namespace fizmo {
 namespace networking {
 namespace security {
 
-// KeyUsage, SubjectAltName, CertificateInfo now live in Backend/tls_types.hpp
-// so the platform backends can populate them without depending on this header.
-
 class Certificate {
 public:
     using Clock     = std::chrono::system_clock;

@@ -2,7 +2,7 @@
 #include "collision_2d.hpp"
 
 namespace fizmo {
-namespace graphics {
+namespace game {
 namespace collision {
 
 void Shape::make_ccw() {
@@ -32,12 +32,12 @@ auto Shape::convex_hull(std::vector<linalg::vector2d> pts) -> Shape {
     return Shape(std::move(hull));
 }
 
-auto Shape::from_sprite(const Sprite& s) -> Shape {
-    const SpriteQuad q = s.quad();
+auto Shape::from_sprite(const graphics::Sprite& s) -> Shape {
+    const graphics::SpriteQuad q = s.quad();
     return Shape({ { q.x[0], q.y[0] }, { q.x[1], q.y[1] }, { q.x[2], q.y[2] }, { q.x[3], q.y[3] } });
 }
 
-auto Shape::circle_of_sprite(const Sprite& s, double scale) -> Shape {
+auto Shape::circle_of_sprite(const graphics::Sprite& s, double scale) -> Shape {
     const auto b = s.rotated_bounds();
     return circle({ b.x + b.w * 0.5, b.y + b.h * 0.5 }, std::min(s.display_width(), s.display_height()) * scale);
 }
@@ -57,11 +57,11 @@ void Shape::bounds(double& x0, double& y0, double& x1, double& y1) const noexcep
 }
 
 } // namespace collision
-} // namespace graphics
+} // namespace game
 } // namespace fizmo
 
 namespace fizmo {
-namespace graphics {
+namespace game {
 namespace collision {
 namespace detail {
 
@@ -171,11 +171,11 @@ bool cores_overlap(const Shape& a, const Shape& b, double feature, linalg::vecto
 
 } // namespace detail
 } // namespace collision
-} // namespace graphics
+} // namespace game
 } // namespace fizmo
 
 namespace fizmo {
-namespace graphics {
+namespace game {
 namespace collision {
 
 double distance(const Shape& a, const Shape& b) noexcept {
@@ -302,5 +302,5 @@ SweepHit sweep(const Shape& moving, const linalg::vector2d& delta, const Shape& 
 }
 
 } // namespace collision
-} // namespace graphics
+} // namespace game
 } // namespace fizmo

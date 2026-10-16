@@ -2,7 +2,7 @@
 #include "camera_controller_2d.hpp"
 
 namespace fizmo {
-namespace graphics {
+namespace game {
 
 double CameraController2D::hash(std::int64_t i, std::uint32_t seed) noexcept {
     std::uint32_t x = static_cast<std::uint32_t>(i) * 0x9E3779B1u ^ seed;
@@ -34,9 +34,9 @@ void CameraController2D::clamp_to_bounds(double& x, double& y) const noexcept {
     else y = std::max(m_bounds.y + hy, std::min(m_bounds.y + m_bounds.h - hy, y));
 }
 
-CameraController2D::CameraController2D(Camera2D& camera) : m_camera(&camera), m_x(camera.x()), m_y(camera.y()), m_zoom_target(camera.zoom()), m_rotation(camera.rotation()) {}
+CameraController2D::CameraController2D(graphics::Camera2D& camera) : m_camera(&camera), m_x(camera.x()), m_y(camera.y()), m_zoom_target(camera.zoom()), m_rotation(camera.rotation()) {}
 
-void CameraController2D::attach(Camera2D& camera) { m_camera = &camera; m_x = camera.x(); m_y = camera.y(); m_zoom_target = camera.zoom(); m_rotation = camera.rotation(); }
+void CameraController2D::attach(graphics::Camera2D& camera) { m_camera = &camera; m_x = camera.x(); m_y = camera.y(); m_zoom_target = camera.zoom(); m_rotation = camera.rotation(); }
 
 auto CameraController2D::set_shake(double max_offset, double max_angle_degrees, double frequency, double decay_per_second) noexcept -> CameraController2D& {
     m_shake_offset = max_offset; m_shake_angle = max_angle_degrees; m_shake_frequency = frequency; m_trauma_decay = decay_per_second; return *this;
@@ -103,5 +103,5 @@ void CameraController2D::update(double dt) noexcept {
     m_camera->set_rotation(m_rotation + m_shake_rot);
 }
 
-} // namespace graphics
+} // namespace game
 } // namespace fizmo

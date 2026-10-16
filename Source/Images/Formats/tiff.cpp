@@ -376,7 +376,7 @@ bool decode_page(const TiffReader& r, const std::map<int, Tag>& tags, BitmapImag
                 if (!decode_jpeg(jpg.data(), jpg.size(), tile, error)) return false;
                 for (unsigned y = 0; y < rows && by * th + y < L.h; ++y)
                     for (unsigned x = 0; x < tw && bx * tw + x < L.w; ++x) {
-                        const graphics::Color c = tile.get_pixel(x, y);
+                        const colors::Color c = tile.get_pixel(x, y);
                         std::uint8_t* dst = img.at(bx * tw + x, by * th + y);
                         dst[0] = c.red(); dst[1] = c.green(); dst[2] = c.blue(); dst[3] = 255;
                     }

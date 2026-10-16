@@ -5,8 +5,8 @@
 #include <fstream>
 #include <stdexcept>
 
-#include "../../Graphics/color.hpp"
-#include "../../Graphics/fixed_color.hpp"
+#include "../../Colors/color.hpp"
+#include "../../Colors/fixed_color.hpp"
 #include "../../Graphics/content_version.hpp"
 
 namespace fizmo {
@@ -35,7 +35,7 @@ struct BMPHeader {
 
 class BitmapImage {
 private:
-    std::vector<fizmo::graphics::Color> m_pixels;
+    std::vector<fizmo::colors::Color> m_pixels;
     unsigned int m_width;
     unsigned int m_height;
     fizmo::ContentVersion m_version;     
@@ -55,33 +55,33 @@ public:
 
     BitmapImage(const std::string& filename);
 
-    BitmapImage(const unsigned int width, const unsigned int height, std::vector<fizmo::graphics::Color> pixels);
+    BitmapImage(const unsigned int width, const unsigned int height, std::vector<fizmo::colors::Color> pixels);
 
     static BitmapImage from_rgba(const unsigned int width, const unsigned int height, const std::uint8_t* rgba);
 
     std::vector<std::uint8_t> to_rgba() const;
 
-    std::vector<fizmo::graphics::Color>& mutable_pixels() { m_version.touch(); return m_pixels; }
+    std::vector<fizmo::colors::Color>& mutable_pixels() { m_version.touch(); return m_pixels; }
 
-    void set_pixel(const unsigned int x, const unsigned int y, const fizmo::graphics::Color& color) { if (is_valid_range(x, y)) { m_pixels[y * m_width + x] = color; m_version.touch(); } }
+    void set_pixel(const unsigned int x, const unsigned int y, const fizmo::colors::Color& color) { if (is_valid_range(x, y)) { m_pixels[y * m_width + x] = color; m_version.touch(); } }
     
-    fizmo::graphics::Color get_pixel(const unsigned int x, const unsigned int y) const { 
+    fizmo::colors::Color get_pixel(const unsigned int x, const unsigned int y) const { 
         if (is_valid_range(x, y)) { return m_pixels[y * m_width + x]; } 
-        return fizmo::graphics::Color(); 
+        return fizmo::colors::Color(); 
     }
 
     unsigned int width() const { return m_width; }
     unsigned int height() const { return m_height; }
-    const std::vector<fizmo::graphics::Color>& pixels() const { return m_pixels; }
+    const std::vector<fizmo::colors::Color>& pixels() const { return m_pixels; }
     bool is_valid_image() const noexcept { return !m_pixels.empty() && m_width != 0 && m_height != 0; }
     double pixel_distance(const unsigned int x, const unsigned int y) const { return std::sqrt(std::pow(x - m_width / 2, 2) + std::pow(y - m_height / 2, 2)); }
     double pixel_distance(const unsigned int x1, const unsigned int y1, const unsigned int x2, const unsigned int y2) { return std::sqrt(std::pow(x1 - x2, 2) + std::pow(y1 - y2, 2)); }
     std::uint64_t version() const noexcept { return m_version.get(); }
 
 public:
-    void fill_area(const unsigned int x1, const unsigned int y1, const unsigned int x2, const unsigned int y2, const fizmo::graphics::Color& color);
+    void fill_area(const unsigned int x1, const unsigned int y1, const unsigned int x2, const unsigned int y2, const fizmo::colors::Color& color);
 
-    void change_background(const fizmo::graphics::Color& color);
+    void change_background(const fizmo::colors::Color& color);
 
     BitmapImage as_resized(const unsigned int new_width, const unsigned int new_height) const;
 

@@ -6,6 +6,8 @@
 #include "../Source/Multiprecision/include.hpp"
 #include "../Source/Random/random_std_int.hpp"
 #include "../Source/Random/random_mp.hpp"
+#include "../Source/Random/random_text.hpp"
+#include "../Source/Random/random_generator.hpp"
 
 #if defined(FIZMO_BASIC) || defined(FIZMO_BASICS)
     #include "std_overloads.hpp"

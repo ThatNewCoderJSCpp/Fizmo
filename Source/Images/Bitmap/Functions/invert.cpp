@@ -9,9 +9,9 @@ BitmapImage invert(const BitmapImage& source) noexcept {
     
     for (unsigned int y = 0; y < source.height(); y++) {
         for (unsigned int x = 0; x < source.width(); x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             
-            const fizmo::graphics::Color inverted(
+            const fizmo::colors::Color inverted(
                 255 - pixel.red(),
                 255 - pixel.green(),
                 255 - pixel.blue()
@@ -40,9 +40,9 @@ BitmapImage invert(
     
     for (unsigned int y = y_1; y < y_2; y++) {
         for (unsigned int x = x_1; x < x_2; x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             
-            const fizmo::graphics::Color inverted(
+            const fizmo::colors::Color inverted(
                 255 - pixel.red(),
                 255 - pixel.green(),
                 255 - pixel.blue()
@@ -63,14 +63,14 @@ BitmapImage invert_partial(const BitmapImage& source, const double percentage) n
     
     for (unsigned int y = 0; y < source.height(); y++) {
         for (unsigned int x = 0; x < source.width(); x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             const unsigned int inverted_red = 255 - pixel.red();
             const unsigned int inverted_green = 255 - pixel.green();
             const unsigned int inverted_blue = 255 - pixel.blue();
             const unsigned int new_red = static_cast<unsigned int>(pixel.red() * (1 - factor) + inverted_red * factor);
             const unsigned int new_green = static_cast<unsigned int>(pixel.green() * (1 - factor) + inverted_green * factor);
             const unsigned int new_blue = static_cast<unsigned int>(pixel.blue() * (1 - factor) + inverted_blue * factor);
-            result.set_pixel(x, y, fizmo::graphics::Color(new_red, new_green, new_blue));
+            result.set_pixel(x, y, fizmo::colors::Color(new_red, new_green, new_blue));
         }
     }
     
@@ -96,14 +96,14 @@ BitmapImage invert_partial(
     
     for (unsigned int y = y_1; y < y_2; y++) {
         for (unsigned int x = x_1; x < x_2; x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             const unsigned int inverted_red = 255 - pixel.red();
             const unsigned int inverted_green = 255 - pixel.green();
             const unsigned int inverted_blue = 255 - pixel.blue();
             const unsigned int new_red = static_cast<unsigned int>(pixel.red() * (1 - factor) + inverted_red * factor);
             const unsigned int new_green = static_cast<unsigned int>(pixel.green() * (1 - factor) + inverted_green * factor);
             const unsigned int new_blue = static_cast<unsigned int>(pixel.blue() * (1 - factor) + inverted_blue * factor);
-            result.set_pixel(x, y, fizmo::graphics::Color(new_red, new_green, new_blue));
+            result.set_pixel(x, y, fizmo::colors::Color(new_red, new_green, new_blue));
         }
     }
     
@@ -115,11 +115,11 @@ BitmapImage invert_channels(const BitmapImage& source, const bool invert_red, co
     
     for (unsigned int y = 0; y < source.height(); y++) {
         for (unsigned int x = 0; x < source.width(); x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             const unsigned int new_red = invert_red ? 255 - pixel.red() : pixel.red();
             const unsigned int new_green = invert_green ? 255 - pixel.green() : pixel.green();
             const unsigned int new_blue = invert_blue ? 255 - pixel.blue() : pixel.blue();
-            result.set_pixel(x, y, fizmo::graphics::Color(new_red, new_green, new_blue));
+            result.set_pixel(x, y, fizmo::colors::Color(new_red, new_green, new_blue));
         }
     }
     
@@ -142,11 +142,11 @@ BitmapImage invert_channels(
     
     for (unsigned int y = y_1; y < y_2; y++) {
         for (unsigned int x = x_1; x < x_2; x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             const unsigned int new_red = invert_red ? 255 - pixel.red() : pixel.red();
             const unsigned int new_green = invert_green ? 255 - pixel.green() : pixel.green();
             const unsigned int new_blue = invert_blue ? 255 - pixel.blue() : pixel.blue();
-            result.set_pixel(x, y, fizmo::graphics::Color(new_red, new_green, new_blue));
+            result.set_pixel(x, y, fizmo::colors::Color(new_red, new_green, new_blue));
         }
     }
     
@@ -166,14 +166,14 @@ BitmapImage invert_channels_partial(
     
     for (unsigned int y = 0; y < source.height(); y++) {
         for (unsigned int x = 0; x < source.width(); x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             const unsigned int inverted_red = 255 - pixel.red();
             const unsigned int inverted_green = 255 - pixel.green();
             const unsigned int inverted_blue = 255 - pixel.blue();
             const unsigned int new_red = static_cast<unsigned int>(pixel.red() * (1 - red_factor) + inverted_red * red_factor);
             const unsigned int new_green = static_cast<unsigned int>(pixel.green() * (1 - green_factor) + inverted_green * green_factor);
             const unsigned int new_blue = static_cast<unsigned int>(pixel.blue() * (1 - blue_factor) + inverted_blue * blue_factor);
-            result.set_pixel(x, y, fizmo::graphics::Color(new_red, new_green, new_blue));
+            result.set_pixel(x, y, fizmo::colors::Color(new_red, new_green, new_blue));
         }
     }
     
@@ -201,14 +201,14 @@ BitmapImage invert_channels_partial(
     
     for (unsigned int y = y_1; y < y_2; y++) {
         for (unsigned int x = x_1; x < x_2; x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             const unsigned int inverted_red = 255 - pixel.red();
             const unsigned int inverted_green = 255 - pixel.green();
             const unsigned int inverted_blue = 255 - pixel.blue();
             const unsigned int new_red = static_cast<unsigned int>(pixel.red() * (1 - red_factor) + inverted_red * red_factor);
             const unsigned int new_green = static_cast<unsigned int>(pixel.green() * (1 - green_factor) + inverted_green * green_factor);
             const unsigned int new_blue = static_cast<unsigned int>(pixel.blue() * (1 - blue_factor) + inverted_blue * blue_factor);
-            result.set_pixel(x, y, fizmo::graphics::Color(new_red, new_green, new_blue));
+            result.set_pixel(x, y, fizmo::colors::Color(new_red, new_green, new_blue));
         }
     }
     

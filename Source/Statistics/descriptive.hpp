@@ -98,6 +98,11 @@ sdetail::element_t<C> variance(const C& data) {
 }
 
 template <class C, sdetail::enable_range<C> = 0>
+sdetail::element_t<C> sample_variance(const C& data) {
+    return variance(data);
+}
+
+template <class C, sdetail::enable_range<C> = 0>
 sdetail::element_t<C> population_variance(const C& data) {
     using T = sdetail::element_t<C>;
     const auto v = sdetail::values(data);
@@ -109,6 +114,11 @@ sdetail::element_t<C> standard_deviation(const C& data) {
     using T = sdetail::element_t<C>;
     const auto v = sdetail::values(data);
     return sdetail::compute<T>([&](const BigFloatContext& c) { return core::standard_deviation(v, true, c); });
+}
+
+template <class C, sdetail::enable_range<C> = 0>
+sdetail::element_t<C> sample_standard_deviation(const C& data) {
+    return standard_deviation(data);
 }
 
 template <class C, sdetail::enable_range<C> = 0>
@@ -241,10 +251,150 @@ sdetail::element_t<C> skewness(const C& data, bool sample = true) {
 }
 
 template <class C, sdetail::enable_range<C> = 0>
-sdetail::element_t<C> kurtosis(const C& data, bool sample = true) {
+sdetail::element_t<C> excess_kurtosis(const C& data, bool sample = true) {
     using T = sdetail::element_t<C>;
     const auto v = sdetail::values(data);
     return sdetail::compute<T>([&](const BigFloatContext& c) { return core::kurtosis_excess(v, sample, c); });
+}
+
+template <class C, sdetail::enable_range<C> = 0>
+sdetail::element_t<C> pearson_kurtosis(const C& data, bool sample = true) {
+    using T = sdetail::element_t<C>;
+    const auto v = sdetail::values(data);
+    return sdetail::compute<T>([&](const BigFloatContext& c) {
+        const BigFloatContext hc(c.precision + 64, math::RoundingMode::nearest_even);
+        return BigFloat::add(core::kurtosis_excess(v, sample, hc), BigFloat(3), c);
+    });
+}
+
+template <class C, sdetail::enable_range<C> = 0>
+sdetail::element_t<C> kurtosis(const C& data, bool sample = true) {
+    return pearson_kurtosis(data, sample);
+}
+
+template <class C, sdetail::enable_range<C> = 0>
+sdetail::element_t<C> mode(const C& data) {
+    using T = sdetail::element_t<C>;
+    const std::vector<T> all = modes(data);
+    return all.empty() ? sdetail::nan_value<T>() : all.front();
+}
+
+template <class C, sdetail::enable_range<C> = 0>
+sdetail::element_t<C> geometric_mean(const C& data) {
+    using T = sdetail::element_t<C>;
+    const auto v = sdetail::values(data);
+    return sdetail::compute<T>([&](const BigFloatContext& c) {
+        if (v.empty()) return BigFloat::nan();
+        const BigFloatContext hc(c.precision + 64, math::RoundingMode::nearest_even);
+        BigFloat              acc = BigFloat::zero();
+        for (const BigFloat& x : v) {
+            if (x.is_zero()) return BigFloat::zero();
+            if (x.is_negative()) return BigFloat::nan();
+            acc = BigFloat::add(acc, math::ln(x, hc), hc);
+        }
+        return math::exp(BigFloat::div(acc, BigFloat(static_cast<std::uint64_t>(v.size())), hc), c);
+    });
+}
+
+template <class C, sdetail::enable_range<C> = 0>
+sdetail::element_t<C> harmonic_mean(const C& data) {
+    using T = sdetail::element_t<C>;
+    const auto v = sdetail::values(data);
+    return sdetail::compute<T>([&](const BigFloatContext& c) {
+        if (v.empty()) return BigFloat::nan();
+        const BigFloatContext hc(c.precision + 64, math::RoundingMode::nearest_even);
+        BigFloat              acc = BigFloat::zero();
+        for (const BigFloat& x : v) {
+            if (x.is_zero()) return BigFloat::zero();
+            acc = BigFloat::add(acc, BigFloat::div(BigFloat::one(), x, hc), hc);
+        }
+        return BigFloat::div(BigFloat(static_cast<std::uint64_t>(v.size())), acc, c);
+    });
+}
+
+template <class C, class D, sdetail::enable_range<C> = 0, sdetail::enable_range<D> = 0>
+sdetail::element_t<C> weighted_mean(const C& data, const D& weights) {
+    using T = sdetail::element_t<C>;
+    const auto v = sdetail::values(data);
+    const auto w = sdetail::values(weights);
+    return sdetail::compute<T>([&](const BigFloatContext& c) {
+        if (v.empty() || v.size() != w.size()) return BigFloat::nan();
+        const BigFloatContext exact(BigFloatContext::max_prec, math::RoundingMode::nearest_even);
+        BigFloat              top = BigFloat::zero();
+        BigFloat              bottom = BigFloat::zero();
+        for (std::size_t i = 0; i < v.size(); ++i) {
+            top    = BigFloat::add(top, BigFloat::mul(v[i], w[i], exact), exact);
+            bottom = BigFloat::add(bottom, w[i], exact);
+        }
+        if (bottom.is_zero()) return BigFloat::nan();
+        return BigFloat::div(top, bottom, c);
+    });
+}
+
+template <class C, sdetail::enable_range<C> = 0>
+sdetail::element_t<C> mean_absolute_deviation(const C& data) {
+    using T = sdetail::element_t<C>;
+    const auto v = sdetail::values(data);
+    return sdetail::compute<T>([&](const BigFloatContext& c) {
+        if (v.empty()) return BigFloat::nan();
+        const BigFloatContext hc(c.precision + 64, math::RoundingMode::nearest_even);
+        const BigFloat        m   = core::mean(v, hc);
+        BigFloat              acc = BigFloat::zero();
+        for (const BigFloat& x : v) acc = BigFloat::add(acc, BigFloat::sub(x, m, hc).abs(), hc);
+        return BigFloat::div(acc, BigFloat(static_cast<std::uint64_t>(v.size())), c);
+    });
+}
+
+template <class C, sdetail::enable_range<C> = 0>
+sdetail::element_t<C> median_absolute_deviation(const C& data) {
+    using T = sdetail::element_t<C>;
+    const auto v = sdetail::values(data);
+    return sdetail::compute<T>([&](const BigFloatContext& c) {
+        if (v.empty()) return BigFloat::nan();
+        const BigFloatContext exact(BigFloatContext::max_prec, math::RoundingMode::nearest_even);
+        const BigFloatContext hc(c.precision + 64, math::RoundingMode::nearest_even);
+        const BigFloat        m = core::median(v, hc);
+        std::vector<BigFloat> gaps;
+        gaps.reserve(v.size());
+        for (const BigFloat& x : v) gaps.push_back(BigFloat::sub(x, m, exact).abs());
+        return core::median(gaps, c);
+    });
+}
+
+template <class C, sdetail::enable_range<C> = 0>
+sdetail::element_t<C> coefficient_of_variation(const C& data) {
+    using T = sdetail::element_t<C>;
+    const auto v = sdetail::values(data);
+    return sdetail::compute<T>([&](const BigFloatContext& c) {
+        const BigFloatContext hc(c.precision + 64, math::RoundingMode::nearest_even);
+        return BigFloat::div(core::standard_deviation(v, true, hc), core::mean(v, hc), c);
+    });
+}
+
+template <class C, sdetail::enable_range<C> = 0>
+sdetail::element_t<C> sum_of_squares(const C& data) {
+    using T = sdetail::element_t<C>;
+    const auto v = sdetail::values(data);
+    return sdetail::compute<T>([&](const BigFloatContext& c) {
+        const BigFloatContext exact(BigFloatContext::max_prec, math::RoundingMode::nearest_even);
+        BigFloat              acc = BigFloat::zero();
+        for (const BigFloat& x : v) acc = BigFloat::add(acc, BigFloat::mul(x, x, exact), exact);
+        return acc.rounded(c);
+    });
+}
+
+template <class C, sdetail::enable_range<C> = 0>
+sdetail::element_t<C> root_mean_square(const C& data) {
+    using T = sdetail::element_t<C>;
+    const auto v = sdetail::values(data);
+    return sdetail::compute<T>([&](const BigFloatContext& c) {
+        if (v.empty()) return BigFloat::nan();
+        const BigFloatContext exact(BigFloatContext::max_prec, math::RoundingMode::nearest_even);
+        const BigFloatContext hc(c.precision + 64, math::RoundingMode::nearest_even);
+        BigFloat              acc = BigFloat::zero();
+        for (const BigFloat& x : v) acc = BigFloat::add(acc, BigFloat::mul(x, x, exact), exact);
+        return math::sqrt(BigFloat::div(acc, BigFloat(static_cast<std::uint64_t>(v.size())), hc), c);
+    });
 }
 
 template <class C, class D, sdetail::enable_range<C> = 0, sdetail::enable_range<D> = 0>

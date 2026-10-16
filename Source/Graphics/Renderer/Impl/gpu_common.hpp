@@ -2,14 +2,14 @@
 #define FIZMO_GPU_COMMON_HPP
 
 #include "gpu_geometry.hpp"
-#include "../../Graphics/paint.hpp"
+#include "../../paint.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 
 namespace fizmo {
-namespace windows {
+namespace graphics {
 namespace detail {
 
 namespace gfx {
@@ -87,7 +87,7 @@ inline Join to_join(graphics::LineJoin j) noexcept {
 } // namespace gfx
 
 } // namespace detail
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo
 
 #endif // FIZMO_GPU_COMMON_HPP

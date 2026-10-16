@@ -70,13 +70,13 @@ bool decode_jpeg(const std::uint8_t* data, std::size_t size, BitmapImage& out, s
         JSAMPROW ptr = row.data();
         jpeg_read_scanlines(&cinfo, &ptr, 1);
         if (!cmyk) {
-            for (unsigned int x = 0; x < w; ++x) result.set_pixel(x, y, graphics::Color(row[x * 3], row[x * 3 + 1], row[x * 3 + 2]));
+            for (unsigned int x = 0; x < w; ++x) result.set_pixel(x, y, colors::Color(row[x * 3], row[x * 3 + 1], row[x * 3 + 2]));
             continue;
         }
         for (unsigned int x = 0; x < w; ++x) {
             unsigned c = row[x * 4], m = row[x * 4 + 1], ye = row[x * 4 + 2], k = row[x * 4 + 3];
             if (!inverted) { c = 255 - c; m = 255 - m; ye = 255 - ye; k = 255 - k; }
-            result.set_pixel(x, y, graphics::Color(static_cast<std::uint8_t>((c * k + 127) / 255), static_cast<std::uint8_t>((m * k + 127) / 255), static_cast<std::uint8_t>((ye * k + 127) / 255)));
+            result.set_pixel(x, y, colors::Color(static_cast<std::uint8_t>((c * k + 127) / 255), static_cast<std::uint8_t>((m * k + 127) / 255), static_cast<std::uint8_t>((ye * k + 127) / 255)));
         }
     }
 
@@ -126,7 +126,7 @@ bool encode_jpeg(const BitmapImage& img, std::vector<std::uint8_t>& out, int qua
     while (cinfo.next_scanline < cinfo.image_height) {
         const std::size_t base = static_cast<std::size_t>(cinfo.next_scanline) * img.width();
         for (unsigned int x = 0; x < img.width(); ++x) {
-            const graphics::Color& c = px[base + x];
+            const colors::Color& c = px[base + x];
             row[x * 3] = c.red();
             row[x * 3 + 1] = c.green();
             row[x * 3 + 2] = c.blue();

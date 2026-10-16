@@ -173,7 +173,7 @@ bool PNGtoBMPConverter::convert_to_bmp(const std::string& output_path) {
                     throw std::runtime_error("Unsupported color type: " + std::to_string(m_ihdr.color_type));
             }
 
-            bmp_image.set_pixel(x, y, fizmo::graphics::Color(r, g, b));
+            bmp_image.set_pixel(x, y, fizmo::colors::Color(r, g, b));
         }
     }
         
@@ -229,7 +229,7 @@ auto PNGtoBMPConverter::convert_to_bmp_no_save() -> fizmo::images::BitmapImage {
                     throw std::runtime_error("Unsupported color type: " + std::to_string(m_ihdr.color_type));
             }
 
-            bmp_image.set_pixel(x, y, fizmo::graphics::Color(r, g, b));
+            bmp_image.set_pixel(x, y, fizmo::colors::Color(r, g, b));
         }
     }
 

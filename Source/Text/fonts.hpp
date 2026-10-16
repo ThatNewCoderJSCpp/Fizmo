@@ -1,7 +1,7 @@
 #ifndef FIZMO_TEXT_FONTS_HPP
 #define FIZMO_TEXT_FONTS_HPP
 
-#include "../Graphics/color.hpp"
+#include "../Colors/color.hpp"
 #include <string>
 #include <cstdint>
 #include <cmath>
@@ -171,11 +171,11 @@ namespace text {
 
 enum class FontCategory : std::uint8_t {
     Default    = 0,   
-    SansSerif, // (terminal: normal)
-    Serif,     // (terminal: normal)
-    Monospace, // fixed-width       (terminal: normal, Canvas: grid font)
-    Cursive,   // handwriting-style (terminal: italic fallback)
-    Fantasy,   // decorative        (terminal: bold fallback)
+    SansSerif, 
+    Serif,     
+    Monospace, // fixed-width       
+    Cursive,   // handwriting-style 
+    Fantasy,   // decorative        
     System     // OS UI font        
 };
 

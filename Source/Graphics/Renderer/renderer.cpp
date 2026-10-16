@@ -2,7 +2,7 @@
 #include "renderer.hpp"
 
 namespace fizmo {
-namespace windows {
+namespace graphics {
 
 bool Renderer::bind() noexcept {
     if (!m_window) return false;
@@ -21,7 +21,7 @@ bool Renderer::bind() noexcept {
     for (PassRecord& p : m_passes) { try { p.impl_id = m_impl->add_gpu_pass(p.stage, p.callback); } catch (...) { p.impl_id = 0; } }
     if (m_impl->is_gpu()) m_window->set_background_erase(false);
     m_window->set_paint_callback([this](void* dc) { if (m_impl) m_impl->paint(dc); });
-    m_window->add_event_listener(WindowEventType::WindowResize, [this](const WindowEvent& e) { if (m_impl) m_impl->resize(e.x, e.y); });
+    m_window->add_event_listener(windows::WindowEventType::WindowResize, [this](const windows::WindowEvent& e) { if (m_impl) m_impl->resize(e.x, e.y); });
     return true;
 }
 
@@ -151,7 +151,7 @@ void Renderer::set_clip_rect(int x, int y, unsigned int w, unsigned int h, RectO
     m_impl->set_clip_rect(r.x, r.y, r.w, r.h, RectOrigin::TopLeft);
 }
 
-void Renderer::draw_pixel(int x, int y, const fizmo::graphics::Color& color) noexcept {
+void Renderer::draw_pixel(int x, int y, const fizmo::colors::Color& color) noexcept {
     if (!m_impl) return;
 
     if (m_xform_kind <= XformKind::Translate) {
@@ -284,7 +284,7 @@ void Renderer::draw_sprite(const graphics::Sprite& sprite, double offset_x, doub
     if (sprite.blend_mode() != saved) m_impl->set_blend_mode(saved);
 }
 
-void Renderer::draw_texture(const graphics::Texture& tex, int dx, int dy, unsigned int dw, unsigned int dh, const graphics::TextureRect& src, const graphics::Color& tint, float opacity) noexcept {
+void Renderer::draw_texture(const graphics::Texture& tex, int dx, int dy, unsigned int dw, unsigned int dh, const graphics::TextureRect& src, const colors::Color& tint, float opacity) noexcept {
     if (!m_impl || !tex.valid()) return;
     if (graphics::is_white(tint)) { emit_texture(tex, dx, dy, dw, dh, opacity, src); return; }
     const double x0 = dx, y0 = dy, x1 = dx + static_cast<double>(dw), y1 = dy + static_cast<double>(dh);
@@ -292,7 +292,7 @@ void Renderer::draw_texture(const graphics::Texture& tex, int dx, int dy, unsign
     m_impl->draw_texture_quad_tinted(quad, tex, tint, opacity, src);
 }
 
-void Renderer::draw_texture_quad(const graphics::Texture& tex, const RenderPoint quad[4], const graphics::TextureRect& src, const graphics::Color& tint, float opacity) noexcept {
+void Renderer::draw_texture_quad(const graphics::Texture& tex, const RenderPoint quad[4], const graphics::TextureRect& src, const colors::Color& tint, float opacity) noexcept {
     if (!m_impl || !tex.valid() || !quad) return;
     RenderPoint q[4];
     for (int i = 0; i < 4; ++i) q[i] = mapped(quad[i].x, quad[i].y);
@@ -322,7 +322,7 @@ void Renderer::visible_world_rect(double& x0, double& y0, double& x1, double& y1
     for (int i = 1; i < 4; ++i) { x0 = std::min(x0, c[i].x); x1 = std::max(x1, c[i].x); y0 = std::min(y0, c[i].y); y1 = std::max(y1, c[i].y); }
 }
 
-void Renderer::draw_nine_slice(const graphics::NineSlice& slice, double x, double y, double w, double h, const graphics::Color& tint, float opacity) noexcept {
+void Renderer::draw_nine_slice(const graphics::NineSlice& slice, double x, double y, double w, double h, const colors::Color& tint, float opacity) noexcept {
     if (!m_impl || !slice.valid()) return;
 
     try {
@@ -357,7 +357,7 @@ std::size_t Renderer::draw_tilemap(const graphics::TileMap& map, double x, doubl
             const int ty1 = std::min(static_cast<int>(layer.height()) - 1, static_cast<int>(std::floor((vy1 - oy) / th)) + 1);
             if (tx1 < tx0 || ty1 < ty0) continue;
             m_sprite_scratch.clear();
-            const graphics::Color& tint = layer.tint();
+            const colors::Color& tint = layer.tint();
 
             for (int ty = ty0; ty <= ty1; ++ty) {
                 for (int tx = tx0; tx <= tx1; ++tx) {
@@ -411,7 +411,7 @@ std::size_t Renderer::draw_particles(const graphics::ParticleEmitter& emitter) n
 
         for (const graphics::Particle& p : emitter.particles()) {
             const float t = p.age / p.life;
-            const graphics::Color c = emitter.color_at(t);
+            const colors::Color c = emitter.color_at(t);
             if (c.alpha() == 0) continue;
             const double size = emitter.size_at(p);
             if (size <= 0.0) continue;
@@ -483,7 +483,7 @@ void Renderer::draw_sprites(const graphics::Sprite* const* sprites, std::size_t 
             const graphics::TextureRect& src = sp->source_rect();
             const float tw = static_cast<float>(sp->texture().width()), th = static_cast<float>(sp->texture().height());
             detail::SpriteInstance& s = m_sprite_scratch[n];
-            const graphics::Color& tint = sp->tint();
+            const colors::Color& tint = sp->tint();
             if (!fill_instance(s, q.x, q.y, 0.0, 0.0, tint.red(), tint.green(), tint.blue(), tint.alpha(), sp->opacity())) continue;
             s.blend = sp->blend_mode();
             s.u0 = src.x / tw;
@@ -725,12 +725,12 @@ void Renderer::draw_triangles_3d(const graphics::Vertex3D* vertices, std::size_t
     m_impl->draw_triangles_3d(vertices, count, m, material);
 }
 
-void Renderer::draw_line_3d(const linalg::vector3d& a, const linalg::vector3d& b, const graphics::Color& color, float width, bool depth_test) noexcept {
+void Renderer::draw_line_3d(const linalg::vector3d& a, const linalg::vector3d& b, const colors::Color& color, float width, bool depth_test) noexcept {
     const linalg::vector3d pts[2] = { a - m_origin_3d, b - m_origin_3d };
     if (m_impl) m_impl->draw_lines_3d(pts, 2, color, width, depth_test);
 }
 
-void Renderer::draw_lines_3d(const std::vector<linalg::vector3d>& points, const graphics::Color& color, float width, bool depth_test) noexcept {
+void Renderer::draw_lines_3d(const std::vector<linalg::vector3d>& points, const colors::Color& color, float width, bool depth_test) noexcept {
     if (!m_impl) return;
 
     try {
@@ -740,7 +740,7 @@ void Renderer::draw_lines_3d(const std::vector<linalg::vector3d>& points, const 
     } catch (...) {}
 }
 
-void Renderer::draw_box_3d(const linalg::vector3d& lo, const linalg::vector3d& hi, const graphics::Color& color, float width, bool depth_test) noexcept {
+void Renderer::draw_box_3d(const linalg::vector3d& lo, const linalg::vector3d& hi, const colors::Color& color, float width, bool depth_test) noexcept {
     if (!m_impl) return;
     linalg::vector3d c[8];
     for (int i = 0; i < 8; ++i) c[i] = linalg::vector3d{ (i & 1) ? hi.x : lo.x, (i & 2) ? hi.y : lo.y, (i & 4) ? hi.z : lo.z };
@@ -787,7 +787,7 @@ void Renderer::to_origin_relative(const linalg::Matrix4d& model, float* out) con
     for (std::size_t i = 0; i < 16; ++i) out[i] = static_cast<float>(rel.data[i]);
 }
 
-bool Renderer::open_target(const graphics::RenderTarget& target, const graphics::Color* clear_color) noexcept {
+bool Renderer::open_target(const graphics::RenderTarget& target, const colors::Color* clear_color) noexcept {
     if (!m_impl) return false;
     if (m_impl->in_3d()) m_impl->end_3d();
 
@@ -812,7 +812,7 @@ void Renderer::release() noexcept {
     while (!m_target_frames.empty()) end_target();
     if (m_window) {
         m_window->set_paint_callback(nullptr);
-        m_window->remove_event_listeners(WindowEventType::WindowResize);
+        m_window->remove_event_listeners(windows::WindowEventType::WindowResize);
         if (m_impl && m_impl->is_gpu()) m_window->set_background_erase(true);
     }
 
@@ -957,11 +957,11 @@ auto Renderer::resolve_corners(int x1, int y1, int x2, int y2) noexcept -> Resol
     return { lx, ly, w, h };
 }
 
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo
 
 namespace fizmo {
-namespace windows {
+namespace graphics {
 
 #if defined(OS_WINDOWS)
 void blit_framebuffer(void* hdc_raw, const graphics::Framebuffer& fb) {
@@ -975,7 +975,7 @@ void blit_framebuffer(void* hdc_raw, const graphics::Framebuffer& fb) {
     bmi.bmiHeader.biBitCount    = 32;
     bmi.bmiHeader.biCompression = BI_RGB;
     std::vector<std::uint8_t> bits(w * h * 4);
-    const graphics::Color* px = fb.data();
+    const colors::Color* px = fb.data();
 
     for (unsigned int i = 0; i < w * h; ++i) {
         bits[i * 4 + 0] = px[i].blue();
@@ -992,5 +992,5 @@ void blit_framebuffer(void* hdc_raw, const graphics::Framebuffer& fb) {
 }
 #endif
 
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo

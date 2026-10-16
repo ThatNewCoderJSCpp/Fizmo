@@ -12,7 +12,6 @@ namespace constants {
 
 namespace detail {
 
-// n <= cap keeps the correction leaves' (2k-1)^3 and 32*k*n^2 inside uint64 (64 n^3 < 2^64).
 static const std::uint64_t bm_n_cap = 650000;
 
 struct bm_main_t {

@@ -7,7 +7,7 @@
 #include "../System/paths.hpp"
 #include "../System/hot_reload.hpp"
 #include "../System/jobs.hpp"
-#include "../Windows/renderer.hpp"
+#include "Renderer/renderer.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -203,7 +203,7 @@ public:
 
     void bounds(linalg::vector3d& lo, linalg::vector3d& hi) const;
 
-    void draw(windows::Renderer& r, const linalg::Matrix4d& transform = linalg::Matrix4d::identity(), const Material3D* override_material = nullptr) const;
+    void draw(graphics::Renderer& r, const linalg::Matrix4d& transform = linalg::Matrix4d::identity(), const Material3D* override_material = nullptr) const;
 };
 
 class ModelAnimator {
@@ -274,7 +274,7 @@ public:
 
     void update(double dt);
 
-    void draw(windows::Renderer& r, const linalg::Matrix4d& transform = linalg::Matrix4d::identity(), const Material3D* override_material = nullptr) const;
+    void draw(graphics::Renderer& r, const linalg::Matrix4d& transform = linalg::Matrix4d::identity(), const Material3D* override_material = nullptr) const;
 };
 
 } // namespace graphics

@@ -17,14 +17,14 @@ namespace text {
 struct MathTheme {
     std::string     math_family = "Latin Modern Math, STIX Two Math, Cambria Math, DejaVu Math TeX Gyre";
     std::string     text_family = "Latin Modern Roman, Cambria, Times New Roman, DejaVu Serif";
-    graphics::Color color = graphics::Color(20, 20, 20, 255);
-    graphics::Color error_color = graphics::Color(211, 47, 47, 255);
-    std::array<graphics::Color, 10> role_colors{};
+    colors::Color color = colors::Color(20, 20, 20, 255);
+    colors::Color error_color = colors::Color(211, 47, 47, 255);
+    std::array<colors::Color, 10> role_colors{};
     std::array<bool, 10>            role_color_set{};
 
-    MathTheme& set_role_color(mathtext::GlyphRole role, const graphics::Color& c) noexcept;
+    MathTheme& set_role_color(mathtext::GlyphRole role, const colors::Color& c) noexcept;
 
-    graphics::Color color_for(mathtext::GlyphRole role) const noexcept;
+    colors::Color color_for(mathtext::GlyphRole role) const noexcept;
 
     const std::string& family_for(mathtext::GlyphRole role) const noexcept;
 };
@@ -64,7 +64,7 @@ inline FancyText make_fancy_math(std::string_view source, TextRasterizer& raster
 
 inline FancyText make_fancy_math(std::string_view source, const MathRenderOptions& options = MathRenderOptions()) { return make_fancy_math(source, shared_text_rasterizer(), options); }
 
-inline images::BitmapImage math_image(std::string_view source, const MathRenderOptions& options = MathRenderOptions(), float padding = 6.0f, const graphics::Color& background = graphics::Color(255, 255, 255, 0)) {
+inline images::BitmapImage math_image(std::string_view source, const MathRenderOptions& options = MathRenderOptions(), float padding = 6.0f, const colors::Color& background = colors::Color(255, 255, 255, 0)) {
     return fancy_text_image(make_fancy_math(source, options), padding, background);
 }
 
@@ -75,7 +75,7 @@ inline void fingerprint_bytes(std::string& out, const void* data, std::size_t si
 template <typename T>
 inline void fingerprint_value(std::string& out, const T& v) { fingerprint_bytes(out, &v, sizeof(v)); }
 
-void fingerprint_color(std::string& out, const graphics::Color& c);
+void fingerprint_color(std::string& out, const colors::Color& c);
 
 inline void fingerprint_string(std::string& out, const std::string& s) {
     fingerprint_value(out, s.size());
@@ -101,7 +101,7 @@ struct MathCache {
     MathCacheEntry& get(std::string_view source, const MathRenderOptions& options, bool texture);
 };
 
-inline MathRenderOptions simple_math_options(float font_size, const graphics::Color& color) {
+inline MathRenderOptions simple_math_options(float font_size, const colors::Color& color) {
     MathRenderOptions o;
     o.layout.font_size = font_size;
     o.theme.color = color;

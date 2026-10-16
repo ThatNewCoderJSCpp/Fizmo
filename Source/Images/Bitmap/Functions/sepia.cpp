@@ -10,7 +10,7 @@ BitmapImage apply_sepia(const BitmapImage& source, const double intensity_percen
     
     for (unsigned int y = 0; y < source.height(); y++) {
         for (unsigned int x = 0; x < source.width(); x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             
             const unsigned int sepiaRed = static_cast<unsigned int>(
                 (pixel.red() * 0.393) + 
@@ -33,7 +33,7 @@ BitmapImage apply_sepia(const BitmapImage& source, const double intensity_percen
             const unsigned int finalRed = static_cast<unsigned int>(pixel.red() * (1 - intensity) + sepiaRed * intensity);
             const unsigned int finalGreen = static_cast<unsigned int>(pixel.green() * (1 - intensity) + sepiaGreen * intensity);
             const unsigned int finalBlue = static_cast<unsigned int>(pixel.blue() * (1 - intensity) + sepiaBlue * intensity);
-            result.set_pixel(x, y, fizmo::graphics::Color(finalRed, finalGreen, finalBlue));
+            result.set_pixel(x, y, fizmo::colors::Color(finalRed, finalGreen, finalBlue));
         }
     }
     
@@ -57,7 +57,7 @@ BitmapImage apply_sepia(
     
     for (unsigned int y = y_1; y < y_2; y++) {
         for (unsigned int x = x_1; x < x_2; x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             
             const unsigned int sepiaRed = static_cast<unsigned int>(
                 (pixel.red() * 0.393) + 
@@ -80,7 +80,7 @@ BitmapImage apply_sepia(
             const unsigned int finalRed = static_cast<unsigned int>(pixel.red() * (1 - intensity) + sepiaRed * intensity);
             const unsigned int finalGreen = static_cast<unsigned int>(pixel.green() * (1 - intensity) + sepiaGreen * intensity);
             const unsigned int finalBlue = static_cast<unsigned int>(pixel.blue() * (1 - intensity) + sepiaBlue * intensity);
-            result.set_pixel(x, y, fizmo::graphics::Color(finalRed, finalGreen, finalBlue));
+            result.set_pixel(x, y, fizmo::colors::Color(finalRed, finalGreen, finalBlue));
         }
     }
     
@@ -89,8 +89,8 @@ BitmapImage apply_sepia(
 
 BitmapImage apply_custom_sepia(
     const BitmapImage& source,
-    const fizmo::graphics::Color& light_tone,  // Highlight tone
-    const fizmo::graphics::Color& dark_tone,     // Shadow tone
+    const fizmo::colors::Color& light_tone,  // Highlight tone
+    const fizmo::colors::Color& dark_tone,     // Shadow tone
     const double intensity_percent 
 ) noexcept {
     const double intensity = fizmo::clamp(intensity_percent, 0.0, 100.0) / 100.0;
@@ -98,7 +98,7 @@ BitmapImage apply_custom_sepia(
     
     for (unsigned int y = 0; y < source.height(); y++) {
         for (unsigned int x = 0; x < source.width(); x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             
             const double gray = 
                 0.299 * pixel.red() +
@@ -112,7 +112,7 @@ BitmapImage apply_custom_sepia(
             red = static_cast<unsigned int>(pixel.red() * (1 - intensity) + red * intensity);
             green = static_cast<unsigned int>(pixel.green() * (1 - intensity) + green * intensity);
             blue = static_cast<unsigned int>(pixel.blue() * (1 - intensity) + blue * intensity);
-            result.set_pixel(x, y, fizmo::graphics::Color(red, green, blue));
+            result.set_pixel(x, y, fizmo::colors::Color(red, green, blue));
         }
     }
     
@@ -123,8 +123,8 @@ BitmapImage apply_custom_sepia(
     const BitmapImage& source,
     unsigned int x1, unsigned int y1, 
     unsigned int x2, unsigned int y2,
-    const fizmo::graphics::Color& light_tone,
-    const fizmo::graphics::Color& dark_tone,
+    const fizmo::colors::Color& light_tone,
+    const fizmo::colors::Color& dark_tone,
     const double intensity_percent 
 ) noexcept {
     if (x1 > x2) { std::swap(x1, x2); }
@@ -138,7 +138,7 @@ BitmapImage apply_custom_sepia(
     
     for (unsigned int y = y_1; y < y_2; y++) {
         for (unsigned int x = x_1; x < x_2; x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             
             const double gray = 
                 0.299 * pixel.red() +
@@ -152,7 +152,7 @@ BitmapImage apply_custom_sepia(
             red = static_cast<unsigned int>(pixel.red() * (1 - intensity) + red * intensity);
             green = static_cast<unsigned int>(pixel.green() * (1 - intensity) + green * intensity);
             blue = static_cast<unsigned int>(pixel.blue() * (1 - intensity) + blue * intensity);
-            result.set_pixel(x, y, fizmo::graphics::Color(red, green, blue));
+            result.set_pixel(x, y, fizmo::colors::Color(red, green, blue));
         }
     }
     

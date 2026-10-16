@@ -2,7 +2,7 @@
 #define FIZMO_FANCY_TEXT_HPP
 
 #include "rich_text.hpp"
-#include "../Graphics/color.hpp"
+#include "../Colors/color.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -36,7 +36,7 @@ struct FancyRect {
     float           y = 0.0f;
     float           w = 0.0f;
     float           h = 0.0f;
-    graphics::Color color;
+    colors::Color color;
     std::uint32_t   tag = kNoFancyTag;
 };
 
@@ -45,7 +45,7 @@ struct FancyPath {
     float                   thickness = 1.0f;
     bool                    closed = false;
     bool                    filled = false;
-    graphics::Color         color;
+    colors::Color         color;
     std::uint32_t           tag = kNoFancyTag;
 };
 
@@ -74,14 +74,14 @@ public:
 
     FancyText& add_text(float x, float baseline, std::string text, const TextStyle& style, std::uint32_t tag = kNoFancyTag) { return add_run(x, baseline, RichText(std::move(text), style), tag); }
 
-    FancyText& add_rect(float x, float y, float w, float h, const graphics::Color& color, std::uint32_t tag = kNoFancyTag) {
+    FancyText& add_rect(float x, float y, float w, float h, const colors::Color& color, std::uint32_t tag = kNoFancyTag) {
         if (w > 0.0f && h > 0.0f) m_rects.push_back(FancyRect{ x, y, w, h, color, tag });
         return *this;
     }
 
-    FancyText& add_path(std::vector<FancyPoint> points, float thickness, const graphics::Color& color, bool closed = false, bool filled = false, std::uint32_t tag = kNoFancyTag);
+    FancyText& add_path(std::vector<FancyPoint> points, float thickness, const colors::Color& color, bool closed = false, bool filled = false, std::uint32_t tag = kNoFancyTag);
 
-    FancyText& add_line(float x0, float y0, float x1, float y1, float thickness, const graphics::Color& color, std::uint32_t tag = kNoFancyTag) { return add_path({ FancyPoint{ x0, y0 }, FancyPoint{ x1, y1 } }, thickness, color, false, false, tag); }
+    FancyText& add_line(float x0, float y0, float x1, float y1, float thickness, const colors::Color& color, std::uint32_t tag = kNoFancyTag) { return add_path({ FancyPoint{ x0, y0 }, FancyPoint{ x1, y1 } }, thickness, color, false, false, tag); }
 
     FancyText& add_image(float x, float y, float w, float h, std::shared_ptr<const images::AnimatedImage> image, float opacity = 1.0f, std::uint32_t tag = kNoFancyTag);
 
@@ -127,7 +127,7 @@ public:
 
     FancyText& append(const FancyText& other, float gap = 0.0f) { return append(other, m_width + gap, 0.0f); }
 
-    FancyText& recolor(const graphics::Color& color);
+    FancyText& recolor(const colors::Color& color);
 
     FancyText& scale(float k);
 

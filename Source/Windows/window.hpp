@@ -3,7 +3,7 @@
 
 #include "../Basic/basic_includes.hpp"
 #include "../Util Hpp/util_functions.hpp"
-#include "../Graphics/color.hpp"
+#include "../Colors/color.hpp"
 #include "window_events.hpp"
 #include "../Input/keybord.hpp"
 #include "Windows Impl/window_factory.hpp"
@@ -18,7 +18,7 @@ private:
     unsigned int m_width;
     unsigned int m_height;
     std::string m_title;
-    fizmo::graphics::Color m_color;
+    fizmo::colors::Color m_color;
     WindowEventHandler m_event_handler;
     input::GestureRecognizer m_gestures;
     bool m_gestures_enabled = true;
@@ -29,7 +29,7 @@ private:
     void feed_gestures(const WindowEvent& e) noexcept;
 
 public:
-    Window(unsigned int w, unsigned int h, const std::string& t, const graphics::Color& background_color = graphics::Color()) noexcept;
+    Window(unsigned int w, unsigned int h, const std::string& t, const colors::Color& background_color = colors::Color()) noexcept;
 
     ~Window() = default;
 
@@ -46,7 +46,7 @@ public:
     unsigned int width() const noexcept { return m_width; }
     unsigned int height() const noexcept { return m_height; }
     const std::string& title() const noexcept { return m_title; }
-    const fizmo::graphics::Color& background_color() const noexcept { return m_color; }
+    const fizmo::colors::Color& background_color() const noexcept { return m_color; }
     WindowEventHandler& event_handler() noexcept { return m_event_handler; }
 
     void set_title(const std::string& title) noexcept {
@@ -54,7 +54,7 @@ public:
         m_impl->set_title(title);
     }
 
-    void set_background_color(const fizmo::graphics::Color& color) noexcept {
+    void set_background_color(const fizmo::colors::Color& color) noexcept {
         m_color = color;
         m_impl->set_background_color(color);
     }
@@ -68,6 +68,7 @@ public:
     bool create() noexcept { return m_impl->create(m_width, m_height, m_title); }
     void poll_events() noexcept;
     bool is_open() const noexcept { return m_impl->is_open(); }
+    void close() noexcept { m_impl->close(); }
     void invalidate() noexcept { m_impl->invalidate(); }
     void* native_handle() const noexcept { return m_impl->native_handle(); }
     void set_paint_callback(std::function<void(void*)> cb) noexcept { m_impl->set_paint_callback(std::move(cb)); }

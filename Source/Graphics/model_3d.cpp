@@ -787,7 +787,7 @@ void Model3D::bounds(linalg::vector3d& lo, linalg::vector3d& hi) const {
     }
 }
 
-void Model3D::draw(windows::Renderer& r, const linalg::Matrix4d& transform, const Material3D* override_material) const {
+void Model3D::draw(graphics::Renderer& r, const linalg::Matrix4d& transform, const Material3D* override_material) const {
     std::vector<model_math::Mat4> world;
     world_matrices(rest_pose(), world);
     const model_math::Mat4 base = model_math::from_matrix(transform);
@@ -970,7 +970,7 @@ void ModelAnimator::update(double dt) {
     refresh();
 }
 
-void ModelAnimator::draw(windows::Renderer& r, const linalg::Matrix4d& transform, const Material3D* override_material) const {
+void ModelAnimator::draw(graphics::Renderer& r, const linalg::Matrix4d& transform, const Material3D* override_material) const {
     if (!m_model) return;
     const model_math::Mat4 base = model_math::from_matrix(transform);
     const linalg::Matrix4d root = model_math::to_matrix(base);

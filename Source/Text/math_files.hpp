@@ -23,13 +23,13 @@ MathImageFormat resolve_image_format(MathImageFormat format, std::string_view pa
 struct MathImageOptions {
     MathRenderOptions render;
     float             padding = 8.0f;
-    graphics::Color   background = graphics::Color(255, 255, 255, 0);
-    graphics::Color   matte = graphics::Color(255, 255, 255, 255);
+    colors::Color   background = colors::Color(255, 255, 255, 0);
+    colors::Color   matte = colors::Color(255, 255, 255, 255);
     MathImageFormat   format = MathImageFormat::Auto;
     int               jpeg_quality = 92;
 };
 
-images::BitmapImage flatten_image(const images::BitmapImage& src, const graphics::Color& matte);
+images::BitmapImage flatten_image(const images::BitmapImage& src, const colors::Color& matte);
 
 images::BitmapImage render_math_image(const mathtext::Document& doc, const MathImageOptions& options = MathImageOptions());
 

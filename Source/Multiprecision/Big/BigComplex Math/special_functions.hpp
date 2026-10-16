@@ -94,6 +94,9 @@ BC lower_incomplete_gamma(const BC& a, const BC& z, const BCC& ctx);
 BC upper_incomplete_gamma(const BC& a, const BC& z, const BCC& ctx);
 BC regularized_gamma_p(const BC& a, const BC& z, const BCC& ctx);
 BC regularized_gamma_q(const BC& a, const BC& z, const BCC& ctx);
+BC incomplete_beta(const BC& z, const BC& a, const BC& b, const BCC& ctx);
+BC regularized_beta(const BC& z, const BC& a, const BC& b, const BCC& ctx);
+BC regularized_beta_complement(const BC& z, const BC& a, const BC& b, const BCC& ctx);
 
 BC fibonacci(const BC& z, const BCC& ctx);
 BC lucas(const BC& z, const BCC& ctx);
@@ -307,6 +310,9 @@ FIZMO_CXSF_2(carlson_rc)
 FIZMO_CXSF_3(carlson_rf)
 FIZMO_CXSF_3(carlson_rd)
 FIZMO_CXSF_3(carlson_rg)
+FIZMO_CXSF_3(incomplete_beta)
+FIZMO_CXSF_3(regularized_beta)
+FIZMO_CXSF_3(regularized_beta_complement)
 
 template <typename X, typename Y, typename Z, typename P, cxsf::if_mixed<X, Y, Z, P> = 0>
 inline BigComplex carlson_rj(const X& x, const Y& y, const Z& z, const P& p, const BigComplexContext& ctx) {

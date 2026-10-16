@@ -205,7 +205,7 @@ bool decode_png(const std::uint8_t* data, std::size_t size, BitmapImage& out, st
                     case 6: r = to8(sample(0)); g = to8(sample(1)); b = to8(sample(2)); a = to8(sample(3)); break;
                 }
 
-                out.set_pixel(static_cast<unsigned int>(ps.x0 + x * ps.dx), static_cast<unsigned int>(ps.y0 + y * ps.dy), graphics::Color(r, g, b, a));
+                out.set_pixel(static_cast<unsigned int>(ps.x0 + x * ps.dx), static_cast<unsigned int>(ps.y0 + y * ps.dy), colors::Color(r, g, b, a));
             }
         }
     }
@@ -224,7 +224,7 @@ bool encode_png(const BitmapImage& img, std::vector<std::uint8_t>& out, bool alp
 
     for (unsigned int y = 0; y < h; ++y) {
         for (unsigned int x = 0; x < w; ++x) {
-            const graphics::Color c = img.get_pixel(x, y);
+            const colors::Color c = img.get_pixel(x, y);
             std::uint8_t* p = &line[x * channels];
             p[0] = c.red(); p[1] = c.green(); p[2] = c.blue();
             if (alpha) p[3] = c.alpha();

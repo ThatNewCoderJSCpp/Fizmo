@@ -22,6 +22,8 @@ public:
 
     std::size_t size() const { return m_nodes.size(); }
     std::size_t length() const { return m_nodes.empty() ? 0 : m_nodes.size() - 1; }
+    std::size_t node_count() const { return m_nodes.size(); }
+    std::size_t edge_count() const { return m_nodes.empty() ? 0 : m_nodes.size() - 1; }
 
     const W& cost() const { return m_cost; }
     const std::vector<NodeId>& nodes() const { return m_nodes; }
@@ -39,6 +41,10 @@ public:
         std::vector<NodeId> s = m_nodes;
         std::sort(s.begin(), s.end());
         return std::adjacent_find(s.begin(), s.end()) == s.end();
+    }
+
+    bool is_simple() const {
+        return simple();
     }
 
     Path& extend(NodeId next, const W& step_cost = W(1)) {
@@ -66,6 +72,8 @@ public:
         }
         return out;
     }
+
+    bool is_cycle() const { return m_nodes.size() > 1 && m_nodes.front() == m_nodes.back(); }
 
     bool valid_in(const Traversable<W>& graph) const { return m_nodes.size() < 2 || edges(graph).size() + 1 == m_nodes.size(); }
 

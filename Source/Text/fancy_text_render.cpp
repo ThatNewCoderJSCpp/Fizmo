@@ -1,6 +1,6 @@
 #include "fizmo_library.hpp"
-#include "../Windows/Renderer Impl/gpu_text.hpp"
-#include "../Windows/Renderer Impl/gpu_common.hpp"
+#include "../Graphics/Renderer/Impl/gpu_text.hpp"
+#include "../Graphics/Renderer/Impl/gpu_common.hpp"
 #include "../Images/Formats/image_formats.hpp"
 #include "emoji.hpp"
 #include "text.hpp"
@@ -12,15 +12,15 @@ namespace fizmo {
 namespace text {
 
 struct TextRasterizer::Impl {
-    const windows::detail::gfx::TextDrawList* layout(const RichText& rt) {
+    const graphics::detail::gfx::TextDrawList* layout(const RichText& rt) {
         if (!ready() || rt.empty()) return nullptr;
         std::uint64_t key = 0x51ED270B27u;
         for (const TextSpan& sp : rt.spans()) {
-            key = windows::detail::gfx::hash_bytes(sp.text.data(), sp.text.size(), key);
-            key = windows::detail::gfx::hash_bytes(sp.family.data(), sp.family.size(), key ^ 0x9E37u);
+            key = graphics::detail::gfx::hash_bytes(sp.text.data(), sp.text.size(), key);
+            key = graphics::detail::gfx::hash_bytes(sp.family.data(), sp.family.size(), key ^ 0x9E37u);
         }
         const double size = rt.base().size();
-        key = windows::detail::gfx::hash_bytes(&size, sizeof(size), key);
+        key = graphics::detail::gfx::hash_bytes(&size, sizeof(size), key);
         auto& bucket = m_layouts[key];
         for (const auto& entry : bucket) if (entry.first == rt) return &entry.second;
         if (m_cached > 8192) {
@@ -28,33 +28,33 @@ struct TextRasterizer::Impl {
             m_cached = 0;
             return layout(rt);
         }
-        windows::detail::gfx::TextDrawList list;
-        if (!windows::detail::gfx::build_text_draw_list(m_engine, rt, 0.0f, 0.0f, list)) return nullptr;
+        graphics::detail::gfx::TextDrawList list;
+        if (!graphics::detail::gfx::build_text_draw_list(m_engine, rt, 0.0f, 0.0f, list)) return nullptr;
         bucket.emplace_back(rt, std::move(list));
         ++m_cached;
         return &bucket.back().second;
     }
 
-    const windows::detail::gfx::GlyphImage& glyph(std::uint32_t face, std::uint32_t index) {
+    const graphics::detail::gfx::GlyphImage& glyph(std::uint32_t face, std::uint32_t index) {
         const std::uint64_t key = (static_cast<std::uint64_t>(face) << 32) | index;
         auto it = m_glyphs.find(key);
         if (it != m_glyphs.end()) return it->second;
-        windows::detail::gfx::GlyphImage img;
-        if (!m_engine.rasterize(face, index, img)) img = windows::detail::gfx::GlyphImage{};
+        graphics::detail::gfx::GlyphImage img;
+        if (!m_engine.rasterize(face, index, img)) img = graphics::detail::gfx::GlyphImage{};
         return m_glyphs.emplace(key, std::move(img)).first->second;
     }
 
     TextInk measure(const RichText& rt) {
         TextInk ink;
-        const windows::detail::gfx::TextDrawList* list = layout(rt);
+        const graphics::detail::gfx::TextDrawList* list = layout(rt);
         if (!list) return ink;
         ink.advance = list->width;
         ink.line_ascent = list->ascent;
         ink.line_descent = list->descent;
         float top = 1e30f, bottom = -1e30f;
-        for (const windows::detail::gfx::TextCmd& c : list->cmds) {
-            if (c.kind != windows::detail::gfx::TextCmd::Kind::Glyph) continue;
-            const windows::detail::gfx::GlyphImage& g = glyph(c.face, c.glyph);
+        for (const graphics::detail::gfx::TextCmd& c : list->cmds) {
+            if (c.kind != graphics::detail::gfx::TextCmd::Kind::Glyph) continue;
+            const graphics::detail::gfx::GlyphImage& g = glyph(c.face, c.glyph);
             if (g.width <= 0 || g.height <= 0) continue;
             const float gy = std::round(c.y) - static_cast<float>(g.top);
             top = std::min(top, gy + 1.0f);
@@ -69,24 +69,24 @@ struct TextRasterizer::Impl {
     }
 
     void draw(images::BitmapImage& img, const RichText& rt, float x, float baseline) {
-        const windows::detail::gfx::TextDrawList* list = layout(rt);
+        const graphics::detail::gfx::TextDrawList* list = layout(rt);
         if (!list) return;
         const float ox = x;
         const float oy = baseline - list->first_baseline;
-        for (const windows::detail::gfx::TextCmd& c : list->cmds) {
+        for (const graphics::detail::gfx::TextCmd& c : list->cmds) {
             switch (c.kind) {
-                case windows::detail::gfx::TextCmd::Kind::Rect:
+                case graphics::detail::gfx::TextCmd::Kind::Rect:
                     fancy_detail::fill_rect(img, ox + c.x, oy + c.y, c.w, c.h, c.color);
                     break;
-                case windows::detail::gfx::TextCmd::Kind::Wave: {
+                case graphics::detail::gfx::TextCmd::Kind::Wave: {
                     std::vector<FancyPoint> pts;
-                    for (const windows::detail::gfx::TextPoint& p : list->waves[c.wave]) pts.push_back(FancyPoint{ ox + p.x, oy + p.y });
+                    for (const graphics::detail::gfx::TextPoint& p : list->waves[c.wave]) pts.push_back(FancyPoint{ ox + p.x, oy + p.y });
                     fancy_detail::stroke_path(img, pts, false, c.w, c.color);
                     break;
                 }
-                case windows::detail::gfx::TextCmd::Kind::Glyph: {
+                case graphics::detail::gfx::TextCmd::Kind::Glyph: {
                     if (c.color.alpha() == 0) break;
-                    const windows::detail::gfx::GlyphImage& g = glyph(c.face, c.glyph);
+                    const graphics::detail::gfx::GlyphImage& g = glyph(c.face, c.glyph);
                     if (g.width <= 0 || g.height <= 0) break;
                     const int gx = static_cast<int>(std::lround(ox + c.x)) + g.left;
                     const int gy = static_cast<int>(std::lround(oy + c.y)) - g.top;
@@ -108,10 +108,10 @@ struct TextRasterizer::Impl {
 
     bool ready() const noexcept { return m_ok && m_engine.ready(); }
 
-    windows::detail::gfx::TextEngine                                                         m_engine;
+    graphics::detail::gfx::TextEngine                                                         m_engine;
     bool                                                                                     m_ok = false;
-    std::unordered_map<std::uint64_t, std::vector<std::pair<RichText, windows::detail::gfx::TextDrawList>>> m_layouts;
-    std::unordered_map<std::uint64_t, windows::detail::gfx::GlyphImage>                      m_glyphs;
+    std::unordered_map<std::uint64_t, std::vector<std::pair<RichText, graphics::detail::gfx::TextDrawList>>> m_layouts;
+    std::unordered_map<std::uint64_t, graphics::detail::gfx::GlyphImage>                      m_glyphs;
     std::size_t                                                                              m_cached = 0;
 };
 
@@ -153,27 +153,27 @@ namespace fizmo {
 namespace text {
 namespace fancy_detail {
 
-void blend(images::BitmapImage& img, int x, int y, const graphics::Color& c, float coverage) {
+void blend(images::BitmapImage& img, int x, int y, const colors::Color& c, float coverage) {
     if (x < 0 || y < 0 || x >= static_cast<int>(img.width()) || y >= static_cast<int>(img.height())) return;
     const float a = clamp01(coverage) * (c.alpha() / 255.0f);
     if (a <= 0.0f) return;
-    const graphics::Color d = img.get_pixel(static_cast<unsigned>(x), static_cast<unsigned>(y));
+    const colors::Color d = img.get_pixel(static_cast<unsigned>(x), static_cast<unsigned>(y));
     const float da = d.alpha() / 255.0f;
     const float oa = a + da * (1.0f - a);
     if (oa <= 0.0f) return;
     auto mix = [&](std::uint8_t s, std::uint8_t t) { return static_cast<std::uint8_t>(std::lround((s * a + t * da * (1.0f - a)) / oa)); };
-    img.set_pixel(static_cast<unsigned>(x), static_cast<unsigned>(y), graphics::Color(mix(c.red(), d.red()), mix(c.green(), d.green()), mix(c.blue(), d.blue()), static_cast<std::uint8_t>(std::lround(oa * 255.0f))));
+    img.set_pixel(static_cast<unsigned>(x), static_cast<unsigned>(y), colors::Color(mix(c.red(), d.red()), mix(c.green(), d.green()), mix(c.blue(), d.blue()), static_cast<std::uint8_t>(std::lround(oa * 255.0f))));
 }
 
 void blend_premultiplied(images::BitmapImage& img, int x, int y, const std::uint8_t* rgba, float opacity) {
     const float sa = rgba[3] / 255.0f * opacity;
     if (sa <= 0.0f) return;
     const float k = rgba[3] > 0 ? 255.0f / rgba[3] : 0.0f;
-    const graphics::Color c(static_cast<std::uint8_t>(std::min(255.0f, rgba[0] * k)), static_cast<std::uint8_t>(std::min(255.0f, rgba[1] * k)), static_cast<std::uint8_t>(std::min(255.0f, rgba[2] * k)), 255);
+    const colors::Color c(static_cast<std::uint8_t>(std::min(255.0f, rgba[0] * k)), static_cast<std::uint8_t>(std::min(255.0f, rgba[1] * k)), static_cast<std::uint8_t>(std::min(255.0f, rgba[2] * k)), 255);
     blend(img, x, y, c, sa);
 }
 
-void fill_rect(images::BitmapImage& img, float x, float y, float w, float h, const graphics::Color& c) {
+void fill_rect(images::BitmapImage& img, float x, float y, float w, float h, const colors::Color& c) {
     if (w <= 0.0f || h <= 0.0f) return;
     const int x0 = static_cast<int>(std::floor(x)), x1 = static_cast<int>(std::ceil(x + w));
     const int y0 = static_cast<int>(std::floor(y)), y1 = static_cast<int>(std::ceil(y + h));
@@ -197,7 +197,7 @@ float segment_distance(float px, float py, const FancyPoint& a, const FancyPoint
     return std::sqrt(dx * dx + dy * dy);
 }
 
-void stroke_path(images::BitmapImage& img, const std::vector<FancyPoint>& pts, bool closed, float thickness, const graphics::Color& c) {
+void stroke_path(images::BitmapImage& img, const std::vector<FancyPoint>& pts, bool closed, float thickness, const colors::Color& c) {
     if (pts.size() < 2) return;
     const float half = std::max(0.5f, thickness * 0.5f);
     float minx = pts[0].x, maxx = pts[0].x, miny = pts[0].y, maxy = pts[0].y;
@@ -222,7 +222,7 @@ void stroke_path(images::BitmapImage& img, const std::vector<FancyPoint>& pts, b
     }
 }
 
-void fill_polygon(images::BitmapImage& img, const std::vector<FancyPoint>& pts, const graphics::Color& c) {
+void fill_polygon(images::BitmapImage& img, const std::vector<FancyPoint>& pts, const colors::Color& c) {
     if (pts.size() < 3) return;
     float miny = pts[0].y, maxy = pts[0].y, minx = pts[0].x, maxx = pts[0].x;
     for (const FancyPoint& p : pts) {
@@ -337,7 +337,7 @@ graphics::Texture frame_texture(const std::shared_ptr<const images::AnimatedImag
 
 } // namespace
 
-void draw_fancy_images_native(windows::Renderer& r, const FancyText& ft, float x, float y, FancyAnchor anchor) {
+void draw_fancy_images_native(graphics::Renderer& r, const FancyText& ft, float x, float y, FancyAnchor anchor) {
     if (ft.images().empty()) return;
     const float ox = x;
     const float oy = anchor == FancyAnchor::TopLeft ? y + ft.ascent() : y;
@@ -360,15 +360,15 @@ void clear_fancy_image_cache() {
     frame_textures().clear();
 }
 
-images::BitmapImage fancy_text_image(const FancyText& ft, TextRasterizer& raster, float padding, const graphics::Color& background) {
+images::BitmapImage fancy_text_image(const FancyText& ft, TextRasterizer& raster, float padding, const colors::Color& background) {
     const unsigned w = static_cast<unsigned>(std::max(1.0f, std::ceil(ft.width() + 2.0f * padding)));
     const unsigned h = static_cast<unsigned>(std::max(1.0f, std::ceil(ft.height() + 2.0f * padding)));
-    images::BitmapImage img(w, h, std::vector<graphics::Color>(static_cast<std::size_t>(w) * h, background));
+    images::BitmapImage img(w, h, std::vector<colors::Color>(static_cast<std::size_t>(w) * h, background));
     draw_fancy_text(img, ft, padding, padding, raster, FancyAnchor::TopLeft);
     return img;
 }
 
-void draw_fancy_text_native(windows::Renderer& r, const FancyText& ft, float x, float y, FancyAnchor anchor) {
+void draw_fancy_text_native(graphics::Renderer& r, const FancyText& ft, float x, float y, FancyAnchor anchor) {
     const float ox = x;
     const float oy = anchor == FancyAnchor::TopLeft ? y + ft.ascent() : y;
     for (const FancyRect& rc : ft.rects()) {
@@ -379,7 +379,7 @@ void draw_fancy_text_native(windows::Renderer& r, const FancyText& ft, float x, 
         r.draw_rect(rx, ry, static_cast<unsigned>(rw), static_cast<unsigned>(rh), graphics::Paint::fill(rc.color));
     }
     for (const FancyPath& p : ft.paths()) {
-        std::vector<windows::RenderPoint> pts;
+        std::vector<graphics::RenderPoint> pts;
         pts.reserve(p.points.size());
         for (const FancyPoint& q : p.points) pts.emplace_back(ox + q.x, oy + q.y);
         if (p.filled && pts.size() >= 3) r.draw_polygon(pts, graphics::Paint::fill(p.color));
@@ -402,7 +402,7 @@ FancyTexture fancy_text_texture(const FancyText& ft, TextRasterizer& raster, flo
     t.descent = ft.descent();
     const unsigned w = static_cast<unsigned>(std::max(1.0f, std::ceil(ft.width() + 2.0f * t.padding)));
     const unsigned h = static_cast<unsigned>(std::max(1.0f, std::ceil(ft.ascent()) + std::ceil(ft.descent()) + 2.0f * t.padding));
-    images::BitmapImage img(w, h, std::vector<graphics::Color>(static_cast<std::size_t>(w) * h, graphics::Color(255, 255, 255, 0)));
+    images::BitmapImage img(w, h, std::vector<colors::Color>(static_cast<std::size_t>(w) * h, colors::Color(255, 255, 255, 0)));
     FancyText still = ft;
     still.images().clear();
     draw_fancy_text(img, still, t.padding, t.padding + std::ceil(ft.ascent()), raster, FancyAnchor::Baseline);
@@ -410,7 +410,7 @@ FancyTexture fancy_text_texture(const FancyText& ft, TextRasterizer& raster, flo
     return t;
 }
 
-void draw_fancy_texture(windows::Renderer& r, const FancyTexture& t, float x, float y, FancyAnchor anchor) {
+void draw_fancy_texture(graphics::Renderer& r, const FancyTexture& t, float x, float y, FancyAnchor anchor) {
     if (!t.valid()) return;
     const float baseline = anchor == FancyAnchor::TopLeft ? y + t.ascent : y;
     const int dx = static_cast<int>(std::lround(x - t.padding));
@@ -418,7 +418,7 @@ void draw_fancy_texture(windows::Renderer& r, const FancyTexture& t, float x, fl
     r.draw_texture(t.texture, dx, dy);
 }
 
-void draw_fancy_text(windows::Renderer& r, const FancyText& ft, float x, float y, FancyAnchor anchor, FancyDrawMode mode) {
+void draw_fancy_text(graphics::Renderer& r, const FancyText& ft, float x, float y, FancyAnchor anchor, FancyDrawMode mode) {
     const bool raster = mode == FancyDrawMode::Rasterized || (mode == FancyDrawMode::Auto && !r.is_gpu());
     if (!raster) {
         draw_fancy_text_native(r, ft, x, y, anchor);

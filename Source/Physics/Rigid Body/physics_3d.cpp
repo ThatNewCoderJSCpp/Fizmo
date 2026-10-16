@@ -644,7 +644,7 @@ void RigidBody3D::integrate_velocities(double dt) {
         if (!vec3::is_zero(w)) {
             const linalg::vector3d w_body = m_transform.rotate_inverse(m_angular_velocity);
             set_orientation(vec3::integrate_rotation(m_transform.orientation, w, dt));
-            if (!vec3::is_zero(m_gyro_half)) m_angular_velocity = m_transform.rotate(w_body); // carried with the body
+            if (!vec3::is_zero(m_gyro_half)) m_angular_velocity = m_transform.rotate(w_body); 
         }
     }
 
@@ -843,7 +843,7 @@ void RigidBody3D::scale_collider_geometry(double s) {
                 break;
             case ShapeType3D::Hull:
                 if (c.shape.hull) {
-                    HullShape h = *c.shape.hull; // copy-on-write: other colliders may share the hull
+                    HullShape h = *c.shape.hull;
                     h.scale(s);
                     c.shape.hull = std::make_shared<const HullShape>(std::move(h));
                 }

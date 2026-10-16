@@ -10,7 +10,7 @@ auto FancyText::add_run(float x, float baseline, RichText text, std::uint32_t ta
     return *this;
 }
 
-auto FancyText::add_path(std::vector<FancyPoint> points, float thickness, const graphics::Color& color, bool closed, bool filled, std::uint32_t tag) -> FancyText& {
+auto FancyText::add_path(std::vector<FancyPoint> points, float thickness, const colors::Color& color, bool closed, bool filled, std::uint32_t tag) -> FancyText& {
     if (points.size() >= 2) m_paths.push_back(FancyPath{ std::move(points), thickness, closed, filled, color, tag });
     return *this;
 }
@@ -59,7 +59,7 @@ auto FancyText::append(const FancyText& other, float dx, float dy) -> FancyText&
     return *this;
 }
 
-auto FancyText::recolor(const graphics::Color& color) -> FancyText& {
+auto FancyText::recolor(const colors::Color& color) -> FancyText& {
     for (FancyRun& r : m_runs) {
         r.text.base().set_fg_color(color);
         for (TextSpan& sp : r.text.spans()) if (sp.style.has_fg_color()) sp.style.set_fg_color(color);

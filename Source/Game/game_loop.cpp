@@ -2,7 +2,7 @@
 #include "game_loop.hpp"
 
 namespace fizmo {
-namespace windows {
+namespace game {
 namespace detail {
 
 ViewRect resolve_layout(const ViewLayout& layout, unsigned int win_w, unsigned int win_h) noexcept {
@@ -40,13 +40,13 @@ ViewRect resolve_layout(const ViewLayout& layout, unsigned int win_w, unsigned i
 }
 
 } // namespace detail
-} // namespace windows
+} // namespace game
 } // namespace fizmo
 
 namespace fizmo {
-namespace windows {
+namespace game {
 
-void GameLoop::render_frame(Renderer& r) {
+void GameLoop::render_frame(graphics::Renderer& r) {
     if (!uses_logical_size()) {
         if (m_auto_clear) r.clear(m_clear);
         if (m_on_render) m_on_render(r);
@@ -96,21 +96,21 @@ bool GameLoop::is_inside_view(int wx, int wy) const noexcept {
 int GameLoop::run() noexcept {
     m_app.set_auto_clear(false);
 
-    m_app.on_startup([this](Application&) {
+    m_app.on_startup([this](windows::Application&) {
         rebuild_view();
         if (m_on_startup) m_on_startup(*this);
     });
 
-    m_app.on_event([this](const WindowEvent& e) {
-        if (e.type == WindowEventType::WindowResize) rebuild_view();
+    m_app.on_event([this](const windows::WindowEvent& e) {
+        if (e.type == windows::WindowEventType::WindowResize) rebuild_view();
         if (m_on_event) m_on_event(e);
     });
 
     m_app.on_update([this](double dt) { if (m_on_update) m_on_update(dt); });
-    m_app.on_render([this](Renderer& r) { try { render_frame(r); } catch (...) {} });
+    m_app.on_render([this](graphics::Renderer& r) { try { render_frame(r); } catch (...) {} });
     m_app.on_shutdown([this]() { if (m_on_shutdown) m_on_shutdown(); });
     return m_app.run();
 }
 
-} // namespace windows
+} // namespace game
 } // namespace fizmo

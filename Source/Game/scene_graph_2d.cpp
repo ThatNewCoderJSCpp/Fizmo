@@ -2,7 +2,7 @@
 #include "scene_graph_2d.hpp"
 
 namespace fizmo {
-namespace graphics {
+namespace game {
 
 auto Node2D::ordered() -> const std::vector<Node2D*>& {
     if (m_order_dirty || m_draw_order.size() != m_children.size()) {
@@ -107,7 +107,7 @@ void Node2D::update(double dt) {
     for (std::size_t i = 0; i < m_children.size(); ++i) m_children[i]->update(dt);
 }
 
-void Node2D::draw(windows::Renderer& r, float parent_opacity) {
+void Node2D::draw(graphics::Renderer& r, float parent_opacity) {
     if (!m_visible) return;
     const float opacity = parent_opacity * m_opacity;
     if (opacity <= 0.0f) return;
@@ -144,9 +144,9 @@ auto Node2D::pick(double wx, double wy) -> Node2D* {
     return hit(wx, wy) ? this : nullptr;
 }
 
-void SpriteNode::draw_self(windows::Renderer& r, float opacity) {
+void SpriteNode::draw_self(graphics::Renderer& r, float opacity) {
     if (opacity >= 1.0f) { r.draw_sprite(m_sprite); return; }
-    Sprite copy = m_sprite;
+    graphics::Sprite copy = m_sprite;
     copy.set_opacity(m_sprite.opacity() * opacity);
     r.draw_sprite(copy);
 }
@@ -157,26 +157,26 @@ auto SpriteNode::local_bounds() const -> NodeBounds {
     return { b.x, b.y, b.w, b.h, true };
 }
 
-void ShapeNode::draw_self(windows::Renderer& r, float opacity) {
-    Paint p = m_paint;
+void ShapeNode::draw_self(graphics::Renderer& r, float opacity) {
+    graphics::Paint p = m_paint;
     p.set_opacity(m_paint.opacity() * opacity);
     switch (m_kind) {
-        case Kind::Rect:        r.draw_path(Path2D::rounded_rect(0, 0, m_w, m_h, 0.0), p); break;
+        case Kind::Rect:        r.draw_path(graphics::Path2D::rounded_rect(0, 0, m_w, m_h, 0.0), p); break;
         case Kind::RoundedRect: r.draw_rounded_rect(0, 0, m_w, m_h, m_radius, p); break;
-        case Kind::Ellipse:     r.draw_path(Path2D::ellipse(m_w * 0.5, m_h * 0.5, m_w * 0.5, m_h * 0.5), p); break;
+        case Kind::Ellipse:     r.draw_path(graphics::Path2D::ellipse(m_w * 0.5, m_h * 0.5, m_w * 0.5, m_h * 0.5), p); break;
         case Kind::Path:        r.draw_path(m_path, p); break;
     }
 }
 
-auto ShapeNode::rect(double w, double h, const Paint& p) -> std::unique_ptr<ShapeNode> { auto n = std::make_unique<ShapeNode>(); n->m_kind = Kind::Rect; n->m_w = w; n->m_h = h; n->m_paint = p; return n; }
+auto ShapeNode::rect(double w, double h, const graphics::Paint& p) -> std::unique_ptr<ShapeNode> { auto n = std::make_unique<ShapeNode>(); n->m_kind = Kind::Rect; n->m_w = w; n->m_h = h; n->m_paint = p; return n; }
 
-auto ShapeNode::rounded(double w, double h, double r, const Paint& p) -> std::unique_ptr<ShapeNode> { auto n = std::make_unique<ShapeNode>(); n->m_kind = Kind::RoundedRect; n->m_w = w; n->m_h = h; n->m_radius = r; n->m_paint = p; return n; }
+auto ShapeNode::rounded(double w, double h, double r, const graphics::Paint& p) -> std::unique_ptr<ShapeNode> { auto n = std::make_unique<ShapeNode>(); n->m_kind = Kind::RoundedRect; n->m_w = w; n->m_h = h; n->m_radius = r; n->m_paint = p; return n; }
 
-auto ShapeNode::ellipse(double w, double h, const Paint& p) -> std::unique_ptr<ShapeNode> { auto n = std::make_unique<ShapeNode>(); n->m_kind = Kind::Ellipse; n->m_w = w; n->m_h = h; n->m_paint = p; return n; }
+auto ShapeNode::ellipse(double w, double h, const graphics::Paint& p) -> std::unique_ptr<ShapeNode> { auto n = std::make_unique<ShapeNode>(); n->m_kind = Kind::Ellipse; n->m_w = w; n->m_h = h; n->m_paint = p; return n; }
 
-auto ShapeNode::path(Path2D path, const Paint& p) -> std::unique_ptr<ShapeNode> { auto n = std::make_unique<ShapeNode>(); n->m_kind = Kind::Path; n->m_path = std::move(path); n->m_paint = p; return n; }
+auto ShapeNode::path(graphics::Path2D path, const graphics::Paint& p) -> std::unique_ptr<ShapeNode> { auto n = std::make_unique<ShapeNode>(); n->m_kind = Kind::Path; n->m_path = std::move(path); n->m_paint = p; return n; }
 
-void TextNode::draw_self(windows::Renderer& r, float opacity) {
+void TextNode::draw_self(graphics::Renderer& r, float opacity) {
     if (m_text.empty()) return;
     text::TextStyle st = m_style;
     if (opacity < 1.0f) st.set_opacity((m_style.has_opacity() ? m_style.opacity() : 1.0f) * opacity);
@@ -189,5 +189,5 @@ auto SceneGraph2D::pick_screen(double sx, double sy) -> Node2D* {
     return m_root.pick(w.x, w.y);
 }
 
-} // namespace graphics
+} // namespace game
 } // namespace fizmo

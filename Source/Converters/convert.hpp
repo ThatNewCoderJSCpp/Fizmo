@@ -12,13 +12,13 @@ namespace fizmo {
 
 template <typename T> struct is_fizmo_linear_unit : std::false_type {};
 
-template <int L,int M,int T,int I,int K,int N,int J,int A>
-struct is_fizmo_linear_unit<units::Unit<L,M,T,I,K,N,J,A>> : std::true_type {};
+template <int L,int M,int T,int I,int K,int N,int J,int A, class Q>
+struct is_fizmo_linear_unit<units::Unit<L,M,T,I,K,N,J,A,Q>> : std::true_type {};
 
 template <typename T> struct is_fizmo_exact_unit : is_fizmo_linear_unit<T> {};
 
-template <int L,int M,int T,int I,int K,int N,int J,int A>
-struct is_fizmo_exact_unit<units::ReciprocalUnit<L,M,T,I,K,N,J,A>> : std::true_type {};
+template <int L,int M,int T,int I,int K,int N,int J,int A, class Q>
+struct is_fizmo_exact_unit<units::ReciprocalUnit<L,M,T,I,K,N,J,A,Q>> : std::true_type {};
 
 template <typename T>
 constexpr bool is_fizmo_exact_unit_v = is_fizmo_exact_unit<T>::value;
@@ -113,17 +113,17 @@ struct map {
 inline int pi_weight(const ExactScale& e) noexcept { return (e.is_zero || e.binary) ? 0 : (e.pi_pow < 0 ? -e.pi_pow : e.pi_pow); }
 inline int pi_weight(const map& m) noexcept { return pi_weight(m.p) + pi_weight(m.q) + pi_weight(m.r) + pi_weight(m.s); }
 
-template <int L,int M,int T,int I,int K,int N,int J,int A>
-map to_base_map(const Unit<L,M,T,I,K,N,J,A>& u) { return map{u.exact_scale, u.exact_offset, ExactScale::zero(), ExactScale::one()}; }
+template <int L,int M,int T,int I,int K,int N,int J,int A, class Q>
+map to_base_map(const Unit<L,M,T,I,K,N,J,A,Q>& u) { return map{u.exact_scale, u.exact_offset, ExactScale::zero(), ExactScale::one()}; }
 
-template <int L,int M,int T,int I,int K,int N,int J,int A>
-map from_base_map(const Unit<L,M,T,I,K,N,J,A>& u) { return map{ExactScale::one(), -u.exact_offset, ExactScale::zero(), u.exact_scale}; }
+template <int L,int M,int T,int I,int K,int N,int J,int A, class Q>
+map from_base_map(const Unit<L,M,T,I,K,N,J,A,Q>& u) { return map{ExactScale::one(), -u.exact_offset, ExactScale::zero(), u.exact_scale}; }
 
-template <int L,int M,int T,int I,int K,int N,int J,int A>
-map to_base_map(const ReciprocalUnit<L,M,T,I,K,N,J,A>& u) { return map{ExactScale::zero(), ExactScale::one(), u.exact_scale, ExactScale::zero()}; }
+template <int L,int M,int T,int I,int K,int N,int J,int A, class Q>
+map to_base_map(const ReciprocalUnit<L,M,T,I,K,N,J,A,Q>& u) { return map{ExactScale::zero(), ExactScale::one(), u.exact_scale, ExactScale::zero()}; }
 
-template <int L,int M,int T,int I,int K,int N,int J,int A>
-map from_base_map(const ReciprocalUnit<L,M,T,I,K,N,J,A>& u) { return map{ExactScale::zero(), ExactScale::one(), u.exact_scale, ExactScale::zero()}; }
+template <int L,int M,int T,int I,int K,int N,int J,int A, class Q>
+map from_base_map(const ReciprocalUnit<L,M,T,I,K,N,J,A,Q>& u) { return map{ExactScale::zero(), ExactScale::one(), u.exact_scale, ExactScale::zero()}; }
 
 inline map identity_map() { return map{ExactScale::one(), ExactScale::zero(), ExactScale::zero(), ExactScale::one()}; }
 
@@ -199,6 +199,9 @@ R finish(const map& first, const map& second, const BigFloat& x) {
 template <class FromU, class ToU>
 struct same_dim : std::integral_constant<bool, FromU::dimension() == ToU::dimension()> {};
 
+template <class FromU, class ToU>
+struct same_kind : kinds_compatible<typename FromU::kind_type, typename ToU::kind_type> {};
+
 template <class T, class U>
 using enable_mp_t = typename std::enable_if<is_mp_value<T>::value && is_fizmo_exact_unit_v<U>, int>::type;
 
@@ -211,18 +214,21 @@ template <class FromU, class ToU>
 constexpr typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, long double>::type
 convert(long double value, FromU from, ToU to) noexcept {
     static_assert(FromU::dimension() == ToU::dimension(), "convert: source and target dimensions differ");
+    static_assert(detail::same_kind<FromU, ToU>::value, "convert: the units are different kinds of quantity (energy and torque, say); use kind_cast if this is intended");
     return to.from_base(from.to_base(value));
 }
 
 template <class T, class FromU, class ToU, detail::enable_mp2_t<T, FromU, ToU> = 0>
 detail::value_result_t<T> convert(const T& value, FromU from, ToU to) {
     static_assert(FromU::dimension() == ToU::dimension(), "convert: source and target dimensions differ");
+    static_assert(detail::same_kind<FromU, ToU>::value, "convert: the units are different kinds of quantity (energy and torque, say); use kind_cast if this is intended");
     return detail::finish<detail::value_result_t<T>>(detail::to_base_map(from), detail::from_base_map(to), multiprecision::BigFloat(value));
 }
 
 template <class FromU, class ToU, typename std::enable_if<is_fizmo_exact_unit_v<FromU> && is_fizmo_exact_unit_v<ToU>, int>::type = 0>
 multiprecision::BigFloat convert(const multiprecision::BigFloat& value, FromU from, ToU to, const multiprecision::BigFloatContext& ctx) {
     static_assert(FromU::dimension() == ToU::dimension(), "convert: source and target dimensions differ");
+    static_assert(detail::same_kind<FromU, ToU>::value, "convert: the units are different kinds of quantity (energy and torque, say); use kind_cast if this is intended");
     return detail::evaluate(detail::to_base_map(from), detail::from_base_map(to), value, ctx);
 }
 
@@ -264,13 +270,15 @@ same_dimension(A, B) noexcept {
     return A::dimension() == B::dimension();
 }
 
-template <int L,int M,int T,int I,int K,int N,int J,int A>
-constexpr long double scale_ratio(Unit<L,M,T,I,K,N,J,A> from, Unit<L,M,T,I,K,N,J,A> to) noexcept {
+template <int L,int M,int T,int I,int K,int N,int J,int A, class Q1, class Q2>
+constexpr long double scale_ratio(Unit<L,M,T,I,K,N,J,A,Q1> from, Unit<L,M,T,I,K,N,J,A,Q2> to) noexcept {
+    static_assert(detail::kinds_compatible<Q1, Q2>::value, "scale_ratio: the units are different kinds of quantity (energy and torque, say); use kind_cast if this is intended");
     return from.scale / to.scale;
 }
 
-template <class R, int L,int M,int T,int I,int K,int N,int J,int A, typename std::enable_if<detail::is_mp_value<R>::value, int>::type = 0>
-R scale_ratio(Unit<L,M,T,I,K,N,J,A> from, Unit<L,M,T,I,K,N,J,A> to) {
+template <class R, int L,int M,int T,int I,int K,int N,int J,int A, class Q1, class Q2, typename std::enable_if<detail::is_mp_value<R>::value, int>::type = 0>
+R scale_ratio(Unit<L,M,T,I,K,N,J,A,Q1> from, Unit<L,M,T,I,K,N,J,A,Q2> to) {
+    static_assert(detail::kinds_compatible<Q1, Q2>::value, "scale_ratio: the units are different kinds of quantity (energy and torque, say); use kind_cast if this is intended");
     return convert(R(1), Unit<L,M,T,I,K,N,J,A>(from.exact_scale), Unit<L,M,T,I,K,N,J,A>(to.exact_scale));
 }
 

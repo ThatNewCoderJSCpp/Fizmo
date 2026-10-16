@@ -2,11 +2,11 @@
 #define FIZMO_RENDERER_LINUX_IMPL_HPP
 
 #include "renderer_base.hpp"
-#include "../../Basic/fizmo_defines.hpp"
+#include "../../../Basic/fizmo_defines.hpp"
 
 #ifdef OS_LINUX
 
-#include "../../x11_compat.hpp"
+#include "../../../x11_compat.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -16,7 +16,7 @@
 #include <vector>
 
 namespace fizmo {
-namespace windows {
+namespace graphics {
 namespace detail {
 
 class RendererImpl : public RendererImplBase {
@@ -59,7 +59,7 @@ private:
              | scale_channel(m_visual->blue_mask,  b);
     }
 
-    unsigned long to_pixel(const graphics::Color& c) const noexcept {
+    unsigned long to_pixel(const colors::Color& c) const noexcept {
         return pack(c.red(), c.green(), c.blue());
     }
 
@@ -161,7 +161,7 @@ public:
         XCopyArea(m_display, m_back, m_window, m_blit_gc, 0, 0, m_width, m_height, 0, 0);
     }
 
-    void clear(const graphics::Color& color) noexcept override {
+    void clear(const colors::Color& color) noexcept override {
         if (!m_display || !m_back) return;
         XSetForeground(m_display, m_gc, to_pixel(color));
         XFillRectangle(m_display, m_back, m_gc, 0, 0, m_width, m_height);
@@ -186,7 +186,7 @@ public:
         if (m_xft) XftDrawSetClip(m_xft, nullptr);
     }
 
-    void draw_pixel(int x, int y, const graphics::Color& color) noexcept override {
+    void draw_pixel(int x, int y, const colors::Color& color) noexcept override {
         if (!m_display || !m_back) return;
         XSetForeground(m_display, m_gc, to_pixel(color));
         XDrawPoint(m_display, m_back, m_gc, x, y);
@@ -353,7 +353,7 @@ public:
 
     void draw_pixel_buffer(
         int dx, int dy, unsigned int dw, unsigned int dh,
-        const graphics::Color* pixels, unsigned int pw, unsigned int ph,
+        const colors::Color* pixels, unsigned int pw, unsigned int ph,
         bool /*smooth*/, std::uint64_t /*version*/
     ) noexcept override {
         if (!m_display || !m_back || !pixels || pw == 0 || ph == 0 || dw == 0 || dh == 0) return;
@@ -370,7 +370,7 @@ public:
 
             for (unsigned int col = 0; col < rw; ++col) {
                 const unsigned int sx = static_cast<unsigned int>(static_cast<std::uint64_t>(x0 - dx + static_cast<int>(col)) * pw / dw);
-                const graphics::Color& c = pixels[static_cast<std::size_t>(std::min(sy, ph - 1)) * pw + std::min(sx, pw - 1)];
+                const colors::Color& c = pixels[static_cast<std::size_t>(std::min(sy, ph - 1)) * pw + std::min(sx, pw - 1)];
                 const unsigned int a = c.alpha();
                 if (a == 0) continue;
                 if (a == 255) { XPutPixel(dst, static_cast<int>(col), static_cast<int>(row), to_pixel(c)); continue; }
@@ -614,7 +614,7 @@ private:
 };
 
 } // namespace detail
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo
 
 #endif // OS_LINUX

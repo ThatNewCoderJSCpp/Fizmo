@@ -50,10 +50,11 @@ public:
     T pdf(const T& x) const     { return run([&](const BigFloatContext& c) { return core::pdf(m_dist, b(x), c); }); }
     T log_pdf(const T& x) const { return run([&](const BigFloatContext& c) { return core::log_pdf(m_dist, b(x), c); }); }
     T cdf(const T& x) const     { return run([&](const BigFloatContext& c) { return core::cdf(m_dist, b(x), false, c); }); }
-    T sf(const T& x) const      { return run([&](const BigFloatContext& c) { return core::cdf(m_dist, b(x), true, c); }); }
+    T sf(const T& x) const       { return run([&](const BigFloatContext& c) { return core::cdf(m_dist, b(x), true, c); }); }
+    T survival(const T& x) const { return sf(x); }
 
     T below(const T& x) const { return cdf(x); }
-    T above(const T& x) const { return sf(x); }
+    T above(const T& x) const { return survival(x); }
 
     T between(const T& lo, const T& hi) const { return run([&](const BigFloatContext& c) { return core::between(m_dist, b(lo), b(hi), c); }); }
     T outside(const T& lo, const T& hi) const { return run([&](const BigFloatContext& c) { return core::outside(m_dist, b(lo), b(hi), c); }); }
@@ -76,10 +77,11 @@ public:
 
     T cdf(std::int64_t k) const          { return run([&](const BigFloatContext& c) { return core::cdf(m_dist, k_of(k), false, c); }); }
     T sf(std::int64_t k) const           { return run([&](const BigFloatContext& c) { return core::cdf(m_dist, k_of(k), true, c); }); }
+    T survival(std::int64_t k) const     { return sf(k); }
     T at_most(std::int64_t k) const      { return cdf(k); }
     T less_than(std::int64_t k) const    { return cdf(k - 1); }
-    T at_least(std::int64_t k) const     { return sf(k - 1); }
-    T greater_than(std::int64_t k) const { return sf(k); }
+    T at_least(std::int64_t k) const     { return survival(k - 1); }
+    T greater_than(std::int64_t k) const { return survival(k); }
 
     T between(std::int64_t lo, std::int64_t hi) const {
         return run([&](const BigFloatContext& c) { return core::between(m_dist, k_of(lo), k_of(hi), c); });

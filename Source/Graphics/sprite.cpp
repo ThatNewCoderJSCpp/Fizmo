@@ -140,11 +140,9 @@ auto Sprite::quad() const noexcept -> SpriteQuad {
         gy[i] = m.data[3] * lx[i] + m.data[4] * ly[i] + m.data[5];
     }
 
-    // corner index flips: bit 0 swaps left/right (0<->1, 2<->3), bit 1 swaps top/bottom (0<->3, 1<->2)
     static constexpr int order[4][4] = { { 0, 1, 2, 3 }, { 1, 0, 3, 2 }, { 3, 2, 1, 0 }, { 2, 3, 0, 1 } };
     const int* o = order[(m_flip_h ? 1 : 0) | (m_flip_v ? 2 : 0)];
     SpriteQuad q;
-
     for (int i = 0; i < 4; ++i) { q.x[i] = gx[o[i]]; q.y[i] = gy[o[i]]; }
     return q;
 }

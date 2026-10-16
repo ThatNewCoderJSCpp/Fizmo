@@ -1,7 +1,7 @@
 #ifndef FIZMO_TEXTURE_HPP
 #define FIZMO_TEXTURE_HPP
 
-#include "../Graphics/color.hpp"
+#include "color.hpp"
 #include "../Images/Bitmap/image.hpp"
 #include <memory>
 #include <algorithm>

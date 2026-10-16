@@ -26,7 +26,7 @@ BitmapImage radial_blur(const BitmapImage& source, const unsigned int centerX, c
                 const int sampleY = static_cast<int>(y - sampleRadius * std::sin(angle));
                 const unsigned int safeX = std::min(std::max(0, sampleX), static_cast<int>(source.width() - 1));
                 const unsigned int safeY = std::min(std::max(0, sampleY), static_cast<int>(source.height() - 1));
-                const fizmo::graphics::Color& color = source.get_pixel(safeX, safeY);
+                const fizmo::colors::Color& color = source.get_pixel(safeX, safeY);
                 const double weight = 1.0 - (t * 0.8);
                 totalRed += color.red() * weight;
                 totalGreen += color.green() * weight;
@@ -37,7 +37,7 @@ BitmapImage radial_blur(const BitmapImage& source, const unsigned int centerX, c
             const unsigned int finalRed = static_cast<unsigned int>(totalRed / totalWeight);
             const unsigned int finalGreen = static_cast<unsigned int>(totalGreen / totalWeight);
             const unsigned int finalBlue = static_cast<unsigned int>(totalBlue / totalWeight);
-            result.set_pixel(x, y, fizmo::graphics::Color(finalRed, finalGreen, finalBlue));
+            result.set_pixel(x, y, fizmo::colors::Color(finalRed, finalGreen, finalBlue));
         }
     }
     

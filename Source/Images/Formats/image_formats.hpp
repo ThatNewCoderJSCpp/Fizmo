@@ -97,7 +97,7 @@ struct SvgOptions {
     unsigned int height = 0;
     float        scale = 1.0f;
     float        dpi = 96.0f;
-    graphics::Color background = graphics::Color(0, 0, 0, 0);
+    colors::Color background = colors::Color(0, 0, 0, 0);
 };
 
 ImageFormat detect_format(const std::uint8_t* data, std::size_t size) noexcept;

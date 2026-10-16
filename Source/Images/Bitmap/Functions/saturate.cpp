@@ -10,11 +10,11 @@ BitmapImage adjust_saturation(const BitmapImage& source, const double saturation
     
     for (unsigned int y = 0; y < source.height(); y++) {
         for (unsigned int x = 0; x < source.width(); x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
-            fizmo::graphics::HSLColor hsl(pixel);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
+            fizmo::colors::HSLColor hsl(pixel);
             const double new_saturation = hsl.saturation() * factor;
             hsl.set_saturation(new_saturation);
-            result.set_pixel(x, y, fizmo::graphics::Color(hsl));
+            result.set_pixel(x, y, fizmo::colors::Color(hsl));
         }
     }
     
@@ -38,11 +38,11 @@ BitmapImage adjust_saturation(
     
     for (unsigned int y = y_1; y < y_2; y++) {
         for (unsigned int x = x_1; x < x_2; x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
-            fizmo::graphics::HSLColor hsl(pixel);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
+            fizmo::colors::HSLColor hsl(pixel);
             const double new_saturation = hsl.saturation() * factor;
             hsl.set_saturation(new_saturation);
-            result.set_pixel(x, y, fizmo::graphics::Color(hsl));
+            result.set_pixel(x, y, fizmo::colors::Color(hsl));
         }
     }
     

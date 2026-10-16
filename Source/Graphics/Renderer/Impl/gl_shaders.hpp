@@ -1,13 +1,13 @@
 #ifndef FIZMO_GL_SHADERS_HPP
 #define FIZMO_GL_SHADERS_HPP
 
-#include "../../GPU/types.hpp"
+#include "../../../GPU/types.hpp"
 #include "gpu_shaders.hpp"
 #include "gpu_shaders_3d.hpp"
 #include <cstdint>
 
 namespace fizmo {
-namespace windows {
+namespace graphics {
 namespace detail {
 namespace glsl {
 
@@ -52,7 +52,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kDraw2DVertBindings[] = {
 inline ::fizmo::gpu::ShaderDesc draw2d_vert() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Vertex;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kDraw2DVert, sizeof(::fizmo::windows::detail::gfx::kDraw2DVert) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kDraw2DVert, sizeof(::fizmo::graphics::detail::gfx::kDraw2DVert) / sizeof(std::uint32_t) };
     d.glsl          = kDraw2DVert;
     d.glsl_pieces   = sizeof(kDraw2DVert) / sizeof(kDraw2DVert[0]);
     d.glsl_version  = kDraw2DVertVersion;
@@ -132,7 +132,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kDraw2DFragBindings[] = {
 inline ::fizmo::gpu::ShaderDesc draw2d_frag() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Fragment;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kDraw2DFrag, sizeof(::fizmo::windows::detail::gfx::kDraw2DFrag) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kDraw2DFrag, sizeof(::fizmo::graphics::detail::gfx::kDraw2DFrag) / sizeof(std::uint32_t) };
     d.glsl          = kDraw2DFrag;
     d.glsl_pieces   = sizeof(kDraw2DFrag) / sizeof(kDraw2DFrag[0]);
     d.glsl_version  = kDraw2DFragVersion;
@@ -165,7 +165,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kPresentVertBindings[] = {
 inline ::fizmo::gpu::ShaderDesc present_vert() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Vertex;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kPresentVert, sizeof(::fizmo::windows::detail::gfx::kPresentVert) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kPresentVert, sizeof(::fizmo::graphics::detail::gfx::kPresentVert) / sizeof(std::uint32_t) };
     d.glsl          = kPresentVert;
     d.glsl_pieces   = sizeof(kPresentVert) / sizeof(kPresentVert[0]);
     d.glsl_version  = kPresentVertVersion;
@@ -196,7 +196,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kPresentFragBindings[] = {
 inline ::fizmo::gpu::ShaderDesc present_frag() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Fragment;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kPresentFrag, sizeof(::fizmo::windows::detail::gfx::kPresentFrag) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kPresentFrag, sizeof(::fizmo::graphics::detail::gfx::kPresentFrag) / sizeof(std::uint32_t) };
     d.glsl          = kPresentFrag;
     d.glsl_pieces   = sizeof(kPresentFrag) / sizeof(kPresentFrag[0]);
     d.glsl_version  = kPresentFragVersion;
@@ -307,7 +307,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kUpscaleFragBindings[] = {
 inline ::fizmo::gpu::ShaderDesc upscale_frag() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Fragment;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kUpscaleFrag, sizeof(::fizmo::windows::detail::gfx::kUpscaleFrag) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kUpscaleFrag, sizeof(::fizmo::graphics::detail::gfx::kUpscaleFrag) / sizeof(std::uint32_t) };
     d.glsl          = kUpscaleFrag;
     d.glsl_pieces   = sizeof(kUpscaleFrag) / sizeof(kUpscaleFrag[0]);
     d.glsl_version  = kUpscaleFragVersion;
@@ -365,7 +365,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kMesh3DVertBindings[] = {
 inline ::fizmo::gpu::ShaderDesc mesh3d_vert() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Vertex;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kMesh3DVert, sizeof(::fizmo::windows::detail::gfx::kMesh3DVert) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kMesh3DVert, sizeof(::fizmo::graphics::detail::gfx::kMesh3DVert) / sizeof(std::uint32_t) };
     d.glsl          = kMesh3DVert;
     d.glsl_pieces   = sizeof(kMesh3DVert) / sizeof(kMesh3DVert[0]);
     d.glsl_version  = kMesh3DVertVersion;
@@ -1347,7 +1347,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kMesh3DFragBindings[] = {
 inline ::fizmo::gpu::ShaderDesc mesh3d_frag() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Fragment;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kMesh3DFrag, sizeof(::fizmo::windows::detail::gfx::kMesh3DFrag) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kMesh3DFrag, sizeof(::fizmo::graphics::detail::gfx::kMesh3DFrag) / sizeof(std::uint32_t) };
     d.glsl          = kMesh3DFrag;
     d.glsl_pieces   = sizeof(kMesh3DFrag) / sizeof(kMesh3DFrag[0]);
     d.glsl_version  = kMesh3DFragVersion;
@@ -1409,7 +1409,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kLine3DVertBindings[] = {
 inline ::fizmo::gpu::ShaderDesc line3d_vert() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Vertex;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kLine3DVert, sizeof(::fizmo::windows::detail::gfx::kLine3DVert) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kLine3DVert, sizeof(::fizmo::graphics::detail::gfx::kLine3DVert) / sizeof(std::uint32_t) };
     d.glsl          = kLine3DVert;
     d.glsl_pieces   = sizeof(kLine3DVert) / sizeof(kLine3DVert[0]);
     d.glsl_version  = kLine3DVertVersion;
@@ -1438,7 +1438,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kLine3DFragBindings[] = {
 inline ::fizmo::gpu::ShaderDesc line3d_frag() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Fragment;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kLine3DFrag, sizeof(::fizmo::windows::detail::gfx::kLine3DFrag) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kLine3DFrag, sizeof(::fizmo::graphics::detail::gfx::kLine3DFrag) / sizeof(std::uint32_t) };
     d.glsl          = kLine3DFrag;
     d.glsl_pieces   = sizeof(kLine3DFrag) / sizeof(kLine3DFrag[0]);
     d.glsl_version  = kLine3DFragVersion;
@@ -1504,7 +1504,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kQuad3DVertBindings[] = {
 inline ::fizmo::gpu::ShaderDesc quad3d_vert() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Vertex;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kQuad3DVert, sizeof(::fizmo::windows::detail::gfx::kQuad3DVert) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kQuad3DVert, sizeof(::fizmo::graphics::detail::gfx::kQuad3DVert) / sizeof(std::uint32_t) };
     d.glsl          = kQuad3DVert;
     d.glsl_pieces   = sizeof(kQuad3DVert) / sizeof(kQuad3DVert[0]);
     d.glsl_version  = kQuad3DVertVersion;
@@ -2799,7 +2799,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kQuad3DFragBindings[] = {
 inline ::fizmo::gpu::ShaderDesc quad3d_frag() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Fragment;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kQuad3DFrag, sizeof(::fizmo::windows::detail::gfx::kQuad3DFrag) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kQuad3DFrag, sizeof(::fizmo::graphics::detail::gfx::kQuad3DFrag) / sizeof(std::uint32_t) };
     d.glsl          = kQuad3DFrag;
     d.glsl_pieces   = sizeof(kQuad3DFrag) / sizeof(kQuad3DFrag[0]);
     d.glsl_version  = kQuad3DFragVersion;
@@ -2932,7 +2932,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kBatch3DVertBindings[] = {
 inline ::fizmo::gpu::ShaderDesc batch3d_vert() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Vertex;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kBatch3DVert, sizeof(::fizmo::windows::detail::gfx::kBatch3DVert) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kBatch3DVert, sizeof(::fizmo::graphics::detail::gfx::kBatch3DVert) / sizeof(std::uint32_t) };
     d.glsl          = kBatch3DVert;
     d.glsl_pieces   = sizeof(kBatch3DVert) / sizeof(kBatch3DVert[0]);
     d.glsl_version  = kBatch3DVertVersion;
@@ -2993,7 +2993,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kInstanced3DVertBindings[] = {
 inline ::fizmo::gpu::ShaderDesc instanced3d_vert() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Vertex;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kInstanced3DVert, sizeof(::fizmo::windows::detail::gfx::kInstanced3DVert) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kInstanced3DVert, sizeof(::fizmo::graphics::detail::gfx::kInstanced3DVert) / sizeof(std::uint32_t) };
     d.glsl          = kInstanced3DVert;
     d.glsl_pieces   = sizeof(kInstanced3DVert) / sizeof(kInstanced3DVert[0]);
     d.glsl_version  = kInstanced3DVertVersion;
@@ -3039,7 +3039,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kShadowMesh3DVertBindings[] = {
 inline ::fizmo::gpu::ShaderDesc shadow_mesh_vert() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Vertex;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kShadowMesh3DVert, sizeof(::fizmo::windows::detail::gfx::kShadowMesh3DVert) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kShadowMesh3DVert, sizeof(::fizmo::graphics::detail::gfx::kShadowMesh3DVert) / sizeof(std::uint32_t) };
     d.glsl          = kShadowMesh3DVert;
     d.glsl_pieces   = sizeof(kShadowMesh3DVert) / sizeof(kShadowMesh3DVert[0]);
     d.glsl_version  = kShadowMesh3DVertVersion;
@@ -3086,7 +3086,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kShadowInstanced3DVertBindings[] = {
 inline ::fizmo::gpu::ShaderDesc shadow_instanced_vert() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Vertex;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kShadowInstanced3DVert, sizeof(::fizmo::windows::detail::gfx::kShadowInstanced3DVert) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kShadowInstanced3DVert, sizeof(::fizmo::graphics::detail::gfx::kShadowInstanced3DVert) / sizeof(std::uint32_t) };
     d.glsl          = kShadowInstanced3DVert;
     d.glsl_pieces   = sizeof(kShadowInstanced3DVert) / sizeof(kShadowInstanced3DVert[0]);
     d.glsl_version  = kShadowInstanced3DVertVersion;
@@ -3135,7 +3135,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kShadowQuad3DVertBindings[] = {
 inline ::fizmo::gpu::ShaderDesc shadow_quad_vert() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Vertex;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kShadowQuad3DVert, sizeof(::fizmo::windows::detail::gfx::kShadowQuad3DVert) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kShadowQuad3DVert, sizeof(::fizmo::graphics::detail::gfx::kShadowQuad3DVert) / sizeof(std::uint32_t) };
     d.glsl          = kShadowQuad3DVert;
     d.glsl_pieces   = sizeof(kShadowQuad3DVert) / sizeof(kShadowQuad3DVert[0]);
     d.glsl_version  = kShadowQuad3DVertVersion;
@@ -3178,7 +3178,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kShadowPoint3DFragBindings[] = {
 inline ::fizmo::gpu::ShaderDesc shadow_point_frag() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Fragment;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kShadowPoint3DFrag, sizeof(::fizmo::windows::detail::gfx::kShadowPoint3DFrag) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kShadowPoint3DFrag, sizeof(::fizmo::graphics::detail::gfx::kShadowPoint3DFrag) / sizeof(std::uint32_t) };
     d.glsl          = kShadowPoint3DFrag;
     d.glsl_pieces   = sizeof(kShadowPoint3DFrag) / sizeof(kShadowPoint3DFrag[0]);
     d.glsl_version  = kShadowPoint3DFragVersion;
@@ -3211,7 +3211,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kSky3DVertBindings[] = {
 inline ::fizmo::gpu::ShaderDesc sky_vert() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Vertex;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kSky3DVert, sizeof(::fizmo::windows::detail::gfx::kSky3DVert) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kSky3DVert, sizeof(::fizmo::graphics::detail::gfx::kSky3DVert) / sizeof(std::uint32_t) };
     d.glsl          = kSky3DVert;
     d.glsl_pieces   = sizeof(kSky3DVert) / sizeof(kSky3DVert[0]);
     d.glsl_version  = kSky3DVertVersion;
@@ -3500,7 +3500,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kSky3DFragBindings[] = {
 inline ::fizmo::gpu::ShaderDesc sky_frag() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Fragment;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kSky3DFrag, sizeof(::fizmo::windows::detail::gfx::kSky3DFrag) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kSky3DFrag, sizeof(::fizmo::graphics::detail::gfx::kSky3DFrag) / sizeof(std::uint32_t) };
     d.glsl          = kSky3DFrag;
     d.glsl_pieces   = sizeof(kSky3DFrag) / sizeof(kSky3DFrag[0]);
     d.glsl_version  = kSky3DFragVersion;
@@ -3776,7 +3776,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kRays3DFragBindings[] = {
 inline ::fizmo::gpu::ShaderDesc rays_frag() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Fragment;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kRays3DFrag, sizeof(::fizmo::windows::detail::gfx::kRays3DFrag) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kRays3DFrag, sizeof(::fizmo::graphics::detail::gfx::kRays3DFrag) / sizeof(std::uint32_t) };
     d.glsl          = kRays3DFrag;
     d.glsl_pieces   = sizeof(kRays3DFrag) / sizeof(kRays3DFrag[0]);
     d.glsl_version  = kRays3DFragVersion;
@@ -3968,7 +3968,7 @@ inline constexpr ::fizmo::gpu::GlslBinding kVolume3DCompBindings[] = {
 inline ::fizmo::gpu::ShaderDesc volume_comp() noexcept {
     ::fizmo::gpu::ShaderDesc d;
     d.stage         = ::fizmo::gpu::ShaderStage::Compute;
-    d.spirv         = { ::fizmo::windows::detail::gfx::kVolume3DComp, sizeof(::fizmo::windows::detail::gfx::kVolume3DComp) / sizeof(std::uint32_t) };
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kVolume3DComp, sizeof(::fizmo::graphics::detail::gfx::kVolume3DComp) / sizeof(std::uint32_t) };
     d.glsl          = kVolume3DComp;
     d.glsl_pieces   = sizeof(kVolume3DComp) / sizeof(kVolume3DComp[0]);
     d.glsl_version  = kVolume3DCompVersion;
@@ -3979,7 +3979,7 @@ inline ::fizmo::gpu::ShaderDesc volume_comp() noexcept {
 
 } // namespace glsl
 } // namespace detail
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo
 
 #endif // FIZMO_GL_SHADERS_HPP

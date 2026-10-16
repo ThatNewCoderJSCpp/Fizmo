@@ -6,16 +6,16 @@ namespace images {
 
 BitmapImage::BitmapImage(const unsigned int width, const unsigned int height) : m_width(width), m_height(height) {
     if (m_width == 0 || m_height == 0) { throw std::runtime_error("Invalid image dimensions (must be positive)"); }
-    m_pixels.resize(width * height, fizmo::graphics::Color(255, 255, 255)); // White background
+    m_pixels.resize(width * height, fizmo::colors::Color(255, 255, 255)); // White background
 }
 
-BitmapImage::BitmapImage(const unsigned int width, const unsigned int height, std::vector<fizmo::graphics::Color> pixels) : m_pixels(std::move(pixels)), m_width(width), m_height(height) {
+BitmapImage::BitmapImage(const unsigned int width, const unsigned int height, std::vector<fizmo::colors::Color> pixels) : m_pixels(std::move(pixels)), m_width(width), m_height(height) {
     if (m_pixels.size() != static_cast<std::size_t>(width) * height) { throw std::runtime_error("Pixel count does not match image dimensions"); }
 }
 
 BitmapImage BitmapImage::from_rgba(const unsigned int width, const unsigned int height, const std::uint8_t* rgba) {
-    std::vector<fizmo::graphics::Color> px(static_cast<std::size_t>(width) * height);
-    for (std::size_t i = 0; i < px.size(); ++i) px[i] = fizmo::graphics::Color(rgba[4 * i], rgba[4 * i + 1], rgba[4 * i + 2], rgba[4 * i + 3]);
+    std::vector<fizmo::colors::Color> px(static_cast<std::size_t>(width) * height);
+    for (std::size_t i = 0; i < px.size(); ++i) px[i] = fizmo::colors::Color(rgba[4 * i], rgba[4 * i + 1], rgba[4 * i + 2], rgba[4 * i + 3]);
     return BitmapImage(width, height, std::move(px));
 }
 
@@ -60,14 +60,14 @@ BitmapImage::BitmapImage(const std::string& filename) {
             const unsigned char blue = row_buffer[buffer_pos];
             const unsigned char green = row_buffer[buffer_pos + 1];
             const unsigned char red = row_buffer[buffer_pos + 2];
-            m_pixels[y * m_width + x] = fizmo::graphics::Color(red, green, blue);
+            m_pixels[y * m_width + x] = fizmo::colors::Color(red, green, blue);
         }
     }
 
     if (!file.good()) { throw std::runtime_error("Error occurred while reading BMP file"); }
 }
 
-void BitmapImage::fill_area(const unsigned int x1, const unsigned int y1, const unsigned int x2, const unsigned int y2, const fizmo::graphics::Color& color) {
+void BitmapImage::fill_area(const unsigned int x1, const unsigned int y1, const unsigned int x2, const unsigned int y2, const fizmo::colors::Color& color) {
     m_version.touch();
     if (is_valid_range(x1, y1) && is_valid_range(x2, y2)) {
         for (unsigned int y = y1; y <= y2; ++y) {
@@ -76,7 +76,7 @@ void BitmapImage::fill_area(const unsigned int x1, const unsigned int y1, const 
     }
 }
 
-void BitmapImage::change_background(const fizmo::graphics::Color& color) {
+void BitmapImage::change_background(const fizmo::colors::Color& color) {
     m_version.touch();
     for (unsigned int i = 0; i < m_width; ++i) {
         for (unsigned int j = 0; j < m_height; ++j) { m_pixels[j * m_width + i] = color; }
@@ -137,7 +137,7 @@ bool BitmapImage::save_to_file(const std::string& filename_input) {
 
     for (unsigned int y = m_height - 1; y < m_height; y--) { 
         for (unsigned int x = 0; x < m_width; x++) {
-            const fizmo::graphics::Color& pixel = get_pixel(x, y);
+            const fizmo::colors::Color& pixel = get_pixel(x, y);
 
             unsigned char color[3] = {
                 static_cast<unsigned char>(pixel.blue()),
@@ -158,7 +158,7 @@ bool BitmapImage::save_to_file(const std::string& filename_input) {
 
 void BitmapImage::change_width_stretch(const unsigned int new_width) {
     if (new_width == 0) { throw std::runtime_error("Invalid new width: " + std::to_string(new_width)); }
-    std::vector<fizmo::graphics::Color> new_pixels(new_width * m_height);
+    std::vector<fizmo::colors::Color> new_pixels(new_width * m_height);
     double x_ratio = static_cast<double>(m_width) / new_width;
         
     for (unsigned int y = 0; y < m_height; y++) {
@@ -182,7 +182,7 @@ void BitmapImage::change_width_proportional(const unsigned int new_width) {
 
 void BitmapImage::change_height_stretch(const unsigned int new_height) {
     if (new_height == 0) { throw std::runtime_error("Invalid new height: " + std::to_string(new_height)); }
-    std::vector<fizmo::graphics::Color> new_pixels(m_width * new_height);
+    std::vector<fizmo::colors::Color> new_pixels(m_width * new_height);
     double y_ratio = static_cast<double>(m_height) / new_height;
         
     for (unsigned int y = 0; y < new_height; y++) {

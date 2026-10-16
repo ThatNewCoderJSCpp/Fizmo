@@ -5,7 +5,7 @@ namespace fizmo {
 namespace system {
 namespace detail {
 
-void FrameAccumulator::add(const windows::FrameStats& s) {
+void FrameAccumulator::add(const graphics::FrameStats& s) {
     ++m_frames;
     if (s.interval_ms > 0.0 && m_intervals.size() < kMaxSamples) m_intervals.push_back(s.interval_ms);
     m_cpu_sum += s.cpu_ms;
@@ -69,7 +69,7 @@ void Relay::reset() noexcept {
     m_close  = nullptr;
 }
 
-void Relay::on_frame(const windows::Renderer& r, const windows::FrameStats& s) noexcept {
+void Relay::on_frame(const graphics::Renderer& r, const graphics::FrameStats& s) noexcept {
     std::lock_guard<std::mutex> lk(m_mutex);
     if (!m_frame) return;
     try { m_frame(r, s); } catch (...) {}

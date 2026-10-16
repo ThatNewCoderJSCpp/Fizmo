@@ -7,7 +7,7 @@
 #include <cstdint>
 
 namespace fizmo {
-namespace windows {
+namespace graphics {
 namespace detail {
 namespace gfx {
 
@@ -674,7 +674,7 @@ inline constexpr std::uint32_t kUpscaleFrag[] = {
 
 } // namespace gfx
 } // namespace detail
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo
 
 #endif // FIZMO_GPU_SHADERS_HPP

@@ -1773,7 +1773,7 @@ private:
         text::TextRasterizer& raster = text::shared_text_rasterizer();
         if (!raster.ready()) return;
 
-        auto make_rich = [&](const TextRun& r, const graphics::Color& color) {
+        auto make_rich = [&](const TextRun& r, const colors::Color& color) {
             text::TextStyle ts(r.st.font_size * scale, color);
             ts.set_weight(static_cast<text::FontWeight>(std::max(100, std::min(900, (r.st.font_weight + 50) / 100 * 100))));
             if (r.st.italic) ts.set_italic(true);
@@ -1795,7 +1795,7 @@ private:
             r.px = cx;
             r.py = cy;
             r.chunk = chunk;
-            const text::TextInk ink = raster.measure(make_rich(r, graphics::Color(255, 255, 255)));
+            const text::TextInk ink = raster.measure(make_rich(r, colors::Color(255, 255, 255)));
             r.width = ink.advance / scale;
             cx += r.width;
         }
@@ -1826,7 +1826,7 @@ private:
             PaintSource paint;
             if (!make_paint(r.st.fill, r.st, r.st.fill_opacity * opacity, ctm, dummy, paint, 0)) continue;
             const bool solid = paint.solid;
-            const graphics::Color draw_color = solid ? graphics::Color(static_cast<std::uint8_t>(std::lround(paint.color.r * 255)), static_cast<std::uint8_t>(std::lround(paint.color.g * 255)), static_cast<std::uint8_t>(std::lround(paint.color.b * 255)), 255) : graphics::Color(255, 255, 255, 255);
+            const colors::Color draw_color = solid ? colors::Color(static_cast<std::uint8_t>(std::lround(paint.color.r * 255)), static_cast<std::uint8_t>(std::lround(paint.color.g * 255)), static_cast<std::uint8_t>(std::lround(paint.color.b * 255)), 255) : colors::Color(255, 255, 255, 255);
             const text::RichText rt = make_rich(r, draw_color);
             const text::TextInk ink = raster.measure(rt);
             const double fs = r.st.font_size * scale;
@@ -1834,7 +1834,7 @@ private:
             const int tw = static_cast<int>(std::ceil(ink.advance + 2 * pad));
             const int th = static_cast<int>(std::ceil(ink.line_ascent + ink.line_descent + 2 * pad));
             if (tw <= 0 || th <= 0 || static_cast<long long>(tw) * th > (1ll << 26)) continue;
-            BitmapImage tmp(static_cast<unsigned>(tw), static_cast<unsigned>(th), std::vector<graphics::Color>(static_cast<std::size_t>(tw) * static_cast<std::size_t>(th), graphics::Color(0, 0, 0, 0)));
+            BitmapImage tmp(static_cast<unsigned>(tw), static_cast<unsigned>(th), std::vector<colors::Color>(static_cast<std::size_t>(tw) * static_cast<std::size_t>(th), colors::Color(0, 0, 0, 0)));
             const double base_v = pad + ink.line_ascent;
             raster.draw(tmp, rt, static_cast<float>(pad), static_cast<float>(base_v));
             const std::vector<std::uint8_t> px = tmp.to_rgba();

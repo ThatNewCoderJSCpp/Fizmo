@@ -830,7 +830,7 @@ private:
     }
 
 public:
-    WindowImpl(IWindowEventHandler* handler, const fizmo::graphics::Color& color) : ImplBase(handler), hwnd(NULL) {
+    WindowImpl(IWindowEventHandler* handler, const fizmo::colors::Color& color) : ImplBase(handler), hwnd(NULL) {
         win32::enable_dpi_awareness();
         backgroundBrush = CreateSolidBrush(RGB(color.red(), color.green(), color.blue()));
         wc = WNDCLASSEXW{};
@@ -887,7 +887,11 @@ public:
 
     bool is_open() const noexcept override { return m_open; }
 
-    void set_background_color(const fizmo::graphics::Color& color) noexcept override {
+    void close() noexcept override {
+        if (m_open && hwnd) DestroyWindow(hwnd);
+    }
+
+    void set_background_color(const fizmo::colors::Color& color) noexcept override {
         if (backgroundBrush) DeleteObject(backgroundBrush);
         backgroundBrush = CreateSolidBrush(RGB(color.red(), color.green(), color.blue()));
         if (hwnd) InvalidateRect(hwnd, NULL, TRUE);
@@ -1040,7 +1044,7 @@ public:
         ReleaseDC(nullptr, dc);
         if (!color || !bits) return false;
         std::uint32_t* dst = static_cast<std::uint32_t*>(bits);
-        const graphics::Color* src = img.pixels().data();
+        const colors::Color* src = img.pixels().data();
         for (int i = 0; i < w * h; ++i) dst[i] = (static_cast<std::uint32_t>(src[i].alpha()) << 24) | (static_cast<std::uint32_t>(src[i].red()) << 16) | (static_cast<std::uint32_t>(src[i].green()) << 8) | src[i].blue();
         HBITMAP mask = CreateBitmap(w, h, 1, 1, nullptr);
         ICONINFO ii{};

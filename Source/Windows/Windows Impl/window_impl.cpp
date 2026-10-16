@@ -11,7 +11,7 @@ namespace fizmo {
 namespace windows {
 namespace detail {
 
-std::unique_ptr<ImplBase> make_window_impl(IWindowEventHandler* handler, const graphics::Color& background) {
+std::unique_ptr<ImplBase> make_window_impl(IWindowEventHandler* handler, const colors::Color& background) {
 #if defined(OS_WINDOWS) || defined(OS_LINUX)
     return std::make_unique<WindowImpl>(handler, background);
 #else

@@ -1,11 +1,11 @@
 #ifndef FIZMO_GPU_SHADERS_EXTRA_HPP
 #define FIZMO_GPU_SHADERS_EXTRA_HPP
 
-#include "../../GPU/types.hpp"
+#include "../../../GPU/types.hpp"
 #include <cstdint>
 
 namespace fizmo {
-namespace windows {
+namespace graphics {
 namespace detail {
 namespace extra_glsl {
 
@@ -347,7 +347,7 @@ inline ::fizmo::gpu::ShaderDesc sprite2d_vert() noexcept {
 
 } // namespace extra_glsl
 } // namespace detail
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo
 
 #endif // FIZMO_GPU_SHADERS_EXTRA_HPP

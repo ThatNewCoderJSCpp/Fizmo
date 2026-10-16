@@ -76,7 +76,7 @@ private:
     bool            m_erase   = true;
 
     std::function<void(void*)> m_paint_callback;
-    fizmo::graphics::Color     m_background;
+    fizmo::colors::Color     m_background;
 
     unsigned int m_last_width  = 0;
     unsigned int m_last_height = 0;
@@ -184,7 +184,7 @@ private:
     void dispatch(WindowEvent& e) noexcept { m_event_handler->dispatch_event(e); }
 
 public:
-    WindowImpl(IWindowEventHandler* handler, const fizmo::graphics::Color& color) noexcept : ImplBase(handler), m_background(color) {
+    WindowImpl(IWindowEventHandler* handler, const fizmo::colors::Color& color) noexcept : ImplBase(handler), m_background(color) {
         XInitThreads();
         m_display = XOpenDisplay(nullptr);
 
@@ -272,7 +272,18 @@ public:
 
     bool is_open() const noexcept override { return m_open; }
 
-    void set_background_color(const fizmo::graphics::Color& color) noexcept override {
+    void close() noexcept override {
+        if (!m_open) return;
+        m_open = false;
+        if (m_window) {
+            XDestroyWindow(m_display, m_window);
+            m_window = 0;
+            m_handle.window = 0;
+            XFlush(m_display);
+        }
+    }
+
+    void set_background_color(const fizmo::colors::Color& color) noexcept override {
         m_background = color;
         if (!m_display || !m_window || !m_erase) return;
         XSetWindowBackground(m_display, m_window, x11::pack_color(DefaultVisual(m_display, m_screen), color.red(), color.green(), color.blue()));
@@ -497,7 +508,7 @@ public:
         if (!xi) return false;
         xi->xhot = static_cast<unsigned int>(std::max(0, std::min(hot_x, static_cast<int>(img.width()) - 1)));
         xi->yhot = static_cast<unsigned int>(std::max(0, std::min(hot_y, static_cast<int>(img.height()) - 1)));
-        const graphics::Color* px = img.pixels().data();
+        const colors::Color* px = img.pixels().data();
 
         for (std::size_t i = 0, n = static_cast<std::size_t>(img.width()) * img.height(); i < n; ++i) {
             const unsigned int a = px[i].alpha();

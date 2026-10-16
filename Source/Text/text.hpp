@@ -73,11 +73,11 @@ struct MarkupOptions {
     bool lists = true;
     bool color_tags = true;
     bool jumbo_emoji = true;
-    graphics::Color code_background = graphics::Color(47, 49, 54, 255);
-    graphics::Color code_color = graphics::Color(220, 221, 222, 255);
-    graphics::Color spoiler_color = graphics::Color(32, 34, 37, 255);
-    graphics::Color link_color = graphics::Color(0, 168, 252, 255);
-    graphics::Color quote_bar_color = graphics::Color(79, 84, 92, 255);
+    colors::Color code_background = colors::Color(47, 49, 54, 255);
+    colors::Color code_color = colors::Color(220, 221, 222, 255);
+    colors::Color spoiler_color = colors::Color(32, 34, 37, 255);
+    colors::Color link_color = colors::Color(0, 168, 252, 255);
+    colors::Color quote_bar_color = colors::Color(79, 84, 92, 255);
     std::string     code_family = "monospace";
 };
 
@@ -116,8 +116,8 @@ public:
     friend Text operator+(Text a, const Text& b) { return a.add(b); }
 
     Text& style(const TextStyle& s) { m_base = s; return *this; }
-    Text& color(const graphics::Color& c) { m_base.set_fg_color(c); return *this; }
-    Text& background(const graphics::Color& c) { m_base.set_bg_color(c); return *this; }
+    Text& color(const colors::Color& c) { m_base.set_fg_color(c); return *this; }
+    Text& background(const colors::Color& c) { m_base.set_bg_color(c); return *this; }
     Text& size(double px) { m_base.set_size(px); return *this; }
     Text& font(Font f) { m_base.set_font(f); return *this; }
     Text& family(std::string name) { m_family = std::move(name); return *this; }
@@ -126,8 +126,8 @@ public:
     Text& underline(bool u = true) { m_base.set_underline(u); return *this; }
     Text& strikethrough(bool s = true) { m_base.set_strikethrough(s); return *this; }
     Text& opacity(float o) { m_base.set_opacity(o); return *this; }
-    Text& shadow(double dx, double dy, double blur, const graphics::Color& c = graphics::Color(0, 0, 0, 128)) { m_base.set_shadow(dx, dy, blur, c); return *this; }
-    Text& outline(const graphics::Color& c, double width) { m_base.set_outline_color(c); m_base.set_outline_width(width); return *this; }
+    Text& shadow(double dx, double dy, double blur, const colors::Color& c = colors::Color(0, 0, 0, 128)) { m_base.set_shadow(dx, dy, blur, c); return *this; }
+    Text& outline(const colors::Color& c, double width) { m_base.set_outline_color(c); m_base.set_outline_width(width); return *this; }
 
     Text& at(float x, float y) noexcept { m_x = x; m_y = y; m_positioned = true; return *this; }
     Text& position(float x, float y) noexcept { return at(x, y); }
@@ -166,8 +166,8 @@ public:
     TextBox   measure(TextRasterizer& raster) const;
     TextBox   measure() const;
 
-    images::BitmapImage render(float padding = 2.0f, const graphics::Color& background = graphics::Color(255, 255, 255, 0)) const;
-    images::BitmapImage render(TextRasterizer& raster, float padding, const graphics::Color& background) const;
+    images::BitmapImage render(float padding = 2.0f, const colors::Color& background = colors::Color(255, 255, 255, 0)) const;
+    images::BitmapImage render(TextRasterizer& raster, float padding, const colors::Color& background) const;
 
     std::uint32_t link_at(const FancyText& layout, float x, float y) const noexcept;
 

@@ -55,7 +55,7 @@ std::size_t utf8_next(std::string_view s, std::size_t i) noexcept {
 
 bool is_word_char(char c) noexcept { return std::isalnum(static_cast<unsigned char>(c)) || static_cast<unsigned char>(c) >= 0x80; }
 
-bool parse_color_token(std::string_view v, graphics::Color& out) {
+bool parse_color_token(std::string_view v, colors::Color& out) {
     std::string s;
     for (char c : v) if (!std::isspace(static_cast<unsigned char>(c))) s.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
     if (s.empty()) return false;
@@ -64,11 +64,11 @@ bool parse_color_token(std::string_view v, graphics::Color& out) {
         const std::string h = s.substr(1);
         for (char c : h) if (hex(c) < 0) return false;
         if (h.size() == 3 || h.size() == 4) {
-            out = graphics::Color(static_cast<std::uint8_t>(hex(h[0]) * 17), static_cast<std::uint8_t>(hex(h[1]) * 17), static_cast<std::uint8_t>(hex(h[2]) * 17), static_cast<std::uint8_t>(h.size() == 4 ? hex(h[3]) * 17 : 255));
+            out = colors::Color(static_cast<std::uint8_t>(hex(h[0]) * 17), static_cast<std::uint8_t>(hex(h[1]) * 17), static_cast<std::uint8_t>(hex(h[2]) * 17), static_cast<std::uint8_t>(h.size() == 4 ? hex(h[3]) * 17 : 255));
             return true;
         }
         if (h.size() == 6 || h.size() == 8) {
-            out = graphics::Color(static_cast<std::uint8_t>(hex(h[0]) * 16 + hex(h[1])), static_cast<std::uint8_t>(hex(h[2]) * 16 + hex(h[3])), static_cast<std::uint8_t>(hex(h[4]) * 16 + hex(h[5])), static_cast<std::uint8_t>(h.size() == 8 ? hex(h[6]) * 16 + hex(h[7]) : 255));
+            out = colors::Color(static_cast<std::uint8_t>(hex(h[0]) * 16 + hex(h[1])), static_cast<std::uint8_t>(hex(h[2]) * 16 + hex(h[3])), static_cast<std::uint8_t>(hex(h[4]) * 16 + hex(h[5])), static_cast<std::uint8_t>(h.size() == 8 ? hex(h[6]) * 16 + hex(h[7]) : 255));
             return true;
         }
         return false;
@@ -84,7 +84,7 @@ bool parse_color_token(std::string_view v, graphics::Color& out) {
     };
     for (const auto& n : named) {
         if (s == n.name) {
-            out = graphics::Color(static_cast<std::uint8_t>(n.rgb >> 16), static_cast<std::uint8_t>(n.rgb >> 8), static_cast<std::uint8_t>(n.rgb));
+            out = colors::Color(static_cast<std::uint8_t>(n.rgb >> 16), static_cast<std::uint8_t>(n.rgb >> 8), static_cast<std::uint8_t>(n.rgb));
             return true;
         }
     }
@@ -270,7 +270,7 @@ private:
             }
 
             if (m_opt.spoilers && s.compare(i, 2, "||") == 0) {
-                const graphics::Color sc = m_opt.spoiler_color;
+                const colors::Color sc = m_opt.spoiler_color;
                 if (wrap(2, "||", false, [&](TextStyle& t) { t.set_bg_color(sc); t.set_fg_color(sc); })) continue;
             }
 
@@ -340,7 +340,7 @@ private:
                     if (close == std::string_view::npos) continue;
                     TextStyle inner = style;
                     std::string fam = family;
-                    graphics::Color col;
+                    colors::Color col;
                     const std::string t = tag;
                     if (t == "color") { if (!parse_color_token(value, col)) continue; inner.set_fg_color(col); }
                     else if (t == "bg") { if (!parse_color_token(value, col)) continue; inner.set_bg_color(col); }
@@ -626,7 +626,7 @@ struct Item {
     EmojiImage   image;
     float        width = 0, ascent = 0, descent = 0;
     bool         space_only = false;
-    graphics::Color bar_color;
+    colors::Color bar_color;
 };
 
 TextStyle resolved_style(const TextStyle& base, const TextStyle& over) {
@@ -971,7 +971,7 @@ FancyText Text::layout(TextRasterizer& raster) const {
                 Item it;
                 it.kind = Item::Bar;
                 const TextStyle st = resolved_style(m_base, seg.style);
-                it.bar_color = st.fg_color().is_set() ? st.fg_color().value() : graphics::Color(79, 84, 92);
+                it.bar_color = st.fg_color().is_set() ? st.fg_color().value() : colors::Color(79, 84, 92);
                 it.width = static_cast<float>(std::max(4.0, st.size() * 0.25) + st.size() * 0.5);
                 it.style = st;
                 items.push_back(std::move(it));
@@ -1222,7 +1222,7 @@ FancyText Text::layout(TextRasterizer& raster) const {
 
             if (it.kind == Item::Math) {
                 out.append(it.math, lx, y);
-                if (it.link >= 0) out.add_rect(lx, y - it.ascent, it.width, it.ascent + it.descent, graphics::Color(0, 0, 0, 0), static_cast<std::uint32_t>(it.link));
+                if (it.link >= 0) out.add_rect(lx, y - it.ascent, it.width, it.ascent + it.descent, colors::Color(0, 0, 0, 0), static_cast<std::uint32_t>(it.link));
                 lx += it.width;
                 ++k;
                 continue;
@@ -1259,7 +1259,7 @@ FancyText Text::layout(TextRasterizer& raster) const {
             if (m > k + 1 || trailing_line_end) measure_run(raster, run);
             const std::uint32_t tag = it.link >= 0 ? static_cast<std::uint32_t>(it.link) : kNoFancyTag;
             out.add_run(lx, y, make_run(run.text, run.style, run.family), tag);
-            if (it.link >= 0) out.add_rect(lx, y - run.ascent, run.width, run.ascent + run.descent, graphics::Color(0, 0, 0, 0), tag);
+            if (it.link >= 0) out.add_rect(lx, y - run.ascent, run.width, run.ascent + run.descent, colors::Color(0, 0, 0, 0), tag);
             lx += run.width + (it.text.back() == ' ' ? justify_extra : 0.0f);
             k = m;
         }
@@ -1286,9 +1286,9 @@ TextBox Text::measure(TextRasterizer& raster) const {
     return b;
 }
 
-images::BitmapImage Text::render(float padding, const graphics::Color& background) const { return render(shared_text_rasterizer(), padding, background); }
+images::BitmapImage Text::render(float padding, const colors::Color& background) const { return render(shared_text_rasterizer(), padding, background); }
 
-images::BitmapImage Text::render(TextRasterizer& raster, float padding, const graphics::Color& background) const {
+images::BitmapImage Text::render(TextRasterizer& raster, float padding, const colors::Color& background) const {
     const FancyText ft = layout(raster);
     return fancy_text_image(ft, raster, padding, background);
 }
@@ -1326,7 +1326,7 @@ void draw_animated_frame(images::BitmapImage& img, const FancyImage& item, float
                     if (sx0 < 0) continue;
                     const double wx = std::min(u1, sx0 + 1.0) - std::max(u0, static_cast<double>(sx0));
                     if (wx <= 0) continue;
-                    const graphics::Color& c = src[static_cast<std::size_t>(sy0) * fw + static_cast<std::size_t>(sx0)];
+                    const colors::Color& c = src[static_cast<std::size_t>(sy0) * fw + static_cast<std::size_t>(sx0)];
                     const double w = wx * wy, a = c.alpha() / 255.0;
                     acc[0] += w * c.red() * a;
                     acc[1] += w * c.green() * a;
@@ -1337,7 +1337,7 @@ void draw_animated_frame(images::BitmapImage& img, const FancyImage& item, float
             }
             if (area <= 0 || acc[3] <= 0) continue;
             const double alpha = acc[3] / area;
-            const graphics::Color col(static_cast<std::uint8_t>(std::lround(std::min(255.0, acc[0] / acc[3]))), static_cast<std::uint8_t>(std::lround(std::min(255.0, acc[1] / acc[3]))), static_cast<std::uint8_t>(std::lround(std::min(255.0, acc[2] / acc[3]))), 255);
+            const colors::Color col(static_cast<std::uint8_t>(std::lround(std::min(255.0, acc[0] / acc[3]))), static_cast<std::uint8_t>(std::lround(std::min(255.0, acc[1] / acc[3]))), static_cast<std::uint8_t>(std::lround(std::min(255.0, acc[2] / acc[3]))), 255);
             const double coverage = (cx1 - cx0) * (cy1 - cy0);
             fancy_detail::blend(img, px, py, col, static_cast<float>(alpha * coverage * item.opacity));
         }

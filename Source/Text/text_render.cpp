@@ -51,7 +51,7 @@ struct TextLayoutCache {
 } // namespace detail
 } // namespace text
 
-namespace windows {
+namespace graphics {
 
 namespace {
 
@@ -132,5 +132,5 @@ text::TextMetrics Renderer::measure_text(const text::Text& t, unsigned int max_w
     }
 }
 
-} // namespace windows
+} // namespace graphics
 } // namespace fizmo

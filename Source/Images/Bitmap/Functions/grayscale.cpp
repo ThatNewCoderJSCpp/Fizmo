@@ -12,7 +12,7 @@ BitmapImage adjust_grayscale(const BitmapImage& source, double percentage) noexc
     
     for (unsigned int y = 0; y < source.height(); y++) {
         for (unsigned int x = 0; x < source.width(); x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             
             const unsigned int gray = static_cast<int>(
                 0.299 * pixel.red() +
@@ -24,7 +24,7 @@ BitmapImage adjust_grayscale(const BitmapImage& source, double percentage) noexc
             const unsigned int newGreen = static_cast<unsigned int>(pixel.green() * (1 - factor) + gray * factor);
             const unsigned int newBlue = static_cast<unsigned int>(pixel.blue() * (1 - factor) + gray * factor);
             
-            result.set_pixel(x, y, fizmo::graphics::Color(newRed, newGreen, newBlue));
+            result.set_pixel(x, y, fizmo::colors::Color(newRed, newGreen, newBlue));
         }
     }
     
@@ -49,7 +49,7 @@ BitmapImage adjust_grayscale(
     
     for (unsigned int y = y_1; y < y_2; y++) {
         for (unsigned int x = x_1; x < x_2; x++) {
-            const fizmo::graphics::Color& pixel = source.get_pixel(x, y);
+            const fizmo::colors::Color& pixel = source.get_pixel(x, y);
             
             const unsigned int gray = static_cast<int>(
                 0.299 * pixel.red() +
@@ -61,7 +61,7 @@ BitmapImage adjust_grayscale(
             const unsigned int newGreen = static_cast<unsigned int>(pixel.green() * (1 - factor) + gray * factor);
             const unsigned int newBlue = static_cast<unsigned int>(pixel.blue() * (1 - factor) + gray * factor);
             
-            result.set_pixel(x, y, fizmo::graphics::Color(newRed, newGreen, newBlue));
+            result.set_pixel(x, y, fizmo::colors::Color(newRed, newGreen, newBlue));
         }
     }
     

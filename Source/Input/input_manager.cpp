@@ -2,30 +2,30 @@
 #include "input_manager.hpp"
 
 namespace fizmo {
-namespace windows {
+namespace input {
 
-void InputManager::connect(WindowEventHandler& handler) noexcept {
+void InputManager::connect(windows::WindowEventHandler& handler) noexcept {
     disconnect();
     m_handler = &handler;
-    listen(WindowEventType::KeyPress,         [this](const WindowEvent& e) { on_key_press(e); });
-    listen(WindowEventType::KeyRelease,       [this](const WindowEvent& e) { on_key_release(e); });
-    listen(WindowEventType::MouseClick,       [this](const WindowEvent& e) { on_mouse_click(e); });
-    listen(WindowEventType::MouseRelease,     [this](const WindowEvent& e) { on_mouse_release(e); });
-    listen(WindowEventType::MouseMove,        [this](const WindowEvent& e) { on_mouse_move(e); });
-    listen(WindowEventType::MouseScroll,      [this](const WindowEvent& e) { on_mouse_scroll(e); });
-    listen(WindowEventType::MouseDoubleClick, [this](const WindowEvent& e) { on_mouse_double_click(e); });
-    listen(WindowEventType::WindowBlur,       [this](const WindowEvent&) { reset(); });
-    listen(WindowEventType::TextInput,        [this](const WindowEvent& e) { m_text += e.text; });
-    listen(WindowEventType::TextEditing,      [this](const WindowEvent& e) { m_composition = e.text; m_composition_cursor = e.text_cursor; });
-    listen(WindowEventType::TouchDown,        [this](const WindowEvent& e) { on_touch(e, 0); });
-    listen(WindowEventType::TouchMove,        [this](const WindowEvent& e) { on_touch(e, 1); });
-    listen(WindowEventType::TouchUp,          [this](const WindowEvent& e) { on_touch(e, 2); });
-    listen(WindowEventType::TouchCancel,      [this](const WindowEvent& e) { on_touch(e, 2); });
-    listen(WindowEventType::PenDown,          [this](const WindowEvent& e) { on_touch(e, 0); });
-    listen(WindowEventType::PenMove,          [this](const WindowEvent& e) { if (e.in_contact) on_touch(e, 1); });
-    listen(WindowEventType::PenUp,            [this](const WindowEvent& e) { on_touch(e, 2); });
-    listen(WindowEventType::Gesture,          [this](const WindowEvent& e) { m_gestures.push_back(e.gesture); });
-    listen(WindowEventType::FilesDropped,     [this](const WindowEvent& e) { m_dropped.insert(m_dropped.end(), e.paths.begin(), e.paths.end()); });
+    listen(windows::WindowEventType::KeyPress,         [this](const windows::WindowEvent& e) { on_key_press(e); });
+    listen(windows::WindowEventType::KeyRelease,       [this](const windows::WindowEvent& e) { on_key_release(e); });
+    listen(windows::WindowEventType::MouseClick,       [this](const windows::WindowEvent& e) { on_mouse_click(e); });
+    listen(windows::WindowEventType::MouseRelease,     [this](const windows::WindowEvent& e) { on_mouse_release(e); });
+    listen(windows::WindowEventType::MouseMove,        [this](const windows::WindowEvent& e) { on_mouse_move(e); });
+    listen(windows::WindowEventType::MouseScroll,      [this](const windows::WindowEvent& e) { on_mouse_scroll(e); });
+    listen(windows::WindowEventType::MouseDoubleClick, [this](const windows::WindowEvent& e) { on_mouse_double_click(e); });
+    listen(windows::WindowEventType::WindowBlur,       [this](const windows::WindowEvent&) { reset(); });
+    listen(windows::WindowEventType::TextInput,        [this](const windows::WindowEvent& e) { m_text += e.text; });
+    listen(windows::WindowEventType::TextEditing,      [this](const windows::WindowEvent& e) { m_composition = e.text; m_composition_cursor = e.text_cursor; });
+    listen(windows::WindowEventType::TouchDown,        [this](const windows::WindowEvent& e) { on_touch(e, 0); });
+    listen(windows::WindowEventType::TouchMove,        [this](const windows::WindowEvent& e) { on_touch(e, 1); });
+    listen(windows::WindowEventType::TouchUp,          [this](const windows::WindowEvent& e) { on_touch(e, 2); });
+    listen(windows::WindowEventType::TouchCancel,      [this](const windows::WindowEvent& e) { on_touch(e, 2); });
+    listen(windows::WindowEventType::PenDown,          [this](const windows::WindowEvent& e) { on_touch(e, 0); });
+    listen(windows::WindowEventType::PenMove,          [this](const windows::WindowEvent& e) { if (e.in_contact) on_touch(e, 1); });
+    listen(windows::WindowEventType::PenUp,            [this](const windows::WindowEvent& e) { on_touch(e, 2); });
+    listen(windows::WindowEventType::Gesture,          [this](const windows::WindowEvent& e) { m_gestures.push_back(e.gesture); });
+    listen(windows::WindowEventType::FilesDropped,     [this](const windows::WindowEvent& e) { m_dropped.insert(m_dropped.end(), e.paths.begin(), e.paths.end()); });
 }
 
 void InputManager::disconnect() noexcept {
@@ -79,14 +79,14 @@ bool InputManager::physical_of_name(const std::string& name, bool (InputManager:
     return (this->*query)(logical);
 }
 
-auto InputManager::resolve(input::Key k, const WindowEvent& e) noexcept -> input::Key {
+auto InputManager::resolve(input::Key k, const windows::WindowEvent& e) noexcept -> input::Key {
     if (k != input::Key::Unknown) return k;
     if (e.physical_key != input::Key::Unknown) return e.physical_key;
     if (e.logical_key != input::Key::Unknown) return e.logical_key;
     return input::key_from_name(e.key_name);
 }
 
-void InputManager::on_key_press(const WindowEvent& e) {
+void InputManager::on_key_press(const windows::WindowEvent& e) {
     m_mods = e.mods;
     const input::Key physical = resolve(e.physical_key, e);
     const input::Key logical = resolve(e.logical_key, e);
@@ -114,7 +114,7 @@ void InputManager::on_key_press(const WindowEvent& e) {
     press_logical(logical, p);
 }
 
-void InputManager::on_key_release(const WindowEvent& e) {
+void InputManager::on_key_release(const windows::WindowEvent& e) {
     m_mods = e.mods;
     const std::size_t p = index(resolve(e.physical_key, e));
     if (p == 0 || !m_down.test(p)) return;
@@ -144,7 +144,7 @@ void InputManager::release_logical(input::Key logical) {
     }
 }
 
-void InputManager::on_mouse_click(const WindowEvent& e) {
+void InputManager::on_mouse_click(const windows::WindowEvent& e) {
     m_mouse_x = static_cast<int>(e.x);
     m_mouse_y = static_cast<int>(e.y);
     if (e.button >= kButtons) return;
@@ -155,7 +155,7 @@ void InputManager::on_mouse_click(const WindowEvent& e) {
     }
 }
 
-void InputManager::on_mouse_release(const WindowEvent& e) {
+void InputManager::on_mouse_release(const windows::WindowEvent& e) {
     m_mouse_x = static_cast<int>(e.x);
     m_mouse_y = static_cast<int>(e.y);
     if (e.button >= kButtons) return;
@@ -165,26 +165,26 @@ void InputManager::on_mouse_release(const WindowEvent& e) {
     }
 }
 
-void InputManager::on_mouse_move(const WindowEvent& e) {
+void InputManager::on_mouse_move(const windows::WindowEvent& e) {
     m_mouse_x = static_cast<int>(e.x);
     m_mouse_y = static_cast<int>(e.y);
     m_mouse_dx += e.dx;
     m_mouse_dy += e.dy;
 }
 
-void InputManager::on_mouse_scroll(const WindowEvent& e) {
+void InputManager::on_mouse_scroll(const windows::WindowEvent& e) {
     m_scroll_delta += e.scroll_delta;
     m_scroll_x += e.scroll_x;
     m_scroll_y += e.scroll_y != 0.0f ? e.scroll_y : static_cast<float>(e.scroll_delta);
 }
 
-void InputManager::on_mouse_double_click(const WindowEvent& e) {
+void InputManager::on_mouse_double_click(const windows::WindowEvent& e) {
     m_mouse_x = static_cast<int>(e.x);
     m_mouse_y = static_cast<int>(e.y);
     if (e.button < kButtons) m_mouse_double.set(e.button);
 }
 
-void InputManager::on_touch(const WindowEvent& e, int phase) {
+void InputManager::on_touch(const windows::WindowEvent& e, int phase) {
     auto it = m_touches.begin();
     while (it != m_touches.end() && it->id != e.pointer_id) ++it;
 
@@ -208,5 +208,5 @@ void InputManager::on_touch(const WindowEvent& e, int phase) {
     it->pressure = e.pressure;
 }
 
-} // namespace windows
+} // namespace input
 } // namespace fizmo

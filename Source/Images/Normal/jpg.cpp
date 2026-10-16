@@ -69,7 +69,7 @@ auto JPEGtoBMPConverter::convert_to_bmp() -> fizmo::images::BitmapImage {
                 throw std::runtime_error("Unsupported number of components: " + std::to_string(m_num_components));
             }
 
-            bmp_image.set_pixel(x, y, fizmo::graphics::Color(r, g, b));
+            bmp_image.set_pixel(x, y, fizmo::colors::Color(r, g, b));
         }
     }
 

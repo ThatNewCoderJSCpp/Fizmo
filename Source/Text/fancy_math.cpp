@@ -4,13 +4,13 @@
 namespace fizmo {
 namespace text {
 
-auto MathTheme::set_role_color(mathtext::GlyphRole role, const graphics::Color& c) noexcept -> MathTheme& {
+auto MathTheme::set_role_color(mathtext::GlyphRole role, const colors::Color& c) noexcept -> MathTheme& {
     role_colors[static_cast<std::size_t>(role)] = c;
     role_color_set[static_cast<std::size_t>(role)] = true;
     return *this;
 }
 
-auto MathTheme::color_for(mathtext::GlyphRole role) const noexcept -> graphics::Color {
+auto MathTheme::color_for(mathtext::GlyphRole role) const noexcept -> colors::Color {
     const std::size_t i = static_cast<std::size_t>(role);
     if (i < role_color_set.size() && role_color_set[i]) return role_colors[i];
     return role == mathtext::GlyphRole::Error ? error_color : color;
@@ -87,7 +87,7 @@ namespace fizmo {
 namespace text {
 namespace detail {
 
-void fingerprint_color(std::string& out, const graphics::Color& c) {
+void fingerprint_color(std::string& out, const colors::Color& c) {
     const std::uint8_t rgba[4] = { c.red(), c.green(), c.blue(), c.alpha() };
     fingerprint_bytes(out, rgba, 4);
 }

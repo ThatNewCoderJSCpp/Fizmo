@@ -123,6 +123,128 @@ std::vector<NodeId> depth_first_search(const Traversable<W>& g, NodeId start) {
     return depth_first_search(g, start, [](NodeId, std::size_t) {});
 }
 
+struct Traversal {
+    std::vector<NodeId>      order;
+    std::vector<std::size_t> depth;
+    std::vector<NodeId>      parent;
+    bool                     has_cycle = false;
+    std::vector<NodeId>      cycle;
+
+    bool reached(NodeId id) const { return id < depth.size() && depth[id] != unreachable; }
+    std::size_t depth_of(NodeId id) const { return id < depth.size() ? depth[id] : unreachable; }
+
+    std::vector<NodeId> path_to(NodeId id) const {
+        std::vector<NodeId> out;
+        if (!reached(id)) return out;
+        for (NodeId at = id; at != invalid_node; at = parent[at]) out.push_back(at);
+        std::reverse(out.begin(), out.end());
+        return out;
+    }
+};
+
+template <class W>
+Traversal breadth_first_traversal(const Traversable<W>& g, NodeId start) {
+    Traversal out;
+    const std::size_t n = g.node_count();
+    out.depth.assign(n, unreachable);
+    out.parent.assign(n, invalid_node);
+    if (!g.contains(start) || !g.passable(start)) return out;
+    std::deque<NodeId> queue{start};
+    out.depth[start] = 0;
+
+    while (!queue.empty()) {
+        const NodeId at = queue.front();
+        queue.pop_front();
+        out.order.push_back(at);
+        g.for_each_edge(at, [&](const Edge<W>& e) {
+            if (e.to < n && out.depth[e.to] == unreachable) {
+                out.depth[e.to]  = out.depth[at] + 1;
+                out.parent[e.to] = at;
+                queue.push_back(e.to);
+            }
+        });
+    }
+
+    return out;
+}
+
+template <class W>
+Traversal depth_first_traversal(const Traversable<W>& g, NodeId start) {
+    Traversal out;
+    const std::size_t n = g.node_count();
+    out.depth.assign(n, unreachable);
+    out.parent.assign(n, invalid_node);
+    if (!g.contains(start) || !g.passable(start)) return out;
+    const bool directed = g.is_directed();
+    std::vector<unsigned char> state(n, 0);
+    std::vector<std::pair<NodeId, std::vector<Edge<W>>>> stack;
+    std::vector<std::size_t>   cursor;
+    std::vector<bool>          skipped_parent;
+
+    auto enter = [&](NodeId id, NodeId from, std::size_t d) {
+        state[id]      = 1;
+        out.depth[id]  = d;
+        out.parent[id] = from;
+        out.order.push_back(id);
+        stack.emplace_back(id, g.edges_from(id));
+        cursor.push_back(0);
+        skipped_parent.push_back(false);
+    };
+
+    auto record_cycle = [&](NodeId from, NodeId to) {
+        if (out.has_cycle) return;
+        out.has_cycle = true;
+        std::vector<NodeId> loop;
+        for (NodeId at = from; at != invalid_node; at = out.parent[at]) {
+            loop.push_back(at);
+            if (at == to) break;
+        }
+        std::reverse(loop.begin(), loop.end());
+        loop.push_back(to);
+        out.cycle = loop;
+    };
+
+    enter(start, invalid_node, 0);
+    while (!stack.empty()) {
+        const NodeId at   = stack.back().first;
+        std::size_t& i    = cursor.back();
+        const auto&  next = stack.back().second;
+        if (i < next.size()) {
+            const Edge<W> e = next[i++];
+            if (e.to >= n || !g.passable(e.to)) continue;
+            if (!directed && e.to == out.parent[at] && !skipped_parent.back()) {
+                skipped_parent.back() = true;
+                continue;
+            }
+            if (state[e.to] == 0) {
+                enter(e.to, at, out.depth[at] + 1);
+            } else if (state[e.to] == 1) {
+                record_cycle(at, e.to);
+            }
+        } else {
+            state[at] = 2;
+            stack.pop_back();
+            cursor.pop_back();
+            skipped_parent.pop_back();
+        }
+    }
+
+    return out;
+}
+
+template <class W>
+std::vector<NodeId> find_cycle(const Traversable<W>& g) {
+    const std::size_t n = g.node_count();
+    std::vector<bool> covered(n, false);
+    for (NodeId s = 0; s < n; ++s) {
+        if (covered[s] || !g.passable(s)) continue;
+        const Traversal t = depth_first_traversal(g, s);
+        if (t.has_cycle) return t.cycle;
+        for (NodeId id : t.order) covered[id] = true;
+    }
+    return std::vector<NodeId>();
+}
+
 template <class W>
 std::vector<NodeId> depth_first_postorder(const Traversable<W>& g, NodeId start) {
     std::vector<NodeId> order;

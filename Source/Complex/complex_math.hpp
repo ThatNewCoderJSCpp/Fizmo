@@ -3,6 +3,7 @@
 
 #include "complex.hpp"
 
+#include <cmath>
 #include <vector>
 
 namespace fizmo {
@@ -223,6 +224,9 @@ FIZMO_CXT_TERNARY(lerch_transcendent)
 FIZMO_CXT_TERNARY(carlson_rf)
 FIZMO_CXT_TERNARY(carlson_rd)
 FIZMO_CXT_TERNARY(carlson_rg)
+FIZMO_CXT_TERNARY(incomplete_beta)
+FIZMO_CXT_TERNARY(regularized_beta)
+FIZMO_CXT_TERNARY(regularized_beta_complement)
 FIZMO_CXT_TERNARY(elliptic_pi)
 
 template <class T>
@@ -389,6 +393,47 @@ Complex<T> unity_root(std::size_t n, std::size_t k) {
         return cxfn::BigComplex(math::cos(theta, c.real()), math::sin(theta, c.imaginary()));
     }, true);
 }
+
+namespace cxfn {
+
+template <class T>
+T part_floor(const T& x) {
+    if constexpr (std::is_floating_point<T>::value) return std::floor(x);
+    else return math::floor(x);
+}
+
+template <class T>
+T part_ceiling(const T& x) {
+    if constexpr (std::is_floating_point<T>::value) return std::ceil(x);
+    else return math::ceiling(x);
+}
+
+template <class T>
+T part_round(const T& x) {
+    if constexpr (std::is_floating_point<T>::value) return std::round(x);
+    else return math::round(x);
+}
+
+template <class T>
+T part_trunc(const T& x) {
+    if constexpr (std::is_floating_point<T>::value) return std::trunc(x);
+    else return math::trunc(x);
+}
+
+template <class T>
+T part_fraction(const T& x) {
+    if constexpr (std::is_floating_point<T>::value) return x - std::trunc(x);
+    else return math::fractional_part(x);
+}
+
+} // namespace cxfn
+
+template <class T> Complex<T> floor(const Complex<T>& z) { return Complex<T>(cxfn::part_floor(z.real()), cxfn::part_floor(z.imaginary())); }
+template <class T> Complex<T> ceiling(const Complex<T>& z) { return Complex<T>(cxfn::part_ceiling(z.real()), cxfn::part_ceiling(z.imaginary())); }
+template <class T> Complex<T> round(const Complex<T>& z) { return Complex<T>(cxfn::part_round(z.real()), cxfn::part_round(z.imaginary())); }
+template <class T> Complex<T> trunc(const Complex<T>& z) { return Complex<T>(cxfn::part_trunc(z.real()), cxfn::part_trunc(z.imaginary())); }
+template <class T> Complex<T> fractional_part(const Complex<T>& z) { return Complex<T>(cxfn::part_fraction(z.real()), cxfn::part_fraction(z.imaginary())); }
+template <class T> Complex<T> lambert_w(const Complex<T>& z) { return lambert_w(z, std::int64_t(0)); }
 
 template <class T, scalar::if_real<T> = 0>
 std::vector<Complex<T>> unity_roots(std::size_t n) {

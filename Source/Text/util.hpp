@@ -85,7 +85,7 @@ enum class TextTransform : std::uint8_t {
     None       = 0,
     Uppercase  = 1,
     Lowercase  = 2,
-    Capitalize = 3   // first letter of each word
+    Capitalize = 3   
 };
 
 enum class WritingDirection : std::uint8_t {

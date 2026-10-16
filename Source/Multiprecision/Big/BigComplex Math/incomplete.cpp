@@ -397,6 +397,235 @@ BC fib_complex(const BC& z, bool luc, const BCC& ctx) {
     return drive(ctx, [&](std::size_t w) { return fib_raw(Z, luc, w); });
 }
 
+CX one_minus(const CX& z, std::size_t w) { return sub(CX(BF::one()), z, w); }
+
+double safe_l2(const CX& z) { return is_zero(z) ? ninf : l2(z); }
+
+struct BetaPart {
+    CX     v;
+    double l2max = ninf;
+    double err   = ninf;
+    bool   ok    = false;
+};
+
+BetaPart beta_series(const CX& z, const CX& a, const CX& b, std::size_t wb) {
+    BetaPart out;
+    const double az = magd(z);
+    const double am = magd(a);
+    const double bm = magd(b);
+    CX t(BF::one());
+    CX s = recip(a, wb);
+    Term T;
+    T.add(safe_l2(s));
+    std::uint64_t K = 0;
+
+    for (std::uint64_t n = 0;; ++n) {
+        if (n + 1 >= term_cap) return out;
+        const BF k(n + 1);
+        t = div(mul(mul(t, sub(CX(k), b, wb), wb), z, wb), k, wb);
+        const CX d = add_real(a, k, wb);
+        if (is_zero(d)) return out;
+        const CX term = div(t, d, wb);
+        s = add(s, term, wb);
+        const double lt = safe_l2(term);
+        T.add(lt);
+        K = n + 1;
+        if (is_zero(t)) break;
+        const double nd = static_cast<double>(n) + 1.0;
+        if (nd < am + bm + 4.0) continue;
+        const double r = az * (1.0 + (bm + 1.0) / nd);
+        if (!(r < 0.95)) continue;
+        if (lt + std::log2(r / (1.0 - r)) + 2.0 < T.l2max - static_cast<double>(wb)) break;
+    }
+
+    const CX p = pow(z, a, wb);
+    out.v     = mul(p, s, wb);
+    out.l2max = T.l2max + safe_l2(p);
+    out.err   = out.l2max + std::log2(static_cast<double>(K) + 4.0) + 4.0 - static_cast<double>(wb);
+    out.ok    = finite(out.v);
+    return out;
+}
+
+CX scale_by(const CX& h, double f, std::size_t w) { return mul(h, BF(static_cast<long double>(f)), w); }
+
+BetaPart beta_walk(const CX& z, const CX& a, const CX& b, std::size_t wb) {
+    BetaPart out;
+    const CX half(BF::one().scaled_pow2(-1));
+    BetaPart start = beta_series(half, a, b, wb);
+    if (!start.ok) return out;
+
+    const CX ab2 = sub(sub(CX(BF(2)), a, wb), b, wb);
+    CX f = pow(CX(BF(2)), ab2, wb);
+    CX B = start.v;
+    CX t = half;
+    double l2max = start.l2max;
+    double err   = start.err;
+    std::uint64_t work = 0;
+
+    const CX am1 = add_real(a, BF(-1), wb);
+    const CX bm1 = add_real(b, BF(-1), wb);
+    const CX P1  = ab2;
+
+    std::vector<CX> path;
+    if (z.im.is_zero()) {
+        const BF dist = BF::sub(z.re, half.re, wctx(wb)).abs();
+        BF lift = BF::compare(dist, BF::one()) == BF::ordering::less ? BF::one() : dist;
+        if (BF::compare(z.re, half.re) == BF::ordering::greater) lift = -lift;
+        path.push_back(CX(half.re, lift));
+        path.push_back(CX(z.re, lift));
+    }
+    path.push_back(z);
+
+    for (const CX& target : path) {
+        for (std::uint64_t guard = 0;; ++guard) {
+            if (guard > 200000) return out;
+            const CX hf = sub(target, t, wb);
+            if (is_zero(hf)) break;
+            const double L   = magd(hf);
+            const double rad = std::min(magd(t), magd(one_minus(t, wb)));
+            const double cap = 0.4 * rad;
+            const bool   last = L <= cap;
+            const CX h = last ? hf : scale_by(hf, cap / L, wb);
+
+            const CX omt  = one_minus(t, wb);
+            const CX Q0i  = recip(mul(t, omt, wb), wb);
+            const CX Q1   = sub(omt, t, wb);
+            const CX P0   = sub(mul(am1, omt, wb), mul(bm1, t, wb), wb);
+
+            CX cprev;
+            CX c     = f;
+            CX hn(BF::one());
+            CX fsum  = f;
+            CX I     = mul(f, h, wb);
+            double lmax  = safe_l2(I);
+            int    small = 0;
+
+            for (std::uint64_t n = 0;; ++n) {
+                if (n > 4 * wb + 200) return out;
+                const BF nb(n);
+                const CX lhs = mul(sub(P0, mul(Q1, nb, wb), wb), c, wb);
+                const CX rhs = mul(add_real(P1, BF(static_cast<std::int64_t>(n) - 1), wb), cprev, wb);
+                const CX cn  = div(mul(add(lhs, rhs, wb), Q0i, wb), BF(n + 1), wb);
+                cprev = c;
+                c     = cn;
+                hn    = mul(hn, h, wb);
+                const CX fterm = mul(c, hn, wb);
+                fsum = add(fsum, fterm, wb);
+                const CX iterm = div(mul(fterm, h, wb), BF(n + 2), wb);
+                I = add(I, iterm, wb);
+                const double li = safe_l2(iterm);
+                if (li > lmax) lmax = li;
+                ++work;
+                const double lf = std::max(safe_l2(fterm), li);
+                if (lf < std::max(lmax, safe_l2(fsum)) - static_cast<double>(wb) - 4.0) {
+                    if (++small >= 2) break;
+                } else {
+                    small = 0;
+                }
+            }
+
+            B = add(B, I, wb);
+            f = fsum;
+            t = last ? target : add(t, h, wb);
+            l2max = std::max({l2max, lmax, safe_l2(B)});
+            err   = lsum(err, lmax + 3.0 - static_cast<double>(wb));
+            if (last) break;
+        }
+    }
+
+    out.v     = B;
+    out.l2max = l2max;
+    out.err   = lsum(err, l2max + std::log2(static_cast<double>(work) + 8.0) + 6.0 - static_cast<double>(wb));
+    out.ok    = finite(out.v);
+    return out;
+}
+
+bool pole_at(const CX& a) {
+    if (!a.im.is_zero() || !a.re.is_integer()) return false;
+    return a.re.signbit() || a.re.is_zero();
+}
+
+BetaPart beta_value(const CX& z, const CX& a, const CX& b, std::size_t wb) {
+    if (pole_at(a)) return BetaPart{};
+    if (magd(z) <= 0.6) return beta_series(z, a, b, wb);
+    const CX w = one_minus(z, wb);
+
+    if (magd(w) <= 0.6 && !pole_at(b)) {
+        BetaPart tail = beta_series(w, b, a, wb);
+        if (!tail.ok) return tail;
+        const BC full = beta(bc(a), bc(b), bcc(wb));
+        if (full.is_undefined() || !full.is_finite()) return BetaPart{};
+        const CX F = cx(full);
+        BetaPart out;
+        out.v     = sub(F, tail.v, wb);
+        out.l2max = std::max(tail.l2max, safe_l2(F));
+        out.err   = lsum(tail.err, out.l2max + 2.0 - static_cast<double>(wb));
+        out.ok    = finite(out.v);
+        return out;
+    }
+
+    return beta_walk(z, a, b, wb);
+}
+
+enum class BetaKind { plain, regularized, complement };
+
+Approx beta_raw(const CX& z, const CX& a, const CX& b, BetaKind kind, std::size_t w) {
+    const std::size_t wb = w + 20 + extra_bits(z) + extra_bits(a) + extra_bits(b);
+    BetaPart part = kind == BetaKind::complement ? beta_value(one_minus(z, wb), b, a, wb) : beta_value(z, a, b, wb);
+    if (!part.ok) return approx_undefined();
+    if (kind == BetaKind::plain) return approx(part.v, part.err);
+    const BC full = beta(bc(a), bc(b), bcc(wb));
+    if (full.is_undefined() || !full.is_finite() || full.is_zero()) return approx_undefined();
+    const CX F = cx(full);
+    const CX v = div(part.v, F, wb);
+    const double e = lsum(part.err - safe_l2(F), safe_l2(v) + 2.0 - static_cast<double>(wb)) + 1.0;
+    return approx(v, e);
+}
+
+bool real_beta_domain(const BC& z, const BC& a, const BC& b) {
+    if (!z.imaginary().is_zero() || !a.imaginary().is_zero() || !b.imaginary().is_zero()) return false;
+    const BF& x = z.real();
+    if (x.signbit() || BF::compare(x, BF::one()) == BF::ordering::greater) return false;
+    return !a.real().signbit() && !a.real().is_zero() && !b.real().signbit() && !b.real().is_zero();
+}
+
+BC beta_complex(const BC& z, const BC& a, const BC& b, BetaKind kind, const BCC& ctx) {
+    if (z.is_indeterminate() || a.is_indeterminate() || b.is_indeterminate()) return BC::indeterminate();
+    if (z.is_undefined() || a.is_undefined() || b.is_undefined()) return BC::undefined();
+    if (!z.is_finite() || !a.is_finite() || !b.is_finite()) return BC::undefined();
+
+    if (real_beta_domain(z, a, b)) {
+        const BF& x = z.real();
+        const BF& p = a.real();
+        const BF& q = b.real();
+        if (kind == BetaKind::plain) return BC(math::incomplete_beta(x, p, q, ctx.real()), BF::zero());
+        if (kind == BetaKind::regularized) return BC(math::regularized_beta(x, p, q, ctx.real()), BF::zero());
+        return BC(math::regularized_beta_complement(x, p, q, ctx.real()), BF::zero());
+    }
+
+    const CX Z = cx(z), A = cx(a), Bb = cx(b);
+    const bool at_zero = is_zero(Z);
+    const bool at_one  = Z.im.is_zero() && BF::compare(Z.re, BF::one()) == BF::ordering::equal;
+
+    if (at_zero || at_one) {
+        const bool empty = (kind == BetaKind::complement) ? at_one : at_zero;
+        const CX&  edge  = (kind == BetaKind::complement) ? Bb : A;
+        if (empty) {
+            if (edge.re.signbit() || edge.re.is_zero()) return BC::undefined();
+            return BC::zero();
+        }
+        if (kind != BetaKind::plain) {
+            const CX& other = (kind == BetaKind::complement) ? A : Bb;
+            if (other.re.signbit() || other.re.is_zero()) return BC::undefined();
+            return BC(BF::one(), BF::zero());
+        }
+        if (Bb.re.signbit() || Bb.re.is_zero()) return BC::undefined();
+        return beta(a, b, ctx);
+    }
+
+    return drive(ctx, [&](std::size_t w) { return beta_raw(Z, A, Bb, kind, w); });
+}
+
 } // namespace
 
 BC lower_incomplete_gamma(const BC& a, const BC& z, const BCC& ctx) { return incomplete(a, z, Kind::lower, false, ctx); }
@@ -406,6 +635,10 @@ BC regularized_gamma_q(const BC& a, const BC& z, const BCC& ctx) { return incomp
 
 BC fibonacci(const BC& z, const BCC& ctx) { return fib_complex(z, false, ctx); }
 BC lucas(const BC& z, const BCC& ctx) { return fib_complex(z, true, ctx); }
+
+BC incomplete_beta(const BC& z, const BC& a, const BC& b, const BCC& ctx) { return beta_complex(z, a, b, BetaKind::plain, ctx); }
+BC regularized_beta(const BC& z, const BC& a, const BC& b, const BCC& ctx) { return beta_complex(z, a, b, BetaKind::regularized, ctx); }
+BC regularized_beta_complement(const BC& z, const BC& a, const BC& b, const BCC& ctx) { return beta_complex(z, a, b, BetaKind::complement, ctx); }
 
 } // namespace cxsf
 } // namespace math

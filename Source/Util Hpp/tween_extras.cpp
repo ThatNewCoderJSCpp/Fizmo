@@ -4,9 +4,9 @@
 namespace fizmo {
 
 template <>
-inline graphics::Color tween_lerp<graphics::Color>(const graphics::Color& a, const graphics::Color& b, double t) {
+inline colors::Color tween_lerp<colors::Color>(const colors::Color& a, const colors::Color& b, double t) {
     auto m = [t](std::uint8_t x, std::uint8_t y) { return static_cast<std::uint8_t>(std::max(0.0, std::min(255.0, std::round(x + (static_cast<double>(y) - x) * t)))); };
-    return graphics::Color(m(a.red(), b.red()), m(a.green(), b.green()), m(a.blue(), b.blue()), m(a.alpha(), b.alpha()));
+    return colors::Color(m(a.red(), b.red()), m(a.green(), b.green()), m(a.blue(), b.blue()), m(a.alpha(), b.alpha()));
 }
 
 void TweenSequence::begin_step() {

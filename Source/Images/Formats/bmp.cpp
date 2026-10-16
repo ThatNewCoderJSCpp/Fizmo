@@ -297,7 +297,7 @@ bool encode_bmp(const BitmapImage& img, std::vector<std::uint8_t>& out, bool alp
 
     for (unsigned y = h; y-- > 0;) {
         for (unsigned x = 0; x < w; ++x) {
-            const graphics::Color& c = px[static_cast<std::size_t>(y) * w + x];
+            const colors::Color& c = px[static_cast<std::size_t>(y) * w + x];
             std::uint8_t* p = row.data() + static_cast<std::size_t>(x) * bpp;
             p[0] = c.blue();
             p[1] = c.green();
