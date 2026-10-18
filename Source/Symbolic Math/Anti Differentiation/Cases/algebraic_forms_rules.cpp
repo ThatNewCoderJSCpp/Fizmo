@@ -75,7 +75,7 @@ bool match_ax2_plus_b(MathExpressionNode* n, std::uint64_t vid, QuadraticDecomp&
 
 MathExpression symbolic_sqrt_free(MathExpressionManager& mgr, MathExpressionNode* n) {
     if (!n) return mgr.constant(0.0);
-    if (n->type == NodeType::Constant && n->constant > 0.0) return mgr.constant(std::sqrt(n->constant));
+    if (n->type == NodeType::Constant && n->constant > 0.0) return mgr.unary(NodeType::Sqrt, MathExpression(n));
     if (n->type == NodeType::Power
         && n->power.exponent->type == NodeType::Constant
         && std::abs(n->power.exponent->constant - 2.0) < 1e-13
@@ -88,7 +88,7 @@ MathExpression symbolic_sqrt_free(MathExpressionManager& mgr, MathExpressionNode
         && n->binary.right->power.exponent->type == NodeType::Constant
         && std::abs(n->binary.right->power.exponent->constant - 2.0) < 1e-13
     ) {
-        MathExpression sc = mgr.constant(std::sqrt(n->binary.left->constant));
+        MathExpression sc = mgr.unary(NodeType::Sqrt, MathExpression(n->binary.left));
         MathExpression sa = mgr.unary(NodeType::AbsoluteValue, MathExpression(n->binary.right->power.base));
         return mgr.binary(NodeType::Multiply, sc, sa);
     }
@@ -172,15 +172,14 @@ MathExpression try_algebraic_forms(
     auto build_a = [&](const QuadraticDecomp& q) -> MathExpression {
         double absA = std::abs(q.x2_coeff);
         if (!std::isnan(q.free_val)) {
-            double r = std::abs(q.free_val) / absA;
-            return K(std::sqrt(r));
+            return sq(dv(K(std::abs(q.free_val)), K(absA)));
         }
         MathExpression s = symbolic_sqrt_free(mgr, q.free_node);
         if (std::abs(absA - 1.0) < 1e-13) return s;
-        return dv(s, K(std::sqrt(absA)));
+        return dv(s, sq(K(absA)));
     };
 
-    auto sqrt_absA = [&](const QuadraticDecomp& q) -> MathExpression { return K(std::sqrt(std::abs(q.x2_coeff))); };
+    auto sqrt_absA = [&](const QuadraticDecomp& q) -> MathExpression { return sq(K(std::abs(q.x2_coeff))); };
 
     if (n->type == NodeType::Divide && is_free(n->binary.left, vid)) {
         MathExpressionNode* sqrt_inner = nullptr;

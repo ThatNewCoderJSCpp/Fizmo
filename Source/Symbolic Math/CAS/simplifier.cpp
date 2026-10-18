@@ -5,6 +5,439 @@ namespace math {
 namespace cas {
 namespace symbols {
 
+namespace {
+
+constexpr std::int64_t factorial_limit   = 1000;
+constexpr std::int64_t sequence_limit    = 100000;
+constexpr std::int64_t polynomial_limit  = 10000;
+constexpr std::int64_t binomial_limit    = 10000;
+
+BigInt factorial_of(std::int64_t n) {
+    BigInt r = BigInt::one();
+    for (std::int64_t i = 2; i <= n; ++i) r *= BigInt(i);
+    return r;
+}
+
+BigInt falling_product(std::int64_t n, std::int64_t k) {
+    BigInt r = BigInt::one();
+    for (std::int64_t i = 0; i < k; ++i) r *= BigInt(n - i);
+    return r;
+}
+
+void fib_lucas_pair(std::int64_t n, BigInt& f, BigInt& l) {
+    BigInt a = BigInt::zero();
+    BigInt b = BigInt::one();
+
+    for (int bit = 62; bit >= 0; --bit) {
+        BigInt c = a * ((b << 1) - a);
+        BigInt d = a * a + b * b;
+
+        if ((n >> bit) & 1) {
+            a = std::move(d);
+            b = c + a;
+        } else {
+            a = std::move(c);
+            b = std::move(d);
+        }
+    }
+
+    f = a;
+    l = (b << 1) - a;
+}
+
+bool rational_int(const Rational& q, std::int64_t& out) { return q.to_int64(out); }
+
+std::int64_t mod_positive(std::int64_t a, std::int64_t m) {
+    std::int64_t r = a % m;
+    return r < 0 ? r + m : r;
+}
+
+} // namespace
+
+bool MathExpressionSimplifier::is_const(const MathExpressionNode* n, double val) const {
+    if (n->type != NodeType::Constant || n->constant != val) return false;
+    if (!n->exact) return true;
+    const Rational& q = *n->exact;
+    if (val == std::floor(val) && std::fabs(val) < 9.0e15) return q.is_integer() && q.numerator() == BigInt(static_cast<std::int64_t>(val));
+    return q == Rational::from_double_exact(val);
+}
+
+int MathExpressionSimplifier::known_sign(const MathExpressionNode* n) const {
+    if (is_const(n)) return qv(n).sign();
+    if (is_named_const(n)) return 1;
+    if (is_pos_inf(n)) return 1;
+    if (is_neg_inf(n)) return -1;
+    return 0;
+}
+
+bool MathExpressionSimplifier::pi_multiple(const MathExpressionNode* n, Rational& r) const {
+    switch (n->type) {
+        case NodeType::Pi:
+            r = Rational(1);
+            return true;
+
+        case NodeType::Negate:
+            if (!pi_multiple(n->unary.child, r)) return false;
+            r = -r;
+            return true;
+
+        case NodeType::Multiply:
+            if (is_const(n->binary.left) && pi_multiple(n->binary.right, r)) { r = qv(n->binary.left) * r; return true; }
+            if (is_const(n->binary.right) && pi_multiple(n->binary.left, r)) { r = qv(n->binary.right) * r; return true; }
+            return false;
+
+        case NodeType::Divide:
+            if (is_const(n->binary.right) && !qv(n->binary.right).is_zero() && pi_multiple(n->binary.left, r)) { r = r / qv(n->binary.right); return true; }
+            return false;
+
+        default:
+            return false;
+    }
+}
+
+bool MathExpressionSimplifier::is_inv_e(const MathExpressionNode* n) const {
+    if (n->type == NodeType::Divide && is_const(n->binary.left, 1.0) && is_e(n->binary.right)) return true;
+    if (n->type == NodeType::Power && is_e(n->power.base) && is_const(n->power.exponent, -1.0)) return true;
+    if (n->type == NodeType::NaturalExp && is_const(n->unary.child, -1.0)) return true;
+    return false;
+}
+
+bool MathExpressionSimplifier::is_neg_inv_e(const MathExpressionNode* n) const {
+    if (n->type == NodeType::Negate) return is_inv_e(n->unary.child);
+    if (n->type == NodeType::Divide && is_const(n->binary.left, -1.0) && is_e(n->binary.right)) return true;
+    if (n->type == NodeType::Multiply) {
+        if (is_const(n->binary.left, -1.0) && is_inv_e(n->binary.right)) return true;
+        if (is_const(n->binary.right, -1.0) && is_inv_e(n->binary.left)) return true;
+    }
+    return false;
+}
+
+auto MathExpressionSimplifier::pi_times(const Rational& r) -> MathExpression {
+    if (r.is_zero()) return konst(Rational());
+    const bool neg = r.is_negative();
+    const Rational a = r.abs();
+    MathExpression body;
+
+    if (a.is_one()) {
+        body = pi_node();
+    } else if (a.is_integer()) {
+        body = mgr_.binary(NodeType::Multiply, konst(a), pi_node());
+    } else if (a.numerator().is_one()) {
+        body = mgr_.binary(NodeType::Divide, pi_node(), konst(Rational(a.denominator())));
+    } else {
+        body = mgr_.binary(NodeType::Divide, mgr_.binary(NodeType::Multiply, konst(Rational(a.numerator())), pi_node()), konst(Rational(a.denominator())));
+    }
+
+    return neg ? mgr_.unary(NodeType::Negate, body) : body;
+}
+
+auto MathExpressionSimplifier::scaled_sqrt(const Rational& a, std::int64_t s) -> MathExpression {
+    if (s == 1 || a.is_zero()) return konst(a);
+    const bool neg = a.is_negative();
+    const Rational m = a.abs();
+    MathExpression root = mgr_.unary(NodeType::Sqrt, konst(Rational(s)));
+    MathExpression body;
+
+    if (m.is_one()) {
+        body = root;
+    } else if (m.is_integer()) {
+        body = mgr_.binary(NodeType::Multiply, konst(m), root);
+    } else if (m.numerator().is_one()) {
+        body = mgr_.binary(NodeType::Divide, root, konst(Rational(m.denominator())));
+    } else {
+        body = mgr_.binary(NodeType::Divide, mgr_.binary(NodeType::Multiply, konst(Rational(m.numerator())), root), konst(Rational(m.denominator())));
+    }
+
+    return neg ? mgr_.unary(NodeType::Negate, body) : body;
+}
+
+auto MathExpressionSimplifier::make_exp(MathExpression child) -> MathExpression {
+    if (is_poison(child.get()))  return child;
+    if (is_const(child.get(), 0.0)) return konst(1.0);
+    if (is_const(child.get(), 1.0)) return e_node();
+    if (is_pos_inf(child.get())) return pos_inf();
+    if (is_neg_inf(child.get())) return konst(0.0);
+    if (child.get()->type == NodeType::NaturalLog) return MathExpression(child.get()->unary.child);
+    return mgr_.unary(NodeType::NaturalExp, child);
+}
+
+auto MathExpressionSimplifier::trig_at_pi_multiple(NodeType t, const Rational& r) -> MathExpression {
+    struct SqrtValue { Rational a; std::int64_t s; bool defined; };
+
+    auto sin_value = [](const Rational& x, SqrtValue& out) -> bool {
+        Rational six = x * Rational(6);
+        std::int64_t m = 0;
+
+        if (rational_int(six, m)) {
+            static const std::int64_t num[12] = { 0, 1, 1, 1, 1, 1, 0, -1, -1, -1, -1, -1 };
+            static const std::int64_t den[12] = { 1, 2, 2, 1, 2, 2, 1,  2,  2,  1,  2,  2 };
+            static const std::int64_t rad[12] = { 1, 1, 3, 1, 3, 1, 1,  1,  3,  1,  3,  1 };
+            const std::int64_t i = mod_positive(m, 12);
+            out = { Rational(BigInt(num[i]), BigInt(den[i])), rad[i], true };
+            return true;
+        }
+
+        Rational four = x * Rational(4);
+
+        if (rational_int(four, m)) {
+            const std::int64_t i = mod_positive(m, 8);
+            const std::int64_t sgn = (i == 1 || i == 3) ? 1 : -1;
+            out = { Rational(BigInt(sgn), BigInt(2)), 2, true };
+            return true;
+        }
+
+        return false;
+    };
+
+    auto recip = [](const SqrtValue& v) -> SqrtValue {
+        if (v.a.is_zero()) return { Rational(), 1, false };
+        return { (v.a * Rational(v.s)).reciprocal(), v.s, true };
+    };
+
+    auto quotient = [](const SqrtValue& n, const SqrtValue& d, SqrtValue& out) -> bool {
+        if (d.a.is_zero()) { out = { Rational(), 1, false }; return true; }
+        if (n.a.is_zero()) { out = { Rational(), 1, true }; return true; }
+
+        if (n.s == d.s) {
+            out = { n.a / d.a, 1, true };
+            return true;
+        }
+
+        if (d.s == 1) {
+            out = { n.a / d.a, n.s, true };
+            return true;
+        }
+
+        if (n.s == 1) {
+            out = { n.a / (d.a * Rational(d.s)), d.s, true };
+            return true;
+        }
+
+        return false;
+    };
+
+    SqrtValue s{}, c{};
+    if (!sin_value(r, s)) return MathExpression{};
+    if (!sin_value(r + Rational(BigInt(1), BigInt(2)), c)) return MathExpression{};
+    SqrtValue v{};
+
+    switch (t) {
+        case NodeType::Sin: v = s; break;
+        case NodeType::Cos: v = c; break;
+        case NodeType::Csc: v = recip(s); break;
+        case NodeType::Sec: v = recip(c); break;
+        case NodeType::Tan: if (!quotient(s, c, v)) return MathExpression{}; break;
+        case NodeType::Cot: if (!quotient(c, s, v)) return MathExpression{}; break;
+        default: return MathExpression{};
+    }
+
+    if (!v.defined) return undef();
+    return scaled_sqrt(v.a, v.s);
+}
+
+auto MathExpressionSimplifier::nan_check(MathExpression candidate, bool undefined_on_nan) -> MathExpression {
+    EvalContext ctx;
+    const double v = eval_node(candidate.get(), ctx);
+    if (std::isnan(v)) return undefined_on_nan ? undef() : nan_node();
+    return candidate;
+}
+
+auto MathExpressionSimplifier::gamma_exact(const Rational& x) -> MathExpression {
+    std::int64_t n = 0;
+
+    if (rational_int(x, n)) {
+        if (n <= 0) return nan_node();
+        if (n - 1 > factorial_limit) return MathExpression{};
+        return konst(Rational(factorial_of(n - 1)));
+    }
+
+    if (!x.is_half_integer()) return MathExpression{};
+    const Rational shifted = x - Rational(BigInt(1), BigInt(2));
+    std::int64_t k = 0;
+    if (!rational_int(shifted, k)) return MathExpression{};
+    if (k > factorial_limit / 2 || k < -factorial_limit / 2) return MathExpression{};
+    MathExpression sqrt_pi = mgr_.unary(NodeType::Sqrt, pi_node());
+    Rational coeff;
+
+    if (k >= 0) {
+        coeff = Rational(factorial_of(2 * k), Rational::int_pow(BigInt(4), static_cast<std::uint64_t>(k)) * factorial_of(k));
+    } else {
+        const std::int64_t m = -k;
+        BigInt num = Rational::int_pow(BigInt(4), static_cast<std::uint64_t>(m)) * factorial_of(m);
+        if (m & 1) num.negate_mutable();
+        coeff = Rational(num, factorial_of(2 * m));
+    }
+
+    if (coeff.is_one()) return sqrt_pi;
+    return mgr_.binary(NodeType::Multiply, konst(coeff), sqrt_pi);
+}
+
+auto MathExpressionSimplifier::fold_power_exact(const Rational& base, const Rational& exp) -> MathExpression {
+    std::int64_t k = 0;
+
+    if (rational_int(exp, k)) {
+        if (base.is_zero() && k < 0) return undef();
+        Rational out;
+        if (base.pow(k, out)) return konst(out);
+        return MathExpression{};
+    }
+
+    if (base.is_negative()) return nan_node();
+    std::int64_t p = 0, q = 0;
+    if (!Rational(exp.numerator()).to_int64(p) || !Rational(exp.denominator()).to_int64(q)) return MathExpression{};
+    Rational root;
+    if (!base.exact_root(static_cast<std::uint64_t>(q), root)) return MathExpression{};
+    Rational out;
+    if (root.pow(p, out)) return konst(out);
+    return MathExpression{};
+}
+
+auto MathExpressionSimplifier::fold_unary_exact(NodeType t, MathExpression child) -> MathExpression {
+    const MathExpressionNode* c = child.get();
+    Rational pr;
+
+    if (pi_multiple(c, pr)) {
+        MathExpression tv = trig_at_pi_multiple(t, pr);
+        if (tv) return tv;
+    }
+
+    if (!is_const(c)) return MathExpression{};
+    const Rational q = qv(c);
+    const Rational one(1);
+    const Rational half(BigInt(1), BigInt(2));
+
+    switch (t) {
+        case NodeType::AbsoluteValue:  return konst(q.abs());
+        case NodeType::Floor:          return konst(Rational(q.floor()));
+        case NodeType::Ceil:           return konst(Rational(q.ceil()));
+        case NodeType::Round:          return konst(Rational(q.round()));
+        case NodeType::Truncate:       return konst(Rational(q.trunc()));
+        case NodeType::IntegerPart:    return konst(Rational(q.trunc()));
+        case NodeType::FractionalPart: return konst(q.fractional_part());
+
+        case NodeType::Sin:
+        case NodeType::Cos:
+        case NodeType::Tan:
+        case NodeType::Csc:
+        case NodeType::Sec:
+        case NodeType::Cot:
+            if (q.is_zero()) return trig_at_pi_multiple(t, Rational());
+            return MathExpression{};
+
+        case NodeType::Arcsin:
+            if (q > one || q < -one) return undef();
+            if (q.is_zero()) return konst(Rational());
+            if (q == one)    return pi_times(half);
+            if (q == -one)   return pi_times(-half);
+            if (q == half)   return pi_times(Rational(BigInt(1), BigInt(6)));
+            if (q == -half)  return pi_times(Rational(BigInt(-1), BigInt(6)));
+            return MathExpression{};
+
+        case NodeType::Arccos:
+            if (q > one || q < -one) return undef();
+            if (q == one)    return konst(Rational());
+            if (q.is_zero()) return pi_times(half);
+            if (q == -one)   return pi_times(one);
+            if (q == half)   return pi_times(Rational(BigInt(1), BigInt(3)));
+            if (q == -half)  return pi_times(Rational(BigInt(2), BigInt(3)));
+            return MathExpression{};
+
+        case NodeType::Arctan:
+            if (q.is_zero()) return konst(Rational());
+            if (q == one)    return pi_times(Rational(BigInt(1), BigInt(4)));
+            if (q == -one)   return pi_times(Rational(BigInt(-1), BigInt(4)));
+            return MathExpression{};
+
+        case NodeType::Arccot:
+            if (q.is_zero()) return pi_times(half);
+            if (q == one)    return pi_times(Rational(BigInt(1), BigInt(4)));
+            if (q == -one)   return pi_times(Rational(BigInt(-1), BigInt(4)));
+            return MathExpression{};
+
+        case NodeType::Arccsc:
+            if (q < one && q > -one) return undef();
+            if (q == one)  return pi_times(half);
+            if (q == -one) return pi_times(-half);
+            return MathExpression{};
+
+        case NodeType::Arcsec:
+            if (q < one && q > -one) return undef();
+            if (q == one)  return konst(Rational());
+            if (q == -one) return pi_times(one);
+            return MathExpression{};
+
+        case NodeType::Sinh:
+        case NodeType::Tanh:
+        case NodeType::Arcsinh:
+            if (q.is_zero()) return konst(Rational());
+            return MathExpression{};
+
+        case NodeType::Cosh:
+        case NodeType::Sech:
+            if (q.is_zero()) return konst(one);
+            return MathExpression{};
+
+        case NodeType::Csch:
+        case NodeType::Coth:
+        case NodeType::Arccsch:
+            if (q.is_zero()) return undef();
+            return MathExpression{};
+
+        case NodeType::Arccosh:
+            if (q < one)  return undef();
+            if (q == one) return konst(Rational());
+            return MathExpression{};
+
+        case NodeType::Arctanh:
+            if (!(q < one && q > -one)) return undef();
+            if (q.is_zero()) return konst(Rational());
+            return MathExpression{};
+
+        case NodeType::Arcsech:
+            if (!q.is_positive() || q > one) return undef();
+            if (q == one) return konst(Rational());
+            return MathExpression{};
+
+        case NodeType::Arccoth:
+            if (!(q > one || q < -one)) return undef();
+            return MathExpression{};
+
+        default:
+            return MathExpression{};
+    }
+}
+
+auto MathExpressionSimplifier::fold_binary_exact(NodeType t, MathExpression l, MathExpression r) -> MathExpression {
+    if (!is_const(l.get()) || !is_const(r.get())) return MathExpression{};
+    const Rational a = qv(l.get());
+    const Rational b = qv(r.get());
+
+    switch (t) {
+        case NodeType::Modulo: {
+            if (b.is_zero()) return undef();
+            return konst(a - b * Rational((a / b).trunc()));
+        }
+
+        case NodeType::Root: {
+            if (b.is_zero()) return undef();
+            std::int64_t k = 0;
+            if (!rational_int(b, k)) return MathExpression{};
+            if (a.is_negative() && (k % 2 == 0)) return undef();
+            const std::uint64_t ak = k < 0 ? static_cast<std::uint64_t>(-k) : static_cast<std::uint64_t>(k);
+            Rational root;
+            if (!a.exact_root(ak, root)) return MathExpression{};
+            if (k < 0) {
+                if (root.is_zero()) return undef();
+                root = root.reciprocal();
+            }
+            return konst(root);
+        }
+
+        default:
+            return MathExpression{};
+    }
+}
+
 auto MathExpressionSimplifier::dominant_poison(MathExpressionNode* a, MathExpressionNode* b) const -> MathExpressionNode* {
     auto rank = [](NodeType t) -> int {
         if (t == NodeType::Undefined)     return 3;
@@ -35,6 +468,8 @@ auto MathExpressionSimplifier::simplify_node(MathExpressionNode* n) -> MathExpre
         case NodeType::NaN:
         case NodeType::Undefined:
         case NodeType::Invalid:
+        case NodeType::Pi:
+        case NodeType::EulerNumber:
             return MathExpression(n);
 
         case NodeType::AppliedFunction: return simplify_applied(n);
@@ -55,38 +490,38 @@ auto MathExpressionSimplifier::simplify_node(MathExpressionNode* n) -> MathExpre
         case NodeType::Sinc:       return simplify_sinc(n);
         case NodeType::NormalSinc: return simplify_normalsinc(n);
         case NodeType::Erf:
-        case NodeType::Erfc:       
+        case NodeType::Erfc:
             return simplify_erf_erfc(n);
-        case NodeType::Erfi:       return simplify_erfi(n); 
-        case NodeType::InverseErf: 
-        case NodeType::InverseErfc: 
-        case NodeType::InverseErfi:  
-            return simplify_inverse_erf_family(n); 
+        case NodeType::Erfi:       return simplify_erfi(n);
+        case NodeType::InverseErf:
+        case NodeType::InverseErfc:
+        case NodeType::InverseErfi:
+            return simplify_inverse_erf_family(n);
         case NodeType::ErfGeneralized:
-        case NodeType::ErfcGeneralized: 
+        case NodeType::ErfcGeneralized:
             return simplify_erf_generalized(n);
         case NodeType::Gamma:
-        case NodeType::Factorial: 
+        case NodeType::Factorial:
             return simplify_gamma_factorial(n);
         case NodeType::Digamma:
-        case NodeType::Trigamma:     
+        case NodeType::Trigamma:
             return simplify_digamma_trigamma(n);
-        case NodeType::BetaFunction: 
+        case NodeType::BetaFunction:
             return simplify_beta(n);
-        case NodeType::LambertW:     
+        case NodeType::LambertW:
             return simplify_lambert_w(n);
-        case NodeType::ChebyshevU:   
-        case NodeType::ChebyshevT:   
+        case NodeType::ChebyshevU:
+        case NodeType::ChebyshevT:
             return simplify_chebyshev(n);
-        case NodeType::ExponentialIntegral:            
+        case NodeType::ExponentialIntegral:
             return simplify_exp_integral(n);
-        case NodeType::LogarithmicIntegral:            
+        case NodeType::LogarithmicIntegral:
             return simplify_log_integral(n);
-        case NodeType::ExponentialIntegralGeneralized: 
+        case NodeType::ExponentialIntegralGeneralized:
             return simplify_exp_integral_gen(n);
-        case NodeType::LogarithmicIntegralGeneralized: 
+        case NodeType::LogarithmicIntegralGeneralized:
             return simplify_log_integral_gen(n);
-        case NodeType::BellPolynomial: 
+        case NodeType::BellPolynomial:
             return simplify_bell(n);
         case NodeType::SinIntegral:
         case NodeType::CosIntegral:
@@ -108,13 +543,13 @@ auto MathExpressionSimplifier::simplify_node(MathExpressionNode* n) -> MathExpre
             return simplify_spence(n);
         case NodeType::RogersL:
         case NodeType::RogersLR:
-            return simplify_spence(n);
+            return simplify_rogers(n);
         case NodeType::Gudermannian:
         case NodeType::InverseGudermannian:
             return simplify_gudermannian(n);
-        case NodeType::Combination: 
+        case NodeType::Combination:
             return simplify_combination(n);
-        case NodeType::Permutation: 
+        case NodeType::Permutation:
             return simplify_permutation(n);
         case NodeType::FibonacciSequence:
         case NodeType::LucasSequence:
@@ -122,8 +557,8 @@ auto MathExpressionSimplifier::simplify_node(MathExpressionNode* n) -> MathExpre
         case NodeType::FibonacciPolynomial:
         case NodeType::LucasPolynomial:
             return simplify_fib_lucas_poly(n);
-                
-        default: 
+
+        default:
             return simplify_generic(n);
     }
 }
@@ -131,30 +566,22 @@ auto MathExpressionSimplifier::simplify_node(MathExpressionNode* n) -> MathExpre
 auto MathExpressionSimplifier::rebuild_unary(NodeType t, MathExpressionNode* n) -> MathExpression {
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get())) return MathExpression(child.get());
-    if (is_const(child.get())) {
-        EvalContext ctx;
-        MathExpression tmp = mgr_.unary(t, child);
-        double v = eval_node(tmp.get(), ctx);
-        if (!std::isnan(v) && !std::isinf(v)) return konst(v);
-        if (std::isinf(v)) return v > 0 ? pos_inf() : neg_inf();
-        return undef();
-    }
-    return mgr_.unary(t, child);
+    if (MathExpression folded = fold_unary_exact(t, child)) return folded;
+    MathExpression result = mgr_.unary(t, child);
+    if (is_const(child.get()) || is_named_const(child.get())) return nan_check(result, true);
+    return result;
 }
 
 auto MathExpressionSimplifier::rebuild_binary(NodeType t, MathExpressionNode* n) -> MathExpression {
     MathExpression l = simplify_node(n->binary.left);
     MathExpression r = simplify_node(n->binary.right);
     if (auto p = propagate_poison2(l, r)) return p;
-    if (is_const(l.get()) && is_const(r.get())) {
-        EvalContext ctx;
-        MathExpression tmp = mgr_.binary(t, l, r);
-        double v = eval_node(tmp.get(), ctx);
-        if (!std::isnan(v) && !std::isinf(v)) return konst(v);
-        if (std::isinf(v)) return v > 0 ? pos_inf() : neg_inf();
-        return undef();
-    }
-    return mgr_.binary(t, l, r);
+    if (MathExpression folded = fold_binary_exact(t, l, r)) return folded;
+    MathExpression result = mgr_.binary(t, l, r);
+    const bool lc = is_const(l.get()) || is_named_const(l.get());
+    const bool rc = is_const(r.get()) || is_named_const(r.get());
+    if (lc && rc) return nan_check(result, true);
+    return result;
 }
 
 auto MathExpressionSimplifier::simplify_generic(MathExpressionNode* n) -> MathExpression {
@@ -166,9 +593,9 @@ auto MathExpressionSimplifier::simplify_generic(MathExpressionNode* n) -> MathEx
 auto MathExpressionSimplifier::simplify_negate(MathExpressionNode* n) -> MathExpression {
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get()))           return MathExpression(child.get());
-    if (is_const(child.get()))            return konst(-child.get()->constant);
+    if (is_const(child.get()))            return konst(-qv(child.get()));
     if (is_infinite(child.get()))         return negate_inf(child.get());
-    if (child.get()->type == NodeType::Negate) return MathExpression(child.get()->unary.child); 
+    if (child.get()->type == NodeType::Negate) return MathExpression(child.get()->unary.child);
     return mgr_.unary(NodeType::Negate, child);
 }
 
@@ -183,7 +610,7 @@ auto MathExpressionSimplifier::simplify_add(MathExpressionNode* n) -> MathExpres
         return is_infinite(l.get()) ? MathExpression(l.get()) : MathExpression(r.get());
     }
 
-    if (is_const(l.get()) && is_const(r.get())) return konst(l.get()->constant + r.get()->constant);
+    if (is_const(l.get()) && is_const(r.get())) return konst(qv(l.get()) + qv(r.get()));
     if (is_const(l.get(), 0.0)) return r;
     if (is_const(r.get(), 0.0)) return l;
 
@@ -231,8 +658,8 @@ auto MathExpressionSimplifier::simplify_add(MathExpressionNode* n) -> MathExpres
 
     if (r.get()->type == NodeType::Multiply) {
         auto* rl = r.get()->binary.left;
-        if (rl->type == NodeType::Constant && rl->constant < 0.0) {
-            MathExpression pos_const = konst(-rl->constant);
+        if (rl->type == NodeType::Constant && qv(rl).is_negative()) {
+            MathExpression pos_const = konst(-qv(rl));
             MathExpression pos_mul   = mgr_.binary(NodeType::Multiply, pos_const, MathExpression(r.get()->binary.right));
             return mgr_.binary(NodeType::Subtract, l, pos_mul);
         }
@@ -252,7 +679,7 @@ auto MathExpressionSimplifier::simplify_subtract(MathExpressionNode* n) -> MathE
         if (is_infinite(l.get())) return MathExpression(l.get());
         return negate_inf(r.get());
     }
-    if (is_const(l.get()) && is_const(r.get())) return konst(l.get()->constant - r.get()->constant);
+    if (is_const(l.get()) && is_const(r.get())) return konst(qv(l.get()) - qv(r.get()));
     if (is_const(r.get(), 0.0)) return l;
     if (is_const(l.get(), 0.0)) return mgr_.unary(NodeType::Negate, r);
     if (l.get() == r.get())     return konst(0.0);
@@ -290,21 +717,21 @@ auto MathExpressionSimplifier::simplify_multiply(MathExpressionNode* n) -> MathE
     if (is_infinite(l.get()) || is_infinite(r.get())) {
         auto check_zero_inf = [&](MathExpression& inf_side, MathExpression& other) -> MathExpression {
             if (is_const(other.get(), 0.0)) return indet();
-            if (is_const(other.get())) {
-                double c = other.get()->constant;
-                if (c > 0.0) return MathExpression(inf_side.get());
-                if (c < 0.0) return negate_inf(inf_side.get());
+            if (is_const(other.get()) || is_named_const(other.get())) {
+                const int s = known_sign(other.get());
+                if (s > 0) return MathExpression(inf_side.get());
+                if (s < 0) return negate_inf(inf_side.get());
             }
             if (is_infinite(other.get())) {
                 return inf_sign(inf_side.get()) * inf_sign(other.get()) > 0 ? pos_inf() : neg_inf();
             }
-            return MathExpression{};  
+            return MathExpression{};
         };
 
         MathExpression result = is_infinite(l.get()) ? check_zero_inf(l, r) : check_zero_inf(r, l);
         if (result) return result;
     }
-    if (is_const(l.get()) && is_const(r.get())) return konst(l.get()->constant * r.get()->constant);
+    if (is_const(l.get()) && is_const(r.get())) return konst(qv(l.get()) * qv(r.get()));
     if (is_const(l.get(), 0.0) || is_const(r.get(), 0.0)) return konst(0.0);
     if (is_const(l.get(),  1.0))  return r;
     if (is_const(r.get(),  1.0))  return l;
@@ -323,13 +750,13 @@ auto MathExpressionSimplifier::simplify_divide(MathExpressionNode* n) -> MathExp
         return konst(0.0);
     }
     if (is_infinite(l.get())) {
-        if (is_const(r.get())) {
-            double c = r.get()->constant;
-            if (c > 0.0) return MathExpression(l.get());
-            if (c < 0.0) return negate_inf(l.get());
+        if (is_const(r.get()) || is_named_const(r.get())) {
+            const int s = known_sign(r.get());
+            if (s > 0) return MathExpression(l.get());
+            if (s < 0) return negate_inf(l.get());
         }
     }
-    if (is_const(l.get()) && is_const(r.get()) && r.get()->constant != 0.0) return konst(l.get()->constant / r.get()->constant);
+    if (is_const(l.get()) && is_const(r.get())) return konst(qv(l.get()) / qv(r.get()));
     if (is_const(l.get(), 0.0)) return konst(0.0);
     if (is_const(r.get(), 1.0)) return l;
     if (l.get() == r.get())     return konst(1.0);
@@ -341,14 +768,11 @@ auto MathExpressionSimplifier::simplify_sign(MathExpressionNode* n) -> MathExpre
     if (is_poison(child.get())) return MathExpression(child.get());
     if (is_pos_inf(child.get())) return konst( 1.0);
     if (is_neg_inf(child.get())) return konst(-1.0);
-        
-    if (is_const(child.get())) {
-        double v = child.get()->constant;
-        if (v > 0.0) return konst( 1.0);
-        if (v < 0.0) return konst(-1.0);
-        return konst(0.0);
+
+    if (is_const(child.get()) || is_named_const(child.get())) {
+        return konst(Rational(known_sign(child.get())));
     }
-        
+
     if (child.get()->type == NodeType::Negate) {
         return mgr_.unary(NodeType::Negate, mgr_.unary(NodeType::Sign, MathExpression(child.get()->unary.child)));
     }
@@ -361,7 +785,7 @@ auto MathExpressionSimplifier::simplify_unit_step(MathExpressionNode* n) -> Math
     if (is_poison(child.get())) return MathExpression(child.get());
     if (is_pos_inf(child.get())) return konst(1.0);
     if (is_neg_inf(child.get())) return konst(0.0);
-    if (is_const(child.get())) { return child.get()->constant >= 0.0 ? konst(1.0) : konst(0.0); }
+    if (is_const(child.get()) || is_named_const(child.get())) { return known_sign(child.get()) >= 0 ? konst(1.0) : konst(0.0); }
     return mgr_.unary(NodeType::UnitStep, child);
 }
 
@@ -370,59 +794,57 @@ auto MathExpressionSimplifier::simplify_power(MathExpressionNode* n) -> MathExpr
     MathExpression exp  = simplify_node(n->power.exponent);
     if (auto p = propagate_poison2(base, exp)) return p;
     if (is_const(base.get(), 0.0)) {
-        if (is_const(exp.get(), 0.0) || is_const(exp.get()) && exp.get()->constant == 0.0)
-            return indet();                        
-        if (is_const(exp.get()) && exp.get()->constant < 0.0)
-            return undef();                        
+        if (is_const(exp.get(), 0.0))
+            return indet();
+        if (is_const(exp.get()) && qv(exp.get()).is_negative())
+            return undef();
         if (is_neg_inf(exp.get()))
-            return undef();                       
+            return undef();
         if (is_pos_inf(exp.get()))
-            return konst(0.0);                    
-        return konst(0.0);                        
+            return konst(0.0);
+        return konst(0.0);
     }
     if (is_const(exp.get(), 0.0)) {
-        if (is_infinite(base.get()))  return indet(); 
-        return konst(1.0);                          
+        if (is_infinite(base.get()))  return indet();
+        return konst(1.0);
     }
-    if (is_const(exp.get(), 1.0))    return base;    
+    if (is_const(exp.get(), 1.0))    return base;
     if (is_const(base.get(), 1.0)) {
         if (is_infinite(exp.get()))   return indet();
-        return konst(1.0);                            
+        return konst(1.0);
     }
     if (is_pos_inf(base.get())) {
-        if (is_const(exp.get()) && exp.get()->constant > 0.0) return pos_inf();
-        if (is_const(exp.get()) && exp.get()->constant < 0.0) return konst(0.0);
+        const int s = (is_const(exp.get()) || is_named_const(exp.get())) ? known_sign(exp.get()) : 0;
+        if (s > 0) return pos_inf();
+        if (s < 0) return konst(0.0);
         if (is_pos_inf(exp.get())) return pos_inf();
         if (is_neg_inf(exp.get())) return konst(0.0);
     }
-    if (is_const(base.get()) && is_const(exp.get())) return konst(std::pow(base.get()->constant, exp.get()->constant));
+    if (is_const(base.get()) && is_const(exp.get())) {
+        if (MathExpression folded = fold_power_exact(qv(base.get()), qv(exp.get()))) return folded;
+    }
+    if (is_e(base.get())) return make_exp(exp);
     if (is_const(exp.get(), -1.0)) return mgr_.binary(NodeType::Divide, konst(1.0), base);
     return mgr_.power(base, exp);
 }
 
 auto MathExpressionSimplifier::simplify_exp(MathExpressionNode* n) -> MathExpression {
-    MathExpression child = simplify_node(n->unary.child);
-    if (is_poison(child.get())) return MathExpression(child.get());
-    if (is_const(child.get()))  return konst(std::exp(child.get()->constant));
-    if (is_pos_inf(child.get())) return pos_inf();  
-    if (is_neg_inf(child.get())) return konst(0.0);
-    if (child.get()->type == NodeType::NaturalLog) return MathExpression(child.get()->unary.child); 
-    return mgr_.unary(NodeType::NaturalExp, child);
+    return make_exp(simplify_node(n->unary.child));
 }
 
 auto MathExpressionSimplifier::simplify_ln(MathExpressionNode* n) -> MathExpression {
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get())) return MathExpression(child.get());
     if (is_const(child.get())) {
-        double v = child.get()->constant;
-        if (v <  0.0) return nan_node();   
-        if (v == 0.0) return neg_inf(); 
-        return konst(std::log(v));
+        const Rational v = qv(child.get());
+        if (v.is_negative()) return nan_node();
+        if (v.is_zero()) return neg_inf();
+        if (v.is_one())  return konst(0.0);
     }
-    if (is_neg_inf(child.get())) return nan_node();   
-    if (is_pos_inf(child.get())) return pos_inf(); 
-    if (is_const(child.get(), 1.0)) return konst(0.0);
-    if (child.get()->type == NodeType::NaturalExp) return MathExpression(child.get()->unary.child); 
+    if (is_e(child.get())) return konst(1.0);
+    if (is_neg_inf(child.get())) return nan_node();
+    if (is_pos_inf(child.get())) return pos_inf();
+    if (child.get()->type == NodeType::NaturalExp) return MathExpression(child.get()->unary.child);
     if (child.get()->type == NodeType::Power) {
         MathExpression b(child.get()->power.base);
         MathExpression e(child.get()->power.exponent);
@@ -436,21 +858,37 @@ auto MathExpressionSimplifier::simplify_log(MathExpressionNode* n) -> MathExpres
     MathExpression base = simplify_node(n->binary.right);
     if (auto p = propagate_poison2(arg, base)) return p;
     if (is_const(base.get())) {
-        double b = base.get()->constant;
-        if (b <= 0.0) return nan_node();
-        if (b == 1.0) return undef(); 
+        const Rational b = qv(base.get());
+        if (!b.is_positive()) return nan_node();
+        if (b.is_one()) return undef();
     }
-    if (is_infinite(base.get()) || is_const(base.get(), 0.0)) return undef();
+    if (is_infinite(base.get())) return undef();
     if (is_const(arg.get())) {
-        double a = arg.get()->constant;
-        if (a <  0.0) return nan_node();
-        if (a == 0.0) return neg_inf();
+        const Rational a = qv(arg.get());
+        if (a.is_negative()) return nan_node();
+        if (a.is_zero()) return neg_inf();
     }
     if (is_neg_inf(arg.get())) return nan_node();
     if (is_pos_inf(arg.get())) return pos_inf();
-    if (is_const(arg.get()) && is_const(base.get())) return konst(std::log(arg.get()->constant) / std::log(base.get()->constant));
-    if (is_const(arg.get(), 1.0)) return konst(0.0); 
+    if (is_const(arg.get(), 1.0)) return konst(0.0);
     if (arg.get() == base.get())  return konst(1.0);
+
+    if (is_const(arg.get()) && is_const(base.get())) {
+        const Rational a = qv(arg.get());
+        const Rational b = qv(base.get());
+        const double guess = std::log(std::fabs(a.to_double())) / std::log(std::fabs(b.to_double()));
+
+        if (std::isfinite(guess) && std::fabs(guess) < 4096.0) {
+            const std::int64_t k0 = static_cast<std::int64_t>(std::llround(guess));
+
+            for (std::int64_t k = k0 - 1; k <= k0 + 1; ++k) {
+                Rational pw;
+                if (b.pow(k, pw) && pw == a) return konst(Rational(k));
+            }
+        }
+    }
+
+    if (is_e(base.get())) return simplify_ln(mgr_.unary(NodeType::NaturalLog, arg).get());
     MathExpression ln_arg  = simplify_ln(mgr_.unary(NodeType::NaturalLog, arg).get());
     MathExpression ln_base = simplify_ln(mgr_.unary(NodeType::NaturalLog, base).get());
     return mgr_.binary(NodeType::Divide, ln_arg, ln_base);
@@ -459,15 +897,13 @@ auto MathExpressionSimplifier::simplify_log(MathExpressionNode* n) -> MathExpres
 auto MathExpressionSimplifier::simplify_sqrt(MathExpressionNode* n) -> MathExpression {
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get()))      return MathExpression(child.get());
-    if (is_neg_inf(child.get()))     return nan_node();   
-    if (is_pos_inf(child.get()))     return pos_inf();    
+    if (is_neg_inf(child.get()))     return nan_node();
+    if (is_pos_inf(child.get()))     return pos_inf();
     if (is_const(child.get())) {
-        double v = child.get()->constant;
-        if (v < 0.0) return nan_node();
-        if (v == 0.0) return konst(0.0);
-        if (v == 1.0) return konst(1.0);
-        double r = std::sqrt(v);
-        if (r == std::floor(r)) return konst(r);
+        const Rational v = qv(child.get());
+        if (v.is_negative()) return nan_node();
+        Rational root;
+        if (v.exact_root(2, root)) return konst(root);
     }
     if (child.get()->type == NodeType::Power && is_const(child.get()->power.exponent, 2.0)) return mgr_.unary(NodeType::AbsoluteValue, MathExpression(child.get()->power.base));
     return mgr_.unary(NodeType::Sqrt, child);
@@ -476,15 +912,11 @@ auto MathExpressionSimplifier::simplify_sqrt(MathExpressionNode* n) -> MathExpre
 auto MathExpressionSimplifier::simplify_cbrt(MathExpressionNode* n) -> MathExpression {
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get()))  return MathExpression(child.get());
-    if (is_pos_inf(child.get())) return pos_inf();   
-    if (is_neg_inf(child.get())) return neg_inf();  
+    if (is_pos_inf(child.get())) return pos_inf();
+    if (is_neg_inf(child.get())) return neg_inf();
     if (is_const(child.get())) {
-        double v = child.get()->constant;
-        if (v == 0.0) return konst(0.0);
-        if (v == 1.0) return konst(1.0);
-        if (v == -1.0) return konst(-1.0);
-        double r = std::cbrt(v);
-        if (r == std::floor(r)) return konst(r);
+        Rational root;
+        if (qv(child.get()).exact_root(3, root)) return konst(root);
     }
     if (child.get()->type == NodeType::Power && is_const(child.get()->power.exponent, 3.0)) return MathExpression(child.get()->power.base);
     return mgr_.unary(NodeType::Cbrt, child);
@@ -493,24 +925,21 @@ auto MathExpressionSimplifier::simplify_cbrt(MathExpressionNode* n) -> MathExpre
 auto MathExpressionSimplifier::simplify_sinc(MathExpressionNode* n) -> MathExpression {
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get()))   return MathExpression(child.get());
-    if (is_infinite(child.get())) return konst(0.0);   
-    if (is_const(child.get())) {
-        double v = child.get()->constant;
-        if (v == 0.0) return konst(1.0);
-        return konst(std::sin(v) / v);
-    }
+    if (is_infinite(child.get())) return konst(0.0);
+    if (is_const(child.get(), 0.0)) return konst(1.0);
+    Rational r;
+    if (pi_multiple(child.get(), r) && r.is_integer()) return r.is_zero() ? konst(1.0) : konst(0.0);
     return mgr_.unary(NodeType::Sinc, child);
 }
 
 auto MathExpressionSimplifier::simplify_normalsinc(MathExpressionNode* n) -> MathExpression {
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get()))   return MathExpression(child.get());
-    if (is_infinite(child.get())) return konst(0.0);  
+    if (is_infinite(child.get())) return konst(0.0);
     if (is_const(child.get())) {
-        double v = child.get()->constant;
-        if (v == 0.0) return konst(1.0);               
-        double pv = constants::pi() * v;
-        return konst(std::sin(pv) / pv);
+        const Rational v = qv(child.get());
+        if (v.is_zero()) return konst(1.0);
+        if (v.is_integer()) return konst(0.0);
     }
     return mgr_.unary(NodeType::NormalSinc, child);
 }
@@ -520,10 +949,7 @@ auto MathExpressionSimplifier::simplify_erf_erfc(MathExpressionNode* n) -> MathE
     if (is_poison(child.get()))   return MathExpression(child.get());
     if (is_pos_inf(child.get()))  return n->type == NodeType::Erf ? konst(1.0)  : konst(0.0);
     if (is_neg_inf(child.get()))  return n->type == NodeType::Erf ? konst(-1.0) : konst(2.0);
-    if (is_const(child.get())) {
-        double v = child.get()->constant;
-        return n->type == NodeType::Erf ? konst(numeric::erf(v)) : konst(numeric::erfc(v));
-    }
+    if (is_const(child.get(), 0.0)) return n->type == NodeType::Erf ? konst(0.0) : konst(1.0);
     if (child.get()->type == NodeType::InverseErf && n->type == NodeType::Erf) { return MathExpression(child.get()->unary.child); }
     if (child.get()->type == NodeType::InverseErfc && n->type == NodeType::Erfc) { return MathExpression(child.get()->unary.child); }
     return mgr_.unary(n->type, child);
@@ -534,11 +960,7 @@ auto MathExpressionSimplifier::simplify_erfi(MathExpressionNode* n) -> MathExpre
     if (is_poison(child.get()))   return MathExpression(child.get());
     if (is_pos_inf(child.get()))  return pos_inf();
     if (is_neg_inf(child.get()))  return neg_inf();
-    if (is_const(child.get())) {
-        double v = child.get()->constant;
-        if (v == 0.0) return konst(0.0);
-        return konst(numeric::erfi(v));
-    }
+    if (is_const(child.get(), 0.0)) return konst(0.0);
     if (child.get()->type == NodeType::InverseErfi) { return MathExpression(child.get()->unary.child); }
     return mgr_.unary(NodeType::Erfi, child);
 }
@@ -555,28 +977,30 @@ auto MathExpressionSimplifier::simplify_inverse_erf_family(MathExpressionNode* n
     }
 
     if (is_const(child.get())) {
-        double v = child.get()->constant;
+        const Rational v = qv(child.get());
+        const Rational one(1);
+        const Rational two(2);
 
         switch (n->type) {
             case NodeType::InverseErf: {
-                if (v < -1.0 || v > 1.0) return nan_node();
-                if (v == -1.0) return neg_inf();
-                if (v ==  1.0) return pos_inf();
-                if (v ==  0.0) return konst(0.0);
-                return konst(numeric::inverse_erf(v));
+                if (v < -one || v > one) return nan_node();
+                if (v == -one) return neg_inf();
+                if (v ==  one) return pos_inf();
+                if (v.is_zero()) return konst(0.0);
+                break;
             }
 
             case NodeType::InverseErfc: {
-                if (v < 0.0 || v > 2.0) return nan_node();
-                if (v == 0.0) return pos_inf();  
-                if (v == 2.0) return neg_inf(); 
-                if (v == 1.0) return konst(0.0); 
-                return konst(numeric::inverse_erfc(v));
+                if (v.is_negative() || v > two) return nan_node();
+                if (v.is_zero()) return pos_inf();
+                if (v == two) return neg_inf();
+                if (v == one) return konst(0.0);
+                break;
             }
 
             case NodeType::InverseErfi: {
-                if (v == 0.0) return konst(0.0);
-                return konst(numeric::inverse_erfi(v));
+                if (v.is_zero()) return konst(0.0);
+                break;
             }
 
             default:
@@ -594,11 +1018,7 @@ auto MathExpressionSimplifier::simplify_erf_generalized(MathExpressionNode* n) -
     MathExpression l = simplify_node(n->binary.left);
     MathExpression r = simplify_node(n->binary.right);
     if (auto p = propagate_poison2(l, r)) return p;
-    if (l.get() == r.get()) return konst(0.0);   
-    if (is_const(l.get()) && is_const(r.get())) {
-        double a = l.get()->constant, b = r.get()->constant;
-        return n->type == NodeType::ErfGeneralized ? konst(numeric::erf_difference(a, b)) : konst(numeric::erfc_difference(a, b));
-    }
+    if (l.get() == r.get()) return konst(0.0);
     return mgr_.binary(n->type, l, r);
 }
 
@@ -609,17 +1029,15 @@ auto MathExpressionSimplifier::simplify_gamma_factorial(MathExpressionNode* n) -
         if (is_pos_inf(child.get())) return pos_inf();
         if (is_neg_inf(child.get())) return nan_node();
         if (is_const(child.get())) {
-            double v = child.get()->constant;
-            if (v <= 0.0 && v == std::floor(v)) return nan_node();
-            return konst(numeric::gamma(v));
+            if (MathExpression g = gamma_exact(qv(child.get()))) return g;
         }
-    } else { 
+    } else {
         if (is_pos_inf(child.get())) return pos_inf();
         if (is_neg_inf(child.get())) return nan_node();
         if (is_const(child.get())) {
-            double v = child.get()->constant;
-            if (v < 0.0 && v == std::floor(v)) return nan_node();
-            return konst(numeric::factorial(v));
+            const Rational v = qv(child.get());
+            if (v.is_negative() && v.is_integer()) return nan_node();
+            if (MathExpression g = gamma_exact(v + Rational(1))) return g;
         }
     }
     return mgr_.unary(n->type, child);
@@ -631,9 +1049,11 @@ auto MathExpressionSimplifier::simplify_digamma_trigamma(MathExpressionNode* n) 
     if (is_pos_inf(child.get())) return n->type == NodeType::Digamma ? pos_inf() : konst(0.0);
     if (is_neg_inf(child.get())) return nan_node();
     if (is_const(child.get())) {
-        double v = child.get()->constant;
-        if (v <= 0.0 && v == std::floor(v)) return nan_node();
-        return n->type == NodeType::Digamma ? konst(numeric::digamma(v)) : konst(numeric::trigamma(v));
+        const Rational v = qv(child.get());
+        if (!v.is_positive() && v.is_integer()) return nan_node();
+        if (n->type == NodeType::Trigamma && v.is_one()) {
+            return mgr_.binary(NodeType::Divide, mgr_.power(pi_node(), konst(2.0)), konst(6.0));
+        }
     }
     return mgr_.unary(n->type, child);
 }
@@ -642,19 +1062,23 @@ auto MathExpressionSimplifier::simplify_beta(MathExpressionNode* n) -> MathExpre
     MathExpression lchild = simplify_node(n->binary.left);
     MathExpression rchild = simplify_node(n->binary.right);
     if (is_poison(lchild.get())) return MathExpression(lchild.get());
-    if (is_poison(rchild.get())) return MathExpression(lchild.get());
+    if (is_poison(rchild.get())) return MathExpression(rchild.get());
     bool lc = is_const(lchild.get());
     bool rc = is_const(rchild.get());
 
     if (lc && rc) {
-        double lv = lchild.get()->constant;
-        double rv = rchild.get()->constant; 
-        double lrv = lv + rv;
-        if ((lv <= 0.0 && lv == std::floor(lv)) || (rv <= 0.0 && rv == std::floor(rv)) || (lrv <= 0.0 && lrv == std::floor(lrv))) return nan_node();
-        return konst(numeric::beta(lv, rv));
-    } else {
-        return mgr_.binary(NodeType::BetaFunction, lchild, rchild);
+        const Rational a = qv(lchild.get());
+        const Rational b = qv(rchild.get());
+        const Rational s = a + b;
+        if ((!a.is_positive() && a.is_integer()) || (!b.is_positive() && b.is_integer()) || (!s.is_positive() && s.is_integer())) return nan_node();
+        std::int64_t ai = 0, bi = 0;
+
+        if (rational_int(a, ai) && rational_int(b, bi) && ai + bi - 1 <= factorial_limit) {
+            return konst(Rational(factorial_of(ai - 1) * factorial_of(bi - 1), factorial_of(ai + bi - 1)));
+        }
     }
+
+    return mgr_.binary(NodeType::BetaFunction, lchild, rchild);
 }
 
 auto MathExpressionSimplifier::simplify_lambert_w(MathExpressionNode* n) -> MathExpression {
@@ -663,28 +1087,18 @@ auto MathExpressionSimplifier::simplify_lambert_w(MathExpressionNode* n) -> Math
     if (auto p = propagate_poison2(arg, branch)) return p;
 
     if (is_const(branch.get())) {
-        double bv = branch.get()->constant;
-        if (bv != std::floor(bv)) return nan_node();            
-        int k = static_cast<int>(bv);
+        const Rational bv = qv(branch.get());
+        if (!bv.is_integer()) return nan_node();
+        std::int64_t k = 0;
+        if (!rational_int(bv, k)) return mgr_.binary(NodeType::LambertW, arg, branch);
 
         if (is_const(arg.get(), 0.0)) {
             if (k == 0) return konst(0.0);
-            return neg_inf();             
+            return neg_inf();
         }
 
-        if (is_const(arg.get())) {
-            double z = arg.get()->constant;
-            double neg_inv_e = -constants::reciprocal_e();
-            if (std::abs(z - neg_inv_e) <= constants::middle_epsilon() && (k == 0 || k == -1)) return konst(-1.0);
-            if (k == 0 && std::abs(z - constants::euler()) <= constants::middle_epsilon()) return konst(1.0);
-        }
-
-        if (is_const(arg.get())) {
-            EvalContext ctx;
-            MathExpression tmp = mgr_.binary(NodeType::LambertW, arg, branch);
-            double v = eval_node(tmp.get(), ctx);
-            if (std::isfinite(v)) return konst(v);
-        }
+        if (is_neg_inv_e(arg.get()) && (k == 0 || k == -1)) return konst(-1.0);
+        if (k == 0 && is_e(arg.get())) return konst(1.0);
     }
 
     return mgr_.binary(NodeType::LambertW, arg, branch);
@@ -694,25 +1108,35 @@ auto MathExpressionSimplifier::simplify_chebyshev(MathExpressionNode* n) -> Math
     MathExpression x = simplify_node(n->binary.left);
     MathExpression k = simplify_node(n->binary.right);
     if (auto p = propagate_poison2(x, k)) return p;
-    const bool is_u = n->type == NodeType::ChebyshevU;
     const bool is_t = n->type == NodeType::ChebyshevT;
 
     if (is_const(k.get())) {
-        double m = k.get()->constant;
-        if (m == 0.0) { return konst(1.0); }
-        if (m == 1.0) { return is_t ? x : mgr_.binary(NodeType::Multiply, konst(2.0), x); }
+        if (is_const(k.get(), 0.0)) { return konst(1.0); }
+        if (is_const(k.get(), 1.0)) { return is_t ? x : mgr_.binary(NodeType::Multiply, konst(2.0), x); }
     }
 
     if (is_const(x.get()) && is_const(k.get())) {
-        EvalContext ctx;
-        MathExpression tmp = mgr_.binary(is_t ? NodeType::ChebyshevT : NodeType::ChebyshevU, x, k);
-        double v = eval_node(tmp.get(), ctx);
-        if (!std::isnan(v) && !std::isinf(v)) return konst(v);
-        if (std::isinf(v)) return v > 0 ? pos_inf() : neg_inf();
-        return undef();
+        std::int64_t m = 0;
+
+        if (rational_int(qv(k.get()), m) && m >= 0 && m <= polynomial_limit) {
+            const Rational xv = qv(x.get());
+            const Rational two_x = Rational(2) * xv;
+            Rational prev(1);
+            Rational cur = is_t ? xv : two_x;
+
+            for (std::int64_t i = 1; i < m; ++i) {
+                Rational next = two_x * cur - prev;
+                prev = std::move(cur);
+                cur  = std::move(next);
+            }
+
+            return konst(cur);
+        }
+
+        return nan_check(mgr_.binary(n->type, x, k), true);
     }
 
-    return mgr_.binary(NodeType::ChebyshevT, x, k);
+    return mgr_.binary(n->type, x, k);
 }
 
 auto MathExpressionSimplifier::simplify_exp_integral(MathExpressionNode* n) -> MathExpression {
@@ -720,14 +1144,7 @@ auto MathExpressionSimplifier::simplify_exp_integral(MathExpressionNode* n) -> M
     if (is_poison(child.get())) return MathExpression(child.get());
     if (is_pos_inf(child.get())) return pos_inf();
     if (is_neg_inf(child.get())) return konst(0.0);
-    if (is_const(child.get())) {
-        double v = child.get()->constant;
-        if (v == 0.0) return neg_inf();
-        double r = numeric::exp_integral(v);
-        if (std::isnan(r)) return nan_node();
-        if (std::isinf(r)) return r > 0 ? pos_inf() : neg_inf();
-        return konst(r);
-    }
+    if (is_const(child.get(), 0.0)) return neg_inf();
     return mgr_.unary(NodeType::ExponentialIntegral, child);
 }
 
@@ -736,14 +1153,10 @@ auto MathExpressionSimplifier::simplify_log_integral(MathExpressionNode* n) -> M
     if (is_poison(child.get())) return MathExpression(child.get());
     if (is_pos_inf(child.get())) return pos_inf();
     if (is_const(child.get())) {
-        double v = child.get()->constant;
-        if (v < 0.0)  return nan_node();
-        if (v == 0.0) return konst(0.0);
-        if (v == 1.0) return neg_inf();
-        double r = numeric::log_integral(v);
-        if (std::isnan(r)) return nan_node();
-        if (std::isinf(r)) return r > 0 ? pos_inf() : neg_inf();
-        return konst(r);
+        const Rational v = qv(child.get());
+        if (v.is_negative()) return nan_node();
+        if (v.is_zero()) return konst(0.0);
+        if (v.is_one()) return neg_inf();
     }
     return mgr_.unary(NodeType::LogarithmicIntegral, child);
 }
@@ -766,13 +1179,7 @@ auto MathExpressionSimplifier::simplify_exp_integral_gen(MathExpressionNode* n) 
         );
     }
 
-    if (is_const(x.get()) && is_const(nn.get())) {
-        double r = numeric::exp_integral(x.get()->constant, nn.get()->constant);
-        if (std::isnan(r)) return nan_node();
-        if (std::isinf(r)) return r > 0 ? pos_inf() : neg_inf();
-        return konst(r);
-    }
-
+    if (is_const(x.get()) && is_const(nn.get())) return nan_check(mgr_.binary(NodeType::ExponentialIntegralGeneralized, x, nn), false);
     return mgr_.binary(NodeType::ExponentialIntegralGeneralized, x, nn);
 }
 
@@ -782,14 +1189,10 @@ auto MathExpressionSimplifier::simplify_log_integral_gen(MathExpressionNode* n) 
     if (auto p = propagate_poison2(x, nn)) return p;
 
     if (is_const(x.get()) && is_const(nn.get())) {
-        double xv = x.get()->constant;
-        if (xv < 0.0) return nan_node();
-        double r = numeric::log_integral(xv, nn.get()->constant);
-        if (std::isnan(r)) return nan_node();
-        if (std::isinf(r)) return r > 0 ? pos_inf() : neg_inf();
-        return konst(r);
+        if (qv(x.get()).is_negative()) return nan_node();
+        return nan_check(mgr_.binary(NodeType::LogarithmicIntegralGeneralized, x, nn), false);
     }
-        
+
     return mgr_.binary(NodeType::LogarithmicIntegralGeneralized, x, nn);
 }
 
@@ -799,9 +1202,8 @@ auto MathExpressionSimplifier::simplify_bell(MathExpressionNode* n) -> MathExpre
     if (auto p = propagate_poison2(arg, idx)) return p;
 
     if (is_const(idx.get())) {
-        double nv = idx.get()->constant;
-        if (nv == 0.0) return konst(1.0);
-        if (nv == 1.0) return arg;
+        if (is_const(idx.get(), 0.0)) return konst(1.0);
+        if (is_const(idx.get(), 1.0)) return arg;
     }
 
     return mgr_.binary(NodeType::BellPolynomial, arg, idx);
@@ -811,50 +1213,62 @@ auto MathExpressionSimplifier::simplify_sin_cos_integral(MathExpressionNode* n) 
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get())) return MathExpression(child.get());
     bool is_sin  = (n->type == NodeType::SinIntegral);
-    bool is_cos  = (n->type == NodeType::CosIntegral);
     bool is_sinh = (n->type == NodeType::SinhIntegral);
     bool is_cosh = (n->type == NodeType::CoshIntegral);
 
     if (is_infinite(child.get())) {
         if (is_sin || is_sinh) { return is_pos_inf(child.get()) ? pos_inf() : neg_inf(); }
         if (is_cosh) { return is_pos_inf(child.get()) ? pos_inf() : neg_inf(); }
-        return konst(constants::quiet_nan());
+        return nan_node();
     }
 
-    if (is_const(child.get())) {
-        double x = child.get()->constant;
-        if (is_sin)  return konst(numeric::sin_integral(x));
-        if (is_cos)  return konst(numeric::cos_integral(x));
-        if (is_sinh) return konst(numeric::sinh_integral(x));
-        if (is_cosh) return konst(numeric::cosh_integral(x));
+    if (is_const(child.get(), 0.0)) {
+        if (is_sin || is_sinh) return konst(0.0);
+        return neg_inf();
     }
 
+    if (is_const(child.get())) return nan_check(mgr_.unary(n->type, child), false);
     return mgr_.unary(n->type, child);
 }
 
 auto MathExpressionSimplifier::simplify_fresnel(MathExpressionNode* n) -> MathExpression {
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get())) return MathExpression(child.get());
-    bool is_sin  = (n->type == NodeType::FresnelS);
-    bool is_cos  = (n->type == NodeType::FresnelC);
-
-    if (is_const(child.get())) {
-        double x = child.get()->constant;
-        if (is_sin)  return konst(numeric::fresnel_s(x));
-        if (is_cos)  return konst(numeric::fresnel_c(x));
-    }
-
+    if (is_const(child.get(), 0.0)) return konst(0.0);
     return mgr_.unary(n->type, child);
 }
 
 auto MathExpressionSimplifier::simplify_riemann(MathExpressionNode* n) -> MathExpression {
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get())) return MathExpression(child.get());
-    bool is_rz  = (n->type == NodeType::RiemannZeta);
 
-    if (is_const(child.get())) {
-        double x = child.get()->constant;
-        if (is_rz) return konst(numeric::riemann_zeta(x));
+    if (n->type == NodeType::RiemannZeta && is_const(child.get())) {
+        std::int64_t s = 0;
+
+        if (rational_int(qv(child.get()), s)) {
+            if (s == 0) return konst(Rational(BigInt(-1), BigInt(2)));
+            if (s < 0 && (s % 2 == 0)) return konst(0.0);
+
+            static const std::int64_t neg_num[7] = { -1, 1, -1, 1, -1, 691, -1 };
+            static const std::int64_t neg_den[7] = { 12, 120, 252, 240, 132, 32760, 12 };
+
+            if (s < 0 && s >= -13) {
+                const std::int64_t i = (-s - 1) / 2;
+                return konst(Rational(BigInt(neg_num[i]), BigInt(neg_den[i])));
+            }
+
+            static const std::int64_t pos_num[6] = { 1, 1, 1, 1, 1, 691 };
+            static const std::int64_t pos_den[6] = { 6, 90, 945, 9450, 93555, 638512875 };
+
+            if (s > 0 && s <= 12 && (s % 2 == 0)) {
+                const std::int64_t i = s / 2 - 1;
+                MathExpression pw = mgr_.power(pi_node(), konst(Rational(s)));
+                if (pos_num[i] != 1) pw = mgr_.binary(NodeType::Multiply, konst(Rational(pos_num[i])), pw);
+                return mgr_.binary(NodeType::Divide, pw, konst(Rational(pos_den[i])));
+            }
+        }
+
+        return nan_check(mgr_.unary(n->type, child), false);
     }
 
     return mgr_.unary(n->type, child);
@@ -864,12 +1278,19 @@ auto MathExpressionSimplifier::simplify_di_tri_log(MathExpressionNode* n) -> Mat
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get())) return MathExpression(child.get());
     bool is_di  = (n->type == NodeType::Dilogarithm);
-    bool is_tri = (n->type == NodeType::Trilogarithm);
 
     if (is_const(child.get())) {
-        double x = child.get()->constant;
-        if (is_di)  return konst(numeric::dilogarithm(x));
-        if (is_tri) return konst(numeric::trilogarithm(x));
+        if (is_const(child.get(), 0.0)) return konst(0.0);
+
+        if (is_di && is_const(child.get(), 1.0)) {
+            return mgr_.binary(NodeType::Divide, mgr_.power(pi_node(), konst(2.0)), konst(6.0));
+        }
+
+        if (is_di && is_const(child.get(), -1.0)) {
+            return mgr_.unary(NodeType::Negate, mgr_.binary(NodeType::Divide, mgr_.power(pi_node(), konst(2.0)), konst(12.0)));
+        }
+
+        return nan_check(mgr_.unary(n->type, child), false);
     }
 
     return mgr_.unary(n->type, child);
@@ -879,58 +1300,32 @@ auto MathExpressionSimplifier::simplify_polylog(MathExpressionNode* n) -> MathEx
     MathExpression arg = simplify_node(n->binary.left);
     MathExpression idx = simplify_node(n->binary.right);
     if (auto p = propagate_poison2(arg, idx)) return p;
-
-    if (is_const(idx.get()) && is_const(arg.get())) {
-        double nv = idx.get()->constant;
-        double xv = arg.get()->constant;
-        return konst(numeric::polylog(xv, nv));
-    }
-
+    if (is_const(arg.get(), 0.0)) return konst(0.0);
+    if (is_const(idx.get(), 2.0)) return simplify_di_tri_log(mgr_.unary(NodeType::Dilogarithm, arg).get());
+    if (is_const(idx.get(), 3.0)) return simplify_di_tri_log(mgr_.unary(NodeType::Trilogarithm, arg).get());
+    if (is_const(idx.get()) && is_const(arg.get())) return nan_check(mgr_.binary(NodeType::Polylog, arg, idx), false);
     return mgr_.binary(NodeType::Polylog, arg, idx);
 }
 
 auto MathExpressionSimplifier::simplify_spence(MathExpressionNode* n) -> MathExpression {
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get())) return MathExpression(child.get());
-    bool is_f = (n->type == NodeType::SpenceFunction);
-    bool is_i = (n->type == NodeType::SpenceIntegral);
-
-    if (is_const(child.get())) {
-        double x = child.get()->constant;
-        if (is_f) return konst(numeric::spence_function(x));
-        if (is_i) return konst(numeric::spence_integral(x));
-    }
-
+    if (is_const(child.get())) return nan_check(mgr_.unary(n->type, child), false);
     return mgr_.unary(n->type, child);
 }
 
 auto MathExpressionSimplifier::simplify_rogers(MathExpressionNode* n) -> MathExpression {
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get())) return MathExpression(child.get());
-    bool is_l = (n->type == NodeType::RogersL);
-    bool is_r = (n->type == NodeType::RogersLR);
-
-    if (is_const(child.get())) {
-        double x = child.get()->constant;
-        if (is_l) return konst(numeric::rogers_l_normalized(x));
-        if (is_r) return konst(numeric::rogers_l(x));
-    }
-
+    if (is_const(child.get())) return nan_check(mgr_.unary(n->type, child), false);
     return mgr_.unary(n->type, child);
 }
 
 auto MathExpressionSimplifier::simplify_gudermannian(MathExpressionNode* n) -> MathExpression {
     MathExpression child = simplify_node(n->unary.child);
     if (is_poison(child.get())) return MathExpression(child.get());
-    bool is_g = (n->type == NodeType::Gudermannian);
-    bool is_i = (n->type == NodeType::InverseGudermannian);
-
-    if (is_const(child.get())) {
-        double x = child.get()->constant;
-        if (is_g) return konst(numeric::gudermannian(x));
-        if (is_i) return konst(numeric::inverse_gudermannian(x));
-    }
-
+    if (is_const(child.get(), 0.0)) return konst(0.0);
+    if (is_const(child.get())) return nan_check(mgr_.unary(n->type, child), false);
     return mgr_.unary(n->type, child);
 }
 
@@ -938,18 +1333,26 @@ auto MathExpressionSimplifier::simplify_combination(MathExpressionNode* n) -> Ma
     MathExpression nn = simplify_node(n->binary.left);
     MathExpression kk = simplify_node(n->binary.right);
     if (auto p = propagate_poison2(nn, kk)) return p;
-    if (is_const(kk.get(), 0.0)) return konst(1.0);                 
-    if (is_const(kk.get(), 1.0)) return nn;                         
-    if (nn.get() == kk.get())    return konst(1.0);                 
-    if (is_const(nn.get(), 0.0)) return konst(0.0);                 
+    if (is_const(kk.get(), 0.0)) return konst(1.0);
+    if (is_const(kk.get(), 1.0)) return nn;
+    if (nn.get() == kk.get())    return konst(1.0);
+    if (is_const(nn.get(), 0.0)) return konst(0.0);
 
     if (is_const(nn.get()) && is_const(kk.get())) {
-        double nv = nn.get()->constant;
-        double kv = kk.get()->constant;
-        double num = std::tgamma(nv + 1.0);
-        double den = std::tgamma(kv + 1.0) * std::tgamma(nv - kv + 1.0);
-        if (den == 0.0 || std::isnan(num) || std::isnan(den)) return nan_node();
-        return konst(num / den);
+        std::int64_t nv = 0, kv = 0;
+        const bool ni = rational_int(qv(nn.get()), nv);
+        const bool ki = rational_int(qv(kk.get()), kv);
+
+        if (ni && ki) {
+            if (nv < 0 || kv < 0) return nan_node();
+            if (kv > nv) return konst(0.0);
+            if (nv <= binomial_limit) {
+                const std::int64_t k = kv < nv - kv ? kv : nv - kv;
+                return konst(Rational(falling_product(nv, k), factorial_of(k)));
+            }
+        }
+
+        return nan_check(mgr_.binary(NodeType::Combination, nn, kk), false);
     }
 
     return mgr_.binary(NodeType::Combination, nn, kk);
@@ -959,21 +1362,25 @@ auto MathExpressionSimplifier::simplify_permutation(MathExpressionNode* n) -> Ma
     MathExpression nn = simplify_node(n->binary.left);
     MathExpression kk = simplify_node(n->binary.right);
     if (auto p = propagate_poison2(nn, kk)) return p;
-    if (is_const(kk.get(), 0.0)) return konst(1.0);                 
-    if (is_const(kk.get(), 1.0)) return nn;                         
+    if (is_const(kk.get(), 0.0)) return konst(1.0);
+    if (is_const(kk.get(), 1.0)) return nn;
     if (nn.get() == kk.get()) { return mgr_.unary(NodeType::Factorial, nn); }
-    if (is_const(nn.get(), 0.0)) return konst(0.0);                 
+    if (is_const(nn.get(), 0.0)) return konst(0.0);
 
     if (is_const(nn.get()) && is_const(kk.get())) {
-        double nv = nn.get()->constant;
-        double kv = kk.get()->constant;
-        double den = std::tgamma(nv - kv + 1.0);
-        if (den == 0.0 || std::isnan(den)) return nan_node();
-        double num = std::tgamma(nv + 1.0);
-        if (std::isnan(num)) return nan_node();
-        return konst(num / den);
+        std::int64_t nv = 0, kv = 0;
+        const bool ni = rational_int(qv(nn.get()), nv);
+        const bool ki = rational_int(qv(kk.get()), kv);
+
+        if (ni && ki) {
+            if (nv < 0 || kv < 0) return nan_node();
+            if (kv > nv) return konst(0.0);
+            if (nv <= binomial_limit) return konst(Rational(falling_product(nv, kv)));
+        }
+
+        return nan_check(mgr_.binary(NodeType::Permutation, nn, kk), false);
     }
-        
+
     return mgr_.binary(NodeType::Permutation, nn, kk);
 }
 
@@ -982,10 +1389,25 @@ auto MathExpressionSimplifier::simplify_fib_lucas_sequence(MathExpressionNode* n
     if (is_poison(child.get())) return MathExpression(child.get());
 
     if (is_const(child.get())) {
-        double v = child.get()->constant;
-        return konst(n->type == NodeType::FibonacciSequence ? numeric::fibonacci(v) : numeric::lucas(v));
+        std::int64_t k = 0;
+
+        if (rational_int(qv(child.get()), k) && k <= sequence_limit && k >= -sequence_limit) {
+            const std::int64_t ak = k < 0 ? -k : k;
+            BigInt f, l;
+            fib_lucas_pair(ak, f, l);
+
+            if (n->type == NodeType::FibonacciSequence) {
+                if (k < 0 && (ak % 2 == 0)) f.negate_mutable();
+                return konst(Rational(f));
+            }
+
+            if (k < 0 && (ak % 2 == 1)) l.negate_mutable();
+            return konst(Rational(l));
+        }
+
+        return nan_check(mgr_.unary(n->type, child), false);
     }
-        
+
     return mgr_.unary(n->type, child);
 }
 
@@ -995,10 +1417,25 @@ auto MathExpressionSimplifier::simplify_fib_lucas_poly(MathExpressionNode* n) ->
     if (auto p = propagate_poison2(arg, idx)) return p;
 
     if (is_const(idx.get()) && is_const(arg.get())) {
-        bool is_fib = n->type == NodeType::FibonacciPolynomial;
-        double nv = idx.get()->constant;
-        double xv = arg.get()->constant;
-        return konst(is_fib ? numeric::fibonacci_polynomial(xv, nv) : numeric::lucas_polynomial(xv, nv));
+        const bool is_fib = n->type == NodeType::FibonacciPolynomial;
+        std::int64_t m = 0;
+
+        if (rational_int(qv(idx.get()), m) && m >= 0 && m <= polynomial_limit) {
+            const Rational x = qv(arg.get());
+            Rational prev = is_fib ? Rational(0) : Rational(2);
+            Rational cur  = is_fib ? Rational(1) : x;
+            if (m == 0) return konst(prev);
+
+            for (std::int64_t i = 1; i < m; ++i) {
+                Rational next = x * cur + prev;
+                prev = std::move(cur);
+                cur  = std::move(next);
+            }
+
+            return konst(cur);
+        }
+
+        return nan_check(mgr_.binary(n->type, arg, idx), false);
     }
 
     return mgr_.binary(n->type, arg, idx);
@@ -1015,7 +1452,7 @@ auto MathExpressionSimplifier::simplify_applied(MathExpressionNode* n) -> MathEx
         args.push_back(a);
         ords.push_back(n->applied.orders[i]);
     }
-        
+
     return mgr_.applied(n->applied.func_id, args, ords);
 }
 

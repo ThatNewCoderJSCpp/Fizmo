@@ -909,6 +909,16 @@ inline Expression operator/(double a, const Expression& b)            { return D
 // --------------------------------
 inline Expression Const(SymbolicContext& ctx, double v) { return ctx.constant(v); }
 inline Expression Const(double v) { return Const(G(), v); }
+inline Expression Const(SymbolicContext& ctx, const Rational& r) { return ctx.constant(r); }
+inline Expression Const(const Rational& r) { return Const(G(), r); }
+inline Expression Const(SymbolicContext& ctx, const std::string& text) { return ctx.constant(text); }
+inline Expression Const(const std::string& text) { return Const(G(), text); }
+inline Expression RATIONAL(SymbolicContext& ctx, std::int64_t numerator, std::int64_t denominator) { return ctx.rational(numerator, denominator); }
+inline Expression RATIONAL(std::int64_t numerator, std::int64_t denominator) { return RATIONAL(G(), numerator, denominator); }
+inline Expression PI(SymbolicContext& ctx) { return ctx.pi(); }
+inline Expression PI() { return PI(G()); }
+inline Expression EULER_E(SymbolicContext& ctx) { return ctx.euler_number(); }
+inline Expression EULER_E() { return EULER_E(G()); }
 inline Expression VARIABLE(SymbolicContext& ctx, const std::string& name) { return ctx.variable(name); }
 inline Expression VARIABLE(const std::string& name) { return VARIABLE(G(), name); }
 inline Expression DIFFERENTIATE(SymbolicContext& ctx, const Expression& e, const std::string& var) { return ctx.derivative(e, var); }
@@ -921,11 +931,16 @@ inline Expression SIMPLIFY(SymbolicContext& ctx, const Expression& e) { return E
 inline Expression SIMPLIFY(const Expression& e) { return SIMPLIFY(G(), e); }
 inline std::string TO_STRING(SymbolicContext& ctx, const Expression& e) { return e.to_string(); }
 inline std::string TO_STRING(const Expression& e) { return TO_STRING(G(), e); }
+inline std::string TO_MATHTEXT(const Expression& e, MathTextSyntax syntax = MathTextSyntax::Brace) { return e.to_mathtext(syntax); }
 inline void WRITE_OUT(SymbolicContext& ctx, std::ostream& os, const Expression& e) { os << e; }
 inline void WRITE_OUT(std::ostream& os, const Expression& e) { WRITE_OUT(G(), os, e); }
 inline double EVALUATE(const Expression& e, std::initializer_list<double> vals, EvaluationPolicy policy = {}) { return e.evaluate(vals, policy); }
 inline double EVALUATE(const Expression& e, const std::unordered_map<std::string,double>& named, EvaluationPolicy policy = {}) { return e.evaluate(named, policy); }
 inline double EVALUATE(const Expression& e, std::initializer_list<std::pair<std::string,double>> vals, EvaluationPolicy policy = {}) { return e.evaluate(vals, policy); }
+template <class T> T EVALUATE_AS(const Expression& e) { return e.evaluate_as<T>(); }
+template <class T> T EVALUATE_AS(const Expression& e, std::initializer_list<T> vals, EvaluationPolicy policy = {}) { return e.evaluate_as<T>(vals, policy); }
+template <class T> T EVALUATE_AS(const Expression& e, const std::unordered_map<std::string, T>& named, EvaluationPolicy policy = {}) { return e.evaluate_as<T>(named, policy); }
+template <class T> T EVALUATE_AS(const Expression& e, std::initializer_list<std::pair<std::string, T>> vals, EvaluationPolicy policy = {}) { return e.evaluate_as<T>(vals, policy); }
 inline Expression SUBSTITUTE(SymbolicContext& ctx, const Expression& e, const std::unordered_map<std::string, Expression>& named) { return ctx.substitute(e, named); }
 inline Expression SUBSTITUTE(const Expression& e, const std::unordered_map<std::string, Expression>& named) { return SUBSTITUTE(G(), e, named); }
 inline Expression SUBSTITUTE(SymbolicContext& ctx, const Expression& e, const std::unordered_map<std::string, double>& named) { return ctx.substitute(e, named); }

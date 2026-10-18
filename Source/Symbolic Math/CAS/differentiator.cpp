@@ -43,6 +43,8 @@ bool MathExpressionDifferentiator::contains_var(const MathExpressionNode* n, std
         case NodeType::Variable:
             return n->variable.var_id == vid;
         case NodeType::Constant:
+        case NodeType::Pi:
+        case NodeType::EulerNumber:
         case NodeType::PositiveInfinity:
         case NodeType::NegativeInfinity:
         case NodeType::NaN:
@@ -66,6 +68,8 @@ auto MathExpressionDifferentiator::diff(MathExpressionNode* n, std::uint64_t vid
     if (is_invalid_node(n)) { return invalid(); }
     switch (n->type) {
         case NodeType::Constant:
+        case NodeType::Pi:
+        case NodeType::EulerNumber:
         case NodeType::PositiveInfinity:
         case NodeType::NegativeInfinity:
         case NodeType::NaN:
@@ -181,7 +185,7 @@ auto MathExpressionDifferentiator::diff(MathExpressionNode* n, std::uint64_t vid
         case NodeType::NormalSinc: {
             MathExpression f(n->unary.child);
             MathExpression fp     = diff(n->unary.child, vid);
-            MathExpression pi_k   = konst(constants::pi());
+            MathExpression pi_k   = mgr_.pi();
             MathExpression pi_f   = mul(pi_k, f);
             MathExpression sin_pf = unary(NodeType::Sin, pi_f);
             MathExpression cos_pf = unary(NodeType::Cos, pi_f);
@@ -309,64 +313,60 @@ auto MathExpressionDifferentiator::diff(MathExpressionNode* n, std::uint64_t vid
 
         case NodeType::Erf: {
             MathExpression f(n->unary.child);
-            MathExpression kernel = mul(konst(2.0 * constants::reciprocal_sqrt_pi()), unary(NodeType::NaturalExp, neg(pow(f, konst(2.0)))));
+            MathExpression kernel = mul(two_over_sqrt_pi(), unary(NodeType::NaturalExp, neg(pow(f, konst(2.0)))));
             return mul(kernel, diff(n->unary.child, vid));
         }
 
         case NodeType::Erfc: {
             MathExpression f(n->unary.child);
-            MathExpression kernel = mul(konst(-2.0 * constants::reciprocal_sqrt_pi()), unary(NodeType::NaturalExp, neg(pow(f, konst(2.0)))));
+            MathExpression kernel = mul(neg(two_over_sqrt_pi()), unary(NodeType::NaturalExp, neg(pow(f, konst(2.0)))));
             return mul(kernel, diff(n->unary.child, vid));
         }
 
         case NodeType::Erfi: {
             MathExpression f(n->unary.child);
             MathExpression fp = diff(n->unary.child, vid);
-            double c = 2.0 * constants::reciprocal_sqrt_pi();
-            MathExpression kernel = mul(konst(c), unary(NodeType::NaturalExp, pow(f, konst(2.0))));
+            MathExpression kernel = mul(two_over_sqrt_pi(), unary(NodeType::NaturalExp, pow(f, konst(2.0))));
             return mul(kernel, fp);
         }
 
         case NodeType::InverseErf: {
             MathExpression x(n->unary.child);
             MathExpression xp = diff(n->unary.child, vid);
-            double c = 0.5 * constants::sqrt_pi(); 
             MathExpression inv = wrap(n);
-            MathExpression kernel = mul(konst(c), unary(NodeType::NaturalExp, pow(inv, konst(2.0))));
+            MathExpression kernel = mul(half_sqrt_pi(), unary(NodeType::NaturalExp, pow(inv, konst(2.0))));
             return mul(kernel, xp);
         }
 
         case NodeType::InverseErfc: {
             MathExpression x(n->unary.child);
             MathExpression xp = diff(n->unary.child, vid);
-            double c = 0.5 * constants::sqrt_pi(); 
             MathExpression inv = wrap(n);
-            MathExpression kernel = mul(konst(-c), unary(NodeType::NaturalExp, pow(inv, konst(2.0))));
+            MathExpression kernel = mul(neg(half_sqrt_pi()), unary(NodeType::NaturalExp, pow(inv, konst(2.0))));
             return mul(kernel, xp);
         }
 
         case NodeType::InverseErfi: {
             MathExpression x(n->unary.child);
             MathExpression xp = diff(n->unary.child, vid);
-            double c = 0.5 * constants::sqrt_pi(); 
             MathExpression inv = wrap(n);
-            MathExpression kernel = mul(konst(c), unary(NodeType::NaturalExp, neg(pow(inv, konst(2.0)))));
+            MathExpression kernel = mul(half_sqrt_pi(), unary(NodeType::NaturalExp, neg(pow(inv, konst(2.0)))));
             return mul(kernel, xp);
         }
 
         case NodeType::ErfGeneralized: {
-            double c = 2.0 * constants::reciprocal_sqrt_pi();
+            MathExpression c = two_over_sqrt_pi();
             MathExpression f(n->binary.left), g(n->binary.right);
-            MathExpression df = mul(mul(konst(c), unary(NodeType::NaturalExp, neg(pow(f, konst(2.0))))), diff(n->binary.left,  vid));
-            MathExpression dg = mul(mul(konst(c), unary(NodeType::NaturalExp, neg(pow(g, konst(2.0))))), diff(n->binary.right, vid));
+            MathExpression df = mul(mul(c, unary(NodeType::NaturalExp, neg(pow(f, konst(2.0))))), diff(n->binary.left,  vid));
+            MathExpression dg = mul(mul(c, unary(NodeType::NaturalExp, neg(pow(g, konst(2.0))))), diff(n->binary.right, vid));
             return sub(df, dg);
         }
 
         case NodeType::ErfcGeneralized: {
-            double c = -2.0 * constants::reciprocal_sqrt_pi();
+            MathExpression c = neg(two_over_sqrt_pi());
             MathExpression f(n->binary.left), g(n->binary.right);
-            MathExpression df = mul(mul(konst(c), unary(NodeType::NaturalExp, neg(pow(f, konst(2.0))))), diff(n->binary.left,  vid));
-            MathExpression dg = mul(mul(konst(c), unary(NodeType::NaturalExp, neg(pow(g, konst(2.0))))), diff(n->binary.right, vid));
+            MathExpression df = mul(mul(c, unary(NodeType::NaturalExp, neg(pow(f, konst(2.0))))), diff(n->binary.left,  vid));
+            MathExpression dg = mul(mul(c, unary(NodeType::NaturalExp, neg(pow(g, konst(2.0))))), diff(n->binary.right, vid));
             return sub(df, dg);
         }
 
@@ -395,10 +395,9 @@ auto MathExpressionDifferentiator::diff(MathExpressionNode* n, std::uint64_t vid
             MathExpression f(n->binary.left);
             MathExpression fp = diff(n->binary.left, vid);
             MathExpression n_(n->binary.right);
-            bool n_free = !contains_var(n->binary.right, vid) && n->type == NodeType::Constant;
+            bool n_free = !contains_var(n->binary.right, vid) && n->binary.right->type == NodeType::Constant;
             if (!n_free) { return invalid(); }
-            double np1 = n_.get()->constant + 1.0;
-            return mul(fp, binary(NodeType::Polygamma, f, konst(np1)));
+            return mul(fp, binary(NodeType::Polygamma, f, add(n_, konst(1.0))));
         }
 
         case NodeType::BetaFunction: {
@@ -526,7 +525,7 @@ auto MathExpressionDifferentiator::diff(MathExpressionNode* n, std::uint64_t vid
                 unary(
                     NodeType::Sin,
                     mul(
-                        konst(constants::pi_2()), 
+                        div(mgr_.pi(), konst(2.0)), 
                         binary(NodeType::Power, f, konst(2.0))
                     )
                 )
@@ -542,7 +541,7 @@ auto MathExpressionDifferentiator::diff(MathExpressionNode* n, std::uint64_t vid
                 unary(
                     NodeType::Cos,
                     mul(
-                        konst(constants::pi_2()), 
+                        div(mgr_.pi(), konst(2.0)), 
                         binary(NodeType::Power, f, konst(2.0))
                     )
                 )
@@ -598,7 +597,7 @@ auto MathExpressionDifferentiator::diff(MathExpressionNode* n, std::uint64_t vid
             MathExpression t1 = div(ln_1mf, mul(konst(2.0), f));
             MathExpression t2 = div(ln_f,   mul(konst(2.0), one_minus_f));
             MathExpression lr_prime = neg(add(t1, t2));
-            MathExpression kernel = mul(konst(6.0 * constants::reciprocal_pi_squared()), lr_prime);
+            MathExpression kernel = mul(div(konst(6.0), pow(mgr_.pi(), konst(2.0))), lr_prime);
             return mul(kernel, fp);
         }
 
@@ -649,35 +648,37 @@ auto MathExpressionDifferentiator::diff(MathExpressionNode* n, std::uint64_t vid
 
         case NodeType::FibonacciSequence: {
             MathExpression f(n->unary.child);
-            const double phi_v    = constants::phi();
-            const double psi_v    = -constants::psi();
-            const double ln_phi   = std::log(phi_v);
-            const double ln_psi   = std::log(psi_v);
-            const double inv_sq5  = 1.0 / std::sqrt(5.0);
-            MathExpression pi_u   = mul(konst(constants::pi()), f);
+            MathExpression sqrt5  = unary(NodeType::Sqrt, konst(5.0));
+            MathExpression phi_v  = div(add(konst(1.0), sqrt5), konst(2.0));
+            MathExpression psi_v  = div(sub(sqrt5, konst(1.0)), konst(2.0));
+            MathExpression ln_phi = unary(NodeType::NaturalLog, phi_v);
+            MathExpression ln_psi = unary(NodeType::NaturalLog, psi_v);
+            MathExpression inv_sq5 = div(konst(1.0), sqrt5);
+            MathExpression pi_u   = mul(mgr_.pi(), f);
             MathExpression cos_pu = unary(NodeType::Cos, pi_u);
             MathExpression sin_pu = unary(NodeType::Sin, pi_u);
-            MathExpression phi_u  = pow(konst(phi_v), f);
-            MathExpression psi_u  = pow(konst(psi_v), f);
-            MathExpression t1     = mul(phi_u, konst(ln_phi));
-            MathExpression inner  = sub(mul(konst(constants::pi()), sin_pu), mul(konst(ln_psi), cos_pu));
-            MathExpression outer  = mul(konst(inv_sq5), add(t1, mul(psi_u, inner)));
+            MathExpression phi_u  = pow(phi_v, f);
+            MathExpression psi_u  = pow(psi_v, f);
+            MathExpression t1     = mul(phi_u, ln_phi);
+            MathExpression inner  = sub(mul(mgr_.pi(), sin_pu), mul(ln_psi, cos_pu));
+            MathExpression outer  = mul(inv_sq5, add(t1, mul(psi_u, inner)));
             return chain(outer, n->unary.child, vid);
         }
 
         case NodeType::LucasSequence: {
             MathExpression f(n->unary.child);
-            const double phi_v    = constants::phi();
-            const double psi_v    = -constants::psi();
-            const double ln_phi   = std::log(phi_v);
-            const double ln_psi   = std::log(psi_v);
-            MathExpression pi_u   = mul(konst(constants::pi()), f);
+            MathExpression sqrt5  = unary(NodeType::Sqrt, konst(5.0));
+            MathExpression phi_v  = div(add(konst(1.0), sqrt5), konst(2.0));
+            MathExpression psi_v  = div(sub(sqrt5, konst(1.0)), konst(2.0));
+            MathExpression ln_phi = unary(NodeType::NaturalLog, phi_v);
+            MathExpression ln_psi = unary(NodeType::NaturalLog, psi_v);
+            MathExpression pi_u   = mul(mgr_.pi(), f);
             MathExpression cos_pu = unary(NodeType::Cos, pi_u);
             MathExpression sin_pu = unary(NodeType::Sin, pi_u);
-            MathExpression phi_u  = pow(konst(phi_v), f);
-            MathExpression psi_u  = pow(konst(psi_v), f);
-            MathExpression t1     = mul(phi_u, konst(ln_phi));
-            MathExpression inner  = sub(mul(konst(ln_psi), cos_pu), mul(konst(constants::pi()), sin_pu));
+            MathExpression phi_u  = pow(phi_v, f);
+            MathExpression psi_u  = pow(psi_v, f);
+            MathExpression t1     = mul(phi_u, ln_phi);
+            MathExpression inner  = sub(mul(ln_psi, cos_pu), mul(mgr_.pi(), sin_pu));
             MathExpression outer  = add(t1, mul(psi_u, inner));
             return chain(outer, n->unary.child, vid);
         }
@@ -744,13 +745,13 @@ auto MathExpressionDifferentiator::diff_power(MathExpressionNode* n, std::uint64
     const bool g_free = !contains_var(n->power.exponent, vid);  
 
     if (g_free && n->power.exponent->type == NodeType::Constant) {
-        double c = n->power.exponent->constant;
-        return mul(mul(konst(c), pow(f, konst(c - 1.0))), fp);
+        MathExpression c = simp_.simplify(g);
+        MathExpression c_minus_one = simp_.simplify(sub(c, konst(1.0)));
+        return mul(mul(c, pow(f, c_minus_one)), fp);
     }
 
     if (f_free && n->power.base->type == NodeType::Constant) {
-        double c = n->power.base->constant;
-        MathExpression ln_c = konst(std::log(c));
+        MathExpression ln_c = simp_.simplify(unary(NodeType::NaturalLog, f));
         return mul(mul(wrap(n), ln_c), gp);
     }
 

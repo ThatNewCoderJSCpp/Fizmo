@@ -44,6 +44,10 @@ std::size_t NodeKeyHash::operator()(NodeKey const& k) const noexcept {
 
     switch (k.type) {
         case NodeType::Constant: {
+            if (k.exact) {
+                mix(k.exact->hash());
+                break;
+            }
             std::uint64_t bits;
             std::memcpy(&bits, &k.constant, sizeof(bits));
             mix(bits);
@@ -101,6 +105,8 @@ bool NodeKeyHash::is_typed_leaf(NodeType t) {
         case NodeType::NaN:
         case NodeType::Undefined:
         case NodeType::Invalid:
+        case NodeType::Pi:
+        case NodeType::EulerNumber:
             return true;
         default:
             return false;
@@ -220,6 +226,7 @@ bool NodeKeyEq::operator()(NodeKey const& a, NodeKey const& b) const noexcept {
 
     switch (a.type) {
         case NodeType::Constant: {
+            if (a.exact || b.exact) return a.exact && b.exact && *a.exact == *b.exact;
             std::uint64_t ba, bb;
             std::memcpy(&ba, &a.constant, sizeof(ba));
             std::memcpy(&bb, &b.constant, sizeof(bb));
@@ -262,14 +269,42 @@ bool NodeKeyEq::operator()(NodeKey const& a, NodeKey const& b) const noexcept {
     }
 }
 
+auto MathExpressionManager::non_finite_constant(double v) -> MathExpression {
+    if (std::isnan(v)) return nan_expr();
+    return v > 0.0 ? pos_inf() : neg_inf();
+}
+
 auto MathExpressionManager::constant(double v) -> MathExpression {
-    NodeKey key = NodeKey::make_constant(v);
-    return MathExpression(intern(key, [&] {
-        MathExpressionNode* n = arena_.make<MathExpressionNode>();
-        n->type = NodeType::Constant;
-        n->constant = v;
-        return n;
-    }));
+    if (!std::isfinite(v)) return non_finite_constant(v);
+    return constant(Rational::from_double(v));
+}
+
+auto MathExpressionManager::constant(const Rational& r) -> MathExpression {
+    const double approx = r.to_double();
+    NodeKey probe = NodeKey::make_constant(&r, approx);
+    auto it = table_.find(probe);
+    if (it != table_.end()) return MathExpression(it->second);
+    const Rational* stored = arena_.make<Rational>(r);
+    MathExpressionNode* n = arena_.make<MathExpressionNode>();
+    n->type = NodeType::Constant;
+    n->constant = approx;
+    n->exact = stored;
+    table_.emplace(NodeKey::make_constant(stored, approx), n);
+    return MathExpression(n);
+}
+
+auto MathExpressionManager::rational(std::int64_t numerator, std::int64_t denominator) -> MathExpression {
+    if (denominator == 0) {
+        if (numerator == 0) return indeterminate_expr();
+        return undefined_expr();
+    }
+    return constant(Rational(BigInt(numerator), BigInt(denominator)));
+}
+
+auto MathExpressionManager::constant_from_string(const std::string& text) -> MathExpression {
+    Rational r;
+    if (!Rational::parse(text, r)) return invalid_expr();
+    return constant(r);
 }
 
 auto MathExpressionManager::variable(const std::string& name) -> MathExpression {
@@ -389,7 +424,9 @@ auto MathExpressionManager::variable_by_id(std::uint64_t id) -> MathExpression {
 auto MathExpressionManager::canonicalize(MathExpressionNode* n) -> MathExpression {
     if (!n) return MathExpression{};
     switch (n->type) {
-        case NodeType::Constant:          return constant(n->constant);
+        case NodeType::Constant:          return n->exact ? constant(*n->exact) : constant(n->constant);
+        case NodeType::Pi:                return pi();
+        case NodeType::EulerNumber:       return euler_number();
         case NodeType::Variable:          return variable_by_id(n->variable.var_id);
         case NodeType::PositiveInfinity:  return pos_inf();
         case NodeType::NegativeInfinity:  return neg_inf();

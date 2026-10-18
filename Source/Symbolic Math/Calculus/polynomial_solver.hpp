@@ -138,7 +138,7 @@ public:
                 Expression two_r    = S(K(2.0) * SQRT(ctx, neg_p_3));
                 Expression cos_arg  = S(K(3.0) * q / (K(2.0) * p) * SQRT(ctx, K(-3.0) / p));
                 Expression theta    = S(ACOS(ctx, cos_arg) / K(3.0));
-                Expression pi       = K(constants::pi());
+                Expression pi       = ctx.pi();
                 Expression two_pi_3 = S(K(2.0) * pi / K(3.0));
                 add_root(S(two_r * COS(ctx, theta)),               1);
                 add_root(S(two_r * COS(ctx, theta - two_pi_3)),    1);

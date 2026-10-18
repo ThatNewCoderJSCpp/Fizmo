@@ -11,6 +11,7 @@
 #include <cstring>
 
 #include "arena.hpp"   
+#include "rational.hpp"
 
 namespace fizmo {
 namespace math {
@@ -26,6 +27,8 @@ enum class NodeType {
     NaN,                // results in a complex number
     Undefined,          // 1/0, ln(0), etc
     Invalid,            // malformed / unsupported expression 
+    Pi,
+    EulerNumber,
     AppliedFunction,
 
     Add,
@@ -228,6 +231,7 @@ private:
 
 struct MathExpressionNode {
     NodeType type;
+    const Rational* exact = nullptr;
 
     union {
         double constant;
@@ -276,6 +280,7 @@ inline bool is_invalid(const MathExpressionNode* n) noexcept { return n == nullp
 
 struct NodeKey {
     NodeType type;
+    const Rational* exact = nullptr;
 
     union {
         double constant;
@@ -298,6 +303,14 @@ struct NodeKey {
         NodeKey k;
         k.type = NodeType::Constant;
         k.constant = v;
+        return k;
+    }
+
+    static NodeKey make_constant(const Rational* r, double approx) {
+        NodeKey k;
+        k.type = NodeType::Constant;
+        k.constant = approx;
+        k.exact = r;
         return k;
     }
 
@@ -403,6 +416,17 @@ public:
 
     MathExpression constant(double v);
 
+    MathExpression constant(const Rational& r);
+
+    MathExpression rational(std::int64_t numerator, std::int64_t denominator);
+
+    MathExpression integer(std::int64_t v) { return constant(Rational(v)); }
+
+    MathExpression constant_from_string(const std::string& text);
+
+    MathExpression pi()           { return typed_leaf(NodeType::Pi); }
+    MathExpression euler_number() { return typed_leaf(NodeType::EulerNumber); }
+
     MathExpression variable(const std::string& name);
 
     MathExpression unary(NodeType t, MathExpression a);
@@ -457,6 +481,8 @@ private:
         return node;
     }
 
+    MathExpression non_finite_constant(double v);
+
     detail::ExpressionArena& arena_;
     VariableTable& vars_;
     VariableTable  funcs_;
@@ -479,16 +505,19 @@ struct EvaluationPolicy {
 
 namespace symbols {
 
-struct EvalContext {
-    std::vector<double> values;
-    std::vector<bool>   assigned;
-    EvaluationPolicy    policy;
+template <class T>
+struct BasicEvalContext {
+    std::vector<T>    values;
+    std::vector<bool> assigned;
+    EvaluationPolicy  policy;
 
     void resize(std::size_t n) {
         values.resize(n);
         assigned.assign(n, false);
     }
 };
+
+using EvalContext = BasicEvalContext<double>;
 
 } // namespace symbols
 } // namespace cas

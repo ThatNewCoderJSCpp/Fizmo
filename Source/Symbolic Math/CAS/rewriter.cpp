@@ -19,7 +19,7 @@ auto MathExpressionRewriter::rewrite(MathExpression e) -> MathExpression {
 auto MathExpressionRewriter::rebuild_children(MathExpressionNode* n) -> MathExpressionNode* {
     using NT = NodeType;
     switch (n->type) {
-    case NT::Constant: case NT::Variable:
+    case NT::Constant: case NT::Variable: case NT::Pi: case NT::EulerNumber:
     case NT::PositiveInfinity: case NT::NegativeInfinity:
     case NT::NaN: case NT::Undefined: case NT::Indeterminate:
         return n;
@@ -62,7 +62,7 @@ auto MathExpressionRewriter::rewrite_node(MathExpressionNode* n) -> MathExpressi
     return n;
 }
 
-void MathExpressionRewriter::collect_mul(MathExpressionNode* n, int side, double& coeff, std::vector<MulEntry>& out) {
+void MathExpressionRewriter::collect_mul(MathExpressionNode* n, int side, Rational& coeff, std::vector<MulEntry>& out) {
     using NT = NodeType;
     switch (n->type) {
     case NT::Multiply:
@@ -74,21 +74,28 @@ void MathExpressionRewriter::collect_mul(MathExpressionNode* n, int side, double
         collect_mul(n->binary.right, -side, coeff, out);
         return;
     case NT::Negate:
-        coeff *= -1.0;
+        coeff = -coeff;
         collect_mul(n->unary.child, side, coeff, out);
         return;
-    case NT::Constant:
-        if (side > 0) coeff *= n->constant;
-        else          coeff /= n->constant;   
+    case NT::Constant: {
+        const Rational q = qv(n);
+        if (side > 0) {
+            coeff *= q;
+        } else if (q.is_zero()) {
+            coeff_undefined_ = true;
+        } else {
+            coeff /= q;
+        }
         return;
+    }
     case NT::Power:
         out.push_back({ n->power.base, n->power.exponent, side });
         return;
     case NT::Sqrt:
-        out.push_back({ n->unary.child, K(0.5).get(), side });
+        out.push_back({ n->unary.child, K(Rational(BigInt(1), BigInt(2))).get(), side });
         return;
     case NT::Cbrt:
-        out.push_back({ n->unary.child, K(1.0 / 3.0).get(), side });
+        out.push_back({ n->unary.child, K(Rational(BigInt(1), BigInt(3))).get(), side });
         return;
     default:
         out.push_back({ n, K(1.0).get(), side });
@@ -96,16 +103,18 @@ void MathExpressionRewriter::collect_mul(MathExpressionNode* n, int side, double
     }
 }
 
-auto MathExpressionRewriter::build_const_exp_product(const std::vector<std::pair<MathExpressionNode*, double>>& factors) -> MathExpressionNode* {
+auto MathExpressionRewriter::build_const_exp_product(const std::vector<std::pair<MathExpressionNode*, Rational>>& factors) -> MathExpressionNode* {
     MathExpressionNode* result = nullptr;
+    const Rational half(BigInt(1), BigInt(2));
+    const Rational third(BigInt(1), BigInt(3));
     for (auto& p : factors) {
         MathExpressionNode* base = p.first;
-        double              e    = p.second;
+        const Rational&     e    = p.second;
         MathExpressionNode* term;
-        if      (near_eq(e, 1.0))       term = base;
-        else if (near_eq(e, 0.5))       term = un(NodeType::Sqrt, W(base)).get();
-        else if (near_eq(e, 1.0 / 3.0)) term = un(NodeType::Cbrt, W(base)).get();
-        else                             term = pw(W(base), K(e)).get();
+        if      (e.is_one())  term = base;
+        else if (e == half)   term = un(NodeType::Sqrt, W(base)).get();
+        else if (e == third)  term = un(NodeType::Cbrt, W(base)).get();
+        else                  term = pw(W(base), K(e)).get();
         result = result ? mul(W(result), W(term)).get() : term;
     }
     return result; 
@@ -131,23 +140,24 @@ auto MathExpressionRewriter::build_sym_product(const std::vector<MulEntry>& entr
     for (auto& grp : groups) {
         MathExpressionNode* exp = simp_.simplify(W(grp.exp)).get();
         MathExpressionNode* term;
-        if      (isK(exp) && near_eq(kv(exp),       1.0)) term = grp.base;
-        else if (isK(exp) && near_eq(kv(exp),       0.5)) term = un(NodeType::Sqrt, W(grp.base)).get();
-        else if (isK(exp) && near_eq(kv(exp), 1.0 / 3.0)) term = un(NodeType::Cbrt, W(grp.base)).get();
-        else if (isK(exp) && near_eq(kv(exp),       0.0)) continue; 
+        const Rational ev = isK(exp) ? qv(exp) : Rational();
+        if      (isK(exp) && ev.is_one())                                term = grp.base;
+        else if (isK(exp) && ev == Rational(BigInt(1), BigInt(2)))       term = un(NodeType::Sqrt, W(grp.base)).get();
+        else if (isK(exp) && ev == Rational(BigInt(1), BigInt(3)))       term = un(NodeType::Cbrt, W(grp.base)).get();
+        else if (isK(exp) && ev.is_zero()) continue; 
         else                                               term = pw(W(grp.base), W(exp)).get();
         result = result ? mul(W(result), W(term)).get() : term;
     }
     return result;
 }
 
-auto MathExpressionRewriter::absorb_coeff(double c, MathExpressionNode* n) -> MathExpressionNode* {
+auto MathExpressionRewriter::absorb_coeff(const Rational& c, MathExpressionNode* n) -> MathExpressionNode* {
     using NT = NodeType;
-    if (near_eq(c, 1.0)) return n;
+    if (c.is_one()) return n;
     if (n->type == NT::Add) return mgr_.binary(NT::Add, W(absorb_coeff(c, n->binary.left)), W(absorb_coeff(c, n->binary.right))).get();
     if (n->type == NT::Subtract) return mgr_.binary(NT::Subtract, W(absorb_coeff(c, n->binary.left)), W(absorb_coeff(c, n->binary.right))).get();
-    if (n->type == NT::Constant) return K(c * n->constant).get();
-    return near_eq(c, -1.0) ? neg(W(n)).get() : mul(K(c), W(n)).get();
+    if (n->type == NT::Constant) return K(c * qv(n)).get();
+    return c.is_minus_one() ? neg(W(n)).get() : mul(K(c), W(n)).get();
 }
 
 bool MathExpressionRewriter::is_polynomial_add(MathExpressionNode* n) {
@@ -163,13 +173,17 @@ bool MathExpressionRewriter::is_polynomial_add(MathExpressionNode* n) {
 auto MathExpressionRewriter::rule_mul_normalize(MathExpressionNode* n) -> MathExpressionNode* {
     using NT = NodeType;
     if (n->type != NT::Multiply && n->type != NT::Divide && n->type != NT::Negate) return n;
-    double coeff = 1.0;
+    Rational coeff(1);
     std::vector<MulEntry> raw;
+    coeff_undefined_ = false;
     collect_mul(n, +1, coeff, raw);
-    if (std::isnan(coeff)) return K(coeff).get();
+    if (coeff_undefined_) {
+        coeff_undefined_ = false;
+        return mgr_.undefined_expr().get();
+    }
     struct Group {
         MathExpressionNode*   base;
-        double                num_exp; 
+        Rational              num_exp; 
         std::vector<MulEntry> sym;      
     };
     std::vector<Group> groups;
@@ -177,21 +191,22 @@ auto MathExpressionRewriter::rule_mul_normalize(MathExpressionNode* n) -> MathEx
         Group* g = nullptr;
         for (auto& grp : groups) { if (same(grp.base, e.base)) { g = &grp; break; }}
         if (!g) {
-            groups.push_back({ e.base, 0.0, {} });
+            groups.push_back({ e.base, Rational(), {} });
             g = &groups.back();
         }
         if (isK(e.exp)) {
-            g->num_exp += (e.side > 0 ? 1.0 : -1.0) * kv(e.exp);
+            if (e.side > 0) g->num_exp += qv(e.exp);
+            else            g->num_exp -= qv(e.exp);
         } else {
             g->sym.push_back(e);
         }
     }
-    std::vector<std::pair<MathExpressionNode*, double>> num_const, den_const;
+    std::vector<std::pair<MathExpressionNode*, Rational>> num_const, den_const;
     std::vector<MulEntry> sym_num, sym_den;
     for (auto& grp : groups) {
-        if (!near_zero(grp.num_exp)) {
-            if (grp.num_exp > 0.0) num_const.push_back({ grp.base,  grp.num_exp });
-            else                   den_const.push_back({ grp.base, -grp.num_exp });
+        if (!grp.num_exp.is_zero()) {
+            if (grp.num_exp.is_positive()) num_const.push_back({ grp.base,  grp.num_exp });
+            else                           den_const.push_back({ grp.base, -grp.num_exp });
         }
         for (auto& se : grp.sym) {
             if (se.side > 0) sym_num.push_back(se);
@@ -203,19 +218,18 @@ auto MathExpressionRewriter::rule_mul_normalize(MathExpressionNode* n) -> MathEx
     MathExpressionNode* result;
     if (!numerator) {
         result = K(coeff).get();
-    } else if (near_eq(coeff, 1.0)) {
+    } else if (coeff.is_one()) {
         result = numerator;
-    } else if (near_eq(coeff, -1.0)) {
+    } else if (coeff.is_minus_one()) {
         result = neg(W(numerator)).get();
     } else {
         if ((numerator->type == NT::Add || numerator->type == NT::Subtract) && is_polynomial_add(numerator)) {
             result = absorb_coeff(coeff, numerator);
         } else {
-            double recip = 1.0 / std::abs(coeff);
-            int ri = static_cast<int>(std::round(recip));
-            if (near_eq(recip, (double)ri) && ri >= 2) {
-                MathExpressionNode* pos = dv(W(numerator), K((double)ri)).get();
-                result = (coeff < 0.0) ? neg(W(pos)).get() : pos;
+            const Rational mag = coeff.abs();
+            if (mag.numerator().is_one() && !mag.is_integer()) {
+                MathExpressionNode* pos = dv(W(numerator), K(Rational(mag.denominator()))).get();
+                result = coeff.is_negative() ? neg(W(pos)).get() : pos;
             } else {
                 result = mul(K(coeff), W(numerator)).get();
             }
@@ -230,95 +244,93 @@ auto MathExpressionRewriter::rule_error_rewrites(MathExpressionNode* n) -> MathE
     if (n->type == NT::Subtract) {
         auto* L = n->binary.left;
         auto* R = n->binary.right;
-        if (L->type == NT::Constant && L->constant == 1.0 && R->type == NT::Erf) { return mgr_.unary(NT::Erfc, W(R->unary.child)).get(); }
+        if (is_exact_int(L, 1) && R->type == NT::Erf) { return mgr_.unary(NT::Erfc, W(R->unary.child)).get(); }
     }
     if (n->type == NT::Subtract) {
         auto* L = n->binary.left;
         auto* R = n->binary.right;
-        if (L->type == NT::Constant && L->constant == 1.0 && R->type == NT::Erfc) { return mgr_.unary(NT::Erf, W(R->unary.child)).get(); }
+        if (is_exact_int(L, 1) && R->type == NT::Erfc) { return mgr_.unary(NT::Erf, W(R->unary.child)).get(); }
     }
     if (n->type == NT::InverseErf) {
         auto* c = n->unary.child;
-        if (c->type == NT::Subtract && c->binary.left->type == NT::Constant && c->binary.left->constant == 1.0) { return mgr_.unary(NT::InverseErfc, W(c->binary.right)).get(); }
+        if (c->type == NT::Subtract && is_exact_int(c->binary.left, 1)) { return mgr_.unary(NT::InverseErfc, W(c->binary.right)).get(); }
     }
     if (n->type == NT::InverseErfc) {
         auto* c = n->unary.child;
-        if (c->type == NT::Subtract && c->binary.left->type == NT::Constant && c->binary.left->constant == 1.0) { return mgr_.unary(NT::InverseErf, W(c->binary.right)).get(); }
+        if (c->type == NT::Subtract && is_exact_int(c->binary.left, 1)) { return mgr_.unary(NT::InverseErf, W(c->binary.right)).get(); }
     }
     return n;
 }
 
-auto MathExpressionRewriter::rebuild_add_entries(double const_sum, const std::vector<AddEntry>& entries) -> MathExpressionNode* {
+auto MathExpressionRewriter::rebuild_add_entries(const Rational& const_sum, const std::vector<AddEntry>& entries) -> MathExpressionNode* {
     MathExpressionNode* result = nullptr;
-    auto append = [&](MathExpressionNode* term, double c) {
+    auto append = [&](MathExpressionNode* term, int c) {
         if (!result) {
-            result = (c < 0.0) ? neg(W(term)).get() : term;
-        } else if (c >= 0.0) {
+            result = (c < 0) ? neg(W(term)).get() : term;
+        } else if (c >= 0) {
             result = add(W(result), W(term)).get();
         } else {
             result = sub(W(result), W(term)).get();
         }
     };
     for (auto& e : entries) { 
-        if (near_zero(e.coeff)) continue;
-        if (e.coeff <= 0.0)    continue;
-        double ac   = e.coeff;
-        MathExpressionNode* term = near_eq(ac, 1.0) ? e.kernel : mul(K(ac), W(e.kernel)).get();
-        append(term, 1.0);
+        if (!e.coeff.is_positive()) continue;
+        const Rational& ac = e.coeff;
+        MathExpressionNode* term = ac.is_one() ? e.kernel : mul(K(ac), W(e.kernel)).get();
+        append(term, 1);
     }
     for (auto& e : entries) { 
-        if (near_zero(e.coeff)) continue;
-        if (e.coeff >= 0.0)    continue;
-        double ac   = std::abs(e.coeff);
-        MathExpressionNode* term = near_eq(ac, 1.0) ? e.kernel : mul(K(ac), W(e.kernel)).get();
-        append(term, -1.0);
+        if (!e.coeff.is_negative()) continue;
+        const Rational ac = e.coeff.abs();
+        MathExpressionNode* term = ac.is_one() ? e.kernel : mul(K(ac), W(e.kernel)).get();
+        append(term, -1);
     }
-    if (!near_zero(const_sum)) {
+    if (!const_sum.is_zero()) {
         if (!result) return K(const_sum).get();
-        if (const_sum > 0.0) result = add(W(result), K(const_sum)).get();
-        else                 result = sub(W(result), K(-const_sum)).get();
+        if (const_sum.is_positive()) result = add(W(result), K(const_sum)).get();
+        else                         result = sub(W(result), K(-const_sum)).get();
     }
     return result ? result : K(0.0).get();
 }
 
-void MathExpressionRewriter::strip_scalar(MathExpressionNode* n, double base_sign, double& coeff_out, MathExpressionNode*& kernel_out) {
-    double c = base_sign;
+void MathExpressionRewriter::strip_scalar(MathExpressionNode* n, const Rational& base_sign, Rational& coeff_out, MathExpressionNode*& kernel_out) {
+    Rational c = base_sign;
     MathExpressionNode* k = n;
     if (k->type == NodeType::Negate) {
-        c *= -1.0;
+        c = -c;
         k = k->unary.child;
     }
     if (k->type == NodeType::Multiply && k->binary.left->type == NodeType::Constant) {
-        c *= k->binary.left->constant;
+        c *= qv(k->binary.left);
         k  = k->binary.right;
     } else if (k->type == NodeType::Multiply && k->binary.right->type == NodeType::Constant) {
-        c *= k->binary.right->constant;
+        c *= qv(k->binary.right);
         k  = k->binary.left;
     }
     coeff_out  = c;
     kernel_out = k;
 }
 
-double MathExpressionRewriter::extract_coeff(MathExpressionNode* n, MathExpressionNode*& kernel_out) {
+Rational MathExpressionRewriter::extract_coeff(MathExpressionNode* n, MathExpressionNode*& kernel_out) {
     if (n->type == NodeType::Negate) {
-        double c = extract_coeff(n->unary.child, kernel_out);
+        Rational c = extract_coeff(n->unary.child, kernel_out);
         return -c;
     }
     if (n->type == NodeType::Multiply) {
         if (n->binary.left->type == NodeType::Constant) {
-            double c = extract_coeff(n->binary.right, kernel_out);
-            return n->binary.left->constant * c;
+            Rational c = extract_coeff(n->binary.right, kernel_out);
+            return qv(n->binary.left) * c;
         }
         if (n->binary.right->type == NodeType::Constant) {
-            double c = extract_coeff(n->binary.left, kernel_out);
-            return n->binary.right->constant * c;
+            Rational c = extract_coeff(n->binary.left, kernel_out);
+            return qv(n->binary.right) * c;
         }
     }
     kernel_out = n;
-    return 1.0;
+    return Rational(1);
 }
 
-void MathExpressionRewriter::collect_add(MathExpressionNode* n, double sign, double& const_sum, std::vector<AddEntry>& out) {
+void MathExpressionRewriter::collect_add(MathExpressionNode* n, const Rational& sign, Rational& const_sum, std::vector<AddEntry>& out) {
     using NT = NodeType;
     switch (n->type) {
     case NT::Add:
@@ -333,15 +345,25 @@ void MathExpressionRewriter::collect_add(MathExpressionNode* n, double sign, dou
         collect_add(n->unary.child, -sign, const_sum, out);
         return;
     case NT::Constant:
-        const_sum += sign * n->constant;
+        const_sum += sign * qv(n);
         return;
     case NT::Divide: {
         MathExpressionNode* num_k = nullptr;
         MathExpressionNode* den_k = nullptr;
-        double num_c = extract_coeff(n->binary.left,  num_k);
-        double den_c = extract_coeff(n->binary.right, den_k);
-        double net   = sign * (num_c / den_c);
-        symbols::MathExpressionNode* reduced = mgr_.binary(NT::Divide, W(num_k), W(den_k)).get();
+        Rational num_c = extract_coeff(n->binary.left,  num_k);
+        Rational den_c = extract_coeff(n->binary.right, den_k);
+        if (den_c.is_zero()) break;
+        if (den_k->type == NT::Constant) {
+            if (qv(den_k).is_zero()) break;
+            den_c *= qv(den_k);
+            den_k = K(1.0).get();
+        }
+        Rational net   = sign * (num_c / den_c);
+        if (num_k->type == NT::Constant) {
+            const_sum += net * qv(num_k);
+            return;
+        }
+        symbols::MathExpressionNode* reduced = (den_k->type == NT::Constant) ? num_k : mgr_.binary(NT::Divide, W(num_k), W(den_k)).get();
         for (auto& e : out) { if (same(e.kernel, reduced)) { e.coeff += net; return; }}
         out.push_back({ reduced, net });
         return;
@@ -350,11 +372,11 @@ void MathExpressionRewriter::collect_add(MathExpressionNode* n, double sign, dou
         break;
     }
 
-    double c;
+    Rational c;
     MathExpressionNode* kernel;
     strip_scalar(n, sign, c, kernel);
     if (kernel->type == NT::Constant) {
-        const_sum += c * kernel->constant;
+        const_sum += c * qv(kernel);
         return;
     }
     for (auto& e : out) {
@@ -369,36 +391,36 @@ void MathExpressionRewriter::collect_add(MathExpressionNode* n, double sign, dou
 auto MathExpressionRewriter::rule_add_normalize(MathExpressionNode* n) -> MathExpressionNode* {
     using NT = NodeType;
     if (n->type != NT::Add && n->type != NT::Subtract && n->type != NT::Negate) return n;
-    double const_sum = 0.0;
+    Rational const_sum;
     std::vector<AddEntry> entries;
-    collect_add(n, 1.0, const_sum, entries);
+    collect_add(n, Rational(1), const_sum, entries);
     std::vector<AddEntry> live;
     live.reserve(entries.size());
-    for (auto& e : entries) { if (!near_zero(e.coeff)) live.push_back(e); }
-    std::stable_partition(live.begin(), live.end(), [](const AddEntry& e) { return e.coeff > 0.0; });
+    for (auto& e : entries) { if (!e.coeff.is_zero()) live.push_back(e); }
+    std::stable_partition(live.begin(), live.end(), [](const AddEntry& e) { return e.coeff.is_positive(); });
     MathExpressionNode* result = nullptr;
     for (auto& e : live) {
-        double ac = std::abs(e.coeff);
+        const Rational ac = e.coeff.abs();
         MathExpressionNode* term;
-        if (near_eq(ac, 1.0)) term = e.kernel;
-        else                  term = mul(K(ac), W(e.kernel)).get();
+        if (ac.is_one()) term = e.kernel;
+        else             term = mul(K(ac), W(e.kernel)).get();
 
         if (!result) {
-            if (near_eq(ac, 1.0))
-                result = (e.coeff < 0.0) ? neg(W(e.kernel)).get() : e.kernel;
-            else if (e.coeff < 0.0)
+            if (ac.is_one())
+                result = e.coeff.is_negative() ? neg(W(e.kernel)).get() : e.kernel;
+            else if (e.coeff.is_negative())
                 result = mul(K(e.coeff), W(e.kernel)).get(); 
             else
                 result = term;
-        } else if (e.coeff > 0.0) {
+        } else if (e.coeff.is_positive()) {
             result = mgr_.binary(NT::Add,      W(result), W(term)).get();
         } else {
             result = mgr_.binary(NT::Subtract, W(result), W(term)).get();
         }
     }
     if (result == nullptr) return K(const_sum).get();
-    if (!near_zero(const_sum)) {
-        if (const_sum > 0.0)
+    if (!const_sum.is_zero()) {
+        if (const_sum.is_positive())
             result = mgr_.binary(NT::Add,      W(result), K(const_sum)).get();
         else
             result = mgr_.binary(NT::Subtract, W(result), K(-const_sum)).get();
@@ -423,26 +445,25 @@ auto MathExpressionRewriter::rule_power_simplify(MathExpressionNode* n) -> MathE
     // x^0.5  ->  sqrt(x)
     if (n->type == NT::Power && isK(n->power.exponent, 0.5)) return un(NT::Sqrt, W(n->power.base)).get();
     // x^(1/3)  ->  cbrt(x)
-    if (n->type == NT::Power && isK(n->power.exponent) && near_eq(kv(n->power.exponent), 1.0 / 3.0)) return un(NT::Cbrt, W(n->power.base)).get();
+    if (n->type == NT::Power && isK(n->power.exponent) && qv(n->power.exponent) == Rational(BigInt(1), BigInt(3))) return un(NT::Cbrt, W(n->power.base)).get();
     // (c*x)^k  ->  c^k * x^k  for constant c and numeric k
     if (n->type == NT::Power && isK(n->power.exponent)) {
-        double e    = kv(n->power.exponent);
+        const Rational e = qv(n->power.exponent);
         auto*  base = n->power.base;
         if (base->type == NT::Multiply && isK(base->binary.left))
-            return mul(K(std::pow(kv(base->binary.left), e)), pw(W(base->binary.right), W(n->power.exponent))).get();
+            return mul(simp_.simplify(pw(W(base->binary.left), W(n->power.exponent))), pw(W(base->binary.right), W(n->power.exponent))).get();
         if (base->type == NT::Multiply && isK(base->binary.right))
-            return mul(K(std::pow(kv(base->binary.right), e)), pw(W(base->binary.left),  W(n->power.exponent))).get();
+            return mul(simp_.simplify(pw(W(base->binary.right), W(n->power.exponent))), pw(W(base->binary.left),  W(n->power.exponent))).get();
         // (-x)^n  for integer n
-        if (base->type == NT::Negate && e == std::floor(e)) {
-            int ei = static_cast<int>(e);
+        if (base->type == NT::Negate && e.is_integer()) {
             MathExpression inner = pw(W(base->unary.child), W(n->power.exponent));
-            return (ei % 2 == 0) ? inner.get() : neg(inner).get();
+            return e.numerator().is_even() ? inner.get() : neg(inner).get();
         }
     }
     // ln(x^n)  ->  n*ln(x)   for non-negative base
     if (n->type == NT::NaturalLog && n->unary.child->type == NT::Power) {
         auto* inner = n->unary.child;
-        if (!isK(inner->power.base) || kv(inner->power.base) > 0.0) return mul(W(inner->power.exponent), un(NT::NaturalLog, W(inner->power.base))).get();
+        if (!isK(inner->power.base) || qv(inner->power.base).is_positive()) return mul(W(inner->power.exponent), un(NT::NaturalLog, W(inner->power.base))).get();
     }
     return n;
 }
@@ -460,10 +481,10 @@ auto MathExpressionRewriter::rule_expand(MathExpressionNode* n, unsigned depth) 
         if (l->type == NT::Subtract) return sub(W(rule_expand(mul(W(l->binary.left),  W(r)).get(), depth+1)), W(rule_expand(mul(W(l->binary.right), W(r)).get(), depth+1))).get();
     }
     if (n->type == NT::Power && isK(n->power.exponent)) {
-        double expv = kv(n->power.exponent);
+        std::int64_t expv = 0;
         auto*  base = n->power.base;
         if ((base->type == NT::Add || base->type == NT::Subtract)
-            && expv == std::floor(expv) && expv >= 2.0 && expv <= 4.0) {
+            && qv(n->power.exponent).to_int64(expv) && expv >= 2 && expv <= 4) {
             int e = static_cast<int>(expv);
             MathExpressionNode* r = base;
             for (int i = 1; i < e; ++i) r = rule_expand(mul(W(r), W(base)).get(), depth+1);
@@ -476,23 +497,22 @@ auto MathExpressionRewriter::rule_expand(MathExpressionNode* n, unsigned depth) 
 auto MathExpressionRewriter::rule_factor(MathExpressionNode* n) -> MathExpressionNode* {
     using NT = NodeType;
     if (n->type != NT::Add && n->type != NT::Subtract) return n;
-    double const_sum = 0.0;
+    Rational const_sum;
     std::vector<AddEntry> entries;
-    collect_add(n, 1.0, const_sum, entries);
-    if (!near_zero(const_sum) || entries.size() < 2) return n;
+    collect_add(n, Rational(1), const_sum, entries);
+    if (!const_sum.is_zero() || entries.size() < 2) return n;
     MathExpressionNode* candidate = entries[0].kernel;
     for (auto& e : entries) { if (!same(e.kernel, candidate)) return n; }
-    double coeff_sum = 0.0;
+    Rational coeff_sum;
     for (auto& e : entries) coeff_sum += e.coeff;
-    if (near_zero(coeff_sum)) return K(0.0).get();
+    if (coeff_sum.is_zero()) return K(0.0).get();
     return mul(K(coeff_sum), W(candidate)).get();
 }
 
 bool MathExpressionRewriter::is_trig_sq(MathExpressionNode* n, NodeType t, MathExpressionNode** out) {
     if (n->type != NodeType::Power)                          return false;
     if (n->power.base->type != t)                            return false;
-    if (n->power.exponent->type != NodeType::Constant)       return false;
-    if (std::abs(n->power.exponent->constant - 2.0) > 1e-13) return false;
+    if (!is_exact_int(n->power.exponent, 2))                 return false;
     if (out) *out = n->power.base->unary.child;
     return true;
 }
@@ -518,11 +538,18 @@ bool MathExpressionRewriter::node_rule_active(const TrigNodeRule& r) const {
     return r.required_pref == TrigFormPreference::Auto || cfg_.trig_form == r.required_pref;
 }
 
+bool MathExpressionRewriter::is_half_pi(const MathExpressionNode* n) {
+    if (n->type == NodeType::Divide && n->binary.left->type == NodeType::Pi && is_exact_int(n->binary.right, 2)) return true;
+    if (n->type != NodeType::Multiply) return false;
+    const MathExpressionNode* k = nullptr;
+    if (n->binary.left->type == NodeType::Pi)  k = n->binary.right;
+    if (n->binary.right->type == NodeType::Pi) k = n->binary.left;
+    return k && k->type == NodeType::Constant && k->exact && *k->exact == Rational(BigInt(1), BigInt(2));
+}
+
 auto MathExpressionRewriter::match_pi2_minus(MathExpressionNode* nd) -> MathExpressionNode* {
     if (nd->type != NodeType::Subtract) return nullptr;
-    auto* lhs = nd->binary.left;
-    if (lhs->type != NodeType::Constant) return nullptr;
-    if (std::abs(lhs->constant - constants::pi_2()) > 1e-12) return nullptr;
+    if (!is_half_pi(nd->binary.left)) return nullptr;
     return nd->binary.right;
 }
 
@@ -548,7 +575,7 @@ void MathExpressionRewriter::init_trig_rules() {
         node_rules_.push_back({ nm,
             [func](MathExpressionNode* nd) -> MathExpressionNode* {
                 if (nd->type != NodeType::Divide) return nullptr;
-                if (nd->binary.left->type != NodeType::Constant || std::abs(nd->binary.left->constant - 1.0) > 1e-12) return nullptr;
+                if (!is_exact_int(nd->binary.left, 1)) return nullptr;
                 if (nd->binary.right->type != func) return nullptr;
                 return nd->binary.right->unary.child;
             },
@@ -597,8 +624,7 @@ void MathExpressionRewriter::init_trig_rules() {
                 if (nd->type != func) return nullptr;
                 auto* arg = nd->unary.child;
                 if (arg->type != NodeType::Divide) return nullptr;
-                if (arg->binary.left->type != NodeType::Constant) return nullptr;
-                if (std::abs(arg->binary.left->constant - 1.0) > 1e-12) return nullptr;
+                if (!is_exact_int(arg->binary.left, 1)) return nullptr;
                 return arg->binary.right;  // x
             },
             [this, res](MathExpressionNode* x) { return un(res, W(x)).get(); },
@@ -820,7 +846,7 @@ void MathExpressionRewriter::init_trig_rules() {
     for (auto& ap : arc_pairs) {
         sum_rules_.push_back({
             "arcf(x)+arcg(x)->pi/2",
-            [ap, this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+            [ap, this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
                 for (int i = 0; i < (int)ent.size(); ++i) {
                     auto* ki = ent[i].kernel;
                     if (ki->type != ap.a && ki->type != ap.b) continue;
@@ -831,10 +857,10 @@ void MathExpressionRewriter::init_trig_rules() {
                         if (kj->type != need) continue;
                         if (!same(xi, kj->unary.child)) continue;
                         if (!near_eq(ent[i].coeff, ent[j].coeff)) continue;
-                        double c = ent[i].coeff;
+                        Rational c = ent[i].coeff;
                         ent.erase(ent.begin() + j);
                         ent.erase(ent.begin() + i);
-                        cs += c * constants::pi_2();
+                        ent.push_back({ mgr_.pi().get(), c * Rational(BigInt(1), BigInt(2)) });
                         return rebuild_add_entries(cs, ent);
                     }
                 }
@@ -850,11 +876,11 @@ void MathExpressionRewriter::init_trig_rules() {
     // SinOnly               -> ca + (cb-ca)*sin^2
     // CosOnly / Auto / rest -> cb + (ca-cb)*cos^2
     sum_rules_.push_back({ "ca*cos^2+cb*sin^2",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             MathExpressionNode* theta = nullptr;
             int ci = find_sq(ent, NT::Cos, &theta);  if (ci < 0) return nullptr;
             int si = find_sq(ent, NT::Sin, theta);   if (si < 0) return nullptr;
-            double ca = ent[ci].coeff, cb = ent[si].coeff;
+            Rational ca = ent[ci].coeff, cb = ent[si].coeff;
             erase_pair(ent, ci, si);
             if (near_eq(ca, cb)) {
                 cs += ca;
@@ -873,13 +899,13 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // ct*tan^2(x) + ct = ct*sec^2(x)
     sum_rules_.push_back({ "ct*tan^2+ct->ct*sec^2",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             if (near_zero(cs)) return nullptr;
             MathExpressionNode* theta = nullptr;
             int ti = find_sq(ent, NT::Tan, &theta);  if (ti < 0) return nullptr;
             if (!near_eq(ent[ti].coeff, cs)) return nullptr;
-            double ct = cs;
-            ent.erase(ent.begin() + ti);  cs = 0.0;
+            Rational ct = cs;
+            ent.erase(ent.begin() + ti);  cs = Rational();
             ent.push_back({ pw(un(NT::Sec, W(theta)), K(2.0)).get(), ct });
             return rebuild_add_entries(cs, ent);
         }
@@ -887,13 +913,13 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // ct*sec^2(x) − ct = ct*tan^2(x)  [PowerReduced only]
     sum_rules_.push_back({ "ct*sec^2-ct->ct*tan^2",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             if (near_zero(cs)) return nullptr;
             MathExpressionNode* theta = nullptr;
             int si = find_sq(ent, NT::Sec, &theta);  if (si < 0) return nullptr;
             if (!near_eq(ent[si].coeff, -cs)) return nullptr;
-            double ct = ent[si].coeff;
-            ent.erase(ent.begin() + si);  cs = 0.0;
+            Rational ct = ent[si].coeff;
+            ent.erase(ent.begin() + si);  cs = Rational();
             ent.push_back({ pw(un(NT::Tan, W(theta)), K(2.0)).get(), ct });
             return rebuild_add_entries(cs, ent);
         },
@@ -902,13 +928,13 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // ct*cot^2(x) + ct = ct*csc^2(x)
     sum_rules_.push_back({ "ct*cot^2+ct->ct*csc^2",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             if (near_zero(cs)) return nullptr;
             MathExpressionNode* theta = nullptr;
             int ti = find_sq(ent, NT::Cot, &theta);  if (ti < 0) return nullptr;
             if (!near_eq(ent[ti].coeff, cs)) return nullptr;
-            double ct = cs;
-            ent.erase(ent.begin() + ti);  cs = 0.0;
+            Rational ct = cs;
+            ent.erase(ent.begin() + ti);  cs = Rational();
             ent.push_back({ pw(un(NT::Csc, W(theta)), K(2.0)).get(), ct });
             return rebuild_add_entries(cs, ent);
         }
@@ -919,11 +945,11 @@ void MathExpressionRewriter::init_trig_rules() {
     //   ca ==  cb  ->  ca*cosh(2x)       (cosh^2+sinh^2 = cosh(2x))
     //   else       ->  cs += ca,  (ca+cb)*sinh^2
     sum_rules_.push_back({ "ca*cosh^2+cb*sinh^2",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             MathExpressionNode* theta = nullptr;
             int ci = find_sq(ent, NT::Cosh, &theta);  if (ci < 0) return nullptr;
             int si = find_sq(ent, NT::Sinh, theta);   if (si < 0) return nullptr;
-            double ca = ent[ci].coeff, cb = ent[si].coeff;
+            Rational ca = ent[ci].coeff, cb = ent[si].coeff;
             erase_pair(ent, ci, si);
             if (near_eq(ca, -cb)) {
                 cs += ca;
@@ -939,13 +965,13 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // ct*sinh^2(x) + ct = ct*cosh^2(x)    i.e. sinh^2+1 = cosh^2
     sum_rules_.push_back({ "ct*sinh^2+ct->ct*cosh^2",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             if (near_zero(cs)) return nullptr;
             MathExpressionNode* theta = nullptr;
             int si = find_sq(ent, NT::Sinh, &theta);  if (si < 0) return nullptr;
             if (!near_eq(ent[si].coeff, cs)) return nullptr;
-            double ct = cs;
-            ent.erase(ent.begin() + si);  cs = 0.0;
+            Rational ct = cs;
+            ent.erase(ent.begin() + si);  cs = Rational();
             ent.push_back({ pw(un(NT::Cosh, W(theta)), K(2.0)).get(), ct });
             return rebuild_add_entries(cs, ent);
         }
@@ -953,13 +979,13 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // ct − ct*tanh^2(x) = ct*sech^2(x)    i.e. 1-tanh^2=sech^2
     sum_rules_.push_back({ "ct-ct*tanh^2->ct*sech^2",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             if (near_zero(cs)) return nullptr;
             MathExpressionNode* theta = nullptr;
             int ti = find_sq(ent, NT::Tanh, &theta);  if (ti < 0) return nullptr;
             if (!near_eq(ent[ti].coeff, -cs)) return nullptr;
-            double ct = cs;
-            ent.erase(ent.begin() + ti);  cs = 0.0;
+            Rational ct = cs;
+            ent.erase(ent.begin() + ti);  cs = Rational();
             ent.push_back({ pw(un(NT::Sech, W(theta)), K(2.0)).get(), ct });
             return rebuild_add_entries(cs, ent);
         }
@@ -967,12 +993,12 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // ct*tanh^2(x) + ct*sech^2(x) = ct    tanh^2+sech^2=1 direction
     sum_rules_.push_back({ "ct*tanh^2+ct*sech^2->ct",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             MathExpressionNode* theta = nullptr;
             int ti = find_sq(ent, NT::Tanh, &theta);  if (ti < 0) return nullptr;
             int si = find_sq(ent, NT::Sech, theta);   if (si < 0) return nullptr;
             if (!near_eq(ent[ti].coeff, ent[si].coeff)) return nullptr;
-            double ct = ent[ti].coeff;
+            Rational ct = ent[ti].coeff;
             erase_pair(ent, ti, si);
             cs += ct;
             return rebuild_add_entries(cs, ent);
@@ -981,12 +1007,12 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // ca*coth^2(x) − ca*csch^2(x) = ca    (coth^2-csch^2=1)
     sum_rules_.push_back({ "ca*coth^2-ca*csch^2->ca",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             MathExpressionNode* theta = nullptr;
             int ci = find_sq(ent, NT::Coth, &theta);  if (ci < 0) return nullptr;
             int si = find_sq(ent, NT::Csch, theta);   if (si < 0) return nullptr;
             if (!near_eq(ent[ci].coeff, -ent[si].coeff)) return nullptr;
-            double ct = ent[ci].coeff;
+            Rational ct = ent[ci].coeff;
             erase_pair(ent, ci, si);
             cs += ct;
             return rebuild_add_entries(cs, ent);
@@ -995,13 +1021,13 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // ct*csch^2(x) + ct = ct*coth^2(x)  (csch^2+1=coth^2) 
     sum_rules_.push_back({ "ct*csch^2+ct->ct*coth^2",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             if (near_zero(cs)) return nullptr;
             MathExpressionNode* theta = nullptr;
             int si = find_sq(ent, NT::Csch, &theta);  if (si < 0) return nullptr;
             if (!near_eq(ent[si].coeff, cs)) return nullptr;
-            double ct = cs;
-            ent.erase(ent.begin() + si);  cs = 0.0;
+            Rational ct = cs;
+            ent.erase(ent.begin() + si);  cs = Rational();
             ent.push_back({ pw(un(NT::Coth, W(theta)), K(2.0)).get(), ct });
             return rebuild_add_entries(cs, ent);
         }
@@ -1009,7 +1035,7 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // sin(A)*cos(B) + sin(B)*cos(A) = sin(A+B) 
     sum_rules_.push_back({ "sin(A)cos(B)+sin(B)cos(A)->sin(A+B)",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             for (int i = 0; i < (int)ent.size(); ++i) {
                 MathExpressionNode *su = nullptr, *cv = nullptr;
                 if (!is_sincos_product(ent[i].kernel, NT::Sin, NT::Cos, &su, &cv)) continue;
@@ -1018,7 +1044,7 @@ void MathExpressionRewriter::init_trig_rules() {
                     MathExpressionNode *sv = nullptr, *cu = nullptr;
                     if (!is_sincos_product(ent[j].kernel, NT::Sin, NT::Cos, &sv, &cu)) continue;
                     if (!same(su, cu) || !same(sv, cv)) continue;
-                    double c = ent[i].coeff;
+                    Rational c = ent[i].coeff;
                     ent.erase(ent.begin()+j); ent.erase(ent.begin()+i);
                     auto* sum_arg = add(W(su), W(sv)).get();
                     ent.push_back({ un(NT::Sin, W(sum_arg)).get(), c });
@@ -1031,7 +1057,7 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // sin(A)*cos(B) - sin(B)*cos(A) = sin(A-B) 
     sum_rules_.push_back({ "sin(A)cos(B)+sin(B)cos(A)->sin(A+B)",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             for (int i = 0; i < (int)ent.size(); ++i) {
                 MathExpressionNode *su = nullptr, *cv = nullptr;
                 if (!is_sincos_product(ent[i].kernel, NT::Sin, NT::Cos, &su, &cv)) continue;
@@ -1040,7 +1066,7 @@ void MathExpressionRewriter::init_trig_rules() {
                     MathExpressionNode *sv = nullptr, *cu = nullptr;
                     if (!is_sincos_product(ent[j].kernel, NT::Sin, NT::Cos, &sv, &cu)) continue;
                     if (!same(su, cu) || !same(sv, cv)) continue;
-                    double c = ent[i].coeff;
+                    Rational c = ent[i].coeff;
                     ent.erase(ent.begin()+j); ent.erase(ent.begin()+i);
                     auto* sum_arg = sub(W(su), W(sv)).get();
                     ent.push_back({ un(NT::Sin, W(sum_arg)).get(), c });
@@ -1053,7 +1079,7 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // cos(A)*cos(B) − sin(A)*sin(B) = cos(A+B) 
     sum_rules_.push_back({ "cos(A)cos(B)-sin(A)sin(B)->cos(A+B)",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             for (int i = 0; i < (int)ent.size(); ++i) {
                 MathExpressionNode *cu = nullptr, *cv = nullptr;
                 if (!is_sincos_product(ent[i].kernel, NT::Cos, NT::Cos, &cu, &cv)) continue;
@@ -1063,7 +1089,7 @@ void MathExpressionRewriter::init_trig_rules() {
                     MathExpressionNode *su = nullptr, *sv = nullptr;
                     if (!is_sincos_product(ent[j].kernel, NT::Sin, NT::Sin, &su, &sv)) continue;
                     if (!(same(su, cu) && same(sv, cv)) && !(same(su, cv) && same(sv, cu))) continue;
-                    double c = ent[i].coeff;
+                    Rational c = ent[i].coeff;
                     int hi = std::max(i,j), lo = std::min(i,j);
                     ent.erase(ent.begin()+hi); ent.erase(ent.begin()+lo);
                     auto* sum_arg = add(W(cu), W(cv)).get();
@@ -1077,7 +1103,7 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // cos(A)*cos(B) + sin(A)*sin(B) = cos(A−B) 
     sum_rules_.push_back({ "cos(A)cos(B)+sin(A)sin(B)->cos(A-B)",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             for (int i = 0; i < (int)ent.size(); ++i) {
                 MathExpressionNode *cu = nullptr, *cv = nullptr;
                 if (!is_sincos_product(ent[i].kernel, NT::Cos, NT::Cos, &cu, &cv)) continue;
@@ -1087,7 +1113,7 @@ void MathExpressionRewriter::init_trig_rules() {
                     MathExpressionNode *su = nullptr, *sv = nullptr;
                     if (!is_sincos_product(ent[j].kernel, NT::Sin, NT::Sin, &su, &sv)) continue;
                     if (!(same(su, cu) && same(sv, cv)) && !(same(su, cv) && same(sv, cu))) continue;
-                    double c = ent[i].coeff;
+                    Rational c = ent[i].coeff;
                     int hi = std::max(i,j), lo = std::min(i,j);
                     ent.erase(ent.begin()+hi); ent.erase(ent.begin()+lo);
                     auto* diff_arg = sub(W(cu), W(cv)).get();
@@ -1101,7 +1127,7 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // sinh(A)*cosh(B) + cosh(A)*sinh(B) = sinh(A+B)
     sum_rules_.push_back({ "sinh(A)cosh(B)+cosh(A)sinh(B)->sinh(A+B)",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             for (int i = 0; i < (int)ent.size(); ++i) {
                 MathExpressionNode *su = nullptr, *cv = nullptr;
                 if (!is_sincos_product(ent[i].kernel, NT::Sinh, NT::Cosh, &su, &cv)) continue;
@@ -1110,7 +1136,7 @@ void MathExpressionRewriter::init_trig_rules() {
                     MathExpressionNode *sv = nullptr, *cu = nullptr;
                     if (!is_sincos_product(ent[j].kernel, NT::Sinh, NT::Cosh, &sv, &cu)) continue;
                     if (!same(su, cu) || !same(sv, cv)) continue;
-                    double c = ent[i].coeff;
+                    Rational c = ent[i].coeff;
                     ent.erase(ent.begin()+j); ent.erase(ent.begin()+i);
                     auto* sum_arg = add(W(su), W(sv)).get();
                     ent.push_back({ un(NT::Sinh, W(sum_arg)).get(), c });
@@ -1123,7 +1149,7 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // sinh(A)*cosh(B) - cosh(A)*sinh(B) = sinh(A-B)
     sum_rules_.push_back({ "sinh(A)cosh(B)-cosh(A)sinh(B)->sinh(A-B)",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             for (int i = 0; i < (int)ent.size(); ++i) {
                 MathExpressionNode *su = nullptr, *cv = nullptr;
                 if (!is_sincos_product(ent[i].kernel, NT::Sinh, NT::Cosh, &su, &cv)) continue;
@@ -1132,7 +1158,7 @@ void MathExpressionRewriter::init_trig_rules() {
                     MathExpressionNode *sv = nullptr, *cu = nullptr;
                     if (!is_sincos_product(ent[j].kernel, NT::Sinh, NT::Cosh, &sv, &cu)) continue;
                     if (!same(su, cu) || !same(sv, cv)) continue;
-                    double c = ent[i].coeff;
+                    Rational c = ent[i].coeff;
                     ent.erase(ent.begin()+j); ent.erase(ent.begin()+i);
                     auto* sum_arg = sub(W(su), W(sv)).get();
                     ent.push_back({ un(NT::Sinh, W(sum_arg)).get(), c });
@@ -1145,7 +1171,7 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // cosh(A)*cosh(B) + sinh(A)*sinh(B) = cosh(A+B)  [NOTE: sign is +, unlike cos(A+B)]
     sum_rules_.push_back({ "cosh(A)cosh(B)+sinh(A)sinh(B)->cosh(A+B)",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             for (int i = 0; i < (int)ent.size(); ++i) {
                 MathExpressionNode *cu = nullptr, *cv = nullptr;
                 if (!is_sincos_product(ent[i].kernel, NT::Cosh, NT::Cosh, &cu, &cv)) continue;
@@ -1155,7 +1181,7 @@ void MathExpressionRewriter::init_trig_rules() {
                     MathExpressionNode *su = nullptr, *sv = nullptr;
                     if (!is_sincos_product(ent[j].kernel, NT::Sinh, NT::Sinh, &su, &sv)) continue;
                     if (!(same(su, cu) && same(sv, cv)) && !(same(su, cv) && same(sv, cu))) continue;
-                    double c = ent[i].coeff;
+                    Rational c = ent[i].coeff;
                     int hi = std::max(i,j), lo = std::min(i,j);
                     ent.erase(ent.begin()+hi); ent.erase(ent.begin()+lo);
                     auto* sum_arg = add(W(cu), W(cv)).get();
@@ -1169,7 +1195,7 @@ void MathExpressionRewriter::init_trig_rules() {
 
     // cosh(A)*cosh(B) - sinh(A)*sinh(B) = cosh(A-B)
     sum_rules_.push_back({ "cosh(A)cosh(B)-sinh(A)sinh(B)->cosh(A-B)",
-        [this](double& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
+        [this](Rational& cs, std::vector<AddEntry>& ent) -> MathExpressionNode* {
             for (int i = 0; i < (int)ent.size(); ++i) {
                 MathExpressionNode *cu = nullptr, *cv = nullptr;
                 if (!is_sincos_product(ent[i].kernel, NT::Cosh, NT::Cosh, &cu, &cv)) continue;
@@ -1179,7 +1205,7 @@ void MathExpressionRewriter::init_trig_rules() {
                     MathExpressionNode *su = nullptr, *sv = nullptr;
                     if (!is_sincos_product(ent[j].kernel, NT::Sinh, NT::Sinh, &su, &sv)) continue;
                     if (!(same(su, cu) && same(sv, cv)) && !(same(su, cv) && same(sv, cu))) continue;
-                    double c = ent[i].coeff;
+                    Rational c = ent[i].coeff;
                     int hi = std::max(i,j), lo = std::min(i,j);
                     ent.erase(ent.begin()+hi); ent.erase(ent.begin()+lo);
                     auto* diff_arg = sub(W(cu), W(cv)).get();
@@ -1216,9 +1242,9 @@ auto MathExpressionRewriter::rule_trig(MathExpressionNode* n) -> MathExpressionN
     }
     if (!cfg_.do_trig_pythagorean) return n;
     if (n->type != NodeType::Add && n->type != NodeType::Subtract) return n;
-    double cs = 0.0;
+    Rational cs;
     std::vector<AddEntry> ent;
-    collect_add(n, 1.0, cs, ent);
+    collect_add(n, Rational(1), cs, ent);
     for (auto& r : sum_rules_) {
         if (!sum_rule_active(r)) continue;
         MathExpressionNode* result = r.apply(cs, ent);

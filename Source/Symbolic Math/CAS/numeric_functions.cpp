@@ -166,6 +166,128 @@ double lucas_polynomial(double x, double n) {
     return unary(x, [k](const BigFloat& a, const BigFloatContext& c) { return fm::lucas_polynomial(a, k, c); });
 }
 
+namespace {
+
+bool whole_big(const BigFloat& n, std::int64_t& k) {
+    if (!n.is_finite() || !n.is_integer()) return false;
+    const BigInt v = n.get_integer_part();
+    if (v.bit_length() > 53) return false;
+    const std::int64_t mag = static_cast<std::int64_t>(v.get_lowest_bits());
+    k = v.is_negative() ? -mag : mag;
+    return true;
+}
+
+BigFloat big_nan() { return BigFloat::nan(); }
+
+} // namespace
+
+BigFloat erf(const BigFloat& x, const BigFloatContext& c)          { return fm::erf(x, c); }
+BigFloat erfc(const BigFloat& x, const BigFloatContext& c)         { return fm::erfc(x, c); }
+BigFloat erfi(const BigFloat& x, const BigFloatContext& c)         { return fm::erfi(x, c); }
+BigFloat inverse_erf(const BigFloat& x, const BigFloatContext& c)  { return fm::inv_erf(x, c); }
+BigFloat inverse_erfc(const BigFloat& x, const BigFloatContext& c) { return fm::inv_erfc(x, c); }
+BigFloat inverse_erfi(const BigFloat& x, const BigFloatContext& c) { return fm::inv_erfi(x, c); }
+
+BigFloat erf_difference(const BigFloat& a, const BigFloat& b, const BigFloatContext& c)  { return fm::generalized_erf(a, b, c); }
+BigFloat erfc_difference(const BigFloat& a, const BigFloat& b, const BigFloatContext& c) { return fm::generalized_erfc(a, b, c); }
+
+BigFloat gamma(const BigFloat& x, const BigFloatContext& c) { return fm::gamma(x, c); }
+
+BigFloat factorial(const BigFloat& x, const BigFloatContext& c) {
+    const BigFloatContext exact(BigFloatContext::max_prec, RoundingMode::nearest_even);
+    return fm::gamma(BigFloat::add(x, BigFloat::one(), exact), c);
+}
+
+BigFloat digamma(const BigFloat& x, const BigFloatContext& c)  { return fm::digamma(x, c); }
+BigFloat trigamma(const BigFloat& x, const BigFloatContext& c) { return fm::trigamma(x, c); }
+
+BigFloat beta(const BigFloat& x, const BigFloat& y, const BigFloatContext& c) { return fm::beta(x, y, c); }
+
+BigFloat polygamma(const BigFloat& x, const BigFloat& n, const BigFloatContext& c) {
+    std::int64_t k = 0;
+    if (!whole_big(n, k) || k > 1000000 || k < -1000000) return big_nan();
+    return fm::polygamma(x, static_cast<int>(k), c);
+}
+
+BigFloat lambert_w(const BigFloat& x, const BigFloat& branch, const BigFloatContext& c) {
+    std::int64_t k = 0;
+    if (!whole_big(branch, k)) return big_nan();
+    return fm::lambert_w(x, k, c);
+}
+
+BigFloat chebyshev_t(const BigFloat& x, const BigFloat& n, const BigFloatContext& c) {
+    std::int64_t k = 0;
+    if (whole_big(n, k)) return fm::chebyshev_t(x, k, c);
+    if (!x.is_finite() || x.abs() > BigFloat::one()) return big_nan();
+    const BigFloatContext g = guarded(c);
+    return fm::cos(BigFloat::mul(n, fm::arccos(x, g), g), g).rounded(c);
+}
+
+BigFloat chebyshev_u(const BigFloat& x, const BigFloat& n, const BigFloatContext& c) {
+    std::int64_t k = 0;
+    if (whole_big(n, k)) return fm::chebyshev_u(x, k, c);
+    if (!x.is_finite() || !(x.abs() < BigFloat::one())) return big_nan();
+    const BigFloatContext g     = guarded(c);
+    const BigFloat        theta = fm::arccos(x, g);
+    const BigFloat        top   = fm::sin(BigFloat::mul(BigFloat::add(n, BigFloat::one(), g), theta, g), g);
+    return BigFloat::div(top, fm::sin(theta, g), g).rounded(c);
+}
+
+BigFloat exp_integral(const BigFloat& x, const BigFloatContext& c) { return fm::exp_integral(x, c); }
+
+BigFloat exp_integral(const BigFloat& x, const BigFloat& n, const BigFloatContext& c) {
+    std::int64_t k = 0;
+    if (whole_big(n, k)) return fm::exp_integral_generalized(x, k, c);
+    if (!(x > BigFloat::zero())) return big_nan();
+    const BigFloatContext g = guarded(c);
+    const BigFloat        s = BigFloat::sub(BigFloat::one(), n, g);
+    return BigFloat::div(fm::upper_incomplete_gamma(s, x, g), fm::pow(x, s, g), g).rounded(c);
+}
+
+BigFloat log_integral(const BigFloat& x, const BigFloatContext& c) { return fm::log_integral(x, c); }
+
+BigFloat log_integral(const BigFloat& x, const BigFloat& n, const BigFloatContext& c) {
+    std::int64_t k = 0;
+    if (!whole_big(n, k)) return big_nan();
+    return fm::log_integral_generalized(x, k, c);
+}
+
+BigFloat sin_integral(const BigFloat& x, const BigFloatContext& c)  { return fm::sin_integral(x, c); }
+BigFloat cos_integral(const BigFloat& x, const BigFloatContext& c)  { return fm::cos_integral(x, c); }
+BigFloat sinh_integral(const BigFloat& x, const BigFloatContext& c) { return fm::sinh_integral(x, c); }
+BigFloat cosh_integral(const BigFloat& x, const BigFloatContext& c) { return fm::cosh_integral(x, c); }
+BigFloat fresnel_s(const BigFloat& x, const BigFloatContext& c)     { return fm::fresnel_s(x, c); }
+BigFloat fresnel_c(const BigFloat& x, const BigFloatContext& c)     { return fm::fresnel_c(x, c); }
+
+BigFloat riemann_zeta(const BigFloat& s, const BigFloatContext& c) { return fm::riemann_zeta(s, c); }
+BigFloat dilogarithm(const BigFloat& x, const BigFloatContext& c)  { return fm::dilogarithm(x, c); }
+BigFloat trilogarithm(const BigFloat& x, const BigFloatContext& c) { return fm::trilogarithm(x, c); }
+
+BigFloat polylog(const BigFloat& x, const BigFloat& s, const BigFloatContext& c) { return fm::polylog(x, s, c); }
+
+BigFloat spence_function(const BigFloat& x, const BigFloatContext& c)     { return fm::spence_function(x, c); }
+BigFloat spence_integral(const BigFloat& x, const BigFloatContext& c)     { return fm::spence_integral(x, c); }
+BigFloat rogers_l(const BigFloat& x, const BigFloatContext& c)            { return fm::rogers_l(x, c); }
+BigFloat rogers_l_normalized(const BigFloat& x, const BigFloatContext& c) { return fm::rogers_l_normalized(x, c); }
+
+BigFloat gudermannian(const BigFloat& x, const BigFloatContext& c)         { return fm::gudermannian(x, c); }
+BigFloat inverse_gudermannian(const BigFloat& x, const BigFloatContext& c) { return fm::inv_gudermannian(x, c); }
+
+BigFloat fibonacci(const BigFloat& x, const BigFloatContext& c) { return fm::fibonacci(x, c); }
+BigFloat lucas(const BigFloat& x, const BigFloatContext& c)     { return fm::lucas(x, c); }
+
+BigFloat fibonacci_polynomial(const BigFloat& x, const BigFloat& n, const BigFloatContext& c) {
+    std::int64_t k = 0;
+    if (!whole_big(n, k)) return big_nan();
+    return fm::fibonacci_polynomial(x, k, c);
+}
+
+BigFloat lucas_polynomial(const BigFloat& x, const BigFloat& n, const BigFloatContext& c) {
+    std::int64_t k = 0;
+    if (!whole_big(n, k)) return big_nan();
+    return fm::lucas_polynomial(x, k, c);
+}
+
 } // namespace numeric
 } // namespace cas
 } // namespace math

@@ -54,6 +54,11 @@ public:
 
     Expression variable(const std::string& name) { return Expression(mgr_.variable(name), mgr_); }
     Expression constant(double v) { return Expression(mgr_.constant(v), mgr_); }
+    Expression constant(const Rational& r) { return Expression(mgr_.constant(r), mgr_); }
+    Expression constant(const std::string& text) { return Expression(mgr_.constant_from_string(text), mgr_); }
+    Expression rational(std::int64_t numerator, std::int64_t denominator) { return Expression(mgr_.rational(numerator, denominator), mgr_); }
+    Expression pi() { return Expression(mgr_.pi(), mgr_); }
+    Expression euler_number() { return Expression(mgr_.euler_number(), mgr_); }
     Expression derivative(const Expression& e, const std::string& var) { return Expression(diff_.derivative(e.inner(), var), mgr_); }
     Expression nth_derivative_iterative(const Expression& e, const std::string& var, unsigned int order) { return Expression(diff_.nth_derivative_iterative(e.inner(), var, order), mgr_); }
     Expression nth_derivative_recursive(const Expression& e, const std::string& var, unsigned int order) { return Expression(diff_.nth_derivative_recursive(e.inner(), var, order), mgr_); }

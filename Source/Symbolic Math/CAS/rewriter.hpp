@@ -53,6 +53,7 @@ private:
 private:
     MathExpression W(MathExpressionNode* n)               { return MathExpression(n); }
     MathExpression K(double v)                             { return mgr_.constant(v); }
+    MathExpression K(const Rational& r)                    { return mgr_.constant(r); }
     MathExpression add(MathExpression a, MathExpression b) { return mgr_.binary(NodeType::Add,      a, b); }
     MathExpression sub(MathExpression a, MathExpression b) { return mgr_.binary(NodeType::Subtract, a, b); }
     MathExpression mul(MathExpression a, MathExpression b) { return mgr_.binary(NodeType::Multiply, a, b); }
@@ -62,10 +63,17 @@ private:
     MathExpression un (NodeType t, MathExpression a)       { return mgr_.unary(t, a); }
 private:
     bool isK(MathExpressionNode* n)           const { return n->type == NodeType::Constant; }
-    bool isK(MathExpressionNode* n, double v) const { return isK(n) && n->constant == v; }
+    bool isK(MathExpressionNode* n, double v) const { return isK(n) && n->constant == v && qv(n) == Rational::from_double_exact(v); }
     double kv(MathExpressionNode* n)          const { return n->constant; }
+    static Rational qv(const MathExpressionNode* n) { return n->exact ? *n->exact : Rational::from_double(n->constant); }
+    static bool is_exact_int(const MathExpressionNode* n, std::int64_t v) { return n->type == NodeType::Constant && n->exact && n->exact->is_integer() && n->exact->numerator() == BigInt(v); }
+    static bool is_half_pi(const MathExpressionNode* n);
     bool near_zero(double v)         const { return std::abs(v) < 1e-13; }
     bool near_eq(double a, double b) const { return std::abs(a - b) < 1e-13; }
+    bool near_zero(const Rational& v)                  const { return v.is_zero(); }
+    bool near_eq(const Rational& a, const Rational& b) const { return a == b; }
+
+    bool coeff_undefined_ = false;
 
     struct TrigNodeRule {
         const char* name;
@@ -87,9 +95,9 @@ private:
         int                 side; // +1 = numerator, -1 = denominator
     };
 
-    void collect_mul(MathExpressionNode* n, int side, double& coeff, std::vector<MulEntry>& out);
+    void collect_mul(MathExpressionNode* n, int side, Rational& coeff, std::vector<MulEntry>& out);
 
-    MathExpressionNode* build_const_exp_product(const std::vector<std::pair<MathExpressionNode*, double>>& factors);
+    MathExpressionNode* build_const_exp_product(const std::vector<std::pair<MathExpressionNode*, Rational>>& factors);
 
     MathExpressionNode* build_sym_product(const std::vector<MulEntry>& entries);
 
@@ -100,7 +108,7 @@ private:
         return mul(W(a), W(b)).get();
     }
 
-    MathExpressionNode* absorb_coeff(double c, MathExpressionNode* n);
+    MathExpressionNode* absorb_coeff(const Rational& c, MathExpressionNode* n);
 
     static bool is_polynomial_add(MathExpressionNode* n);
 
@@ -110,25 +118,25 @@ private:
 
     struct AddEntry {
         MathExpressionNode* kernel;
-        double              coeff;
+        Rational            coeff;
     };
 
     struct TrigSumRule {
         const char* name;
-        std::function<MathExpressionNode*(double&, std::vector<AddEntry>&)> apply;
+        std::function<MathExpressionNode*(Rational&, std::vector<AddEntry>&)> apply;
         TrigFormPreference required_pref = TrigFormPreference::Auto;
     };
 
     std::vector<TrigNodeRule> node_rules_;
     std::vector<TrigSumRule>  sum_rules_;
 
-    MathExpressionNode* rebuild_add_entries(double const_sum, const std::vector<AddEntry>& entries);
+    MathExpressionNode* rebuild_add_entries(const Rational& const_sum, const std::vector<AddEntry>& entries);
 
-    static void strip_scalar(MathExpressionNode* n, double base_sign, double& coeff_out, MathExpressionNode*& kernel_out);
+    static void strip_scalar(MathExpressionNode* n, const Rational& base_sign, Rational& coeff_out, MathExpressionNode*& kernel_out);
 
-    static double extract_coeff(MathExpressionNode* n, MathExpressionNode*& kernel_out);
+    static Rational extract_coeff(MathExpressionNode* n, MathExpressionNode*& kernel_out);
 
-    void collect_add(MathExpressionNode* n, double sign, double& const_sum, std::vector<AddEntry>& out);
+    void collect_add(MathExpressionNode* n, const Rational& sign, Rational& const_sum, std::vector<AddEntry>& out);
 
     MathExpressionNode* rule_add_normalize(MathExpressionNode* n);
 

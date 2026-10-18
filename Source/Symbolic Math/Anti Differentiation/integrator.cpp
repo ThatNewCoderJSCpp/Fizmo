@@ -11,6 +11,8 @@ bool is_free(const MathExpressionNode* n, std::uint64_t vid) {
     switch (n->type) {
     case NodeType::Variable:          return n->variable.var_id != vid;
     case NodeType::Constant:
+    case NodeType::Pi:
+    case NodeType::EulerNumber:
     case NodeType::PositiveInfinity:
     case NodeType::NegativeInfinity:
     case NodeType::NaN:
@@ -127,7 +129,89 @@ auto MathExpressionIntegrator::integrate_node(MathExpressionNode* n, std::uint64
     if (result) return result;
     result = try_heuristic(mgr_, simp_, diff_, n, vid);
     if (result) return result;
-    return {};
+    return integrate_linear_substitution(n, vid);
+}
+
+bool MathExpressionIntegrator::linear_parts(MathExpressionNode* n, std::uint64_t vid, MathExpression& a, MathExpression& b) {
+    using namespace integration;
+    if (is_var(n, vid)) { a = K(1.0); b = K(0.0); return true; }
+
+    switch (n->type) {
+        case NodeType::Negate:
+            if (!linear_parts(n->unary.child, vid, a, b)) return false;
+            a = neg(a);
+            b = neg(b);
+            return true;
+
+        case NodeType::Multiply: {
+            MathExpressionNode* c = nullptr;
+            MathExpressionNode* u = nullptr;
+            if (is_free(n->binary.left, vid))       { c = n->binary.left;  u = n->binary.right; }
+            else if (is_free(n->binary.right, vid)) { c = n->binary.right; u = n->binary.left;  }
+            else return false;
+            if (!linear_parts(u, vid, a, b)) return false;
+            a = mul(W(c), a);
+            b = mul(W(c), b);
+            return true;
+        }
+
+        case NodeType::Divide: {
+            if (!is_free(n->binary.right, vid)) return false;
+            if (!linear_parts(n->binary.left, vid, a, b)) return false;
+            a = divn(a, W(n->binary.right));
+            b = divn(b, W(n->binary.right));
+            return true;
+        }
+
+        case NodeType::Add:
+        case NodeType::Subtract: {
+            const bool add_op = n->type == NodeType::Add;
+            MathExpression la, lb, ra, rb;
+            const bool lfree = is_free(n->binary.left, vid);
+            const bool rfree = is_free(n->binary.right, vid);
+            if (lfree) { la = K(0.0); lb = W(n->binary.left); }
+            else if (!linear_parts(n->binary.left, vid, la, lb)) return false;
+            if (rfree) { ra = K(0.0); rb = W(n->binary.right); }
+            else if (!linear_parts(n->binary.right, vid, ra, rb)) return false;
+            a = add_op ? add(la, ra) : sub(la, ra);
+            b = add_op ? add(lb, rb) : sub(lb, rb);
+            return true;
+        }
+
+        default:
+            return false;
+    }
+}
+
+auto MathExpressionIntegrator::integrate_linear_substitution(MathExpressionNode* n, std::uint64_t vid) -> MathExpression {
+    using namespace integration;
+    MathExpressionNode* inner = nullptr;
+    MathExpression plain;
+    const MathExpression x = var_expr(vid);
+
+    if (NodeKeyHash::is_unary(n->type)) {
+        inner = n->unary.child;
+        plain = un(n->type, x);
+    } else if (n->type == NodeType::Power && is_free(n->power.exponent, vid)) {
+        inner = n->power.base;
+        plain = pw(x, W(n->power.exponent));
+    } else if (n->type == NodeType::Power && is_free(n->power.base, vid)) {
+        inner = n->power.exponent;
+        plain = pw(W(n->power.base), x);
+    } else {
+        return {};
+    }
+
+    if (is_var(inner, vid)) return {};
+    MathExpression a, b;
+    if (!linear_parts(inner, vid, a, b)) return {};
+    a = simp_.simplify(a);
+    if (a.get()->type == NodeType::Constant && a.get()->exact && a.get()->exact->is_zero()) return {};
+    MathExpression antiderivative = integrate_node(plain.get(), vid);
+    if (!antiderivative) return {};
+    MathExpressionSubstitutor subst(mgr_, vars_, simp_);
+    MathExpression back = subst.substitute(antiderivative, vars_.name(vid), MathExpression(inner));
+    return divn(back, a);
 }
 
 } // namespace symbols

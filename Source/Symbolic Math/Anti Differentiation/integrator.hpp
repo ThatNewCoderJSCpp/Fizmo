@@ -57,6 +57,10 @@ private:
     MathExpression W(MathExpressionNode* n)                 { return MathExpression(n); }
 
     MathExpression integrate_node(MathExpressionNode* n, std::uint64_t vid);
+
+    bool linear_parts(MathExpressionNode* n, std::uint64_t vid, MathExpression& a, MathExpression& b);
+
+    MathExpression integrate_linear_substitution(MathExpressionNode* n, std::uint64_t vid);
 };
 
 } // namespace symbols

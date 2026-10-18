@@ -54,6 +54,8 @@ public:
         using NT = symbols::NodeType;
         auto& mgr = y.manager();
         auto K = [&](double v) { return Expression(v, mgr); };
+        const Expression pi_k(mgr.pi(), mgr);
+        const Expression two_pi_k(mgr.binary(symbols::NodeType::Multiply, mgr.constant(2.0), mgr.pi()), mgr);
 
         switch (fn) {
             case NT::Sqrt:        return bijective(x, POW(y, 2.0), logic::IsNonNegative(y));
@@ -95,29 +97,29 @@ public:
 
             case NT::Sin: {
                 Expression base = ASIN(y);
-                return periodic(x, { base, K(constants::pi()) - base }, AND(y >= -1.0, y <= 1.0), index_var, K(2.0 * constants::pi()));
+                return periodic(x, { base, pi_k - base }, AND(y >= -1.0, y <= 1.0), index_var, two_pi_k);
             }
 
             case NT::Cos: {
                 Expression base = ACOS(y);
-                return periodic(x, { base, -base }, AND(y >= -1.0, y <= 1.0), index_var, K(2.0 * constants::pi()));
+                return periodic(x, { base, -base }, AND(y >= -1.0, y <= 1.0), index_var, two_pi_k);
             }
 
-            case NT::Tan: return periodic(x, { ATAN(y) }, logic::Predicate(true), index_var, K(constants::pi()));
+            case NT::Tan: return periodic(x, { ATAN(y) }, logic::Predicate(true), index_var, pi_k);
 
             case NT::Csc: {
                 Expression base = ACSC(y);
                 logic::Predicate dom = logic::OR(logic::Predicate(y >= 1.0), logic::Predicate(y <= -1.0));
-                return periodic(x, { base, K(constants::pi()) - base }, dom, index_var, K(2.0 * constants::pi()));
+                return periodic(x, { base, pi_k - base }, dom, index_var, two_pi_k);
             }
 
             case NT::Sec: {
                 Expression base = ASEC(y);
                 logic::Predicate dom = logic::OR(logic::Predicate(y >= 1.0), logic::Predicate(y <= -1.0));
-                return periodic(x, { base, -base }, dom, index_var, K(2.0 * constants::pi()));
+                return periodic(x, { base, -base }, dom, index_var, two_pi_k);
             }
 
-            case NT::Cot: return periodic(x, { ACOT(y) }, logic::Predicate(true), index_var, K(constants::pi()));
+            case NT::Cot: return periodic(x, { ACOT(y) }, logic::Predicate(true), index_var, pi_k);
 
             case NT::Sinh: return bijective(x, ASINH(y), logic::Predicate(true));
             case NT::Tanh: return bijective(x, ATANH(y), AND(y > -1.0, y < 1.0));

@@ -23,6 +23,9 @@ public:
 
 private:
     MathExpression konst(double v)   { return mgr_.constant(v);          }
+    MathExpression konst(const Rational& r) { return mgr_.constant(r);   }
+    MathExpression pi_node()         { return mgr_.pi();                 }
+    MathExpression e_node()          { return mgr_.euler_number();       }
     MathExpression pos_inf()         { return mgr_.pos_inf();            }
     MathExpression neg_inf()         { return mgr_.neg_inf();            }
     MathExpression nan_node()        { return mgr_.nan_expr();           }
@@ -31,7 +34,15 @@ private:
 
 public:
     bool is_const(const MathExpressionNode* n)             const { return n->type == NodeType::Constant;           }
-    bool is_const(const MathExpressionNode* n, double val) const { return is_const(n) && n->constant == val;       }
+    bool is_const(const MathExpressionNode* n, double val) const;
+    bool is_pi(const MathExpressionNode* n)                const { return n->type == NodeType::Pi;                 }
+    bool is_e(const MathExpressionNode* n)                 const { return n->type == NodeType::EulerNumber;        }
+    bool is_named_const(const MathExpressionNode* n)       const { return is_pi(n) || is_e(n);                     }
+    Rational qv(const MathExpressionNode* n)               const { return n->exact ? *n->exact : Rational::from_double(n->constant); }
+    int known_sign(const MathExpressionNode* n)            const;
+    bool pi_multiple(const MathExpressionNode* n, Rational& r) const;
+    bool is_inv_e(const MathExpressionNode* n)             const;
+    bool is_neg_inv_e(const MathExpressionNode* n)         const;
     bool is_pos_inf(const MathExpressionNode* n)           const { return n->type == NodeType::PositiveInfinity;   }
     bool is_neg_inf(const MathExpressionNode* n)           const { return n->type == NodeType::NegativeInfinity;   }
     bool is_infinite(const MathExpressionNode* n)          const { return is_pos_inf(n) || is_neg_inf(n);          }
@@ -64,6 +75,24 @@ public:
     }
 
     MathExpression simplify_node(MathExpressionNode* n);
+
+    MathExpression pi_times(const Rational& r);
+
+    MathExpression scaled_sqrt(const Rational& a, std::int64_t s);
+
+    MathExpression make_exp(MathExpression child);
+
+    MathExpression trig_at_pi_multiple(NodeType t, const Rational& r);
+
+    MathExpression fold_unary_exact(NodeType t, MathExpression child);
+
+    MathExpression fold_binary_exact(NodeType t, MathExpression l, MathExpression r);
+
+    MathExpression fold_power_exact(const Rational& base, const Rational& exp);
+
+    MathExpression gamma_exact(const Rational& x);
+
+    MathExpression nan_check(MathExpression candidate, bool undefined_on_nan);
 
     MathExpression rebuild_unary(NodeType t, MathExpressionNode* n);
 

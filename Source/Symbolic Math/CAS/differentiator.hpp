@@ -53,6 +53,8 @@ private:
     MathExpression binary(NodeType t, MathExpression a, MathExpression b) { return mgr_.binary(t, a, b); }
     MathExpression wrap(MathExpressionNode* n)             { return MathExpression(n); }
     MathExpression invalid() { return mgr_.invalid_expr(); }
+    MathExpression two_over_sqrt_pi() { return div(konst(2.0), unary(NodeType::Sqrt, mgr_.pi())); }
+    MathExpression half_sqrt_pi()     { return div(unary(NodeType::Sqrt, mgr_.pi()), konst(2.0)); }
     static bool is_invalid_node(const MathExpressionNode* n) noexcept { return is_invalid(n); }
 
     MathExpression chain(MathExpression outer_prime, MathExpressionNode* inner, std::uint64_t vid) {

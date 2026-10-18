@@ -8,6 +8,7 @@
 #include "printer.hpp"
 #include "rewriter.hpp"
 #include "substituter.hpp"
+#include "mathtext_converter.hpp"
 
 #include <ostream>
 #include <sstream>
@@ -59,7 +60,7 @@ public:
     bool is_symbolically_zero() const;
 
     friend std::ostream& operator<<(std::ostream& os, const Expression& e) {
-        symbols::print_node(os, e.node(), e.vars_, nullptr);
+        symbols::print_node(os, e.node(), e.vars_, e.mgr_ ? &e.mgr_->functions() : nullptr);
         return os;
     }
 
@@ -67,6 +68,11 @@ public:
         std::ostringstream ss;
         ss << *this;
         return ss.str();
+    }
+
+    std::string to_mathtext(MathTextSyntax syntax = MathTextSyntax::Brace) const {
+        if (is_invalid()) return "\"invalid\"";
+        return symbols::to_mathtext(expr_.get(), vars_, &mgr_->functions(), syntax);
     }
 
     bool depends_on(const std::string& var_name) const;
@@ -85,6 +91,66 @@ public:
     double evaluate(const std::unordered_map<std::string, double>& named, EvaluationPolicy policy = {}) const;
 
     double evaluate(std::initializer_list<std::pair<std::string, double>> vals, EvaluationPolicy policy = {}) const;
+
+    template <class T>
+    T evaluate(const std::unordered_map<std::string, T>& named, EvaluationPolicy policy = {}) const { return evaluate_as<T>(named, policy); }
+
+    template <class T>
+    T evaluate_as(const symbols::BasicEvalContext<T>& ctx) const {
+        assert(*this);
+        return symbols::evaluate_as<T>(expr_, ctx);
+    }
+
+    template <class T>
+    T evaluate_as() const { return evaluate_as<T>(std::unordered_map<std::string, T>{}, EvaluationPolicy{}); }
+
+    template <class T>
+    T evaluate_as(std::initializer_list<T> vals, EvaluationPolicy policy = {}) const {
+        assert(*this);
+        const auto& vars = manager().variables();
+        symbols::BasicEvalContext<T> ctx;
+        ctx.policy = policy;
+        ctx.resize(vars.size());
+        std::size_t i = 0;
+
+        for (const T& v : vals) {
+            if (i >= vars.size()) break;
+            ctx.values[i]   = v;
+            ctx.assigned[i] = true;
+            ++i;
+        }
+
+        return symbols::evaluate_as<T>(expr_, ctx);
+    }
+
+    template <class T>
+    T evaluate_as(const std::unordered_map<std::string, T>& named, EvaluationPolicy policy = {}) const {
+        assert(*this);
+        const auto& vars = manager().variables();
+        symbols::BasicEvalContext<T> ctx;
+        ctx.policy = policy;
+        ctx.resize(vars.size());
+
+        for (const auto& kv : named) {
+            const std::uint64_t id = vars.get(kv.first);
+
+            if (id != symbols::VariableTable::invalid_id && id < ctx.values.size()) {
+                ctx.values[id]   = kv.second;
+                ctx.assigned[id] = true;
+            }
+        }
+
+        return symbols::evaluate_as<T>(expr_, ctx);
+    }
+
+    template <class T>
+    T evaluate_as(std::initializer_list<std::pair<std::string, T>> vals, EvaluationPolicy policy = {}) const {
+        return evaluate_as<T>(std::unordered_map<std::string, T>(vals.begin(), vals.end()), policy);
+    }
+
+    bool is_exact_constant() const noexcept { return expr_.get() && expr_.get()->type == symbols::NodeType::Constant && expr_.get()->exact; }
+
+    const Rational* exact_value() const noexcept { return is_exact_constant() ? expr_.get()->exact : nullptr; }
 
     Expression rewrite(const RewriterConfig& cfg) const;
 

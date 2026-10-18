@@ -157,20 +157,27 @@ void print_node(
 ) {
     if (is_invalid(n)) { os << "<Invalid>"; return; }
     if (!n) { os << "<null>"; return; }
-    const int prec = node_prec(n->type);
+    const int prec = (n->type == NodeType::Constant && n->exact && !n->exact->is_integer()) ? node_prec(NodeType::Divide) : node_prec(n->type);
     const bool need_parens = (prec < parent_prec) || (right_child && prec == parent_prec && prec <= 2);  
     if (need_parens) os << '(';
 
     switch (n->type) {
         case NodeType::Constant:
-            print_double(os, n->constant);
+            if (n->exact) {
+                os << n->exact->to_string();
+            } else {
+                print_double(os, n->constant);
+            }
             break;
 
+        case NodeType::Pi:          os << "\u03c0"; break;
+        case NodeType::EulerNumber: os << 'e';      break;
+
         case NodeType::Variable:
-            if (funcs && n->applied.func_id < funcs->size()) {
-                os << funcs->name(n->applied.func_id);
+            if (vars && n->variable.var_id < vars->size()) {
+                os << vars->name(n->variable.var_id);
             } else {
-                os << 'f' << n->applied.func_id;
+                os << 'x' << n->variable.var_id;
             }
             break;
 
@@ -434,7 +441,9 @@ void print_node(
             break;
 
         case NodeType::AppliedFunction: {
-            if (vars && n->applied.func_id < vars->size()) {
+            if (funcs && n->applied.func_id < funcs->size()) {
+                os << funcs->name(n->applied.func_id);
+            } else if (vars && n->applied.func_id < vars->size()) {
                 os << vars->name(n->applied.func_id);
             } else {
                 os << 'f' << n->applied.func_id;
