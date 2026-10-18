@@ -2,6 +2,7 @@
 #define FIZMO_UI_TEXT_HPP
 
 #include "ui_core.hpp"
+#include "../String/regex.hpp"
 #include <cctype>
 #include <cwctype>
 #include <limits>
@@ -64,6 +65,8 @@ public:
     static CharFilter only(const std::string& chars);
 
     static CharFilter except(const std::string& chars);
+
+    static CharFilter from(const CharSet& set) { return CharFilter([set](char32_t c) { return set.contains(c); }); }
 };
 
 enum class TextCase : std::uint8_t { Any = 0, Upper, Lower };
@@ -150,6 +153,10 @@ public:
     TextField& set_filter(CharFilter f) { m_filter = std::move(f); return *this; }
     TextField& set_allowed_chars(const std::string& chars) { m_filter = CharFilter::only(chars); return *this; }
     TextField& set_blocked_chars(const std::string& chars);
+    TextField& set_allowed(const CharSet& set) { m_filter = CharFilter::from(set); return *this; }
+    TextField& set_blocked(const CharSet& set) { m_filter = m_filter ? (m_filter && !CharFilter::from(set)) : !CharFilter::from(set); return *this; }
+    TextField& set_pattern(const Regex& pattern) { m_check = [pattern](const std::string& text) { return pattern.matches(text); }; return *this; }
+    TextField& set_pattern(const Pattern& pattern) { return set_pattern(pattern.compile()); }
     TextField& set_validator(std::function<bool(const std::string&)> fn) { m_validator = std::move(fn); return *this; }
     TextField& set_check(std::function<bool(const std::string&)> fn) { m_check = std::move(fn); return *this; }
     TextField& set_case(TextCase c) noexcept { m_case = c; return *this; }

@@ -33,7 +33,7 @@ set(FIZMO_COMPONENT_USES_collections core)
 set(FIZMO_COMPONENT_USES_system      core)
 set(FIZMO_COMPONENT_USES_util        core)
 set(FIZMO_COMPONENT_USES_net         crypto)
-set(FIZMO_COMPONENT_USES_graphics    system util)
+set(FIZMO_COMPONENT_USES_graphics    system util string)
 
 foreach(_fizmo_component IN LISTS FIZMO_COMPONENTS)
     set(FIZMO_COMPONENT_SOURCES_${_fizmo_component} "")

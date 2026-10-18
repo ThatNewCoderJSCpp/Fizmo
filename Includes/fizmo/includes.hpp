@@ -107,6 +107,11 @@
 
         #if defined(FIZMO_STRING) || defined(FIZMO_STR)
             #include "../string.hpp"
+            #include "../regex.hpp"
+        #endif
+
+        #if defined(FIZMO_REGEX) && !(defined(FIZMO_STRING) || defined(FIZMO_STR))
+            #include "../regex.hpp"
         #endif
 
         #ifdef FIZMO_MATRICES
