@@ -58,6 +58,8 @@ public:
 
     virtual bool set_system_cursor(SystemCursor) noexcept { return false; }
     virtual bool set_cursor_image(const images::BitmapImage&, int, int) noexcept { return false; }
+    virtual bool set_icons(const std::vector<const images::BitmapImage*>&) noexcept { return false; }
+    virtual void set_app_id(const std::string&) noexcept {}
 
     virtual std::string clipboard_text() noexcept { return {}; }
     virtual bool set_clipboard_text(const std::string&) noexcept { return false; }

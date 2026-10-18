@@ -231,6 +231,8 @@ private:
 
     HCURSOR m_cursor       = nullptr;
     HCURSOR m_owned_cursor = nullptr;
+    HICON   m_icon_big = nullptr;
+    HICON   m_icon_small = nullptr;
     WindowMode m_mode      = WindowMode::Windowed;
     LONG_PTR   m_saved_style = 0;
     LONG_PTR   m_saved_ex_style = 0;
@@ -839,6 +841,8 @@ public:
         wc.lpfnWndProc = WindowProc;
         wc.hInstance = GetModuleHandleW(NULL);
         wc.hCursor = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
+        wc.hIcon = static_cast<HICON>(LoadImageW(wc.hInstance, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR | LR_SHARED));
+        wc.hIconSm = static_cast<HICON>(LoadImageW(wc.hInstance, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR | LR_SHARED));
         wc.lpszClassName = L"WindowClass";
         RegisterClassExW(&wc);
         m_pointer_type = win32::proc<win32::GetPointerTypeFn>(L"user32.dll", "GetPointerType");
@@ -851,6 +855,8 @@ public:
         if (m_drop) { if (hwnd) RevokeDragDrop(hwnd); m_drop->Release(); m_drop = nullptr; }
         if (m_ole) OleUninitialize();
         if (m_owned_cursor) DestroyIcon(m_owned_cursor);
+        if (m_icon_big) DestroyIcon(m_icon_big);
+        if (m_icon_small) DestroyIcon(m_icon_small);
         if (backgroundBrush) DeleteObject(backgroundBrush);
     }
 
@@ -868,6 +874,8 @@ public:
         if (dpi) m_dpi = dpi(hwnd);
         m_open = true;
         if (m_drop_enabled) set_drop_target(true);
+        if (m_icon_big) SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(m_icon_big));
+        if (m_icon_small) SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(m_icon_small));
         ShowWindow(hwnd, SW_SHOW);
         UpdateWindow(hwnd);
         return true;
@@ -1021,6 +1029,75 @@ public:
         m_cursor = c;
         if (m_owned_cursor) { DestroyIcon(m_owned_cursor); m_owned_cursor = nullptr; }
         update_cursor();
+        return true;
+    }
+
+    static HICON make_icon(const images::BitmapImage& img) noexcept {
+        const int w = static_cast<int>(img.width()), h = static_cast<int>(img.height());
+        BITMAPV5HEADER bi{};
+        bi.bV5Size = sizeof(bi);
+        bi.bV5Width = w;
+        bi.bV5Height = -h;
+        bi.bV5Planes = 1;
+        bi.bV5BitCount = 32;
+        bi.bV5Compression = BI_BITFIELDS;
+        bi.bV5RedMask = 0x00FF0000;
+        bi.bV5GreenMask = 0x0000FF00;
+        bi.bV5BlueMask = 0x000000FF;
+        bi.bV5AlphaMask = 0xFF000000;
+        void* bits = nullptr;
+        HDC dc = GetDC(nullptr);
+        HBITMAP color = CreateDIBSection(dc, reinterpret_cast<BITMAPINFO*>(&bi), DIB_RGB_COLORS, &bits, nullptr, 0);
+        ReleaseDC(nullptr, dc);
+        if (!color || !bits) return nullptr;
+        std::uint32_t* dst = static_cast<std::uint32_t*>(bits);
+        const colors::Color* src = img.pixels().data();
+        for (int i = 0; i < w * h; ++i) dst[i] = (static_cast<std::uint32_t>(src[i].alpha()) << 24) | (static_cast<std::uint32_t>(src[i].red()) << 16) | (static_cast<std::uint32_t>(src[i].green()) << 8) | src[i].blue();
+        HBITMAP mask = CreateBitmap(w, h, 1, 1, nullptr);
+        ICONINFO ii{};
+        ii.fIcon = TRUE;
+        ii.hbmMask = mask;
+        ii.hbmColor = color;
+        HICON icon = CreateIconIndirect(&ii);
+        DeleteObject(color);
+        if (mask) DeleteObject(mask);
+        return icon;
+    }
+
+    static const images::BitmapImage* closest_icon(const std::vector<const images::BitmapImage*>& images, int want) noexcept {
+        const images::BitmapImage* best = nullptr;
+        int best_score = 0;
+        for (const images::BitmapImage* img : images) {
+            if (!img || !img->is_valid_image()) continue;
+            const int size = static_cast<int>(img->width());
+            const int score = size >= want ? size - want : (want - size) * 4;
+            if (!best || score < best_score) {
+                best = img;
+                best_score = score;
+            }
+        }
+        return best;
+    }
+
+    bool set_icons(const std::vector<const images::BitmapImage*>& images) noexcept override {
+        const images::BitmapImage* big = closest_icon(images, GetSystemMetrics(SM_CXICON));
+        const images::BitmapImage* little = closest_icon(images, GetSystemMetrics(SM_CXSMICON));
+        if (!big || !little) return false;
+        HICON big_icon = make_icon(*big);
+        HICON small_icon = make_icon(*little);
+        if (!big_icon || !small_icon) {
+            if (big_icon) DestroyIcon(big_icon);
+            if (small_icon) DestroyIcon(small_icon);
+            return false;
+        }
+        if (hwnd) {
+            SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(big_icon));
+            SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
+        }
+        if (m_icon_big) DestroyIcon(m_icon_big);
+        if (m_icon_small) DestroyIcon(m_icon_small);
+        m_icon_big = big_icon;
+        m_icon_small = small_icon;
         return true;
     }
 

@@ -135,6 +135,8 @@ private:
 
     WindowMode      m_mode = WindowMode::Windowed;
     Rect            m_windowed{};
+    std::vector<unsigned long> m_icon_data;
+    std::string     m_app_id;
     bool            m_decorated = true;
     bool            m_resizable = true;
     unsigned int    m_min_w = 0, m_min_h = 0;
@@ -235,6 +237,8 @@ public:
         if (!m_window) return false;
         XSetWMProtocols(m_display, m_window, &m_atoms.wm_delete, 1);
         apply_title(title);
+        apply_app_id();
+        apply_icons();
         if (!m_erase) XSetWindowBackgroundPixmap(m_display, m_window, x11::kNone);
         init_input_method();
         if (m_drop_enabled) set_drop_enabled(true);
@@ -281,6 +285,24 @@ public:
             m_handle.window = 0;
             XFlush(m_display);
         }
+    }
+
+    void apply_icons() noexcept {
+        if (!m_display || !m_window || m_icon_data.empty()) return;
+        XChangeProperty(m_display, m_window, atom("_NET_WM_ICON"), XA_CARDINAL, 32, PropModeReplace,
+                        reinterpret_cast<const unsigned char*>(m_icon_data.data()), static_cast<int>(m_icon_data.size()));
+    }
+
+    void apply_app_id() noexcept {
+        if (!m_display || !m_window || m_app_id.empty()) return;
+        XClassHint* hint = XAllocClassHint();
+        if (!hint) return;
+        std::string name = m_app_id;
+        std::string klass = m_app_id;
+        hint->res_name = name.data();
+        hint->res_class = klass.data();
+        XSetClassHint(m_display, m_window, hint);
+        XFree(hint);
     }
 
     void set_background_color(const fizmo::colors::Color& color) noexcept override {
@@ -525,6 +547,38 @@ public:
         apply_cursor();
         XFlush(m_display);
         return true;
+    }
+
+    bool set_icons(const std::vector<const images::BitmapImage*>& images) noexcept override {
+        try {
+            std::vector<unsigned long> data;
+            for (const images::BitmapImage* img : images) {
+                if (!img || !img->is_valid_image()) continue;
+                data.push_back(img->width());
+                data.push_back(img->height());
+                const colors::Color* px = img->pixels().data();
+                for (std::size_t i = 0, n = static_cast<std::size_t>(img->width()) * img->height(); i < n; ++i) {
+                    data.push_back((static_cast<unsigned long>(px[i].alpha()) << 24) | (static_cast<unsigned long>(px[i].red()) << 16) | (static_cast<unsigned long>(px[i].green()) << 8) | px[i].blue());
+                }
+            }
+            if (data.empty()) return false;
+            m_icon_data = std::move(data);
+        } catch (...) {
+            return false;
+        }
+        if (m_window) {
+            apply_icons();
+            XFlush(m_display);
+        }
+        return true;
+    }
+
+    void set_app_id(const std::string& id) noexcept override {
+        try { m_app_id = id; } catch (...) { return; }
+        if (m_window) {
+            apply_app_id();
+            XFlush(m_display);
+        }
     }
 
     std::string clipboard_text() noexcept override {

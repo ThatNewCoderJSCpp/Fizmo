@@ -102,6 +102,9 @@ public:
 
     bool set_cursor(SystemCursor cursor) noexcept { return m_impl->set_system_cursor(cursor); }
     bool set_cursor(const images::BitmapImage& image, int hot_x = 0, int hot_y = 0) noexcept { return m_impl->set_cursor_image(image, hot_x, hot_y); }
+    bool set_icon(const images::BitmapImage& image) noexcept;
+    bool set_icons(const std::vector<images::BitmapImage>& images) noexcept;
+    void set_app_id(const std::string& id) noexcept { m_impl->set_app_id(id); }
 
     std::string clipboard_text() noexcept { return m_impl->clipboard_text(); }
     bool set_clipboard_text(const std::string& text) noexcept { return m_impl->set_clipboard_text(text); }

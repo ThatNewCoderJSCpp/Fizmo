@@ -16,6 +16,25 @@ void Window::emit_gesture(const input::GestureData& g) noexcept {
     m_event_handler.dispatch_event(e);
 }
 
+bool Window::set_icon(const images::BitmapImage& image) noexcept {
+    try {
+        const std::vector<const images::BitmapImage*> list{ &image };
+        return m_impl->set_icons(list);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool Window::set_icons(const std::vector<images::BitmapImage>& images) noexcept {
+    try {
+        std::vector<const images::BitmapImage*> list;
+        for (const images::BitmapImage& i : images) list.push_back(&i);
+        return m_impl->set_icons(list);
+    } catch (...) {
+        return false;
+    }
+}
+
 void Window::feed_gestures(const WindowEvent& e) noexcept {
     if (!m_gestures_enabled || e.pointer != input::PointerType::Touch) return;
     auto emit = [this](const input::GestureData& g) { emit_gesture(g); };
