@@ -16,6 +16,7 @@
 #include "dicts.hpp"
 #include "priority_queue.hpp"
 #include "sync_queue.hpp"
+#include "trie.hpp"
 #include "misc.hpp"
 
 #endif // FIZMO_COLLECTIONS_HPP
