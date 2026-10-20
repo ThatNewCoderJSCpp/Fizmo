@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.2.28
+    VERSION 0.2.29
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -339,13 +339,13 @@ if(PROJECT_IS_TOP_LEVEL OR CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(CPACK_DEBIAN_PACKAGE_SECTION libdevel)
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
     set(CPACK_DEBIAN_PACKAGE_DEPENDS
-        "libx11-dev, libxft-dev, libxrender-dev, libfontconfig-dev | libfontconfig1-dev, libfreetype-dev | libfreetype6-dev, libssl-dev, libpango1.0-dev, libcairo2-dev, zlib1g-dev, libjpeg-dev, pkg-config")
+        "libx11-dev, libxft-dev, libxrender-dev, libfontconfig-dev | libfontconfig1-dev, libfreetype-dev | libfreetype6-dev, libssl-dev, libharfbuzz-dev, zlib1g-dev, libjpeg-dev, pkg-config")
 
     set(CPACK_RPM_PACKAGE_NAME fizmo-devel)
     set(CPACK_RPM_FILE_NAME ${CPACK_PACKAGE_FILE_NAME}.rpm)
     set(CPACK_RPM_PACKAGE_GROUP "Development/Libraries")
     set(CPACK_RPM_PACKAGE_REQUIRES
-        "libX11-devel, libXft-devel, libXrender-devel, fontconfig-devel, freetype-devel, openssl-devel, pango-devel, cairo-devel, zlib-devel, libjpeg-turbo-devel, pkgconf")
+        "libX11-devel, libXft-devel, libXrender-devel, fontconfig-devel, freetype-devel, openssl-devel, harfbuzz-devel, zlib-devel, libjpeg-turbo-devel, pkgconf")
     set(CPACK_RPM_PACKAGE_AUTOREQ OFF)
     set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION /usr/include /usr/lib/cmake /usr/lib64/cmake)
     set(CPACK_RPM_SPEC_MORE_DEFINE "%define _build_id_links none")

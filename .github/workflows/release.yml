@@ -46,7 +46,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ninja-build pkg-config rpm \
             libx11-dev libxft-dev libxrender-dev libfontconfig1-dev libfreetype-dev \
-            libssl-dev libpango1.0-dev libcairo2-dev zlib1g-dev libjpeg-dev \
+            libssl-dev libharfbuzz-dev zlib1g-dev libjpeg-dev \
             libvulkan-dev libgl-dev
 
       - name: Configure
@@ -74,7 +74,7 @@ jobs:
           check net libfizmo_crypto.a libfizmo_random.a libfizmo_core.a -lssl -lcrypto
           check graphics libfizmo_system.a libfizmo_util.a libfizmo_core.a \
             -lz -ljpeg -lX11 -lXft -lXrender -lfontconfig -lfreetype \
-            $(pkg-config --libs pangocairo pangoft2 pango cairo gobject-2.0 glib-2.0)
+            $(pkg-config --libs harfbuzz)
 
       - name: Package
         working-directory: build
@@ -104,7 +104,7 @@ jobs:
             apt-get update
             apt-get install -y --no-install-recommends ca-certificates g++ cmake ninja-build pkg-config file rpm dpkg-dev \
               libx11-dev libxft-dev libxrender-dev libfontconfig-dev libfreetype-dev \
-              libssl-dev libpango1.0-dev libcairo2-dev zlib1g-dev libjpeg-dev \
+              libssl-dev libharfbuzz-dev zlib1g-dev libjpeg-dev \
               libvulkan-dev libgl-dev
             cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_PACKAGE_PLATFORM=linux-i686
             cmake --build build -j 4

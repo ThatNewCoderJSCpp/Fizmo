@@ -4083,7 +4083,7 @@ private:
             }
         }
 
-        for (auto it = m_layouts.begin(); it != m_layouts.end();) {
+        for (auto it = (now & 31u) == 0 ? m_layouts.begin() : m_layouts.end(); it != m_layouts.end();) {
             auto& bucket = it->second;
 
             bucket.erase(

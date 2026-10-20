@@ -21,9 +21,7 @@
         #pragma comment(lib, "dwrite.lib")       
     #endif
 #elif defined(OS_LINUX)
-    #include <pango/pangocairo.h>
-    #include <pango/pangofc-fontmap.h>
-    #include <fontconfig/fontconfig.h>            
+    #include <memory>
 #endif
 
 namespace fizmo {
@@ -768,317 +766,24 @@ private:
 #elif defined(OS_LINUX)
 
 class TextEngine {
-private:
-    struct Face {
-        PangoFont*           font   = nullptr;
-        cairo_scaled_font_t* scaled = nullptr;   
-        FaceMetrics          metrics;
-    };
-
-    PangoFontMap*                             m_map = nullptr;
-    PangoContext*                             m_ctx = nullptr;
-    std::vector<Face>                         m_faces;
-    std::unordered_map<PangoFont*, std::uint32_t> m_face_ids;
-
-    std::uint32_t face_id(PangoFont* font) {
-        auto it = m_face_ids.find(font);
-        if (it != m_face_ids.end()) return it->second;
-        Face f;
-        f.font   = PANGO_FONT(g_object_ref(font));
-        f.scaled = pango_cairo_font_get_scaled_font(PANGO_CAIRO_FONT(font));
-
-        if (PangoFontMetrics* m = pango_font_get_metrics(font, nullptr)) {
-            const float S = static_cast<float>(PANGO_SCALE);
-            f.metrics.ascent              = pango_font_metrics_get_ascent(m) / S;
-            f.metrics.descent             = pango_font_metrics_get_descent(m) / S;
-            f.metrics.underline_position  = pango_font_metrics_get_underline_position(m) / S;
-            f.metrics.underline_thickness = std::max(1.0f, pango_font_metrics_get_underline_thickness(m) / S);
-            f.metrics.strikeout_position  = pango_font_metrics_get_strikethrough_position(m) / S;
-            f.metrics.strikeout_thickness = std::max(1.0f, pango_font_metrics_get_strikethrough_thickness(m) / S);
-            pango_font_metrics_unref(m);
-        }
-
-        m_faces.push_back(f);
-        const std::uint32_t id = static_cast<std::uint32_t>(m_faces.size() - 1);
-        m_face_ids.emplace(font, id);
-        return id;
-    }
-
-    static PangoStyle pango_style(text::FontSlant s) noexcept {
-        return s == text::FontSlant::Italic ? PANGO_STYLE_ITALIC : s == text::FontSlant::Oblique ? PANGO_STYLE_OBLIQUE : PANGO_STYLE_NORMAL;
-    }
-
-    static PangoFontDescription* describe(const PreparedSpan& sp) {
-        PangoFontDescription* d = pango_font_description_new();
-        pango_font_description_set_family(d, sp.family.empty() ? "sans-serif" : sp.family.c_str());
-        pango_font_description_set_absolute_size(d, static_cast<double>(sp.size) * PANGO_SCALE);
-        pango_font_description_set_weight(d, static_cast<PangoWeight>(sp.weight));
-        pango_font_description_set_style(d, pango_style(sp.slant));
-        return d;
-    }
-
 public:
-    TextEngine() noexcept = default;
-    ~TextEngine() noexcept { shutdown(); }
+    TextEngine() noexcept;
+    ~TextEngine() noexcept;
     TextEngine(const TextEngine&) = delete;
     TextEngine& operator=(const TextEngine&) = delete;
 
-    bool initialize(void* /*native_window*/ = nullptr) noexcept {
-        if (m_ctx) return true;
-        m_map = pango_cairo_font_map_new();
-        if (!m_map) return false;
-        m_ctx = pango_font_map_create_context(m_map);
-        if (!m_ctx) { shutdown(); return false; }
-        cairo_font_options_t* fo = cairo_font_options_create();
-        cairo_font_options_set_antialias(fo, CAIRO_ANTIALIAS_GRAY);
-        cairo_font_options_set_hint_style(fo, CAIRO_HINT_STYLE_SLIGHT);
-        cairo_font_options_set_hint_metrics(fo, CAIRO_HINT_METRICS_OFF);
-        pango_cairo_context_set_font_options(m_ctx, fo);
-        cairo_font_options_destroy(fo);
-        return true;
-    }
+    bool initialize(void* native_window = nullptr) noexcept;
+    void shutdown() noexcept;
+    bool ready() const noexcept;
+    bool load_font_file(const std::string& utf8_path);
+    std::string transform_case(const std::string& s, text::TextTransform t);
+    bool shape(const PreparedText& text, const ShapeParams& p, ShapedLayout& out);
+    bool rasterize(std::uint32_t face, std::uint32_t glyph, GlyphImage& out);
+    FaceMetrics face_metrics(std::uint32_t face) const noexcept;
 
-    void shutdown() noexcept {
-        for (Face& f : m_faces) if (f.font) g_object_unref(f.font);
-        m_faces.clear();
-        m_face_ids.clear();
-        if (m_ctx) { g_object_unref(m_ctx); m_ctx = nullptr; }
-        if (m_map) { g_object_unref(m_map); m_map = nullptr; }
-    }
-
-    bool ready() const noexcept { return m_ctx != nullptr; }
-
-    bool load_font_file(const std::string& utf8_path) {
-        if (!m_map) return false;
-        if (!FcConfigAppFontAddFile(FcConfigGetCurrent(), reinterpret_cast<const FcChar8*>(utf8_path.c_str()))) return false;
-        if (PANGO_IS_FC_FONT_MAP(m_map)) pango_fc_font_map_config_changed(PANGO_FC_FONT_MAP(m_map));
-        pango_context_changed(m_ctx);
-        return true;
-    }
-
-    std::string transform_case(const std::string& s, text::TextTransform t) {
-        if (t == text::TextTransform::None || s.empty()) return s;
-        std::string out;
-
-        if (t == text::TextTransform::Uppercase || t == text::TextTransform::Lowercase) {
-            gchar* r = t == text::TextTransform::Uppercase ? g_utf8_strup(s.c_str(), static_cast<gssize>(s.size()))
-                                                          : g_utf8_strdown(s.c_str(), static_cast<gssize>(s.size()));
-            if (!r) return s;
-            out = r;
-            g_free(r);
-            return out;
-        }
-
-        bool word_start = true;
-
-        for (const gchar* p = s.c_str(); *p; p = g_utf8_next_char(p)) {
-            const gunichar c = g_utf8_get_char(p);
-            const gunichar o = word_start && g_unichar_isalpha(c) ? g_unichar_totitle(c) : c;
-            gchar buf[8];
-            out.append(buf, static_cast<std::size_t>(g_unichar_to_utf8(o, buf)));
-            word_start = !g_unichar_isalnum(c) && c != '\'';
-        }
-
-        return out;
-    }
-
-    bool shape(const PreparedText& text, const ShapeParams& p, ShapedLayout& out) {
-        out.clear();
-        if (!m_ctx || text.spans.empty() || text.utf8.empty()) return false;
-        pango_context_set_base_dir(m_ctx, p.rtl ? PANGO_DIRECTION_RTL : PANGO_DIRECTION_LTR);
-        PangoLayout* layout = pango_layout_new(m_ctx);
-        if (!layout) return false;
-        pango_layout_set_auto_dir(layout, FALSE);
-        pango_layout_set_text(layout, text.utf8.data(), static_cast<int>(text.utf8.size()));
-        PangoFontDescription* base = describe(text.spans.front());
-        pango_layout_set_font_description(layout, base);
-        pango_font_description_free(base);
-        PangoAttrList* attrs = pango_attr_list_new();
-
-        for (const PreparedSpan& sp : text.spans) {
-            if (sp.end <= sp.begin) continue;
-            PangoFontDescription* d = describe(sp);
-            PangoAttribute* a = pango_attr_font_desc_new(d);
-            pango_font_description_free(d);
-            a->start_index = sp.begin;
-            a->end_index   = sp.end;
-            pango_attr_list_insert(attrs, a);
-
-            if (sp.letter_spacing != 0.0f) {
-                a = pango_attr_letter_spacing_new(static_cast<int>(sp.letter_spacing * PANGO_SCALE));
-                a->start_index = sp.begin;
-                a->end_index   = sp.end;
-                pango_attr_list_insert(attrs, a);
-            }
-
-            if (sp.word_spacing != 0.0f) {
-                for (std::uint32_t i = sp.begin; i < sp.end; ++i) {
-                    const bool nbsp = i + 1 < sp.end && static_cast<unsigned char>(text.utf8[i]) == 0xC2 && static_cast<unsigned char>(text.utf8[i + 1]) == 0xA0;
-                    if (text.utf8[i] != ' ' && !nbsp) continue;
-                    a = pango_attr_letter_spacing_new(static_cast<int>((sp.letter_spacing + sp.word_spacing) * PANGO_SCALE));
-                    a->start_index = i;
-                    a->end_index   = i + (nbsp ? 2 : 1);
-                    pango_attr_list_change(attrs, a);
-                }
-            }
-        }
-
-        pango_layout_set_attributes(layout, attrs);
-        pango_attr_list_unref(attrs);
-
-        if (p.max_width > 0.0f && (p.wrap || p.ellipsize)) {
-            pango_layout_set_width(layout, static_cast<int>(p.max_width * PANGO_SCALE));
-            pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
-            if (p.ellipsize) pango_layout_set_ellipsize(layout, PANGO_ELLIPSIZE_END);
-        }
-
-        if (p.wrap) {
-            pango_layout_set_alignment(
-                layout,
-                p.align == text::TextAlign::Center ? PANGO_ALIGN_CENTER :
-                p.align == text::TextAlign::Right  ? PANGO_ALIGN_RIGHT : PANGO_ALIGN_LEFT
-            );
-
-            pango_layout_set_justify(layout, p.justify);
-        }
-
-        if (p.line_spacing > 0.0f) pango_layout_set_line_spacing(layout, p.line_spacing);
-        if (p.indent != 0.0f) pango_layout_set_indent(layout, static_cast<int>(p.indent * PANGO_SCALE));
-
-        const float S = static_cast<float>(PANGO_SCALE);
-        PangoLayoutIter* it = pango_layout_get_iter(layout);
-        PangoLayoutLine* current = nullptr;
-        std::uint32_t line_index = 0;
-
-        do {
-            PangoLayoutLine* line = pango_layout_iter_get_line_readonly(it);
-
-            if (line != current) {
-                if (current && line && line->is_paragraph_start) out.lines.back().paragraph_end = true;
-                current = line;
-                PangoRectangle logical;
-                pango_layout_iter_get_line_extents(it, nullptr, &logical);
-                int y0 = 0, y1 = 0;
-                pango_layout_iter_get_line_yrange(it, &y0, &y1);
-                ShapedLine L;
-                L.left     = logical.x / S;
-                L.width    = logical.width / S;
-                L.top      = y0 / S;
-                L.bottom   = y1 / S;
-                L.baseline = pango_layout_iter_get_baseline(it) / S;
-                L.start    = static_cast<std::uint32_t>(line->start_index);
-                L.end      = static_cast<std::uint32_t>(line->start_index + line->length);
-                out.lines.push_back(L);
-                line_index = static_cast<std::uint32_t>(out.lines.size() - 1);
-            }
-
-            PangoLayoutRun* run = pango_layout_iter_get_run_readonly(it);
-            if (!run) continue;
-            PangoRectangle rl;
-            pango_layout_iter_get_run_extents(it, nullptr, &rl);
-            const int baseline = pango_layout_iter_get_baseline(it);
-            const std::uint32_t face = face_id(run->item->analysis.font);
-            PangoGlyphString* gs = run->glyphs;
-            int pen = rl.x;
-
-            for (int i = 0; i < gs->num_glyphs; ++i) {
-                const PangoGlyphInfo& gi = gs->glyphs[i];
-                const bool drawable = gi.glyph != PANGO_GLYPH_EMPTY && !(gi.glyph & PANGO_GLYPH_UNKNOWN_FLAG);
-
-                if (drawable) {
-                    ShapedGlyph g;
-                    g.face    = face;
-                    g.glyph   = gi.glyph;
-                    g.line    = line_index;
-                    g.span    = text.span_at(static_cast<std::uint32_t>(run->item->offset + gs->log_clusters[i]));
-                    g.x       = (pen + gi.geometry.x_offset) / S;
-                    g.y       = (baseline + gi.geometry.y_offset) / S;
-                    g.advance = gi.geometry.width / S;
-                    out.glyphs.push_back(g);
-                }
-
-                pen += gi.geometry.width;
-            }
-        } while (pango_layout_iter_next_run(it));
-
-        pango_layout_iter_free(it);
-        if (!out.lines.empty()) out.lines.back().paragraph_end = true;
-        PangoRectangle logical;
-        pango_layout_get_extents(layout, nullptr, &logical);
-        out.width = 0.0f;
-        for (const ShapedLine& L : out.lines) out.width = std::max(out.width, L.width);
-        out.height = logical.height / S;
-        g_object_unref(layout);
-        return true;
-    }
-
-    bool rasterize(std::uint32_t face, std::uint32_t glyph, GlyphImage& out) {
-        out = GlyphImage{};
-        if (face >= m_faces.size() || !m_faces[face].scaled) return false;
-        cairo_scaled_font_t* sf = m_faces[face].scaled;
-        cairo_glyph_t g{ glyph, 0.0, 0.0 };
-        cairo_text_extents_t e;
-        cairo_scaled_font_glyph_extents(sf, &g, 1, &e);
-        if (e.width <= 0.0 || e.height <= 0.0) return true;             
-        const int x0 = static_cast<int>(std::floor(e.x_bearing)) - 1;
-        const int y0 = static_cast<int>(std::floor(e.y_bearing)) - 1;
-        const int x1 = static_cast<int>(std::ceil(e.x_bearing + e.width)) + 1;
-        const int y1 = static_cast<int>(std::ceil(e.y_bearing + e.height)) + 1;
-        const int w = x1 - x0, h = y1 - y0;
-        if (w <= 0 || h <= 0 || w > 4096 || h > 4096) return true;
-        cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
-        if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) { cairo_surface_destroy(surface); return false; }
-        cairo_t* cr = cairo_create(surface);
-        cairo_set_scaled_font(cr, sf);
-        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 1.0);
-        g.x = -x0;
-        g.y = -y0;
-        cairo_show_glyphs(cr, &g, 1);
-        cairo_destroy(cr);
-        cairo_surface_flush(surface);
-        const unsigned char* data = cairo_image_surface_get_data(surface);
-        const int stride = cairo_image_surface_get_stride(surface);
-        bool color = false;
-
-        for (int y = 0; y < h && !color; ++y) {
-            const std::uint32_t* row = reinterpret_cast<const std::uint32_t*>(data + static_cast<std::size_t>(y) * stride);
-            for (int x = 0; x < w; ++x) {
-                const std::uint32_t px = row[x];
-                const std::uint32_t a = px >> 24, r = (px >> 16) & 0xFF, gg = (px >> 8) & 0xFF, b = px & 0xFF;
-                if (r != a || gg != a || b != a) { color = true; break; }
-            }
-        }
-
-        out.width  = w;
-        out.height = h;
-        out.left   = x0;
-        out.top    = -y0;
-        out.color  = color;
-        out.pixels.resize(static_cast<std::size_t>(w) * h * (color ? 4 : 1));
-
-        for (int y = 0; y < h; ++y) {
-            const std::uint32_t* row = reinterpret_cast<const std::uint32_t*>(data + static_cast<std::size_t>(y) * stride);
-            for (int x = 0; x < w; ++x) {
-                const std::uint32_t px = row[x];
-                if (color) {
-                    std::uint8_t* d = &out.pixels[(static_cast<std::size_t>(y) * w + x) * 4];
-                    d[0] = static_cast<std::uint8_t>((px >> 16) & 0xFF);
-                    d[1] = static_cast<std::uint8_t>((px >> 8) & 0xFF);
-                    d[2] = static_cast<std::uint8_t>(px & 0xFF);
-                    d[3] = static_cast<std::uint8_t>(px >> 24);
-                } else {
-                    out.pixels[static_cast<std::size_t>(y) * w + x] = static_cast<std::uint8_t>(px >> 24);
-                }
-            }
-        }
-
-        cairo_surface_destroy(surface);
-        return true;
-    }
-
-    FaceMetrics face_metrics(std::uint32_t face) const noexcept {
-        return face < m_faces.size() ? m_faces[face].metrics : FaceMetrics{};
-    }
+private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 #endif
@@ -1211,7 +916,8 @@ inline colors::Color fade(colors::Color c, float opacity) noexcept {
 
 struct Segment {
     std::uint32_t line, span, face;
-    float         x0, x1, baseline;  
+    float         x0, x1, baseline;
+    std::uint32_t first = 0, last = 0;
 };
 
 inline void add_rect(TextDrawList& out, float x, float y, float w, float h, const colors::Color& c) {
@@ -1418,26 +1124,32 @@ inline bool build_text_draw_list(TextEngine& engine, const text::RichText& rt, f
     for (float& v : dy) v += vy;
     std::vector<Segment> segs;
 
-    for (const ShapedGlyph& g : layout.glyphs) {
+    segs.reserve(layout.glyphs.size() / 4 + 1);
+
+    for (std::uint32_t gi = 0; gi < layout.glyphs.size(); ++gi) {
+        const ShapedGlyph& g = layout.glyphs[gi];
         const float x = g.x + dx[g.line];
 
         if (segs.empty() || segs.back().line != g.line || segs.back().span != g.span) {
-            segs.push_back({ g.line, g.span, g.face, x, x + g.advance, layout.lines[g.line].baseline + dy[g.line] });
+            segs.push_back({ g.line, g.span, g.face, x, x + g.advance, layout.lines[g.line].baseline + dy[g.line], gi, gi + 1 });
         } else {
             segs.back().x0 = std::min(segs.back().x0, x);
             segs.back().x1 = std::max(segs.back().x1, x + g.advance);
+            segs.back().last = gi + 1;
         }
     }
 
     auto style_of = [&](std::uint32_t span) -> const text::TextStyle& { return prepared.styles[prepared.spans[span].style]; };
     auto opacity_of = [&](std::uint32_t span) { const auto& s = style_of(span); return s.has_opacity() ? s.opacity() : 1.0f; };
 
-    auto emit_glyphs = [&](std::uint32_t line, std::uint32_t span, float ox, float oy, const colors::Color& c) {
-        if (c.alpha() == 0) return;
-        const float rise = prepared.spans[span].rise;
+    out.cmds.reserve(layout.glyphs.size() + segs.size());
 
-        for (const ShapedGlyph& g : layout.glyphs) {
-            if (g.line != line || g.span != span) continue;
+    auto emit_glyphs = [&](const Segment& s, float ox, float oy, const colors::Color& c) {
+        if (c.alpha() == 0) return;
+        const float rise = prepared.spans[s.span].rise;
+
+        for (std::uint32_t gi = s.first; gi < s.last; ++gi) {
+            const ShapedGlyph& g = layout.glyphs[gi];
             TextCmd cmd;
             cmd.kind  = TextCmd::Kind::Glyph;
             cmd.color = c;
@@ -1466,14 +1178,14 @@ inline bool build_text_draw_list(TextEngine& engine, const text::RichText& rt, f
         const colors::Color deco = base_c;
 
         if (blur < 0.5f) {
-            emit_glyphs(s.line, s.span, ox, oy, base_c);
+            emit_glyphs(s, ox, oy, base_c);
             add_decorations(out, s, st, engine.face_metrics(s.face), prepared.spans[s.span].rise, ox, oy, deco);
         } else {
             const colors::Color ring = fade(base_c, 0.22f);
-            emit_glyphs(s.line, s.span, ox, oy, fade(base_c, 0.45f));
+            emit_glyphs(s, ox, oy, fade(base_c, 0.45f));
             for (int k = 0; k < 8; ++k) {
                 const float a = k * 0.78539816f;
-                emit_glyphs(s.line, s.span, ox + std::cos(a) * blur * 0.5f, oy + std::sin(a) * blur * 0.5f, ring);
+                emit_glyphs(s, ox + std::cos(a) * blur * 0.5f, oy + std::sin(a) * blur * 0.5f, ring);
             }
         }
     }
@@ -1488,7 +1200,7 @@ inline bool build_text_draw_list(TextEngine& engine, const text::RichText& rt, f
         for (float rr = r; rr > 0.0f; rr -= 1.5f) {
             for (int k = 0; k < steps; ++k) {
                 const float a = k * 6.2831853f / steps;
-                emit_glyphs(s.line, s.span, std::cos(a) * rr, std::sin(a) * rr, c);
+                emit_glyphs(s, std::cos(a) * rr, std::sin(a) * rr, c);
             }
         }
     }
@@ -1496,7 +1208,7 @@ inline bool build_text_draw_list(TextEngine& engine, const text::RichText& rt, f
     for (const Segment& s : segs) {
         const text::TextStyle& st = style_of(s.span);
         const colors::Color fg = st.has_fg_color() ? st.fg_color().value() : colors::Color(0, 0, 0, 255);
-        emit_glyphs(s.line, s.span, 0.0f, 0.0f, fade(fg, opacity_of(s.span)));
+        emit_glyphs(s, 0.0f, 0.0f, fade(fg, opacity_of(s.span)));
     }
 
     for (const Segment& s : segs) {

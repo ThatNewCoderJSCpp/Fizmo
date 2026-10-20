@@ -38,13 +38,12 @@ if("graphics" IN_LIST FIZMO_DEPENDENCY_COMPONENTS)
         find_dependency(Freetype)             # -lfreetype
 
         find_dependency(PkgConfig)
-        pkg_check_modules(FIZMO_PANGOCAIRO REQUIRED IMPORTED_TARGET GLOBAL
-            pangocairo pangoft2 pango cairo gobject-2.0 glib-2.0)
+        pkg_check_modules(FIZMO_HARFBUZZ REQUIRED IMPORTED_TARGET GLOBAL harfbuzz>=2.6)
 
         list(APPEND FIZMO_GRAPHICS_DEPENDENCY_TARGETS
             X11::X11 X11::Xft X11::Xrender
             Fontconfig::Fontconfig Freetype::Freetype
-            PkgConfig::FIZMO_PANGOCAIRO)
+            PkgConfig::FIZMO_HARFBUZZ)
     endif()
 endif()
 
