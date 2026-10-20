@@ -72,7 +72,7 @@ jobs:
             check $c libfizmo_core.a
           done
           check net libfizmo_crypto.a libfizmo_random.a libfizmo_core.a -lssl -lcrypto
-          check graphics libfizmo_system.a libfizmo_util.a libfizmo_core.a \
+          check graphics libfizmo_system.a libfizmo_util.a libfizmo_string.a libfizmo_random.a libfizmo_core.a \
             -lz -ljpeg -lX11 -lXft -lXrender -lfontconfig -lfreetype \
             $(pkg-config --libs harfbuzz)
 
