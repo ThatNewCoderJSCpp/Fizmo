@@ -42,7 +42,7 @@ public:
     PacketWriter& write_quantized(float value, float min, float max, int bits);
     PacketWriter& write_angle(float radians, int bits = 16);
     PacketWriter& write_unit_vector(float x, float y, float z, int bits_per_component = 16);
-    PacketWriter& write_zeros(std::size_t n) { m_data.insert(m_data.end(), n, 0); return *this; }
+    PacketWriter& write_zeros(std::size_t n) { m_data.resize(m_data.size() + n, 0); return *this; }
 
     template <typename T>
     typename std::enable_if<std::is_integral<T>::value && !std::is_same<T, bool>::value, PacketWriter&>::type write(T v) {
