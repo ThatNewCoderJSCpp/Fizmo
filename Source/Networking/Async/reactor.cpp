@@ -99,6 +99,9 @@ struct Reactor::Impl {
     native_socket_t read_end  = invalid_socket;
     native_socket_t write_end = invalid_socket;
     static constexpr bool interrupt_on_start = true;
+#if defined(OS_WINDOWS)
+    static constexpr int wake_check_ms = 50;
+#endif
 
     Impl() {
 #if defined(OS_WINDOWS)
@@ -183,6 +186,9 @@ struct Reactor::Impl {
             }
         }
 
+#if defined(OS_WINDOWS)
+        if (timeout_ms < 0 || timeout_ms > wake_check_ms) timeout_ms = wake_check_ms;
+#endif
         const int n = FIZMO_POLL_FN(fds.data(), static_cast<unsigned long>(fds.size()), timeout_ms);
         if (n <= 0) return;
         if (fds[0].revents != 0) drain();
