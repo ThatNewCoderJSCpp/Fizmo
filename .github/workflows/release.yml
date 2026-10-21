@@ -152,14 +152,43 @@ jobs:
       - uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.msystem }}
-          update: true
-          install: >-
-            ${{ matrix.prefix }}-cc
-            ${{ matrix.prefix }}-cmake
-            ${{ matrix.prefix }}-ninja
-            ${{ matrix.prefix }}-zlib
-            ${{ matrix.prefix }}-libjpeg-turbo
-            ${{ matrix.prefix }}-vulkan-headers
+          update: false
+
+      - name: Refresh the MSYS2 keyring
+        run: |
+          base=https://repo.msys2.org/msys/x86_64
+          keyring=""
+          for attempt in 1 2 3 4; do
+            keyring=$(curl -fsSL "$base/" | grep -o 'msys2-keyring-[^"]*\.pkg\.tar\.zst' | sort -uV | tail -n 1)
+            if [ -n "$keyring" ] && curl -fsSLO "$base/$keyring"; then
+              break
+            fi
+            keyring=""
+            sleep $((attempt * 20))
+          done
+          if [ -z "$keyring" ]; then
+            echo "::error::couldn't download the MSYS2 keyring"
+            exit 1
+          fi
+          sed 's/^SigLevel.*/SigLevel = Never/' /etc/pacman.conf > /tmp/pacman-keyring.conf
+          pacman -U --noconfirm --config /tmp/pacman-keyring.conf "$keyring"
+          pacman-key --populate msys2
+
+      - name: Update MSYS2
+        run: pacman -Syuu --noconfirm --overwrite '*'
+
+      - name: Finish updating MSYS2
+        run: pacman -Syuu --noconfirm --overwrite '*'
+
+      - name: Install packages
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if pacman -S --needed --noconfirm --overwrite '*' ${{ matrix.prefix }}-cc ${{ matrix.prefix }}-cmake ${{ matrix.prefix }}-ninja ${{ matrix.prefix }}-zlib ${{ matrix.prefix }}-libjpeg-turbo ${{ matrix.prefix }}-vulkan-headers; then
+              exit 0
+            fi
+            sleep $((attempt * 30))
+          done
+          exit 1
 
       - name: Install NSIS
         shell: pwsh
