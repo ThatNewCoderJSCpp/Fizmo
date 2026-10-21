@@ -6,6 +6,7 @@
 #include <utility>
 #include "float.hpp"
 #include "decimal_conversion.hpp"
+#include "small_float_ops.hpp"
 
 namespace fizmo {
 namespace multiprecision {
@@ -43,6 +44,15 @@ private:
 
     constexpr floatmp(raw_tag, bool neg, const store_t& bits) noexcept
         : m_is_negative(neg), m_data(bits) {}
+
+    static constexpr bool small_fast = fdetail::small_format<TotalBits, MantissaBits>::value;
+    using small_t = fdetail::small_ops<(small_fast ? TotalBits : 32), (small_fast ? MantissaBits : 23)>;
+
+    OPTIONAL_CPP14_CONSTEXPR std::uint64_t raw_bits() const noexcept { return m_data.get_lowest_bits(); }
+
+    static OPTIONAL_CPP14_CONSTEXPR floatmp from_small(fdetail::sf_value v) noexcept {
+        return floatmp(raw_tag{}, v.neg, store_t(v.bits));
+    }
 
     static OPTIONAL_CPP14_CONSTEXPR sstore_t to_signed(const store_t& u) noexcept { return sstore_t(u); }      
     static OPTIONAL_CPP14_CONSTEXPR store_t  to_unsigned(const sstore_t& s) noexcept { return store_t(s); }    
@@ -191,22 +201,31 @@ public:
     static constexpr bit_index series_cap() noexcept { return static_cast<bit_index>(guard_t::mantissa_bits) + 16; }
 
 public:
-    OPTIONAL_CPP14_CONSTEXPR bool is_zero()              const noexcept { return get_biased_exponent().is_zero() && get_mantissa().is_zero(); }
+    OPTIONAL_CPP14_CONSTEXPR bool is_zero()              const noexcept {
+        if constexpr (small_fast) return raw_bits() == 0;
+        else return get_biased_exponent().is_zero() && get_mantissa().is_zero();
+    }
     OPTIONAL_CPP14_CONSTEXPR bool is_subnormal()         const noexcept { return get_biased_exponent().is_zero() && !get_mantissa().is_zero(); }
-    OPTIONAL_CPP14_CONSTEXPR bool is_infinite()          const noexcept { return get_biased_exponent() == max_biased_exponent && get_mantissa().is_zero(); }
+    OPTIONAL_CPP14_CONSTEXPR bool is_infinite()          const noexcept {
+        if constexpr (small_fast) return small_t::is_infinite(raw_bits());
+        else return get_biased_exponent() == max_biased_exponent && get_mantissa().is_zero();
+    }
     OPTIONAL_CPP14_CONSTEXPR bool is_positive_infinity() const noexcept { return is_infinite() && !m_is_negative; }
     OPTIONAL_CPP14_CONSTEXPR bool is_negative_infinity() const noexcept { return is_infinite() &&  m_is_negative; }
 
     OPTIONAL_CPP14_CONSTEXPR bool is_nan() const noexcept {
-        return get_biased_exponent() == max_biased_exponent && get_mantissa() == ((one() << (MantissaBits - 1)) | one()) && !m_is_negative;
+        if constexpr (small_fast) return small_t::is_nan(m_is_negative, raw_bits());
+        else return get_biased_exponent() == max_biased_exponent && get_mantissa() == ((one() << (MantissaBits - 1)) | one()) && !m_is_negative;
     }
 
     OPTIONAL_CPP14_CONSTEXPR bool is_undefined() const noexcept {
-        return get_biased_exponent() == max_biased_exponent && get_mantissa() == ((one() << (MantissaBits - 1)) | store_t(std::uint64_t(2))) && !m_is_negative;
+        if constexpr (small_fast) return small_t::is_undefined(m_is_negative, raw_bits());
+        else return get_biased_exponent() == max_biased_exponent && get_mantissa() == ((one() << (MantissaBits - 1)) | store_t(std::uint64_t(2))) && !m_is_negative;
     }
 
     OPTIONAL_CPP14_CONSTEXPR bool is_indeterminate() const noexcept {
-        return get_biased_exponent() == max_biased_exponent && get_mantissa() == ((one() << (MantissaBits - 1)) | store_t(std::uint64_t(3))) && !m_is_negative;
+        if constexpr (small_fast) return small_t::is_indeterminate(m_is_negative, raw_bits());
+        else return get_biased_exponent() == max_biased_exponent && get_mantissa() == ((one() << (MantissaBits - 1)) | store_t(std::uint64_t(3))) && !m_is_negative;
     }
 
     OPTIONAL_CPP14_CONSTEXPR bool is_unordered() const noexcept { return is_nan() || is_undefined() || is_indeterminate(); }
@@ -272,7 +291,8 @@ public:
 
 public:
     OPTIONAL_CPP14_CONSTEXPR bool operator==(const floatmp& o) const noexcept {
-        return (is_unordered() || o.is_unordered()) ? false
+        if constexpr (small_fast) return small_t::equal(m_is_negative, raw_bits(), o.m_is_negative, o.raw_bits());
+        else return (is_unordered() || o.is_unordered()) ? false
              : (is_zero() && o.is_zero())                                     ? true
              : (m_is_negative == o.m_is_negative && m_data == o.m_data);
     }
@@ -280,7 +300,8 @@ public:
     OPTIONAL_CPP14_CONSTEXPR bool operator!=(const floatmp& o) const noexcept { return !(*this == o); }
 
     OPTIONAL_CPP14_CONSTEXPR bool operator<(const floatmp& o) const noexcept {
-        return (is_unordered() || o.is_unordered()) ? false
+        if constexpr (small_fast) return small_t::less(m_is_negative, raw_bits(), o.m_is_negative, o.raw_bits());
+        else return (is_unordered() || o.is_unordered()) ? false
              : is_negative_infinity()                                         ? !o.is_negative_infinity()
              : o.is_positive_infinity()                                       ? !is_positive_infinity()
              : (is_positive_infinity() || o.is_negative_infinity())           ? false
@@ -331,10 +352,18 @@ public:
     }
 
 public:
-    OPTIONAL_CPP14_CONSTEXPR floatmp operator+(const floatmp& o) const noexcept { return add_impl(*this, o); }
-    OPTIONAL_CPP14_CONSTEXPR floatmp operator-(const floatmp& o) const noexcept { return add_impl(*this, -o); }
+    OPTIONAL_CPP14_CONSTEXPR floatmp operator+(const floatmp& o) const noexcept {
+        if constexpr (small_fast) return from_small(small_t::add(m_is_negative, raw_bits(), o.m_is_negative, o.raw_bits()));
+        else return add_impl(*this, o);
+    }
+
+    OPTIONAL_CPP14_CONSTEXPR floatmp operator-(const floatmp& o) const noexcept {
+        if constexpr (small_fast) return from_small(small_t::sub(m_is_negative, raw_bits(), o.m_is_negative, o.raw_bits()));
+        else return add_impl(*this, -o);
+    }
 
     OPTIONAL_CPP14_CONSTEXPR floatmp operator*(const floatmp& o) const noexcept {
+        if constexpr (small_fast) return from_small(small_t::mul(m_is_negative, raw_bits(), o.m_is_negative, o.raw_bits()));
         if (is_unordered() || o.is_unordered()) return unordered_result(*this, o);
         if (is_infinite())   { if (o.is_zero()) return indeterminate(); return infinity(m_is_negative != o.m_is_negative); }
         if (o.is_infinite()) { if (is_zero())  return indeterminate(); return infinity(m_is_negative != o.m_is_negative); }
@@ -343,6 +372,7 @@ public:
     }
 
     OPTIONAL_CPP14_CONSTEXPR floatmp operator/(const floatmp& o) const noexcept {
+        if constexpr (small_fast) return from_small(small_t::div(m_is_negative, raw_bits(), o.m_is_negative, o.raw_bits()));
         if (is_unordered() || o.is_unordered()) return unordered_result(*this, o);
         if (o.is_zero())   return is_zero() ? indeterminate() : undefined();
         if (is_infinite()) { if (o.is_infinite()) return indeterminate(); return infinity(m_is_negative != o.m_is_negative); }
@@ -408,6 +438,13 @@ public:
     }
 
     static OPTIONAL_CPP14_CONSTEXPR floatmp ldexp(std::pair<store_t, sstore_t> me, bool neg = false) noexcept { return ldexp(me.first, me.second, neg); }
+
+    static constexpr floatmp from_raw(bool neg, const store_t& bits) noexcept { return floatmp(raw_tag{}, neg, bits); }
+
+    static OPTIONAL_CPP14_CONSTEXPR floatmp from_wide(bool neg, const wide_t& mantissa, const sstore_t& exponent, bool sticky = false) noexcept {
+        if (mantissa.is_zero()) return zero(neg);
+        return pack_wide(neg, mantissa, exponent, sticky);
+    }
 
 public:
     OPTIONAL_CPP14_CONSTEXPR floatmp get_integer_part() const noexcept {
@@ -515,6 +552,16 @@ public:
 
 private:
     static OPTIONAL_CPP14_CONSTEXPR floatmp pack_wide(bool neg, wide_t m, sstore_t e, bool sticky) noexcept {
+        if constexpr (small_fast) {
+            const long long ev = e.is_negative() ? -static_cast<long long>((-e).get_lowest_bits()) : static_cast<long long>(e.get_lowest_bits());
+            if (m.is_zero()) return zero(neg);
+            if (ev > (1ll << 40)) return infinity(neg);
+            if (ev < -(1ll << 40)) return zero(neg);
+            const std::uint64_t lo = m.get_lowest_bits();
+            std::uint64_t hi = 0;
+            if constexpr (TotalBits * 2 > 64) hi = (m >> 64).get_lowest_bits();
+            return from_small(small_t::pack_wide(neg, hi, lo, ev, sticky));
+        }
         const bit_index lead = top_bit_wide(m);
         if (lead < 0) return zero(neg);
         sstore_t E = e + sstore_t(lead);

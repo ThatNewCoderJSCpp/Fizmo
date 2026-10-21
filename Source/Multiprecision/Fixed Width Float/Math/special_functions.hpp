@@ -2,6 +2,7 @@
 #define FIZMO_MULTIPRECISION_FIXED_SPECIAL_FUNCTIONS_HPP
 
 #include "Details/bigfloat_bridge.hpp"
+#include "Details/fast_float.hpp"
 
 namespace fizmo {
 namespace math {
@@ -17,6 +18,33 @@ namespace math {
     fizmo_float_from_int_t<fizmo::multiprecision::integer<B, S>> NAME(const fizmo::multiprecision::integer<B, S>& n) {                                           \
         const fizmo::multiprecision::BigFloat a(n);                                                                                       \
         return bdetail::eval<fizmo_float_from_int_t<fizmo::multiprecision::integer<B, S>>>([&a](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, c); }); \
+    }
+
+#define FIZMO_FW_UNARY_FAST(NAME, OP)                                                                              \
+    template <std::size_t TB, std::size_t MB, fizmo::multiprecision::sign S>                                       \
+    fizmo::multiprecision::floatmp<TB, MB, S> NAME(const fizmo::multiprecision::floatmp<TB, MB, S>& x) {           \
+        fizmo::multiprecision::floatmp<TB, MB, S> quick;                                                           \
+        if (fwfast::unary(fwfast::fop::OP, x, quick)) return quick;                                                    \
+        const fizmo::multiprecision::BigFloat a(x);                                                                \
+        return bdetail::eval<fizmo::multiprecision::floatmp<TB, MB, S>>([&a](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, c); }); \
+    }                                                                                                              \
+                                                                                                                   \
+    template <std::size_t B, fizmo::multiprecision::sign S>                                                        \
+    fizmo_float_from_int_t<fizmo::multiprecision::integer<B, S>> NAME(const fizmo::multiprecision::integer<B, S>& n) { \
+        const fizmo::multiprecision::BigFloat a(n);                                                                \
+        return bdetail::eval<fizmo_float_from_int_t<fizmo::multiprecision::integer<B, S>>>([&a](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, c); }); \
+    }
+
+#define FIZMO_FW_BINARY_FAST(NAME, OP)                                                                             \
+    template <class A, class B, bdetail::enable_fw_t<A, B> = 0>                                                    \
+    bdetail::common_t<A, B> NAME(const A& x, const B& y) {                                                         \
+        if constexpr (std::is_same<A, bdetail::common_t<A, B>>::value && std::is_same<B, bdetail::common_t<A, B>>::value) { \
+            bdetail::common_t<A, B> quick;                                                                         \
+            if (fwfast::binary(fwfast::fop2::OP, x, y, quick)) return quick;                                           \
+        }                                                                                                          \
+        const fizmo::multiprecision::BigFloat a = bdetail::to_bf(x);                                               \
+        const fizmo::multiprecision::BigFloat b = bdetail::to_bf(y);                                               \
+        return bdetail::eval<bdetail::common_t<A, B>>([&](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, b, c); }); \
     }
 
 #define FIZMO_FW_BINARY(NAME)                                                                                      \
@@ -68,31 +96,31 @@ namespace math {
         return bdetail::eval<bdetail::common_t<A, B>>([&](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, b, c); });   \
     }
 
-FIZMO_FW_UNARY(sinc)
-FIZMO_FW_UNARY(normalized_sinc)
+FIZMO_FW_UNARY_FAST(sinc, sinc)
+FIZMO_FW_UNARY_FAST(normalized_sinc, normalized_sinc)
 
-FIZMO_FW_UNARY(arcsin)
-FIZMO_FW_UNARY(arccos)
-FIZMO_FW_UNARY(arctan)
-FIZMO_FW_UNARY(arccot)
-FIZMO_FW_UNARY(arcsec)
-FIZMO_FW_UNARY(arccsc)
-FIZMO_FW_BINARY(atan2)
+FIZMO_FW_UNARY_FAST(arcsin, arcsin)
+FIZMO_FW_UNARY_FAST(arccos, arccos)
+FIZMO_FW_UNARY_FAST(arctan, arctan)
+FIZMO_FW_UNARY_FAST(arccot, arccot)
+FIZMO_FW_UNARY_FAST(arcsec, arcsec)
+FIZMO_FW_UNARY_FAST(arccsc, arccsc)
+FIZMO_FW_BINARY_FAST(atan2, atan2)
 
-FIZMO_FW_UNARY(ln)
+FIZMO_FW_UNARY_FAST(ln, log)
 
-FIZMO_FW_UNARY(arcsinh)
-FIZMO_FW_UNARY(arccosh)
-FIZMO_FW_UNARY(arctanh)
-FIZMO_FW_UNARY(arccoth)
-FIZMO_FW_UNARY(arcsech)
-FIZMO_FW_UNARY(arccsch)
+FIZMO_FW_UNARY_FAST(arcsinh, arcsinh)
+FIZMO_FW_UNARY_FAST(arccosh, arccosh)
+FIZMO_FW_UNARY_FAST(arctanh, arctanh)
+FIZMO_FW_UNARY_FAST(arccoth, arccoth)
+FIZMO_FW_UNARY_FAST(arcsech, arcsech)
+FIZMO_FW_UNARY_FAST(arccsch, arccsch)
 
-FIZMO_FW_UNARY(gudermannian)
-FIZMO_FW_UNARY(inv_gudermannian)
+FIZMO_FW_UNARY_FAST(gudermannian, gudermannian)
+FIZMO_FW_UNARY_FAST(inv_gudermannian, inv_gudermannian)
 
-FIZMO_FW_UNARY(erf)
-FIZMO_FW_UNARY(erfc)
+FIZMO_FW_UNARY_FAST(erf, erf)
+FIZMO_FW_UNARY_FAST(erfc, erfc)
 FIZMO_FW_UNARY(erfi)
 FIZMO_FW_UNARY(inv_erf)
 FIZMO_FW_UNARY(inv_erfc)
@@ -100,9 +128,9 @@ FIZMO_FW_UNARY(inv_erfi)
 FIZMO_FW_BINARY(generalized_erf)
 FIZMO_FW_BINARY(generalized_erfc)
 
-FIZMO_FW_UNARY(gamma)
+FIZMO_FW_UNARY_FAST(gamma, gamma)
 FIZMO_FW_UNARY(log_gamma)
-FIZMO_FW_UNARY(log_abs_gamma)
+FIZMO_FW_UNARY_FAST(log_abs_gamma, log_abs_gamma)
 FIZMO_FW_UNARY(factorial)
 FIZMO_FW_BINARY(beta)
 FIZMO_FW_BINARY(log_beta)
@@ -201,8 +229,8 @@ FIZMO_FW_COUNTING(combination)
 FIZMO_FW_TERNARY(generalized_gaussian_moment)
 FIZMO_FW_BINARY(generalized_gaussian_integral)
 
-FIZMO_FW_UNARY(log1p)
-FIZMO_FW_UNARY(expm1)
+FIZMO_FW_UNARY_FAST(log1p, log1p)
+FIZMO_FW_UNARY_FAST(expm1, expm1)
 
 FIZMO_FW_BINARY(regularized_gamma_p)
 FIZMO_FW_BINARY(regularized_gamma_q)
@@ -218,6 +246,8 @@ FIZMO_FW_TERNARY(inverse_regularized_beta)
 FIZMO_FW_TERNARY(inverse_regularized_beta_complement)
 
 #undef FIZMO_FW_UNARY
+#undef FIZMO_FW_UNARY_FAST
+#undef FIZMO_FW_BINARY_FAST
 #undef FIZMO_FW_BINARY
 #undef FIZMO_FW_TERNARY
 #undef FIZMO_FW_QUATERNARY

@@ -2,6 +2,7 @@
 #define FIZMO_MULTIPRECISION_LOG_POW_ROOTS_HPP
 
 #include "Details/log_pow_roots_detail.hpp"
+#include "Details/fast_float.hpp"
 
 namespace fizmo {
 namespace math {
@@ -20,6 +21,7 @@ namespace math {
     fizmo::multiprecision::floatmp<TB, MB, S> NAME(const fizmo::multiprecision::floatmp<TB, MB, S>& x) {                                                         \
         fizmo::multiprecision::floatmp<TB, MB, S> early;                                                           \
         if (edetail::FILTER(x, early)) return early;                                                               \
+        if (fwfast::unary(fwfast::fop::NAME, x, early)) return early;                                                  \
         const BigFloat a(x);                                                                                       \
         return bdetail::eval<fizmo::multiprecision::floatmp<TB, MB, S>>([&a](const fizmo::multiprecision::BigFloatContext& c) { return BIG(a, c); });           \
     }                                                                                                              \
@@ -71,6 +73,10 @@ template <class A, class B>
 struct apply<A, B, 2> {
     static typename result<A, B>::type run(const A& a, const B& b) {
         using F = typename result<A, B>::type;
+        if constexpr (std::is_same<A, F>::value && std::is_same<B, F>::value) {
+            F quick;
+            if (fwfast::binary(fwfast::fop2::pow, a, b, quick)) return quick;
+        }
         return pow_run<F>(widen<F>(a), widen<F>(b), bdetail::to_bf(a), bdetail::to_bf(b));
     }
 };

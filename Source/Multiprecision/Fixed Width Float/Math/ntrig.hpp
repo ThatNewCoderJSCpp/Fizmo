@@ -2,6 +2,7 @@
 #define FIZMO_MULTIPRECISION_NORMAL_TRIG_HPP
 
 #include "Details/bigfloat_bridge.hpp"
+#include "Details/fast_float.hpp"
 
 #include <cmath>
 
@@ -27,6 +28,8 @@ namespace math {
     fizmo::multiprecision::floatmp<TB, MB, S> NAME(const fizmo::multiprecision::floatmp<TB, MB, S>& x) {                                                         \
         if (x.is_unordered())                 return x;                                                                                   \
         if (x.is_infinite())                  return fizmo::multiprecision::floatmp<TB, MB, S>::undefined();                              \
+        fizmo::multiprecision::floatmp<TB, MB, S> quick;                                                           \
+        if (fwfast::unary(fwfast::fop::NAME, x, quick)) return quick;                                                  \
         const BigFloat a(x);                                                                                       \
         return bdetail::eval<fizmo::multiprecision::floatmp<TB, MB, S>>([&a](const fizmo::multiprecision::BigFloatContext& c) { return NAME(a, c); });          \
     }
