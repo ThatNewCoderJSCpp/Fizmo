@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.2.37
+    VERSION 0.2.38
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -241,6 +241,18 @@ if(FIZMO_BUILD_TEST)
     target_compile_definitions(fizmo-test PRIVATE
         FIZMO_MATH_EXAMPLE="${CMAKE_CURRENT_SOURCE_DIR}/examples/example.math"
         FIZMO_OUTPUT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/output")
+endif()
+
+option(FIZMO_BUILD_NUMERICS_TESTS "Build Testing/numerics_tests.cpp as fizmo-numerics-tests" OFF)
+if(FIZMO_BUILD_NUMERICS_TESTS)
+    add_executable(fizmo-numerics-tests Testing/numerics_tests.cpp)
+    if(TARGET fizmo::numerics)
+        target_link_libraries(fizmo-numerics-tests PRIVATE fizmo::numerics)
+    else()
+        target_link_libraries(fizmo-numerics-tests PRIVATE fizmo::fizmo)
+    endif()
+    enable_testing()
+    add_test(NAME fizmo-numerics COMMAND fizmo-numerics-tests)
 endif()
 
 if(PROJECT_IS_TOP_LEVEL OR CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)

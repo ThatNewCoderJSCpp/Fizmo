@@ -65,6 +65,10 @@
         #ifndef FIZMO_CONSTANTS
             #define FIZMO_CONSTANTS
         #endif
+
+        #ifndef FIZMO_NUMERICS
+            #define FIZMO_NUMERICS
+        #endif
     #endif // ALL_FIZMO
 
     #ifdef FIZMO
@@ -120,6 +124,10 @@
 
         #if defined(FIZMO_STATISTICS) || defined(FIZMO_STATS)
             #include "../statistics.hpp"
+        #endif
+
+        #if defined(FIZMO_NUMERICS) || defined(FIZMO_NUMERIC)
+            #include "../numerics.hpp"
         #endif
 
         #if defined(FIZMO_GRAPHS) || defined(FIZMO_GRAPH)
