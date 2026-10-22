@@ -126,86 +126,72 @@ jobs:
   mingw:
     name: Windows ${{ matrix.platform }}
     needs: version
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
         include:
-          - msystem: MINGW64
-            prefix: mingw-w64-x86_64
-            platform: windows-mingw64
-            runner: windows-latest
-          - msystem: UCRT64
-            prefix: mingw-w64-ucrt-x86_64
+          - target: x86_64-w64-mingw32
             platform: windows-ucrt64
-            runner: windows-latest
-          - msystem: CLANGARM64
-            prefix: mingw-w64-clang-aarch64
+          - target: i686-w64-mingw32
+            platform: windows-i686
+          - target: aarch64-w64-mingw32
             platform: windows-clangarm64
-            runner: windows-11-arm
-    defaults:
-      run:
-        shell: msys2 {0}
+    env:
+      LLVM_MINGW_VERSION: "20261020"
+      LLVM_MINGW: llvm-mingw-20261020-ucrt-ubuntu-22.04-x86_64
+      LLVM_MINGW_TARGET: ${{ matrix.target }}
+      LLVM_MINGW_DEPS: ${{ github.workspace }}/windows-deps
     steps:
       - uses: actions/checkout@v4
 
-      - uses: msys2/setup-msys2@v2
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build nsis p7zip-full
+
+      - name: Cache llvm-mingw
+        id: llvm-mingw-cache
+        uses: actions/cache@v4
         with:
-          msystem: ${{ matrix.msystem }}
-          update: false
+          path: ~/llvm-mingw
+          key: ${{ env.LLVM_MINGW }}
 
-      - name: Refresh the MSYS2 keyring
+      - name: Download llvm-mingw
+        if: steps.llvm-mingw-cache.outputs.cache-hit != 'true'
         run: |
-          base=https://repo.msys2.org/msys/x86_64
-          keyring=""
-          for attempt in 1 2 3 4; do
-            keyring=$(curl -fsSL "$base/" | grep -o 'msys2-keyring-[^"]*\.pkg\.tar\.zst' | sort -uV | tail -n 1)
-            if [ -n "$keyring" ] && curl -fsSLO "$base/$keyring"; then
-              break
-            fi
-            keyring=""
-            sleep $((attempt * 20))
-          done
-          if [ -z "$keyring" ]; then
-            echo "::error::couldn't download the MSYS2 keyring"
-            exit 1
-          fi
-          sed 's/^SigLevel.*/SigLevel = Never/' /etc/pacman.conf > /tmp/pacman-keyring.conf
-          pacman -U --noconfirm --config /tmp/pacman-keyring.conf "$keyring"
-          pacman-key --populate msys2
+          curl -fL --retry 5 --retry-delay 10 -o /tmp/llvm-mingw.tar.xz "https://github.com/mstorsjo/llvm-mingw/releases/download/$LLVM_MINGW_VERSION/$LLVM_MINGW.tar.xz"
+          mkdir -p ~/llvm-mingw
+          tar -xf /tmp/llvm-mingw.tar.xz -C ~/llvm-mingw --strip-components=1
 
-      - name: Update MSYS2
-        run: pacman -Syuu --noconfirm --overwrite '*'
+      - name: Put llvm-mingw on the PATH
+        run: echo "$HOME/llvm-mingw/bin" >> "$GITHUB_PATH"
 
-      - name: Finish updating MSYS2
-        run: pacman -Syuu --noconfirm --overwrite '*'
+      - name: Cache the Windows libraries
+        id: deps-cache
+        uses: actions/cache@v4
+        with:
+          path: windows-deps
+          key: windows-deps-${{ matrix.target }}-${{ env.LLVM_MINGW }}-${{ hashFiles('.github/scripts/windows-deps.sh', 'cmake/llvm-mingw.cmake') }}
 
-      - name: Install packages
-        run: |
-          for attempt in 1 2 3 4 5 6; do
-            if pacman -S --needed --noconfirm --overwrite '*' ${{ matrix.prefix }}-cc ${{ matrix.prefix }}-cmake ${{ matrix.prefix }}-ninja ${{ matrix.prefix }}-zlib ${{ matrix.prefix }}-libjpeg-turbo ${{ matrix.prefix }}-vulkan-headers; then
-              exit 0
-            fi
-            sleep $((attempt * 30))
-          done
-          exit 1
-
-      - name: Install NSIS
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) { choco install nsis -y --no-progress }
+      - name: Build zlib, libjpeg-turbo and the Vulkan headers
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: bash .github/scripts/windows-deps.sh "$LLVM_MINGW_TARGET" "$LLVM_MINGW_DEPS" "$RUNNER_TEMP/windows-deps-src"
 
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_PACKAGE_PLATFORM=${{ matrix.platform }}
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/llvm-mingw.cmake \
+            -DFIZMO_PACKAGE_PLATFORM=${{ matrix.platform }} \
+            -DJPEG_LIBRARY="$LLVM_MINGW_DEPS/lib/libjpeg.a" -DJPEG_INCLUDE_DIR="$LLVM_MINGW_DEPS/include" \
+            -DZLIB_LIBRARY="$LLVM_MINGW_DEPS/lib/libzs.a" -DZLIB_INCLUDE_DIR="$LLVM_MINGW_DEPS/include"
 
       - name: Build
         run: cmake --build build -j 4
 
       - name: Package
         working-directory: build
-        run: |
-          export PATH="$PATH:/c/Program Files (x86)/NSIS"
-          cpack -G "ZIP;7Z;NSIS"
+        run: cpack -G "ZIP;7Z;NSIS"
 
       - uses: actions/upload-artifact@v4
         with:

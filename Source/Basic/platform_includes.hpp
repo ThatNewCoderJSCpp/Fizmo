@@ -6,8 +6,8 @@
 #if defined(OS_WINDOWS)
     #include <winsock2.h>
     #include <windows.h>
-    #include <Windows.h>
-    #include <CommCtrl.h>
+    #include <windows.h>
+    #include <commctrl.h>
     #include <commdlg.h>
     #include <windowsx.h>
     #include <wincrypt.h>

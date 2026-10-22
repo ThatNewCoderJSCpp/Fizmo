@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.2.34
+    VERSION 0.2.35
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -304,6 +304,8 @@ if(PROJECT_IS_TOP_LEVEL OR CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         endif()
         if(MINGW AND FIZMO_PACKAGE_ARCH STREQUAL "arm64")
             set(FIZMO_PACKAGE_PLATFORM_DEFAULT windows-clangarm64)
+        elseif(MINGW AND FIZMO_PACKAGE_ARCH STREQUAL "i686")
+            set(FIZMO_PACKAGE_PLATFORM_DEFAULT windows-i686)
         elseif(MINGW AND FIZMO_MINGW_UCRT)
             set(FIZMO_PACKAGE_PLATFORM_DEFAULT windows-ucrt64)
         elseif(MINGW)
