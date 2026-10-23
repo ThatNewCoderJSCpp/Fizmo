@@ -260,9 +260,9 @@ std::vector<std::vector<Point2>> join_segments(const std::vector<Point2>& segmen
                 const Point2 tip = dir == 0 ? line.back() : line.front();
                 if (!take(tip, next, forward)) break;
                 used[next] = 1;
-                const Point2 far = forward ? segments[2 * next + 1] : segments[2 * next];
-                if (dir == 0) line.push_back(far);
-                else line.insert(line.begin(), far);
+                const Point2 other_end = forward ? segments[2 * next + 1] : segments[2 * next];
+                if (dir == 0) line.push_back(other_end);
+                else line.insert(line.begin(), other_end);
             }
         }
         out.push_back(std::move(line));

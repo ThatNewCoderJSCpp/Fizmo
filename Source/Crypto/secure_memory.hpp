@@ -8,6 +8,7 @@
 #include <memory>
 #include <new>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace fizmo {
@@ -16,6 +17,10 @@ namespace crypto {
 void secure_zero(void* data, std::size_t len) noexcept;
 
 bool secure_compare(const void* a, const void* b, std::size_t len) noexcept;
+
+bool strequal(std::string_view a, std::string_view b) noexcept;
+
+bool strequal(const char* a, const char* b) noexcept;
 
 inline bool secure_equals(const std::string& a, const std::string& b) noexcept {
     return a.size() == b.size() && secure_compare(a.data(), b.data(), a.size());
