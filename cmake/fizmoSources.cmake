@@ -25,7 +25,7 @@ set(FIZMO_COMPONENT_DIRS_collections Arrays)
 set(FIZMO_COMPONENT_DIRS_system      System)
 set(FIZMO_COMPONENT_DIRS_util        "Util Hpp")
 set(FIZMO_COMPONENT_DIRS_net         Networking)
-set(FIZMO_COMPONENT_DIRS_graphics    Colors GPU Game Graphics Images Input OpenGL Text UI Vulkan Windows)
+set(FIZMO_COMPONENT_DIRS_graphics    Android Colors GPU Game Graphics Images Input OpenGL Text UI Vulkan Windows)
 
 set(FIZMO_COMPONENT_FILES_graphics System/hot_reload.cpp)
 set(FIZMO_COMPONENT_FILES_core Arrays/common/memory/windows/allocator.cpp)
