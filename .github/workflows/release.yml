@@ -120,6 +120,7 @@ jobs:
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_BUILD_NUMERICS_TESTS=ON \
             -DFIZMO_PACKAGE_PLATFORM=macos-${{ matrix.arch }} \
             -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" \
+            -DFIZMO_VULKAN_INCLUDE_DIR="$(brew --prefix vulkan-headers)/include" \
             -DCMAKE_PREFIX_PATH="$prefix;$(brew --prefix jpeg-turbo);$(brew --prefix zlib)"
 
       - name: Build

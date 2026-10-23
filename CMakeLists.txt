@@ -81,7 +81,7 @@ option(FIZMO_PCH "Use a precompiled header while building the fizmo library" ON)
 option(FIZMO_UNITY_BUILD "Compile the fizmo library sources in batches" OFF)
 
 if(APPLE)
-    find_path(FIZMO_VULKAN_INCLUDE_DIR vulkan/vulkan.h HINTS /opt/homebrew/include /usr/local/include)
+    find_path(FIZMO_VULKAN_INCLUDE_DIR vulkan/vulkan.h HINTS /opt/homebrew/opt/vulkan-headers/include /usr/local/opt/vulkan-headers/include /opt/homebrew/include /usr/local/include)
 else()
     find_path(FIZMO_VULKAN_INCLUDE_DIR vulkan/vulkan.h)
 endif()
