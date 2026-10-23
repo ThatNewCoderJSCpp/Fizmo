@@ -95,6 +95,7 @@ private:
     void fill_info() noexcept;
 
     static std::string name_to_string(X509_NAME* name) noexcept;
+    static std::string name_to_string(const X509_NAME* name) noexcept;
 
     std::string serial_to_string() const noexcept;
 

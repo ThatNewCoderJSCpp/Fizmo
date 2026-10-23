@@ -122,6 +122,10 @@ void OpenSSLCertificate::fill_info() noexcept {
 
 #if defined(OS_POSIX)
 std::string OpenSSLCertificate::name_to_string(X509_NAME* name) noexcept {
+    return name_to_string(static_cast<const X509_NAME*>(name));
+}
+
+std::string OpenSSLCertificate::name_to_string(const X509_NAME* name) noexcept {
     if (!name) return {};
     BIO* bio = BIO_new(BIO_s_mem());
     if (!bio) return {};
@@ -137,13 +141,16 @@ std::string OpenSSLCertificate::name_to_string(X509_NAME* name) noexcept {
 #if defined(OS_POSIX)
 std::string OpenSSLCertificate::serial_to_string() const noexcept {
     const ASN1_INTEGER* serial = X509_get0_serialNumber(m_x509);
-    if (!serial || serial->length <= 0) return {};
+    if (!serial) return {};
+    const int length = ASN1_STRING_length(serial);
+    const unsigned char* bytes = ASN1_STRING_get0_data(serial);
+    if (length <= 0 || !bytes) return {};
     std::string out;
-    out.reserve(static_cast<std::size_t>(serial->length) * 3);
+    out.reserve(static_cast<std::size_t>(length) * 3);
 
-    for (int i = 0; i < serial->length; ++i) {
+    for (int i = 0; i < length; ++i) {
         char hex[4];
-        std::snprintf(hex, sizeof(hex), "%02X", serial->data[i]);
+        std::snprintf(hex, sizeof(hex), "%02X", bytes[i]);
         if (!out.empty()) out += ':';
         out += hex;
     }
