@@ -30,7 +30,9 @@
 #include <condition_variable>
 #include <cstring>
 #include <deque>
+#include <map>
 #include <mutex>
+#include <set>
 #include <thread>
 
 namespace fizmo {
@@ -951,6 +953,43 @@ void JNICALL native_insets(JNIEnv*, jobject, jint left, jint top, jint right, ji
     s->push_external(std::move(x));
 }
 
+struct PickWaiters {
+    std::mutex                mutex;
+    std::condition_variable   cond;
+    std::set<int>             waiting;
+    std::map<int, PickResult> done;
+    int                       next = 1;
+};
+
+PickWaiters& pick_waiters() {
+    static PickWaiters w;
+    return w;
+}
+
+void JNICALL native_picked(JNIEnv* env, jobject, jint id, jobjectArray paths, jstring error, jboolean cancelled) {
+    PickResult r;
+    if (paths) {
+        const jsize n = env->GetArrayLength(paths);
+        for (jsize i = 0; i < n; ++i) {
+            jstring p = static_cast<jstring>(env->GetObjectArrayElement(paths, i));
+            if (detail::clear_exception(env)) break;
+            std::string path = detail::utf8_of(env, p);
+            if (p) env->DeleteLocalRef(p);
+            if (!path.empty()) r.paths.push_back(std::move(path));
+        }
+    }
+    r.error = detail::utf8_of(env, error);
+    r.cancelled = cancelled == JNI_TRUE;
+    PickWaiters& w = pick_waiters();
+    {
+        std::lock_guard<std::mutex> lock(w.mutex);
+        if (!w.waiting.count(id)) return;
+        w.waiting.erase(id);
+        w.done[id] = std::move(r);
+    }
+    w.cond.notify_all();
+}
+
 void JNICALL native_device_removed(JNIEnv*, jobject, jint id) {
     AppState* s = g_state.load();
     if (!s) return;
@@ -967,6 +1006,7 @@ bool register_natives(JNIEnv* env, jobject activity) {
         { "nativeKey", "(IIZ)V", reinterpret_cast<void*>(native_key) },
         { "nativeInsets", "(IIIII)V", reinterpret_cast<void*>(native_insets) },
         { "nativeDeviceRemoved", "(I)V", reinterpret_cast<void*>(native_device_removed) },
+        { "nativePicked", "(I[Ljava/lang/String;Ljava/lang/String;Z)V", reinterpret_cast<void*>(native_picked) },
     };
     jclass cls = detail::find_class_in_hierarchy(env, activity, "fizmo.android.FizmoActivity");
     if (!cls) return false;
@@ -1218,6 +1258,51 @@ bool App::set_clipboard_text(const std::string& text) {
 bool App::vibrate(unsigned int ms) noexcept {
     JNIEnv* env = detail::env_for_thread(m_state->activity->vm);
     return detail::vibrate(env, m_state->java, m_state->activity->clazz, ms);
+}
+
+PickResult App::pick_files(const PickOptions& options) {
+    PickResult result;
+    if (!m_state->java.fizmo || !m_state->java.pick) {
+        result.error = "this app can't show the file picker";
+        return result;
+    }
+    PickWaiters& w = pick_waiters();
+    int id = 0;
+    {
+        std::lock_guard<std::mutex> lock(w.mutex);
+        id = w.next++;
+        w.waiting.insert(id);
+    }
+    JNIEnv* env = detail::env_for_thread(m_state->activity->vm);
+    const int kind = options.kind == PickKind::Save ? 1 : options.kind == PickKind::Folder ? 2 : 0;
+    if (!detail::start_pick(env, m_state->java, m_state->activity->clazz, id, kind, options.multiple, options.title, options.suggested_name, options.patterns, options.start)) {
+        std::lock_guard<std::mutex> lock(w.mutex);
+        w.waiting.erase(id);
+        result.error = "the file picker couldn't start";
+        return result;
+    }
+    std::unique_lock<std::mutex> lock(w.mutex);
+    while (!w.done.count(id)) {
+        if (m_state->destroy_requested) {
+            w.waiting.erase(id);
+            result.cancelled = true;
+            return result;
+        }
+        w.cond.wait_for(lock, std::chrono::milliseconds(250));
+    }
+    result = std::move(w.done[id]);
+    w.done.erase(id);
+    return result;
+}
+
+bool App::all_files_access() const noexcept {
+    JNIEnv* env = detail::env_for_thread(m_state->activity->vm);
+    return detail::has_all_files_access(env, m_state->java, m_state->activity->clazz);
+}
+
+bool App::declares_all_files_access() const noexcept {
+    JNIEnv* env = detail::env_for_thread(m_state->activity->vm);
+    return detail::declares_all_files_access(env, m_state->java, m_state->activity->clazz);
 }
 
 bool App::open_url(const std::string& url) noexcept {

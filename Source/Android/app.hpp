@@ -106,6 +106,27 @@ enum class LogLevel : std::uint8_t {
     Fatal
 };
 
+enum class PickKind : std::uint8_t {
+    Open = 0,
+    Save,
+    Folder
+};
+
+struct PickOptions {
+    PickKind                 kind     = PickKind::Open;
+    bool                     multiple = false;
+    std::string              title;
+    std::string              suggested_name;
+    std::string              start;
+    std::vector<std::string> patterns;
+};
+
+struct PickResult {
+    std::vector<std::string> paths;
+    std::string              error;
+    bool                     cancelled = false;
+};
+
 void log(LogLevel level, const std::string& tag, const std::string& message) noexcept;
 void log(const std::string& message) noexcept;
 bool redirect_stdio(const std::string& tag);
@@ -161,6 +182,10 @@ public:
 
     std::string clipboard_text();
     bool set_clipboard_text(const std::string& text);
+
+    PickResult pick_files(const PickOptions& options);
+    bool all_files_access() const noexcept;
+    bool declares_all_files_access() const noexcept;
 
     bool vibrate(unsigned int milliseconds) noexcept;
     bool open_url(const std::string& url) noexcept;

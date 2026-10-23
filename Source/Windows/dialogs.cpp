@@ -14,6 +14,10 @@ extern char** environ;
 #include <shobjidl.h>
 #endif
 
+#if defined(OS_ANDROID)
+#include "../Android/app.hpp"
+#endif
+
 namespace fizmo {
 namespace windows {
 namespace dialogs {
@@ -605,9 +609,34 @@ MessageResult linux_message_box(const std::string& title, const std::string& mes
 }
 #endif
 
+#if defined(OS_ANDROID)
+std::vector<std::string> android_file_dialog(const FileDialogOptions& o, int kind) {
+    fizmo::android::App* app = fizmo::android::App::current();
+    if (!app) return {};
+    fizmo::android::PickOptions p;
+    p.kind = kind == 1 ? fizmo::android::PickKind::Save : kind == 2 ? fizmo::android::PickKind::Folder : fizmo::android::PickKind::Open;
+    p.multiple = o.multiple;
+    p.title = o.title;
+    p.start = o.default_path;
+    p.suggested_name = o.default_name;
+    if (p.suggested_name.empty() && kind == 1 && !o.default_path.empty()) {
+        const std::size_t slash = o.default_path.find_last_of('/');
+        p.suggested_name = slash == std::string::npos ? o.default_path : o.default_path.substr(slash + 1);
+    }
+    for (const FileFilter& f : o.filters) {
+        for (const std::string& pattern : f.patterns) p.patterns.push_back(pattern);
+    }
+    fizmo::android::PickResult r = app->pick_files(p);
+    if (!r.error.empty()) fizmo::android::log(fizmo::android::LogLevel::Warn, "fizmo", "file picker: " + r.error);
+    return r.paths;
+}
+#endif
+
 std::vector<std::string> file_dialog(const FileDialogOptions& o, int kind) {
 #if defined(OS_WINDOWS)
     return windows_file_dialog(o, kind);
+#elif defined(OS_ANDROID)
+    return android_file_dialog(o, kind);
 #elif defined(OS_LINUX)
     return run_file_dialog(o, kind);
 #elif defined(OS_MACOS)
@@ -635,6 +664,8 @@ Backend backend() {
     return detail::linux_backend(program);
 #elif defined(OS_MACOS)
     return Backend::Native;
+#elif defined(OS_ANDROID)
+    return fizmo::android::App::current() ? Backend::Native : Backend::None;
 #else
     return Backend::None;
 #endif

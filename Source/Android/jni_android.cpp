@@ -206,6 +206,9 @@ JavaHooks load_java_hooks(JNIEnv* env, jobject activity) noexcept {
     h.orientation   = method(env, cls, "fizmoSetOrientation", "(I)V");
     h.immersive     = method(env, cls, "fizmoSetImmersive", "(Z)V");
     h.unicode_char  = method(env, cls, "fizmoUnicodeChar", "(II)I");
+    h.pick          = method(env, cls, "fizmoPick", "(IIZLjava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Z");
+    h.has_all_files = method(env, cls, "fizmoHasAllFilesAccess", "()Z");
+    h.wants_all_files = method(env, cls, "fizmoDeclaresAllFilesAccess", "()Z");
     return h;
 }
 
@@ -351,6 +354,35 @@ bool set_clipboard_text(JNIEnv* env, const JavaHooks& h, jobject activity, const
 bool vibrate(JNIEnv* env, const JavaHooks& h, jobject activity, unsigned int ms) noexcept {
     if (!env || !activity || !h.fizmo || !h.vibrate) return false;
     const jboolean ok = env->CallBooleanMethod(activity, h.vibrate, static_cast<jlong>(ms));
+    return !clear_exception(env) && ok == JNI_TRUE;
+}
+
+bool start_pick(JNIEnv* env, const JavaHooks& h, jobject activity, int id, int kind, bool multiple, const std::string& title, const std::string& name, const std::vector<std::string>& patterns, const std::string& start) noexcept {
+    if (!env || !activity || !h.fizmo || !h.pick) return false;
+    LocalFrame frame(env, static_cast<jint>(16 + patterns.size()));
+    jclass string_cls = find(env, "java/lang/String");
+    if (!string_cls) return false;
+    jobjectArray list = env->NewObjectArray(static_cast<jsize>(patterns.size()), string_cls, nullptr);
+    if (clear_exception(env) || !list) return false;
+    for (std::size_t i = 0; i < patterns.size(); ++i) {
+        jstring p = java_string(env, patterns[i]);
+        env->SetObjectArrayElement(list, static_cast<jsize>(i), p);
+        if (clear_exception(env)) return false;
+    }
+    const jboolean ok = env->CallBooleanMethod(activity, h.pick, static_cast<jint>(id), static_cast<jint>(kind), multiple ? JNI_TRUE : JNI_FALSE,
+        java_string(env, title), java_string(env, name), list, java_string(env, start));
+    return !clear_exception(env) && ok == JNI_TRUE;
+}
+
+bool has_all_files_access(JNIEnv* env, const JavaHooks& h, jobject activity) noexcept {
+    if (!env || !activity || !h.fizmo || !h.has_all_files) return false;
+    const jboolean ok = env->CallBooleanMethod(activity, h.has_all_files);
+    return !clear_exception(env) && ok == JNI_TRUE;
+}
+
+bool declares_all_files_access(JNIEnv* env, const JavaHooks& h, jobject activity) noexcept {
+    if (!env || !activity || !h.fizmo || !h.wants_all_files) return false;
+    const jboolean ok = env->CallBooleanMethod(activity, h.wants_all_files);
     return !clear_exception(env) && ok == JNI_TRUE;
 }
 

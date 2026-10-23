@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace fizmo {
 namespace android {
@@ -27,6 +28,9 @@ struct JavaHooks {
     jmethodID orientation    = nullptr;
     jmethodID immersive      = nullptr;
     jmethodID unicode_char   = nullptr;
+    jmethodID pick           = nullptr;
+    jmethodID has_all_files  = nullptr;
+    jmethodID wants_all_files = nullptr;
     jclass    key_event      = nullptr;
     jmethodID key_event_new  = nullptr;
     jmethodID key_event_char = nullptr;
@@ -76,6 +80,10 @@ bool set_clipboard_text(JNIEnv* env, const JavaHooks& hooks, jobject activity, c
 bool vibrate(JNIEnv* env, const JavaHooks& hooks, jobject activity, unsigned int ms) noexcept;
 bool open_url(JNIEnv* env, const JavaHooks& hooks, jobject activity, const std::string& url) noexcept;
 bool share_text(JNIEnv* env, const JavaHooks& hooks, jobject activity, const std::string& text, const std::string& title) noexcept;
+
+bool start_pick(JNIEnv* env, const JavaHooks& hooks, jobject activity, int id, int kind, bool multiple, const std::string& title, const std::string& name, const std::vector<std::string>& patterns, const std::string& start) noexcept;
+bool has_all_files_access(JNIEnv* env, const JavaHooks& hooks, jobject activity) noexcept;
+bool declares_all_files_access(JNIEnv* env, const JavaHooks& hooks, jobject activity) noexcept;
 
 std::string cache_dir(JNIEnv* env, jobject activity);
 std::string native_library_dir(JNIEnv* env, jobject activity);

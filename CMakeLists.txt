@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.3.0
+    VERSION 0.3.1
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -76,6 +76,19 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoSources.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoTuning.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoUnicode.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fizmoDependencies.cmake)
+
+if(FIZMO_BUNDLED_DEPS)
+    target_include_directories(fizmo_headers SYSTEM INTERFACE
+        $<BUILD_INTERFACE:${FIZMO_BUNDLED_PREFIX}/include>
+        $<BUILD_INTERFACE:${FIZMO_BUNDLED_PREFIX}/include/freetype2>
+        $<BUILD_INTERFACE:${FIZMO_BUNDLED_PREFIX}/include/harfbuzz>)
+    foreach(_fizmo_bundled IN ITEMS fizmo_bundled_jpeg fizmo_bundled_freetype fizmo_bundled_harfbuzz fizmo_bundled_ssl)
+        if(TARGET ${_fizmo_bundled})
+            add_dependencies(fizmo_headers ${_fizmo_bundled})
+        endif()
+    endforeach()
+    unset(_fizmo_bundled)
+endif()
 
 option(FIZMO_PCH "Use a precompiled header while building the fizmo library" ON)
 option(FIZMO_UNITY_BUILD "Compile the fizmo library sources in batches" OFF)
@@ -294,6 +307,10 @@ if(PROJECT_IS_TOP_LEVEL OR CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    if(FIZMO_BUNDLED_DEPS)
+        install(DIRECTORY "${FIZMO_BUNDLED_PREFIX}/lib/" DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            FILES_MATCHING PATTERN "*.a" PATTERN "cmake" EXCLUDE PATTERN "pkgconfig" EXCLUDE)
+    endif()
     if(FIZMO_BUILD_SHADER_TOOL)
         set_target_properties(fizmo-shaders PROPERTIES EXPORT_NAME shaders)
         install(TARGETS fizmo-shaders EXPORT fizmoTargets RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
