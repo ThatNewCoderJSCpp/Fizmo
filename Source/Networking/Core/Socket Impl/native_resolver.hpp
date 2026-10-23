@@ -7,7 +7,7 @@
 #include <vector>
 #include <cstring>
 
-#ifdef OS_LINUX
+#ifdef OS_POSIX
 #include <netdb.h>
 #endif
 

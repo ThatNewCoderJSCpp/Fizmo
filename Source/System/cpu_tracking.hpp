@@ -4,6 +4,7 @@
 #include "tracker.hpp"
 #include "platform_linux.hpp"
 #include "win_library.hpp"
+#include "platform_macos.hpp"
 #include <set>
 
 namespace fizmo {
@@ -75,7 +76,7 @@ private:
     std::optional<std::uint64_t> m_prev_ctxt;
     detail::Clock::time_point  m_prev_time = detail::Clock::now();
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
     double                     m_ticks_per_second = 100.0;
     std::vector<std::string>   m_temp_dirs;
     std::string                m_temp_zone;
@@ -120,6 +121,24 @@ private:
     static void read_process(std::uint64_t& user, std::uint64_t& kernel);
 
     static std::uint32_t count_threads();
+
+    void prime();
+
+    CPUSample collect();
+
+#elif defined(OS_MACOS)
+    struct MacState;
+    detail::Opaque<MacState> m_mac;
+
+    void discover();
+
+    void discover_temperature();
+
+    void read_temperature(CPUSample& s) const;
+
+    bool read_ticks(Times& total, std::vector<Times>& cores) const;
+
+    static void read_process(std::uint64_t& user_us, std::uint64_t& kernel_us, std::uint32_t& threads);
 
     void prime();
 

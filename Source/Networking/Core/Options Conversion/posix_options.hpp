@@ -3,7 +3,7 @@
 
 #include "socket_option.hpp"
 
-#ifdef OS_LINUX
+#ifdef OS_POSIX
 
 namespace fizmo {
 namespace networking {
@@ -22,5 +22,5 @@ public:
 } // namespace networking
 } // namespace fizmo
 
-#endif // OS_LINUX
+#endif // OS_POSIX
 #endif // FIZMO_POSIX_OPTIONS_HPP

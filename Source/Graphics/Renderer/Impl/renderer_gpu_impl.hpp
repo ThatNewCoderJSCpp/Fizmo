@@ -4,7 +4,7 @@
 #include "renderer_base.hpp"
 #include "../../../Basic/fizmo_defines.hpp"
 
-#if defined(OS_WINDOWS) || defined(OS_LINUX)
+#if defined(OS_WINDOWS) || defined(OS_LINUX) || defined(OS_MACOS) || defined(OS_ANDROID)
 
 #include "../../../GPU/include.hpp"
 #include "gpu_geometry.hpp"
@@ -5233,5 +5233,5 @@ private:
 } // namespace graphics
 } // namespace fizmo
 
-#endif // OS_WINDOWS || OS_LINUX
+#endif // OS_WINDOWS || OS_LINUX || OS_MACOS || OS_ANDROID
 #endif // FIZMO_RENDERER_GPU_IMPL_HPP

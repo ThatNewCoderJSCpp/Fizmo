@@ -5,7 +5,7 @@ namespace fizmo {
 namespace networking {
 namespace core {
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 auto PosixErrorConverter::convert(int err, const std::string& operation) noexcept -> SocketError {
     if (err == 0) { return SocketError(ErrorCode::Success, "Operation completed successfully", 0, operation); }
     ErrorCode code;
@@ -115,24 +115,24 @@ auto PosixErrorConverter::convert(int err, const std::string& operation) noexcep
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool PosixErrorConverter::is_temporary_error() noexcept {
     return (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINPROGRESS || errno == EINTR || errno == ETIMEDOUT);
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool PosixErrorConverter::is_critical_error() noexcept {
     return (errno == ECONNRESET || errno == ENETDOWN || errno == ECONNABORTED || errno == ESHUTDOWN || errno == EPIPE);
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 std::string PosixErrorConverter::get_error_message(int error_code) noexcept {
     char buf[256];
     buf[0] = '\0';
 
-#if defined(__GLIBC__) && defined(_GNU_SOURCE)
+#if (defined(__GLIBC__) && defined(_GNU_SOURCE)) || (defined(OS_ANDROID) && defined(__USE_GNU) && __ANDROID_API__ >= 23)
     const char* msg = ::strerror_r(error_code, buf, sizeof(buf)); 
     return msg ? std::string(msg) : std::string("Unknown error");
 #else
@@ -142,7 +142,7 @@ std::string PosixErrorConverter::get_error_message(int error_code) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 auto PosixErrorConverter::convert_gai(int gai_error, const std::string& operation) noexcept -> SocketError {
     if (gai_error == 0) { return SocketError(ErrorCode::Success, "Resolution succeeded", 0, operation); }
     if (gai_error == EAI_SYSTEM) { return convert(errno, operation); }
@@ -181,7 +181,7 @@ auto PosixErrorConverter::convert_gai(int gai_error, const std::string& operatio
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 auto PosixErrorConverter::convert_ssl_error(unsigned long ssl_error, const std::string& operation) noexcept -> SocketError {
     if (ssl_error == 0) { return SocketError(ErrorCode::Success, "SSL operation completed successfully", 0, operation); }
     return SocketError(ErrorCode::SSLError, "TLS error", static_cast<int>(ssl_error), operation);

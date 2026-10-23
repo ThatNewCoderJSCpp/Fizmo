@@ -19,6 +19,14 @@ namespace windows {
 namespace dialogs {
 namespace detail {
 
+#if defined(OS_MACOS)
+
+std::vector<std::string> macos_file_dialog(const FileDialogOptions& o, int kind);
+
+MessageResult macos_message_box(const std::string& title, const std::string& message, MessageButtons buttons, MessageIcon icon, void* parent);
+
+#endif
+
 #if defined(OS_LINUX)
 
 bool find_program(const std::string& name, std::string& out);
@@ -602,6 +610,8 @@ std::vector<std::string> file_dialog(const FileDialogOptions& o, int kind) {
     return windows_file_dialog(o, kind);
 #elif defined(OS_LINUX)
     return run_file_dialog(o, kind);
+#elif defined(OS_MACOS)
+    return macos_file_dialog(o, kind);
 #else
     (void)o; (void)kind;
     return {};
@@ -623,6 +633,8 @@ Backend backend() {
 #elif defined(OS_LINUX)
     std::string program;
     return detail::linux_backend(program);
+#elif defined(OS_MACOS)
+    return Backend::Native;
 #else
     return Backend::None;
 #endif
@@ -658,6 +670,8 @@ MessageResult message_box(const std::string& title, const std::string& message, 
     return detail::windows_message_box(title, message, buttons, icon, parent);
 #elif defined(OS_LINUX)
     return detail::linux_message_box(title, message, buttons, icon, parent);
+#elif defined(OS_MACOS)
+    return detail::macos_message_box(title, message, buttons, icon, parent);
 #else
     (void)title; (void)message; (void)icon; (void)parent;
     return buttons == MessageButtons::Ok ? MessageResult::Ok : MessageResult::Cancel;

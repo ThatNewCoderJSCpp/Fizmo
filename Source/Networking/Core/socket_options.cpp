@@ -8,7 +8,7 @@ namespace core {
 auto SocketOptions::resolve(OptionCode code) noexcept -> NativeOption {
 #ifdef OS_WINDOWS
     return WindowsOptions::resolve(code);
-#elif defined(OS_LINUX)
+#elif defined(OS_POSIX)
     return LinuxOptions::resolve(code);
 #else
     return NativeOption();
@@ -131,7 +131,7 @@ auto SocketOptions::apply_server_defaults() noexcept -> SocketOptions& {
 
 auto SocketOptions::apply_low_latency() noexcept -> SocketOptions& {
     set(BooleanOption::TCPNoDelay, true);
-#ifdef OS_LINUX
+#ifdef OS_LINUX_KERNEL
     set_quick_ack(true);
 #endif
     return *this;
@@ -170,7 +170,7 @@ auto SocketOptions::apply_bulk_transfer() noexcept -> SocketOptions& {
 }
 
 bool SocketOptions::set_quick_ack(bool enable) noexcept {
-#if defined(OS_LINUX) && defined(TCP_QUICKACK)
+#if defined(OS_LINUX_KERNEL) && defined(TCP_QUICKACK)
     auto native = resolve(OptionCode::QuickAck);
     if (!native.supported) return false;
     int val = enable ? 1 : 0;
@@ -194,7 +194,7 @@ bool SocketOptions::enable_fast_open_listener(int queue_length) noexcept {
 }
 
 bool SocketOptions::enable_fast_open_client() noexcept {
-#if defined(OS_LINUX) && defined(TCP_FASTOPEN_CONNECT)
+#if defined(OS_LINUX_KERNEL) && defined(TCP_FASTOPEN_CONNECT)
     int on = 1;
     return m_socket.set_option(IPPROTO_TCP, TCP_FASTOPEN_CONNECT, on) == 0;
 #else

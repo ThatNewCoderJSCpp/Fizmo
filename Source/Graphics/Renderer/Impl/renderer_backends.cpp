@@ -6,6 +6,10 @@
     #include "renderer_windows_impl.hpp"
 #elif defined(OS_LINUX)
     #include "renderer_linux_impl.hpp"
+#elif defined(OS_MACOS)
+    #include "renderer_macos_impl.hpp"
+#elif defined(OS_ANDROID)
+    #include "renderer_pixels_impl.hpp"
 #endif
 
 namespace fizmo {

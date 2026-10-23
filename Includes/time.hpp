@@ -6,7 +6,7 @@
 #include "../Source/Time/timer.hpp"
 #include "../Source/Time/civil.hpp"
 
-#if defined(OS_LINUX) && defined(FIZMO_TIME_USE_TSC)
+#if (defined(OS_LINUX) || defined(OS_MACOS)) && defined(FIZMO_TIME_USE_TSC)
 #include "../Source/Time/tsc.hpp"
 #endif
 

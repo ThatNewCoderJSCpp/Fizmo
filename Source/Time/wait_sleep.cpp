@@ -5,7 +5,7 @@ namespace fizmo {
 namespace time {
 namespace detail {
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 std::uint64_t linux_now_ns(clockid_t id) noexcept {
     struct timespec ts;
     if (::clock_gettime(id, &ts) != 0) return 0;
@@ -37,7 +37,7 @@ namespace fizmo {
 namespace time {
 namespace impl {
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 std::uint64_t mono_ns() noexcept {
     struct timespec ts;
     if (::clock_gettime(FIZMO_STEADY_CLOCK_ID, &ts) != 0) return 0;
@@ -45,7 +45,20 @@ std::uint64_t mono_ns() noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_MACOS)
+bool sleep_until_ns(std::uint64_t deadline_ns) noexcept {
+    for (;;) {
+        const std::uint64_t now = mono_ns();
+        if (now == 0) return false;
+        if (now >= deadline_ns) return true;
+        const std::uint64_t left = deadline_ns - now;
+        struct timespec ts;
+        ts.tv_sec  = static_cast<time_t>(left / 1000000000ULL);
+        ts.tv_nsec = static_cast<long>(left % 1000000000ULL);
+        if (::nanosleep(&ts, nullptr) != 0 && errno != EINTR) return false;
+    }
+}
+#elif defined(OS_POSIX)
 bool sleep_until_ns(std::uint64_t deadline_ns) noexcept {
     struct timespec ts;
     ts.tv_sec  = static_cast<time_t>(deadline_ns / 1000000000ULL);
@@ -72,7 +85,7 @@ bool do_sleep(std::uint64_t ms, std::uint64_t ns) noexcept {
     }
 
     return true;
-#elif defined(OS_LINUX)
+#elif defined(OS_POSIX)
     const std::uint64_t total_ns = (ns > 0) ? ns : ms * 1000000ULL;
     if (total_ns == 0) return true;
     return sleep_until_ns(mono_ns() + total_ns);
@@ -93,7 +106,7 @@ bool do_wait(std::uint64_t target_ns) noexcept {
     } while (static_cast<std::uint64_t>(current.QuadPart - start.QuadPart) < target_ticks);
 
     return true;
-#elif defined(OS_LINUX)
+#elif defined(OS_POSIX)
     const std::uint64_t deadline = mono_ns() + target_ns;
     while (mono_ns() < deadline) cpu_relax();
     return true;
@@ -120,7 +133,7 @@ bool do_precise_wait(std::uint64_t total_ns) noexcept {
     } while (static_cast<std::uint64_t>(current.QuadPart - start.QuadPart) < total_ticks);
 
     return true;
-#elif defined(OS_LINUX)
+#elif defined(OS_POSIX)
     const std::uint64_t deadline = mono_ns() + total_ns;
     const std::uint64_t guard = 250000ULL;      
     if (total_ns > guard * 2) sleep_until_ns(deadline - guard);
@@ -142,7 +155,7 @@ bool yield() noexcept {
 #ifdef OS_WINDOWS
     Sleep(0);
     return true;
-#elif defined(OS_LINUX)
+#elif defined(OS_POSIX)
     return ::sched_yield() == 0;
 #else
     return false;

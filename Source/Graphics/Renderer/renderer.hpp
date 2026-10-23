@@ -3,6 +3,7 @@
 
 #include "../../Colors/color.hpp"
 #include "../../Windows/window.hpp"
+#include "../../Android/app.hpp"
 #include "../framebuffer.hpp"
 #include "../sprite.hpp"
 #include "../sprite_batch.hpp"
@@ -64,6 +65,14 @@ private:
     using FrameClock = std::chrono::steady_clock;
 
     windows::Window* m_window;
+#if defined(OS_ANDROID)
+    android::Surface* m_surface = nullptr;
+    std::uint64_t     m_surface_listener = 0;
+    bool              m_surface_auto = false;
+
+    bool bind_surface_impl() noexcept;
+    void release_surface_impl() noexcept;
+#endif
     std::unique_ptr<detail::RendererImplBase> m_impl;
     RendererBackend m_requested = RendererBackend::Auto;
     bool m_vsync = true;
@@ -101,7 +110,19 @@ public:
     explicit Renderer(windows::Window& window, RendererBackend backend = RendererBackend::Auto) noexcept
         : m_window(&window), m_impl(nullptr), m_requested(backend) {}
 
+#if defined(OS_ANDROID)
+    explicit Renderer(android::Surface& surface, RendererBackend backend = RendererBackend::Auto) noexcept
+        : m_window(nullptr), m_surface(&surface), m_impl(nullptr), m_requested(backend) {}
+
+    ~Renderer() {
+        unbind();
+        if (m_surface && m_surface_listener) m_surface->remove_listener(m_surface_listener);
+    }
+
+    android::Surface* surface() const noexcept { return m_surface; }
+#else
     ~Renderer() { unbind(); }
+#endif
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
     Renderer(Renderer&&) = default;
@@ -118,12 +139,36 @@ public:
             impl->set_gpu_timing(m_gpu_timing);
             impl->set_sprite_atlas(m_sprite_atlas);
             impl->set_blend_mode(m_blend);
-            if (impl->initialize(handle, m_window->width(), m_window->height())) m_impl = std::move(impl);
+            if (impl->initialize(handle, target_width(), target_height())) m_impl = std::move(impl);
         } catch (...) {}
+    }
+
+    unsigned int target_width() const noexcept {
+#if defined(OS_ANDROID)
+        if (m_surface) return m_surface->width();
+#endif
+        return m_window ? m_window->width() : 0;
+    }
+
+    unsigned int target_height() const noexcept {
+#if defined(OS_ANDROID)
+        if (m_surface) return m_surface->height();
+#endif
+        return m_window ? m_window->height() : 0;
+    }
+
+    bool has_target() const noexcept {
+#if defined(OS_ANDROID)
+        if (m_surface) return true;
+#endif
+        return m_window != nullptr;
     }
 
     void unbind() noexcept {
         const bool was_bound = m_impl != nullptr;
+#if defined(OS_ANDROID)
+        m_surface_auto = false;
+#endif
         release();
         if (was_bound) notify_unbind();
     }
@@ -413,7 +458,7 @@ public:
     text::FancyTexture make_fancy_texture(const text::FancyText& ft, float padding = 2.0f) const;
 
     bool begin_3d(const graphics::Camera3D& camera) noexcept {
-        return m_window ? begin_3d(camera, 0, 0, m_window->width(), m_window->height()) : false;
+        return has_target() ? begin_3d(camera, 0, 0, target_width(), target_height()) : false;
     }
 
     bool begin_3d(const graphics::Camera3D& camera, int x, int y, unsigned int w, unsigned int h) noexcept;

@@ -3,7 +3,7 @@
 
 #include "../socket_error.hpp"
 
-#ifdef OS_LINUX
+#ifdef OS_POSIX
 
 #include <cerrno>
 #include <cstring>
@@ -42,5 +42,5 @@ public:
 } // namespace networking
 } // namespace fizmo
 
-#endif // OS_LINUX
+#endif // OS_POSIX
 #endif // FIZMO_POSIX_ERROR_CONVERTER_HPP

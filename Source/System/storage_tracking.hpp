@@ -4,6 +4,7 @@
 #include "tracker.hpp"
 #include "platform_linux.hpp"
 #include "win_library.hpp"
+#include "platform_macos.hpp"
 #include <set>
 
 namespace fizmo {
@@ -64,7 +65,7 @@ private:
 
     static void finish_volume(VolumeSample& v);
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
     struct DiskState {
         std::string   name;
         std::string   model;
@@ -123,6 +124,15 @@ private:
     void discover();
 
     static int disk_index(const std::string& instance);
+
+    StorageSample collect();
+
+#elif defined(OS_MACOS)
+    static void read_process(std::uint64_t& read, std::uint64_t& write);
+
+    static void read_volumes(StorageSample& out);
+
+    void discover();
 
     StorageSample collect();
 

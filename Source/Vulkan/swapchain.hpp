@@ -120,7 +120,15 @@ private:
         const PhysicalDevice gpu = device.physical_device();
         const VkSurfaceCapabilitiesKHR caps = m_surface->capabilities(gpu);
         Extent2D extent = m_desc.size;
+    #if defined(OS_ANDROID)
+        const bool identity = (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) != 0;
+        const bool rotated = (caps.currentTransform & (VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR | VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR)) != 0;
+        if ((extent.width == 0 || extent.height == 0) && caps.currentExtent.width != UINT32_MAX) {
+            extent = rotated && identity ? Extent2D{ caps.currentExtent.height, caps.currentExtent.width } : Extent2D{ caps.currentExtent.width, caps.currentExtent.height };
+        }
+    #else
         if (caps.currentExtent.width != UINT32_MAX) extent = { caps.currentExtent.width, caps.currentExtent.height };
+    #endif
         extent.width  = std::max(caps.minImageExtent.width,  std::min(caps.maxImageExtent.width,  extent.width));
         extent.height = std::max(caps.minImageExtent.height, std::min(caps.maxImageExtent.height, extent.height));
         if (extent.width == 0 || extent.height == 0) return Result::NotReady;   // minimized
@@ -166,7 +174,11 @@ private:
         info.imageExtent      = to_vk(extent);
         info.imageArrayLayers = 1;
         info.imageUsage       = usage | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    #if defined(OS_ANDROID)
+        info.preTransform     = identity ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR : caps.currentTransform;
+    #else
         info.preTransform     = caps.currentTransform;
+    #endif
         info.compositeAlpha   = alpha;
         info.presentMode      = to_vk(mode);
         info.clipped          = VK_TRUE;

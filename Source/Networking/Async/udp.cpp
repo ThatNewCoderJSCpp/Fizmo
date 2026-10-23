@@ -298,6 +298,8 @@ bool UdpSocket::set_dont_fragment(bool enable, std::error_code& ec) {
     return detail::set_int_option(m_fd, IPPROTO_IP, IP_DONTFRAGMENT, enable ? 1 : 0, ec);
 #elif defined(IP_MTU_DISCOVER)
     return detail::set_int_option(m_fd, IPPROTO_IP, IP_MTU_DISCOVER, enable ? IP_PMTUDISC_DO : IP_PMTUDISC_DONT, ec);
+#elif defined(IP_DONTFRAG)
+    return detail::set_int_option(m_fd, IPPROTO_IP, IP_DONTFRAG, enable ? 1 : 0, ec);
 #else
     (void)enable;
     ec = error::unsupported;

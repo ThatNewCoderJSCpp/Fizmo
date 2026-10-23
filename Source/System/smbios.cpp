@@ -1,6 +1,7 @@
 #include "fizmo_library.hpp"
 #include "smbios.hpp"
 #include "platform_windows.hpp"
+#include "iokit_macos.hpp"
 
 namespace fizmo {
 namespace system {
@@ -102,6 +103,18 @@ std::vector<MemoryModule> read_memory_modules() {
     std::memcpy(&length, buf.data() + 4, sizeof(length));
     const std::size_t avail = std::min<std::size_t>(length, buf.size() - 8);
     return parse_smbios_memory(buf.data() + 8, avail);
+#elif defined(OS_MACOS)
+    CFMutableDictionaryRef match = ::IOServiceMatching("AppleSMBIOS");
+    if (!match) return {};
+    mac::IORef service(::IOServiceGetMatchingService(MACH_PORT_NULL, match));
+    if (!service) return {};
+    auto table = mac::property(service.get(), "SMBIOS");
+    if (!table || ::CFGetTypeID(table.get()) != ::CFDataGetTypeID()) return {};
+    CFDataRef data = static_cast<CFDataRef>(table.get());
+    const UInt8* bytes = ::CFDataGetBytePtr(data);
+    const CFIndex size = ::CFDataGetLength(data);
+    if (!bytes || size <= 0) return {};
+    return parse_smbios_memory(bytes, static_cast<std::size_t>(size));
 #else
     return {};
 #endif

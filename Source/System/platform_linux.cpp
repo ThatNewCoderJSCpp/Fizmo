@@ -6,7 +6,7 @@ namespace system {
 namespace detail {
 namespace lnx {
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 bool read_text(const std::string& p, std::string& out, std::size_t limit) {
     out.clear();
     const int fd = ::open(full(p).c_str(), O_RDONLY | O_CLOEXEC);
@@ -26,7 +26,7 @@ bool read_text(const std::string& p, std::string& out, std::size_t limit) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 std::string read_line(const std::string& p) {
     std::string s;
     if (!read_text(p, s, 4096)) return {};
@@ -36,7 +36,7 @@ std::string read_line(const std::string& p) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 std::vector<std::string> list(const std::string& p) {
     std::vector<std::string> out;
     DIR* d = ::opendir(full(p).c_str());
@@ -54,7 +54,7 @@ std::vector<std::string> list(const std::string& p) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 std::string resolve(const std::string& p) {
     char buf[PATH_MAX];
     if (!::realpath(full(p).c_str(), buf)) return {};
@@ -65,7 +65,7 @@ std::string resolve(const std::string& p) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 std::string read_link(const std::string& p) {
     char buf[PATH_MAX];
     const ssize_t n = ::readlink(full(p).c_str(), buf, sizeof(buf) - 1);
@@ -74,7 +74,7 @@ std::string read_link(const std::string& p) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 std::map<std::string, std::uint64_t> key_values(const std::string& p) {
     std::map<std::string, std::uint64_t> out;
     std::string text;
@@ -95,7 +95,7 @@ std::map<std::string, std::uint64_t> key_values(const std::string& p) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 std::vector<HwmonTemp> hwmon_temps(const std::string& dir) {
     std::vector<HwmonTemp> out;
 
@@ -115,7 +115,7 @@ std::vector<HwmonTemp> hwmon_temps(const std::string& dir) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 std::vector<std::string> hwmon_dirs_under(const std::string& device_dir) {
     std::vector<std::string> out;
     for (const std::string& n : list(device_dir + "/hwmon")) if (starts_with(n, "hwmon")) out.push_back(device_dir + "/hwmon/" + n);
@@ -124,7 +124,7 @@ std::vector<std::string> hwmon_dirs_under(const std::string& device_dir) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 std::vector<std::pair<std::string, std::string>> hwmon_by_name() {
     std::vector<std::pair<std::string, std::string>> out;
     for (const std::string& n : list("/sys/class/hwmon")) {
@@ -135,7 +135,7 @@ std::vector<std::pair<std::string, std::string>> hwmon_by_name() {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 PciName pci_name(std::uint32_t vendor, std::uint32_t device) {
     PciName out;
     static const char* files[] = { "/usr/share/hwdata/pci.ids", "/usr/share/misc/pci.ids", "/usr/share/pci.ids", "/var/lib/pciutils/pci.ids" };

@@ -11,6 +11,20 @@
     #include <cerrno>
 #endif
 
+#if defined(OS_MACOS)
+    #ifndef __ASSERT_MACROS_DEFINE_VERSIONS_WITHOUT_UNDERSCORES
+    #define __ASSERT_MACROS_DEFINE_VERSIONS_WITHOUT_UNDERSCORES 0
+    #endif
+    #include <CoreFoundation/CoreFoundation.h>
+    #include <IOKit/hid/IOHIDManager.h>
+    #include <IOKit/hid/IOHIDKeys.h>
+    #include <algorithm>
+#endif
+
+#if defined(OS_ANDROID)
+    #include "../Android/app.hpp"
+#endif
+
 namespace fizmo {
 namespace input {
 
@@ -523,6 +537,451 @@ public:
 } // namespace detail
 #endif
 
+#if defined(OS_MACOS)
+namespace detail {
+
+class MacGamepadBackend : public GamepadBackend {
+private:
+    struct Element {
+        IOHIDElementRef ref   = nullptr;
+        std::uint32_t   page  = 0;
+        std::uint32_t   usage = 0;
+        CFIndex         min   = 0;
+        CFIndex         max   = 0;
+    };
+
+    struct Device : GamepadDevice {
+        IOHIDDeviceRef       hid = nullptr;
+        std::vector<Element> buttons;
+        std::vector<Element> axes;
+        std::vector<Element> hats;
+
+        ~Device() override { if (hid) ::CFRelease(hid); }
+    };
+
+    IOHIDManagerRef m_manager = nullptr;
+    CFRunLoopRef    m_loop = nullptr;
+    CFStringRef     m_mode = nullptr;
+    bool            m_open = false;
+    bool            m_failed = false;
+    int             m_next_key = 1;
+    std::vector<std::unique_ptr<Device>> m_devices;
+    std::vector<GamepadDevice*>          m_pending_added;
+    std::vector<int>                     m_pending_removed;
+
+    static CFMutableDictionaryRef usage_match(int page, int usage) {
+        CFMutableDictionaryRef d = ::CFDictionaryCreateMutable(kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        if (!d) return nullptr;
+        CFNumberRef p = ::CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &page);
+        CFNumberRef u = ::CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &usage);
+        if (p) { ::CFDictionarySetValue(d, CFSTR(kIOHIDDeviceUsagePageKey), p); ::CFRelease(p); }
+        if (u) { ::CFDictionarySetValue(d, CFSTR(kIOHIDDeviceUsageKey), u); ::CFRelease(u); }
+        return d;
+    }
+
+    static int int_property(IOHIDDeviceRef dev, CFStringRef key) {
+        CFTypeRef v = ::IOHIDDeviceGetProperty(dev, key);
+        int out = 0;
+        if (v && ::CFGetTypeID(v) == ::CFNumberGetTypeID()) ::CFNumberGetValue(static_cast<CFNumberRef>(v), kCFNumberIntType, &out);
+        return out;
+    }
+
+    static std::string string_property(IOHIDDeviceRef dev, CFStringRef key) {
+        CFTypeRef v = ::IOHIDDeviceGetProperty(dev, key);
+        if (!v || ::CFGetTypeID(v) != ::CFStringGetTypeID()) return {};
+        char buf[256] = {};
+        if (!::CFStringGetCString(static_cast<CFStringRef>(v), buf, sizeof(buf), kCFStringEncodingUTF8)) return {};
+        return buf;
+    }
+
+    static bool is_axis(std::uint32_t page, std::uint32_t usage) noexcept {
+        if (page == 0x01) return usage >= 0x30 && usage <= 0x38;
+        if (page == 0x02) return usage == 0xBA || usage == 0xBB || usage == 0xC4 || usage == 0xC5;
+        return false;
+    }
+
+    static bool is_button(std::uint32_t page, std::uint32_t usage) noexcept {
+        if (page == 0x09 || page == 0x0C) return true;
+        if (page == 0x01) return (usage >= 0x90 && usage <= 0x93) || usage == 0x3D || usage == 0x3E || usage == 0x85;
+        return false;
+    }
+
+    static void collect_elements(Device& d) {
+        CFArrayRef list = ::IOHIDDeviceCopyMatchingElements(d.hid, nullptr, kIOHIDOptionsTypeNone);
+        if (!list) return;
+        std::vector<IOHIDElementCookie> seen;
+        const CFIndex n = ::CFArrayGetCount(list);
+
+        for (CFIndex i = 0; i < n; ++i) {
+            IOHIDElementRef el = static_cast<IOHIDElementRef>(const_cast<void*>(::CFArrayGetValueAtIndex(list, i)));
+            if (!el || ::CFGetTypeID(el) != ::IOHIDElementGetTypeID()) continue;
+            const IOHIDElementType type = ::IOHIDElementGetType(el);
+            if (type != kIOHIDElementTypeInput_Misc && type != kIOHIDElementTypeInput_Button && type != kIOHIDElementTypeInput_Axis) continue;
+            const IOHIDElementCookie cookie = ::IOHIDElementGetCookie(el);
+            if (std::find(seen.begin(), seen.end(), cookie) != seen.end()) continue;
+            seen.push_back(cookie);
+            Element e;
+            e.ref = el;
+            e.page = ::IOHIDElementGetUsagePage(el);
+            e.usage = ::IOHIDElementGetUsage(el);
+            e.min = ::IOHIDElementGetLogicalMin(el);
+            e.max = ::IOHIDElementGetLogicalMax(el);
+            if (e.page == 0x01 && e.usage == 0x39) d.hats.push_back(e);
+            else if (is_axis(e.page, e.usage)) d.axes.push_back(e);
+            else if (is_button(e.page, e.usage)) d.buttons.push_back(e);
+            else continue;
+            ::CFRetain(el);
+        }
+
+        ::CFRelease(list);
+        auto by_usage = [](const Element& a, const Element& b) { return a.usage < b.usage; };
+        std::stable_sort(d.buttons.begin(), d.buttons.end(), by_usage);
+        std::stable_sort(d.axes.begin(), d.axes.end(), by_usage);
+        std::stable_sort(d.hats.begin(), d.hats.end(), by_usage);
+    }
+
+    static void release_elements(Device& d) {
+        for (auto* list : { &d.buttons, &d.axes, &d.hats })
+            for (Element& e : *list) if (e.ref) { ::CFRelease(e.ref); e.ref = nullptr; }
+    }
+
+    static int find(const std::vector<Element>& list, std::uint32_t page, std::uint32_t usage) noexcept {
+        for (std::size_t i = 0; i < list.size(); ++i) if (list[i].page == page && list[i].usage == usage) return static_cast<int>(i);
+        return -1;
+    }
+
+    static void bind(GamepadMapping& m, GamepadButton target, int index) {
+        if (index < 0 || m.buttons[static_cast<std::size_t>(target)].source != GamepadBinding::Source::None) return;
+        GamepadBinding b;
+        b.source = GamepadBinding::Source::Button;
+        b.index = index;
+        m.buttons[static_cast<std::size_t>(target)] = b;
+    }
+
+    static void bind(GamepadMapping& m, GamepadAxis target, int index) {
+        if (index < 0 || m.axes[static_cast<std::size_t>(target)].source != GamepadBinding::Source::None) return;
+        GamepadBinding b;
+        b.source = GamepadBinding::Source::Axis;
+        b.index = index;
+        m.axes[static_cast<std::size_t>(target)] = b;
+    }
+
+    static void bind_trigger_button(GamepadMapping& m, GamepadAxis target, int index) {
+        if (index < 0 || m.axes[static_cast<std::size_t>(target)].source != GamepadBinding::Source::None) return;
+        GamepadBinding b;
+        b.source = GamepadBinding::Source::Button;
+        b.index = index;
+        b.input_half = GamepadBinding::Half::Positive;
+        m.axes[static_cast<std::size_t>(target)] = b;
+    }
+
+    static void build_fallback(Device& d) {
+        GamepadMapping& m = d.fallback;
+        m.guid = d.info.guid;
+        m.name = d.info.name;
+        m.platform = "Mac OS X";
+        auto btn = [&](std::uint32_t usage) { return find(d.buttons, 0x09, usage); };
+        auto gd_axis = [&](std::uint32_t usage) { return find(d.axes, 0x01, usage); };
+        const bool sony = d.info.vendor == 0x054C;
+        const bool xbox360 = d.info.vendor == 0x045E && (d.info.product == 0x028E || d.info.product == 0x028F || d.info.product == 0x02A1 || d.info.product == 0x0719);
+
+        if (sony) {
+            const GamepadButton order[] = { GamepadButton::West, GamepadButton::South, GamepadButton::East, GamepadButton::North, GamepadButton::LeftShoulder, GamepadButton::RightShoulder };
+            for (std::uint32_t i = 0; i < 6; ++i) bind(m, order[i], btn(i + 1));
+            bind(m, GamepadButton::Back, btn(9));
+            bind(m, GamepadButton::Start, btn(10));
+            bind(m, GamepadButton::LeftStick, btn(11));
+            bind(m, GamepadButton::RightStick, btn(12));
+            bind(m, GamepadButton::Guide, btn(13));
+            bind(m, GamepadButton::Touchpad, btn(14));
+            bind(m, GamepadAxis::LeftX, gd_axis(0x30));
+            bind(m, GamepadAxis::LeftY, gd_axis(0x31));
+            bind(m, GamepadAxis::RightX, gd_axis(0x32));
+            bind(m, GamepadAxis::RightY, gd_axis(0x35));
+            bind(m, GamepadAxis::LeftTrigger, gd_axis(0x33));
+            bind(m, GamepadAxis::RightTrigger, gd_axis(0x34));
+            bind_trigger_button(m, GamepadAxis::LeftTrigger, btn(7));
+            bind_trigger_button(m, GamepadAxis::RightTrigger, btn(8));
+        } else if (xbox360) {
+            const GamepadButton order[] = { GamepadButton::South, GamepadButton::East, GamepadButton::West, GamepadButton::North, GamepadButton::LeftShoulder, GamepadButton::RightShoulder,
+                                            GamepadButton::LeftStick, GamepadButton::RightStick, GamepadButton::Start, GamepadButton::Back, GamepadButton::Guide,
+                                            GamepadButton::DpadUp, GamepadButton::DpadDown, GamepadButton::DpadLeft, GamepadButton::DpadRight };
+            for (std::uint32_t i = 0; i < 15; ++i) bind(m, order[i], btn(i + 1));
+            bind(m, GamepadAxis::LeftX, gd_axis(0x30));
+            bind(m, GamepadAxis::LeftY, gd_axis(0x31));
+            bind(m, GamepadAxis::RightX, gd_axis(0x33));
+            bind(m, GamepadAxis::RightY, gd_axis(0x34));
+            bind(m, GamepadAxis::LeftTrigger, gd_axis(0x32));
+            bind(m, GamepadAxis::RightTrigger, gd_axis(0x35));
+        } else {
+            const GamepadButton order[] = { GamepadButton::South, GamepadButton::East, GamepadButton::West, GamepadButton::North, GamepadButton::LeftShoulder, GamepadButton::RightShoulder,
+                                            GamepadButton::Back, GamepadButton::Start, GamepadButton::LeftStick, GamepadButton::RightStick };
+            for (std::uint32_t i = 0; i < 10; ++i) bind(m, order[i], btn(i + 1));
+            bind(m, GamepadButton::Back, find(d.buttons, 0x01, 0x3E));
+            bind(m, GamepadButton::Start, find(d.buttons, 0x01, 0x3D));
+            bind(m, GamepadButton::Guide, find(d.buttons, 0x01, 0x85));
+            bind(m, GamepadButton::Guide, find(d.buttons, 0x0C, 0x223));
+            bind(m, GamepadButton::Misc1, find(d.buttons, 0x0C, 0xB2));
+            bind(m, GamepadAxis::LeftX, gd_axis(0x30));
+            bind(m, GamepadAxis::LeftY, gd_axis(0x31));
+            const int brake = find(d.axes, 0x02, 0xC5);
+            const int accel = find(d.axes, 0x02, 0xC4);
+            if (brake >= 0 || accel >= 0) {
+                bind(m, GamepadAxis::RightX, gd_axis(0x32));
+                bind(m, GamepadAxis::RightY, gd_axis(0x35));
+                bind(m, GamepadAxis::LeftTrigger, brake);
+                bind(m, GamepadAxis::RightTrigger, accel);
+            } else if (gd_axis(0x33) >= 0) {
+                bind(m, GamepadAxis::RightX, gd_axis(0x33));
+                bind(m, GamepadAxis::RightY, gd_axis(0x34));
+                bind(m, GamepadAxis::LeftTrigger, gd_axis(0x32));
+                bind(m, GamepadAxis::RightTrigger, gd_axis(0x35));
+            } else {
+                bind(m, GamepadAxis::RightX, gd_axis(0x32));
+                bind(m, GamepadAxis::RightY, gd_axis(0x35));
+            }
+        }
+
+        bind(m, GamepadButton::DpadUp, find(d.buttons, 0x01, 0x90));
+        bind(m, GamepadButton::DpadDown, find(d.buttons, 0x01, 0x91));
+        bind(m, GamepadButton::DpadRight, find(d.buttons, 0x01, 0x92));
+        bind(m, GamepadButton::DpadLeft, find(d.buttons, 0x01, 0x93));
+
+        if (!d.hats.empty() && m.buttons[static_cast<std::size_t>(GamepadButton::DpadUp)].source == GamepadBinding::Source::None) {
+            const std::uint8_t masks[4] = { 1, 4, 8, 2 };
+            const GamepadButton targets[4] = { GamepadButton::DpadUp, GamepadButton::DpadDown, GamepadButton::DpadLeft, GamepadButton::DpadRight };
+            for (int i = 0; i < 4; ++i) {
+                GamepadBinding b;
+                b.source = GamepadBinding::Source::Hat;
+                b.index = 0;
+                b.hat_mask = masks[i];
+                m.buttons[static_cast<std::size_t>(targets[i])] = b;
+            }
+        }
+
+        d.has_fallback = m.buttons[0].source != GamepadBinding::Source::None && m.axes[0].source != GamepadBinding::Source::None;
+    }
+
+    void add_device(IOHIDDeviceRef dev) {
+        for (const auto& d : m_devices) if (d->hid == dev) return;
+        auto d = std::make_unique<Device>();
+        ::CFRetain(dev);
+        d->hid = dev;
+        d->key = m_next_key++;
+        d->info.vendor  = static_cast<std::uint16_t>(int_property(dev, CFSTR(kIOHIDVendorIDKey)));
+        d->info.product = static_cast<std::uint16_t>(int_property(dev, CFSTR(kIOHIDProductIDKey)));
+        d->info.version = static_cast<std::uint16_t>(int_property(dev, CFSTR(kIOHIDVersionNumberKey)));
+        d->info.bus = 0x03;
+        d->info.name = string_property(dev, CFSTR(kIOHIDProductKey));
+        if (d->info.name.empty()) d->info.name = string_property(dev, CFSTR(kIOHIDManufacturerKey));
+        if (d->info.name.empty()) d->info.name = "Gamepad";
+        char path[64];
+        std::snprintf(path, sizeof(path), "iohid:%08x", static_cast<unsigned int>(int_property(dev, CFSTR(kIOHIDLocationIDKey))));
+        d->info.path = path;
+        d->info.guid = make_guid(d->info.bus, d->info.vendor, d->info.product, d->info.version, d->info.name);
+        collect_elements(*d);
+        if (d->buttons.empty() && d->axes.empty() && d->hats.empty()) return;
+        d->raw.buttons.assign(d->buttons.size(), false);
+        d->raw.axes.assign(d->axes.size(), 0.0f);
+        d->raw.hats.assign(d->hats.size(), 0);
+        build_fallback(*d);
+        m_pending_added.push_back(d.get());
+        m_devices.push_back(std::move(d));
+    }
+
+    void remove_device(IOHIDDeviceRef dev) {
+        for (auto it = m_devices.begin(); it != m_devices.end(); ++it) {
+            if ((*it)->hid != dev) continue;
+            GamepadDevice* raw = it->get();
+            auto pending = std::find(m_pending_added.begin(), m_pending_added.end(), raw);
+            if (pending != m_pending_added.end()) m_pending_added.erase(pending);
+            else m_pending_removed.push_back((*it)->key);
+            release_elements(**it);
+            m_devices.erase(it);
+            return;
+        }
+    }
+
+    static void on_match(void* ctx, IOReturn result, void*, IOHIDDeviceRef dev) {
+        if (result != kIOReturnSuccess || !ctx || !dev) return;
+        static_cast<MacGamepadBackend*>(ctx)->add_device(dev);
+    }
+
+    static void on_remove(void* ctx, IOReturn, void*, IOHIDDeviceRef dev) {
+        if (!ctx || !dev) return;
+        static_cast<MacGamepadBackend*>(ctx)->remove_device(dev);
+    }
+
+    static CFIndex read_value(IOHIDDeviceRef dev, Element& e, bool& ok) noexcept {
+        IOHIDValueRef value = nullptr;
+        ok = ::IOHIDDeviceGetValue(dev, e.ref, &value) == kIOReturnSuccess && value;
+        if (!ok) return 0;
+        const CFIndex v = ::IOHIDValueGetIntegerValue(value);
+        return v;
+    }
+
+    static void read_device(Device& d) noexcept {
+        bool ok = false;
+        for (std::size_t i = 0; i < d.buttons.size(); ++i) {
+            const CFIndex v = read_value(d.hid, d.buttons[i], ok);
+            if (ok) d.raw.buttons[i] = v > 0;
+        }
+
+        for (std::size_t i = 0; i < d.axes.size(); ++i) {
+            Element& e = d.axes[i];
+            const CFIndex v = read_value(d.hid, e, ok);
+            if (!ok) continue;
+            if (v < e.min) e.min = v;
+            if (v > e.max) e.max = v;
+            if (e.max <= e.min) { d.raw.axes[i] = 0.0f; continue; }
+            const float f = 2.0f * static_cast<float>(v - e.min) / static_cast<float>(e.max - e.min) - 1.0f;
+            d.raw.axes[i] = std::max(-1.0f, std::min(1.0f, f));
+        }
+
+        static const std::uint8_t dirs[8] = { 1, 1 | 2, 2, 2 | 4, 4, 4 | 8, 8, 8 | 1 };
+        for (std::size_t i = 0; i < d.hats.size(); ++i) {
+            const Element& e = d.hats[i];
+            CFIndex v = read_value(d.hid, d.hats[i], ok);
+            if (!ok) continue;
+            const CFIndex range = e.max - e.min + 1;
+            v -= e.min;
+            if (range == 4) v *= 2;
+            d.raw.hats[i] = (v >= 0 && v < 8) ? dirs[v] : 0;
+        }
+    }
+
+    void start() {
+        if (m_open || m_failed) return;
+        m_manager = ::IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
+        if (!m_manager) { m_failed = true; return; }
+        CFMutableArrayRef matches = ::CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
+        if (!matches) { m_failed = true; return; }
+        const int usages[3] = { 0x04, 0x05, 0x08 };
+        for (int u : usages) {
+            CFMutableDictionaryRef d = usage_match(0x01, u);
+            if (!d) continue;
+            ::CFArrayAppendValue(matches, d);
+            ::CFRelease(d);
+        }
+        ::IOHIDManagerSetDeviceMatchingMultiple(m_manager, matches);
+        ::CFRelease(matches);
+        ::IOHIDManagerRegisterDeviceMatchingCallback(m_manager, &MacGamepadBackend::on_match, this);
+        ::IOHIDManagerRegisterDeviceRemovalCallback(m_manager, &MacGamepadBackend::on_remove, this);
+        m_loop = ::CFRunLoopGetCurrent();
+        ::CFRetain(m_loop);
+        m_mode = CFSTR("FizmoGamepadMode");
+        ::IOHIDManagerScheduleWithRunLoop(m_manager, m_loop, m_mode);
+        if (::IOHIDManagerOpen(m_manager, kIOHIDOptionsTypeNone) != kIOReturnSuccess) {
+            ::IOHIDManagerUnscheduleFromRunLoop(m_manager, m_loop, m_mode);
+            m_failed = true;
+            return;
+        }
+        m_open = true;
+    }
+
+public:
+    MacGamepadBackend() = default;
+
+    ~MacGamepadBackend() override {
+        if (m_manager) {
+            ::IOHIDManagerRegisterDeviceMatchingCallback(m_manager, nullptr, nullptr);
+            ::IOHIDManagerRegisterDeviceRemovalCallback(m_manager, nullptr, nullptr);
+            if (m_open) {
+                ::IOHIDManagerUnscheduleFromRunLoop(m_manager, m_loop, m_mode);
+                ::IOHIDManagerClose(m_manager, kIOHIDOptionsTypeNone);
+            }
+        }
+        for (auto& d : m_devices) release_elements(*d);
+        m_devices.clear();
+        if (m_manager) ::CFRelease(m_manager);
+        if (m_loop) ::CFRelease(m_loop);
+    }
+
+    void poll(std::vector<GamepadDevice*>& added, std::vector<int>& removed) override {
+        start();
+        if (m_open && m_loop == ::CFRunLoopGetCurrent()) {
+            for (int i = 0; i < 256; ++i) if (::CFRunLoopRunInMode(m_mode, 0.0, true) != kCFRunLoopRunHandledSource) break;
+        }
+        for (auto& d : m_devices) read_device(*d);
+        added.insert(added.end(), m_pending_added.begin(), m_pending_added.end());
+        removed.insert(removed.end(), m_pending_removed.begin(), m_pending_removed.end());
+        m_pending_added.clear();
+        m_pending_removed.clear();
+    }
+};
+
+} // namespace detail
+#endif
+
+#if defined(OS_ANDROID)
+namespace detail {
+
+class AndroidGamepadBackend : public GamepadBackend {
+private:
+    struct Device : GamepadDevice {
+        int device_id = 0;
+    };
+
+    std::vector<std::unique_ptr<Device>> m_devices;
+    int m_next_key = 1;
+
+    static void build_fallback(Device& d) {
+        d.fallback = GamepadMapping{};
+        d.fallback.name = d.info.name;
+        d.fallback.platform = "Android";
+        for (std::size_t i = 0; i < kGamepadButtonCount; ++i) {
+            d.fallback.buttons[i].source = GamepadBinding::Source::Button;
+            d.fallback.buttons[i].index = static_cast<int>(i);
+        }
+        for (std::size_t i = 0; i < kGamepadAxisCount; ++i) {
+            const bool trigger = i == static_cast<std::size_t>(GamepadAxis::LeftTrigger) || i == static_cast<std::size_t>(GamepadAxis::RightTrigger);
+            d.fallback.axes[i].source = GamepadBinding::Source::Axis;
+            d.fallback.axes[i].index = static_cast<int>(i);
+            d.fallback.axes[i].input_half = trigger ? GamepadBinding::Half::Positive : GamepadBinding::Half::Full;
+        }
+        d.has_fallback = true;
+    }
+
+public:
+    void poll(std::vector<GamepadDevice*>& added, std::vector<int>& removed) override {
+        android::App* app = android::App::current();
+        if (!app) return;
+        const std::vector<android::GamepadState>& pads = app->gamepads();
+        for (auto it = m_devices.begin(); it != m_devices.end();) {
+            bool alive = false;
+            for (const android::GamepadState& p : pads) alive = alive || (p.connected && p.device_id == (*it)->device_id);
+            if (alive) { ++it; continue; }
+            removed.push_back((*it)->key);
+            it = m_devices.erase(it);
+        }
+        for (const android::GamepadState& p : pads) {
+            if (!p.connected) continue;
+            Device* dev = nullptr;
+            for (auto& d : m_devices) if (d->device_id == p.device_id) dev = d.get();
+            if (!dev) {
+                auto d = std::make_unique<Device>();
+                d->key = m_next_key++;
+                d->device_id = p.device_id;
+                d->info.name = p.name;
+                d->info.vendor = p.vendor;
+                d->info.product = p.product;
+                d->info.path = "android:" + std::to_string(p.device_id);
+                d->raw.buttons.assign(kGamepadButtonCount, false);
+                d->raw.axes.assign(kGamepadAxisCount, 0.0f);
+                build_fallback(*d);
+                dev = d.get();
+                added.push_back(dev);
+                m_devices.push_back(std::move(d));
+            }
+            for (std::size_t i = 0; i < kGamepadButtonCount; ++i) dev->raw.buttons[i] = p.buttons[i];
+            for (std::size_t i = 0; i < kGamepadAxisCount; ++i) dev->raw.axes[i] = p.axes[i];
+        }
+    }
+};
+
+} // namespace detail
+#endif
+
 } // namespace input
 } // namespace fizmo
 
@@ -927,6 +1386,10 @@ GamepadManager::GamepadManager() {
     m_backend = std::make_unique<detail::LinuxGamepadBackend>();
 #elif defined(OS_WINDOWS)
     m_backend = std::make_unique<detail::WindowsGamepadBackend>();
+#elif defined(OS_MACOS)
+    m_backend = std::make_unique<detail::MacGamepadBackend>();
+#elif defined(OS_ANDROID)
+    m_backend = std::make_unique<detail::AndroidGamepadBackend>();
 #endif
 }
 

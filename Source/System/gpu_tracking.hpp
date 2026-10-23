@@ -111,7 +111,7 @@ private:
 
     void apply_nvml(std::size_t index, GPUAdapterSample& a) const;
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
     struct LinuxAdapter {
         std::string card;
         std::string dev;
@@ -151,6 +151,14 @@ private:
     void discover();
 
     static bool parse_engine(const std::string& name, std::string& luid, std::string& engine, std::string& type);
+
+    std::vector<GPUAdapterSample> sample_adapters(double);
+
+#elif defined(OS_MACOS)
+    struct MacState;
+    detail::Opaque<MacState> m_mac;
+
+    void discover();
 
     std::vector<GPUAdapterSample> sample_adapters(double);
 

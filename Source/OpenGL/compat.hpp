@@ -8,6 +8,8 @@
 #if defined(OS_LINUX)
     #include <dlfcn.h>
     #include "../x11_compat.hpp"
+#elif defined(OS_MACOS)
+    #include <dlfcn.h>
 #endif
 
 #if defined(OS_WINDOWS)

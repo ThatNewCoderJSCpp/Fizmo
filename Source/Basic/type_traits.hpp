@@ -185,6 +185,11 @@ struct floating_point_traits {
             is_float_ieee754_binary32 && 
             is_double_ieee754_binary64 &&
             is_long_double_same_as_double;
+    #elif defined(OS_ANDROID)
+        static constexpr bool platform_expected_format = 
+            is_float_ieee754_binary32 && 
+            is_double_ieee754_binary64 &&
+            (is_long_double_same_as_double || is_long_double_ieee754_binary128);
     #elif defined(OS_LINUX) && (defined(ARCH_X86_64) || defined(ARCH_X86_32))
         static constexpr bool platform_expected_format = 
             is_float_ieee754_binary32 && 

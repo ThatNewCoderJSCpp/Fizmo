@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 #include <cerrno>
 #include <fcntl.h>
 #include <spawn.h>

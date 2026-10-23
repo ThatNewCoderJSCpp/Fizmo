@@ -165,6 +165,8 @@ public:
         m_handle = LoadLibraryA("opengl32.dll");
         if (!m_handle) return false;
         m_loader = reinterpret_cast<void*>(::GetProcAddress(m_handle, "wglGetProcAddress"));
+    #elif defined(OS_MACOS)
+        return false;
     #else
         m_handle = dlopen("libGL.so.1", RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE);
         if (!m_handle) m_handle = dlopen("libGL.so", RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE);

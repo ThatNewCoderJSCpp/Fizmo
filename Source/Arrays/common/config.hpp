@@ -8,6 +8,11 @@
     #define FIZMO_ARRAYS_WINDOWS 1
 #elif defined(__linux__)
     #define FIZMO_ARRAYS_LINUX 1
+    #if defined(__ANDROID__)
+        #define FIZMO_ARRAYS_ANDROID 1
+    #endif
+#elif defined(__APPLE__) && defined(__MACH__)
+    #define FIZMO_ARRAYS_MACOS 1
 #endif
 
 #if defined(__GNUC__) || defined(__clang__)

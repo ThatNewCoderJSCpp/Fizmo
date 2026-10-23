@@ -37,7 +37,7 @@ bool SocketOption::is_available_on_current_platform(OptionCode code) noexcept {
     if (cat == OptionCategory::Common) return true;
 #ifdef OS_WINDOWS
     return cat == OptionCategory::Windows;
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX_KERNEL)
     return cat == OptionCategory::Linux;
 #else
     return false;

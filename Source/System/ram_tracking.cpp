@@ -1,11 +1,12 @@
 #include "fizmo_library.hpp"
 #include "ram_tracking.hpp"
 #include "platform_windows.hpp"
+#include "platform_macos.hpp"
 
 namespace fizmo {
 namespace system {
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 std::uint64_t RAMTracking::read_faults() const {
     std::string text;
     if (!detail::lnx::read_text("/proc/self/stat", text)) return 0;
@@ -17,19 +18,23 @@ std::uint64_t RAMTracking::read_faults() const {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void RAMTracking::discover() {
     const long page = ::sysconf(_SC_PAGESIZE);
     m_info.page_size = page > 0 ? static_cast<std::uint64_t>(page) : 4096u;
     const auto mem = detail::lnx::key_values("/proc/meminfo");
     m_info.total = detail::lnx::value_of(mem, "MemTotal").value_or(0);
+    if (m_info.total == 0) {
+        struct sysinfo si{};
+        if (::sysinfo(&si) == 0) m_info.total = static_cast<std::uint64_t>(si.totalram) * si.mem_unit;
+    }
     m_info.modules = detail::read_memory_modules();
     for (const auto& h : detail::lnx::hwmon_by_name()) if (h.first == "spd5118" || h.first == "jc42" || h.first == "ee1004") m_dimm_sensors.push_back(h.second);
     m_prev_faults = read_faults();
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 auto RAMTracking::collect() -> RAMSample {
     RAMSample s;
     const auto mem = detail::lnx::key_values("/proc/meminfo");
@@ -48,6 +53,20 @@ auto RAMTracking::collect() -> RAMSample {
     s.swap_used    = s.swap_total > swap_free ? s.swap_total - swap_free : 0;
     s.commit_used  = value_of(mem, "Committed_AS").value_or(0);
     s.commit_limit = value_of(mem, "CommitLimit").value_or(0);
+    if (s.total == 0) {
+        struct sysinfo si{};
+        if (::sysinfo(&si) == 0) {
+            const std::uint64_t unit = si.mem_unit ? si.mem_unit : 1u;
+            s.total      = static_cast<std::uint64_t>(si.totalram) * unit;
+            s.free       = static_cast<std::uint64_t>(si.freeram) * unit;
+            s.available  = s.free + static_cast<std::uint64_t>(si.bufferram) * unit;
+            s.used       = s.total > s.available ? s.total - s.available : 0;
+            s.cached     = static_cast<std::uint64_t>(si.bufferram) * unit;
+            s.swap_total = static_cast<std::uint64_t>(si.totalswap) * unit;
+            s.swap_used  = si.totalswap > si.freeswap ? static_cast<std::uint64_t>(si.totalswap - si.freeswap) * unit : 0;
+            s.usage_percent = s.total ? 100.0 * static_cast<double>(s.used) / static_cast<double>(s.total) : 0.0;
+        }
+    }
 
     const auto st = detail::lnx::key_values("/proc/self/status");
     s.process_resident      = value_of(st, "VmRSS").value_or(0);
@@ -66,6 +85,70 @@ auto RAMTracking::collect() -> RAMSample {
     for (const std::string& dir : m_dimm_sensors)
         for (const auto& t : detail::lnx::hwmon_temps(dir)) s.module_temperatures_c.push_back(t.celsius);
     if (!s.module_temperatures_c.empty()) s.temperature_c = *std::max_element(s.module_temperatures_c.begin(), s.module_temperatures_c.end());
+    return s;
+}
+#endif
+
+#if defined(OS_MACOS)
+std::uint64_t RAMTracking::read_faults() {
+    struct proc_taskinfo ti{};
+    if (::proc_pidinfo(::getpid(), PROC_PIDTASKINFO, 0, &ti, sizeof(ti)) != static_cast<int>(sizeof(ti))) return 0;
+    return static_cast<std::uint64_t>(ti.pti_faults);
+}
+
+void RAMTracking::discover() {
+    m_info.page_size = detail::mac::page_size();
+    m_info.total = detail::mac::sysctl_u64("hw.memsize").value_or(0);
+    m_info.modules = detail::read_memory_modules();
+    m_prev_faults = read_faults();
+}
+
+auto RAMTracking::collect() -> RAMSample {
+    RAMSample s;
+    s.total = m_info.total ? m_info.total : detail::mac::sysctl_u64("hw.memsize").value_or(0);
+    const std::uint64_t page = m_info.page_size ? m_info.page_size : detail::mac::page_size();
+    vm_statistics64_data_t vm{};
+    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+
+    if (::host_statistics64(::mach_host_self(), HOST_VM_INFO64, reinterpret_cast<host_info64_t>(&vm), &count) == KERN_SUCCESS) {
+        const std::uint64_t internal = vm.internal_page_count > vm.purgeable_count ? vm.internal_page_count - vm.purgeable_count : 0;
+        const std::uint64_t used = (internal + vm.wire_count + vm.compressor_page_count) * page;
+        s.used = std::min(used, s.total);
+        s.available = s.total > s.used ? s.total - s.used : 0;
+        s.free = static_cast<std::uint64_t>(vm.free_count) * page;
+        s.cached = (static_cast<std::uint64_t>(vm.external_page_count) + vm.purgeable_count) * page;
+        s.usage_percent = s.total ? 100.0 * static_cast<double>(s.used) / static_cast<double>(s.total) : 0.0;
+    }
+
+    struct xsw_usage swap{};
+    std::size_t swap_size = sizeof(swap);
+    if (::sysctlbyname("vm.swapusage", &swap, &swap_size, nullptr, 0) == 0) {
+        s.swap_total = swap.xsu_total;
+        s.swap_used  = swap.xsu_used;
+    }
+    s.commit_used  = s.used + s.swap_used;
+    s.commit_limit = s.total + s.swap_total;
+
+    struct proc_taskinfo ti{};
+    if (::proc_pidinfo(::getpid(), PROC_PIDTASKINFO, 0, &ti, sizeof(ti)) == static_cast<int>(sizeof(ti))) {
+        s.process_resident = ti.pti_resident_size;
+        s.process_virtual  = ti.pti_virtual_size;
+    }
+
+    task_vm_info_data_t vmi{};
+    mach_msg_type_number_t vmi_count = TASK_VM_INFO_COUNT;
+    if (::task_info(::mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&vmi), &vmi_count) == KERN_SUCCESS) s.process_private = vmi.phys_footprint;
+    else s.process_private = s.process_resident;
+
+    struct rusage ru{};
+    if (::getrusage(RUSAGE_SELF, &ru) == 0) s.process_peak_resident = static_cast<std::uint64_t>(ru.ru_maxrss);
+    s.process_percent = s.total ? 100.0 * static_cast<double>(s.process_resident) / static_cast<double>(s.total) : 0.0;
+
+    const std::uint64_t faults = read_faults();
+    const detail::Clock::time_point now = detail::Clock::now();
+    s.process_page_faults_per_sec = detail::per_second(faults, m_prev_faults, detail::seconds_between(m_prev_time, now));
+    m_prev_faults = faults;
+    m_prev_time = now;
     return s;
 }
 #endif

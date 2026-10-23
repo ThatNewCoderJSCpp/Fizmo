@@ -81,14 +81,17 @@ public:
     #if defined(OS_WINDOWS)
         const std::uint64_t ms = detail::windows_uptime_ms();
         const T planck = T(ms) * planck_per_unit<T>(Unit::millisecond);
-    #elif defined(OS_LINUX)
+    #elif defined(OS_LINUX_KERNEL)
         const std::uint64_t ns = detail::linux_now_ns(CLOCK_BOOTTIME);
+        const T planck = T(ns) * planck_per_ns_;
+    #elif defined(OS_MACOS)
+        const std::uint64_t ns = detail::linux_now_ns(CLOCK_MONOTONIC);
         const T planck = T(ns) * planck_per_ns_;
     #else
         return difference_type();
     #endif
 
-    #if defined(OS_WINDOWS) || defined(OS_LINUX)
+    #if defined(OS_WINDOWS) || defined(OS_LINUX_KERNEL) || defined(OS_MACOS)
         const T ppd  = planck_per_unit<T>(Unit::day);
         const T days = planck / ppd;
         const T rem  = planck - days * ppd;
@@ -174,7 +177,7 @@ private:
         const T sub_day_planck = T(remainder_ns) * planck_per_ns_;
         const T total_days = windows_epoch_days_ + T(days_since_1601);
         return datetime_type(total_days, sub_day_planck);
-    #elif defined(OS_LINUX)
+    #elif defined(OS_POSIX)
         struct timespec ts;
         if (::clock_gettime(CLOCK_REALTIME, &ts) != 0) return datetime_type();
         const std::int64_t sec = static_cast<std::int64_t>(ts.tv_sec);
@@ -202,7 +205,7 @@ private:
         const T days = total_planck / ppd;
         const T rem  = total_planck - days * ppd;
         return datetime_type(days, rem);
-    #elif defined(OS_LINUX)
+    #elif defined(OS_POSIX)
         const std::uint64_t ns = tick_counter();   
         const T total_planck = T(ns) * planck_per_ns_;
         const T ppd = planck_per_unit<T>(Unit::day);
@@ -221,7 +224,7 @@ private:
         std::uint64_t time_increment = 0;
         if (detail::windows_time_increment(time_increment)) { return TimeUnit<Unit::nanosecond, default_storage_uint>(time_increment * ns_per_filetime_tick_); }
         return TimeUnit<Unit::nanosecond, default_storage_uint>(std::uint64_t(15625000));
-    #elif defined(OS_LINUX)
+    #elif defined(OS_POSIX)
         struct timespec ts;
 
         if (::clock_getres(CLOCK_REALTIME, &ts) == 0) {

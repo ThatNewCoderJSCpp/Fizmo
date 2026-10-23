@@ -30,6 +30,31 @@ fs::path u8(const std::string& s) {
 #endif
 }
 
+struct AppDirectories {
+    std::mutex  lock;
+    std::string data;
+    std::string cache;
+    std::string external;
+};
+
+AppDirectories& app_directories() {
+    static AppDirectories dirs;
+    return dirs;
+}
+
+std::string app_directory(std::string AppDirectories::* member) {
+    AppDirectories& d = app_directories();
+    std::lock_guard<std::mutex> g(d.lock);
+    return d.*member;
+}
+
+fs::path android_temp_dir() {
+    const std::string t = env("TMPDIR");
+    if (!t.empty()) return u8(t);
+    const std::string c = app_directory(&AppDirectories::cache);
+    return c.empty() ? fs::path() : u8(c);
+}
+
 } // namespace detail
 } // namespace paths
 } // namespace system
@@ -49,10 +74,20 @@ fs::path executable_path() {
         buf.resize(buf.size() * 2);
     }
     return fs::path(buf);
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX_KERNEL)
     std::error_code ec;
     fs::path p = fs::read_symlink("/proc/self/exe", ec);
     return ec ? fs::path() : p;
+#elif defined(OS_MACOS)
+    std::uint32_t size = 0;
+    ::_NSGetExecutablePath(nullptr, &size);
+    if (size == 0) return {};
+    std::string buf(size, '\0');
+    if (::_NSGetExecutablePath(&buf[0], &size) != 0) return {};
+    buf.resize(std::strlen(buf.c_str()));
+    char real[PATH_MAX];
+    if (::realpath(buf.c_str(), real)) return fs::path(real);
+    return fs::path(buf);
 #else
     return {};
 #endif
@@ -63,7 +98,16 @@ fs::path home_dir() {
     fs::path p = detail::known_folder(FOLDERID_Profile);
     if (p.empty()) p = fs::path(detail::env("USERPROFILE"));
     return p;
-#elif defined(OS_LINUX)
+#elif defined(OS_ANDROID)
+    const std::string d = detail::app_directory(&detail::AppDirectories::data);
+    if (!d.empty()) return detail::u8(d);
+    std::string h = detail::env("HOME");
+    if (h.empty()) {
+        const passwd* pw = getpwuid(getuid());
+        if (pw && pw->pw_dir) h = pw->pw_dir;
+    }
+    return fs::path(h);
+#elif defined(OS_POSIX)
     std::string h = detail::env("HOME");
     if (h.empty()) {
         const passwd* pw = getpwuid(getuid());
@@ -78,6 +122,13 @@ fs::path home_dir() {
 fs::path data_dir(const std::string& app) {
 #if defined(OS_WINDOWS)
     return detail::with_app(detail::known_folder(FOLDERID_RoamingAppData), app);
+#elif defined(OS_MACOS)
+    return detail::with_app(home_dir() / "Library" / "Application Support", app);
+#elif defined(OS_ANDROID)
+    const std::string d = detail::app_directory(&detail::AppDirectories::data);
+    if (!d.empty()) return detail::with_app(detail::u8(d), app);
+    const std::string x = detail::env("XDG_DATA_HOME");
+    return detail::with_app(x.empty() ? home_dir() / ".local" / "share" : fs::path(x), app);
 #else
     const std::string x = detail::env("XDG_DATA_HOME");
     return detail::with_app(x.empty() ? home_dir() / ".local" / "share" : fs::path(x), app);
@@ -87,6 +138,13 @@ fs::path data_dir(const std::string& app) {
 fs::path config_dir(const std::string& app) {
 #if defined(OS_WINDOWS)
     return detail::with_app(detail::known_folder(FOLDERID_RoamingAppData), app);
+#elif defined(OS_MACOS)
+    return detail::with_app(home_dir() / "Library" / "Application Support", app);
+#elif defined(OS_ANDROID)
+    const std::string d = detail::app_directory(&detail::AppDirectories::data);
+    if (!d.empty()) return detail::with_app(detail::u8(d) / "config", app);
+    const std::string x = detail::env("XDG_CONFIG_HOME");
+    return detail::with_app(x.empty() ? home_dir() / ".config" : fs::path(x), app);
 #else
     const std::string x = detail::env("XDG_CONFIG_HOME");
     return detail::with_app(x.empty() ? home_dir() / ".config" : fs::path(x), app);
@@ -96,6 +154,13 @@ fs::path config_dir(const std::string& app) {
 fs::path cache_dir(const std::string& app) {
 #if defined(OS_WINDOWS)
     return detail::with_app(detail::known_folder(FOLDERID_LocalAppData), app) / "Cache";
+#elif defined(OS_MACOS)
+    return detail::with_app(home_dir() / "Library" / "Caches", app);
+#elif defined(OS_ANDROID)
+    const std::string c = detail::app_directory(&detail::AppDirectories::cache);
+    if (!c.empty()) return detail::with_app(detail::u8(c), app);
+    const std::string x = detail::env("XDG_CACHE_HOME");
+    return detail::with_app(x.empty() ? home_dir() / ".cache" : fs::path(x), app);
 #else
     const std::string x = detail::env("XDG_CACHE_HOME");
     return detail::with_app(x.empty() ? home_dir() / ".cache" : fs::path(x), app);
@@ -105,10 +170,30 @@ fs::path cache_dir(const std::string& app) {
 fs::path documents_dir() {
 #if defined(OS_WINDOWS)
     return detail::known_folder(FOLDERID_Documents);
+#elif defined(OS_ANDROID)
+    const std::string e = detail::app_directory(&detail::AppDirectories::external);
+    if (!e.empty()) return detail::u8(e) / "Documents";
+    const std::string d = detail::app_directory(&detail::AppDirectories::data);
+    if (!d.empty()) return detail::u8(d) / "Documents";
+    const std::string x = detail::env("XDG_DOCUMENTS_DIR");
+    return x.empty() ? home_dir() / "Documents" : fs::path(x);
 #else
     const std::string x = detail::env("XDG_DOCUMENTS_DIR");
     return x.empty() ? home_dir() / "Documents" : fs::path(x);
 #endif
+}
+
+void set_app_directories(const std::string& data, const std::string& cache, const std::string& external) {
+    {
+        detail::AppDirectories& d = detail::app_directories();
+        std::lock_guard<std::mutex> g(d.lock);
+        d.data = data;
+        d.cache = cache;
+        d.external = external;
+    }
+#if defined(OS_ANDROID)
+    if (!data.empty()) AssetPaths::instance().add_root(detail::u8(data) / "assets");
+#endif // OS_ANDROID
 }
 
 std::optional<std::vector<std::uint8_t>> read_bytes(const fs::path& p) {
@@ -194,6 +279,10 @@ void AssetPaths::add_defaults() {
     add_root(exe);
     add_root(current_dir() / "assets");
     add_root(current_dir());
+#if defined(OS_ANDROID)
+    const std::string data = detail::app_directory(&detail::AppDirectories::data);
+    if (!data.empty()) add_root(detail::u8(data) / "assets");
+#endif // OS_ANDROID
 }
 
 void AssetPaths::add_root(const fs::path& root, bool front) {

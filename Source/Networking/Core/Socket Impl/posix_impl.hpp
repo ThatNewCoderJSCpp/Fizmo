@@ -3,7 +3,7 @@
 
 #include "socket_impl_base.hpp"
 
-#ifdef OS_LINUX
+#ifdef OS_POSIX
 
 #include <cerrno>
 #include <cstring>
@@ -139,5 +139,5 @@ public:
 } // namespace networking
 } // namespace fizmo
 
-#endif // OS_LINUX
+#endif // OS_POSIX
 #endif // FIZMO_POSIX_IMPL_FILE_HPP

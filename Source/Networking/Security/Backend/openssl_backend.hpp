@@ -3,7 +3,7 @@
 
 #include "backend_base.hpp"
 
-#ifdef OS_LINUX
+#ifdef OS_POSIX
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -23,6 +23,10 @@
 #include <cstdio>
 #include <algorithm>
 
+#if defined(OS_ANDROID)
+#include <dirent.h>
+#endif // OS_ANDROID
+
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
     #define FIZMO_SSL_GET1_PEER_CERT SSL_get_peer_certificate
 #else
@@ -39,6 +43,12 @@ void openssl_init_once() noexcept;
 std::string openssl_last_error() noexcept;
 
 inline void openssl_drain_errors() noexcept { ERR_clear_error(); }
+
+#if defined(OS_ANDROID)
+std::vector<std::string> android_ca_files();
+
+int openssl_load_android_roots(X509_STORE* store) noexcept;
+#endif // OS_ANDROID
 
 class OpenSSLCertificate : public NativeCertificateBase {
 private:
@@ -281,5 +291,5 @@ private:
 } // namespace networking
 } // namespace fizmo
 
-#endif // OS_LINUX
+#endif // OS_POSIX
 #endif // FIZMO_OPENSSL_BACKEND_HPP

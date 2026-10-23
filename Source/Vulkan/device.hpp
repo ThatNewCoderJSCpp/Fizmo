@@ -419,6 +419,10 @@ public:
             state->memory_budget = true;
         }
 
+    #if defined(OS_MACOS)
+        if (best.gpu.supports_extension("VK_KHR_portability_subset")) extensions.push_back("VK_KHR_portability_subset");
+    #endif
+
         auto info = detail::make<VkDeviceCreateInfo>(VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO);
         info.pNext                   = &e2;
         info.queueCreateInfoCount    = static_cast<std::uint32_t>(queue_infos.size());

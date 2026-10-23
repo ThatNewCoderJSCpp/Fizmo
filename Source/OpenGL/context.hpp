@@ -434,9 +434,11 @@ public:
 
     #if defined(OS_LINUX) || defined(OS_WINDOWS)
         try { r = create_platform(native_window, desc); } catch (...) { r = Result::ContextCreationFailed; }
-    #endif
-
         if (failed(r)) { destroy_platform(); m_state.reset(); return r; }
+    #else
+        (void)desc;
+        if (failed(r)) { m_state.reset(); return r; }
+    #endif
         m_state->alive = true;
         ContextState::current() = m_state.get();
 

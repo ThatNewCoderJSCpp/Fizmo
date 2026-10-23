@@ -3,13 +3,14 @@
 
 #include "common.hpp"
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 
 #include <dirent.h>
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/sysinfo.h>
 #include <unistd.h>
 #include <climits>
 #include <cstdlib>
@@ -110,6 +111,6 @@ public:
 } // namespace system
 } // namespace fizmo
 
-#endif // OS_LINUX
+#endif // OS_LINUX_KERNEL
 
 #endif // FIZMO_SYSTEM_PLATFORM_LINUX_HPP

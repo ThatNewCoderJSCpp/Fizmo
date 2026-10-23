@@ -40,6 +40,12 @@
     #define FIZMO_VK_INSTANCE_FUNCTIONS_PLATFORM(X)         \
         X(vkCreateWin32SurfaceKHR)                          \
         X(vkGetPhysicalDeviceWin32PresentationSupportKHR)
+#elif defined(OS_MACOS)
+    #define FIZMO_VK_INSTANCE_FUNCTIONS_PLATFORM(X)         \
+        X(vkCreateMetalSurfaceEXT)
+#elif defined(OS_ANDROID)
+    #define FIZMO_VK_INSTANCE_FUNCTIONS_PLATFORM(X)         \
+        X(vkCreateAndroidSurfaceKHR)
 #else
     #define FIZMO_VK_INSTANCE_FUNCTIONS_PLATFORM(X)         \
         X(vkCreateXlibSurfaceKHR)                           \
@@ -177,6 +183,18 @@ public:
         m_handle = LoadLibraryA("vulkan-1.dll");
         if (!m_handle) return false;
         m_get_proc = reinterpret_cast<PFN_vkGetInstanceProcAddr>(reinterpret_cast<void*>(GetProcAddress(m_handle, "vkGetInstanceProcAddr")));
+    #elif defined(OS_MACOS)
+        static const char* const names[] = {
+            "libvulkan.1.dylib", "libvulkan.dylib",
+            "/opt/homebrew/lib/libvulkan.1.dylib", "/usr/local/lib/libvulkan.1.dylib",
+            "libMoltenVK.dylib", "/opt/homebrew/lib/libMoltenVK.dylib", "/usr/local/lib/libMoltenVK.dylib"
+        };
+        for (const char* name : names) {
+            m_handle = dlopen(name, RTLD_NOW | RTLD_LOCAL);
+            if (m_handle) break;
+        }
+        if (!m_handle) return false;
+        m_get_proc = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(m_handle, "vkGetInstanceProcAddr"));
     #else
         m_handle = dlopen("libvulkan.so.1", RTLD_NOW | RTLD_LOCAL);
         if (!m_handle) m_handle = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);

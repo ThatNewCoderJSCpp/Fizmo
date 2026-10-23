@@ -1,6 +1,16 @@
 #include "fizmo_library.hpp"
 #include "file_watcher.hpp"
 
+#if defined(OS_MACOS)
+#ifndef __ASSERT_MACROS_DEFINE_VERSIONS_WITHOUT_UNDERSCORES
+#define __ASSERT_MACROS_DEFINE_VERSIONS_WITHOUT_UNDERSCORES 0
+#endif
+#include <CoreServices/CoreServices.h>
+#include <dispatch/dispatch.h>
+#include <sys/stat.h>
+#include <mutex>
+#endif
+
 namespace fizmo {
 namespace system {
 
@@ -78,7 +88,7 @@ void FileWatcher::diff(Watch& w) {
     w.snapshot = std::move(now);
 }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 bool FileWatcher::add_dir(const Path& dir) {
     auto it = m_dir_wd.find(dir);
     if (it != m_dir_wd.end()) { ++it->second.second; return true; }
@@ -95,7 +105,7 @@ bool FileWatcher::add_dir(const Path& dir) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void FileWatcher::release_dir(const Path& dir) {
     auto it = m_dir_wd.find(dir);
     if (it == m_dir_wd.end()) return;
@@ -106,7 +116,7 @@ void FileWatcher::release_dir(const Path& dir) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 bool FileWatcher::attach_native(Watch& w) {
     if (m_fd < 0) return false;
 
@@ -133,7 +143,7 @@ bool FileWatcher::attach_native(Watch& w) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void FileWatcher::new_subdir(const Path& dir) {
     for (auto& w : m_watches) {
         if (!w->is_dir || !w->recursive || !under(dir, w->target)) continue;
@@ -152,7 +162,7 @@ void FileWatcher::new_subdir(const Path& dir) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void FileWatcher::read_native() {
     if (m_fd < 0) return;
     alignas(inotify_event) char buf[65536];
@@ -416,6 +426,163 @@ void FileWatcher::open_native() {}
 void FileWatcher::close_native() {
     for (auto& kv : m_win.get().m_dirs) close_dir(*kv.second);
     m_win.get().m_dirs.clear();
+}
+#endif
+
+#if defined(OS_MACOS)
+struct FileWatcher::MacState {
+    struct Event {
+        std::string             path;
+        FSEventStreamEventFlags flags = 0;
+    };
+
+    dispatch_queue_t                    queue = nullptr;
+    std::mutex                          mutex;
+    std::vector<Event>                  events;
+    std::map<WatchId, FSEventStreamRef> streams;
+
+    static void callback(ConstFSEventStreamRef, void* info, std::size_t count, void* paths, const FSEventStreamEventFlags flags[], const FSEventStreamEventId[]) {
+        auto* self = static_cast<MacState*>(info);
+        char** list = static_cast<char**>(paths);
+        if (!self || !list) return;
+        std::lock_guard<std::mutex> lk(self->mutex);
+        for (std::size_t i = 0; i < count; ++i) {
+            if (!list[i]) continue;
+            Event e;
+            e.path = list[i];
+            while (e.path.size() > 1 && e.path.back() == '/') e.path.pop_back();
+            e.flags = flags[i];
+            self->events.push_back(std::move(e));
+        }
+    }
+
+    static void drain(void*) {}
+
+    void stop(FSEventStreamRef s) {
+        if (!s) return;
+        ::FSEventStreamStop(s);
+        ::FSEventStreamInvalidate(s);
+        if (queue) ::dispatch_sync_f(queue, nullptr, &MacState::drain);
+        ::FSEventStreamRelease(s);
+    }
+};
+#endif
+
+#if defined(OS_MACOS)
+void FileWatcher::open_native() {
+    MacState& st = m_mac.get();
+    if (!st.queue) st.queue = ::dispatch_queue_create("fizmo.file_watcher", DISPATCH_QUEUE_SERIAL);
+    if (!st.queue) m_backend = WatchBackend::Polling;
+}
+#endif
+
+#if defined(OS_MACOS)
+void FileWatcher::close_native() {
+    MacState& st = m_mac.get();
+    for (auto& kv : st.streams) st.stop(kv.second);
+    st.streams.clear();
+    if (st.queue) ::dispatch_release(st.queue);
+    st.queue = nullptr;
+    std::lock_guard<std::mutex> lk(st.mutex);
+    st.events.clear();
+}
+#endif
+
+#if defined(OS_MACOS)
+bool FileWatcher::attach_native(Watch& w) {
+    MacState& st = m_mac.get();
+    if (!st.queue) return false;
+    const Path dir = w.is_dir ? w.target : w.target.parent_path();
+    CFStringRef path = ::CFStringCreateWithFileSystemRepresentation(kCFAllocatorDefault, dir.c_str());
+    if (!path) return false;
+    const void* values[1] = { path };
+    CFArrayRef paths = ::CFArrayCreate(kCFAllocatorDefault, values, 1, &kCFTypeArrayCallBacks);
+    ::CFRelease(path);
+    if (!paths) return false;
+    FSEventStreamContext ctx{};
+    ctx.version = 0;
+    ctx.info = &st;
+    const FSEventStreamCreateFlags flags = kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagWatchRoot;
+    FSEventStreamRef stream = ::FSEventStreamCreate(kCFAllocatorDefault, &MacState::callback, &ctx, paths, kFSEventStreamEventIdSinceNow, 0.03, flags);
+    ::CFRelease(paths);
+    if (!stream) return false;
+    ::FSEventStreamSetDispatchQueue(stream, st.queue);
+    if (!::FSEventStreamStart(stream)) {
+        ::FSEventStreamInvalidate(stream);
+        ::FSEventStreamRelease(stream);
+        return false;
+    }
+    st.streams[w.id] = stream;
+    w.dirs.push_back(dir);
+    return true;
+}
+#endif
+
+#if defined(OS_MACOS)
+void FileWatcher::detach_native(Watch& w) {
+    MacState& st = m_mac.get();
+    auto it = st.streams.find(w.id);
+    if (it != st.streams.end()) {
+        st.stop(it->second);
+        st.streams.erase(it);
+    }
+    w.dirs.clear();
+}
+#endif
+
+#if defined(OS_MACOS)
+void FileWatcher::read_native() {
+    MacState& st = m_mac.get();
+    std::vector<MacState::Event> events;
+    {
+        std::lock_guard<std::mutex> lk(st.mutex);
+        events.swap(st.events);
+    }
+
+    constexpr FSEventStreamEventFlags dropped = kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped;
+    constexpr FSEventStreamEventFlags changed = kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemInodeMetaMod | kFSEventStreamEventFlagItemFinderInfoMod | kFSEventStreamEventFlagItemChangeOwner | kFSEventStreamEventFlagItemXattrMod;
+
+    for (const MacState::Event& e : events) {
+        const Path path = Path(e.path).lexically_normal();
+        const FSEventStreamEventFlags f = e.flags;
+        if (f & kFSEventStreamEventFlagHistoryDone) continue;
+
+        if (f & dropped) {
+            for (auto& w : m_watches) if (!w->polled && (path == w->target || under(w->target, path) || under(path, w->target))) record(w->target, FileAction::Modified);
+            continue;
+        }
+
+        struct stat sb{};
+        const bool exists = ::lstat(path.c_str(), &sb) == 0;
+
+        if (f & kFSEventStreamEventFlagRootChanged) {
+            for (auto& w : m_watches) if (!w->polled && (path == w->target || under(w->target, path) || path == w->target.parent_path())) record(w->target, exists ? FileAction::Modified : FileAction::Removed);
+            continue;
+        }
+
+        const bool is_dir = (f & kFSEventStreamEventFlagItemIsDir) != 0 || (exists && S_ISDIR(sb.st_mode));
+
+        if (f & kFSEventStreamEventFlagItemRenamed) {
+            record(path, exists ? FileAction::Added : FileAction::Removed);
+            if (exists && is_dir) {
+                for (auto& w : m_watches) {
+                    if (w->polled || !w->is_dir || !w->recursive || !under(path, w->target)) continue;
+                    std::error_code ec;
+                    for (std::filesystem::recursive_directory_iterator it(path, std::filesystem::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) record(it->path(), FileAction::Added);
+                    break;
+                }
+            }
+            continue;
+        }
+
+        if ((f & kFSEventStreamEventFlagItemRemoved) && !exists) { record(path, FileAction::Removed); continue; }
+        if (f & kFSEventStreamEventFlagItemCreated) {
+            if ((f & kFSEventStreamEventFlagItemRemoved) && exists) record(path, FileAction::Removed);
+            if (exists) record(path, FileAction::Added);
+            continue;
+        }
+        if ((f & changed) && !is_dir) record(path, FileAction::Modified);
+    }
 }
 #endif
 

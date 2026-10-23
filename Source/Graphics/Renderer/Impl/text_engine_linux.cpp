@@ -1,16 +1,22 @@
 #include "gpu_text.hpp"
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_MACOS) || defined(OS_ANDROID)
 
 #include "glyph_raster.hpp"
 #include "line_break.hpp"
 #include "../../../String/unicode.hpp"
 
-#include <fontconfig/fontconfig.h>
+#if defined(OS_ANDROID)
+    #include "android_fonts.hpp"
+#else
+    #include <fontconfig/fontconfig.h>
+#endif
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_OUTLINE_H
 #include FT_SIZES_H
+#include FT_MULTIPLE_MASTERS_H
+#include FT_TRUETYPE_TABLES_H
 
 #include <hb.h>
 #include <hb-ot.h>
@@ -93,6 +99,7 @@ struct TextEngine::Impl {
         hb_face_t*  hb      = nullptr;
         bool        color   = false;
         bool        bitmap  = false;
+        std::vector<hb_variation_t> variations;
     };
 
     struct Face {
@@ -109,6 +116,20 @@ struct TextEngine::Impl {
         FaceMetrics   metrics;
     };
 
+#if defined(OS_ANDROID)
+    struct Candidate {
+        AndroidFontFile font;
+        bool            prepared = false;
+        int             source   = -1;
+        bool            embolden = false;
+        float           slant    = 0.0f;
+    };
+
+    struct FontList {
+        std::vector<Candidate>              fonts;
+        std::unordered_map<char32_t, int>   picks;
+    };
+#else
     struct Candidate {
         FcPattern*  font     = nullptr;
         FcCharSet*  charset  = nullptr;
@@ -124,6 +145,7 @@ struct TextEngine::Impl {
         FcPattern*                          pattern = nullptr;
         std::unordered_map<char32_t, int>   picks;
     };
+#endif
 
     struct HbGlyph {
         std::uint32_t glyph;
@@ -235,6 +257,55 @@ struct TextEngine::Impl {
         if (buffer) hb_buffer_destroy(buffer);
     }
 
+#if defined(OS_ANDROID)
+    static void release_list(FontList& l) {
+        l.fonts.clear();
+        l.picks.clear();
+    }
+
+    bool init() {
+        if (ok) return true;
+        if (!ft.lib) return false;
+        buffer = hb_buffer_create();
+        ok = hb_buffer_allocation_successful(buffer);
+        return ok;
+    }
+
+    FontList& list_for(const std::string& family, int weight, text::FontSlant slant) {
+        std::string key = family;
+        key += '\x1f';
+        key += std::to_string(weight);
+        key += '\x1f';
+        key += static_cast<char>('0' + static_cast<int>(slant));
+        auto it = lists.find(key);
+        if (it != lists.end()) return *it->second;
+        auto list = std::make_unique<FontList>();
+        const bool italic = slant != text::FontSlant::Normal;
+        for (const AndroidFontPick& p : AndroidFontCatalog::instance().candidates(family, weight, italic)) {
+            if (!p.font) continue;
+            Candidate c;
+            c.font = *p.font;
+            c.embolden = p.embolden;
+            c.slant = p.slant;
+            list->fonts.push_back(std::move(c));
+        }
+        FontList& ref = *list;
+        lists.emplace(std::move(key), std::move(list));
+        return ref;
+    }
+
+    void prepare(FontList&, Candidate& c) {
+        if (c.prepared) return;
+        c.prepared = true;
+        c.source = source_for(c.font.path, c.font.index, c.font.axes);
+    }
+
+    bool covers(FontList& list, Candidate& c, char32_t cp) {
+        prepare(list, c);
+        if (c.source < 0) return false;
+        return FT_Get_Char_Index(sources[static_cast<std::size_t>(c.source)]->ft, cp) != 0;
+    }
+#else
     static void release_list(FontList& l) {
         for (Candidate& c : l.fonts) if (c.prepared && c.font) FcPatternDestroy(c.font);
         if (l.set) FcFontSetDestroy(l.set);
@@ -298,10 +369,22 @@ struct TextEngine::Impl {
         return ref;
     }
 
+#endif
+
     int source_for(const std::string& file, int index) {
+        return source_for(file, index, {});
+    }
+
+    int source_for(const std::string& file, int index, const std::vector<std::pair<std::uint32_t, float>>& axes) {
         std::string key = file;
         key += '#';
         key += std::to_string(index);
+        for (const auto& [tag, value] : axes) {
+            key += '|';
+            key += std::to_string(tag);
+            key += '=';
+            key += std::to_string(static_cast<int>(std::lround(value * 100.0f)));
+        }
         auto it = source_ids.find(key);
         if (it != source_ids.end()) return static_cast<int>(it->second);
         auto src = std::make_unique<Source>();
@@ -321,6 +404,7 @@ struct TextEngine::Impl {
             return -1;
         }
         src->hb = hb_face_create(src->blob, static_cast<unsigned int>(index & 0xFFFF));
+        if (!axes.empty()) apply_axes(*src, axes);
         src->color = FT_HAS_COLOR(src->ft);
         bool vector_color = hb_ot_color_has_layers(src->hb) || hb_ot_color_has_svg(src->hb);
 #if HB_VERSION_ATLEAST(7, 0, 0)
@@ -333,6 +417,30 @@ struct TextEngine::Impl {
         return static_cast<int>(id);
     }
 
+    void apply_axes(Source& src, const std::vector<std::pair<std::uint32_t, float>>& axes) {
+        for (const auto& [tag, value] : axes) {
+            hb_variation_t v;
+            v.tag = tag;
+            v.value = value;
+            src.variations.push_back(v);
+        }
+        if (!FT_HAS_MULTIPLE_MASTERS(src.ft)) return;
+        FT_MM_Var* mm = nullptr;
+        if (FT_Get_MM_Var(src.ft, &mm) != 0 || !mm) return;
+        std::vector<FT_Fixed> coords(mm->num_axis);
+        for (FT_UInt i = 0; i < mm->num_axis; ++i) {
+            coords[i] = mm->axis[i].def;
+            for (const auto& [tag, value] : axes) {
+                if (static_cast<std::uint32_t>(mm->axis[i].tag) != tag) continue;
+                const FT_Fixed v = static_cast<FT_Fixed>(std::lround(value * 65536.0f));
+                coords[i] = std::max(mm->axis[i].minimum, std::min(mm->axis[i].maximum, v));
+            }
+        }
+        FT_Set_Var_Design_Coordinates(src.ft, mm->num_axis, coords.data());
+        FT_Done_MM_Var(ft.lib, mm);
+    }
+
+#if !defined(OS_ANDROID)
     void prepare(FontList& list, Candidate& c) {
         if (c.prepared) return;
         c.prepared = true;
@@ -356,6 +464,7 @@ struct TextEngine::Impl {
         if (c.source < 0) return false;
         return FT_Get_Char_Index(sources[static_cast<std::size_t>(c.source)]->ft, cp) != 0;
     }
+#endif
 
     int pick(FontList& list, char32_t cp) {
         auto it = list.picks.find(cp);
@@ -401,6 +510,7 @@ struct TextEngine::Impl {
         f.embolden = embolden;
         f.slant = slant;
         f.hb = hb_font_create(src.hb);
+        if (!src.variations.empty()) hb_font_set_variations(f.hb, src.variations.data(), static_cast<unsigned int>(src.variations.size()));
 #if HB_VERSION_ATLEAST(3, 3, 0)
         if (slant != 0.0f) hb_font_set_synthetic_slant(f.hb, slant);
 #endif
@@ -1481,7 +1591,27 @@ bool TextEngine::ready() const noexcept {
 
 bool TextEngine::load_font_file(const std::string& utf8_path) {
     if (!ready()) return false;
+#if defined(OS_ANDROID)
+    FT_Face face = nullptr;
+    if (FT_New_Face(m_impl->ft.lib, utf8_path.c_str(), 0, &face) != 0 || !face) return false;
+    const FT_Long count = std::max<FT_Long>(1, face->num_faces);
+    FT_Done_Face(face);
+    bool any = false;
+    for (FT_Long i = 0; i < count; ++i) {
+        if (FT_New_Face(m_impl->ft.lib, utf8_path.c_str(), i, &face) != 0 || !face) continue;
+        const std::string family = face->family_name ? face->family_name : "";
+        const bool italic = (face->style_flags & FT_STYLE_FLAG_ITALIC) != 0;
+        int weight = (face->style_flags & FT_STYLE_FLAG_BOLD) ? 700 : 400;
+        if (const auto* os2 = static_cast<const TT_OS2*>(FT_Get_Sfnt_Table(face, FT_SFNT_OS2))) {
+            if (os2->usWeightClass >= 1 && os2->usWeightClass <= 1000) weight = os2->usWeightClass;
+        }
+        FT_Done_Face(face);
+        if (!family.empty()) any = AndroidFontCatalog::instance().add_user_font(utf8_path, static_cast<int>(i), family, weight, italic) || any;
+    }
+    if (!any) return false;
+#else
     if (!FcConfigAppFontAddFile(FcConfigGetCurrent(), reinterpret_cast<const FcChar8*>(utf8_path.c_str()))) return false;
+#endif
     for (auto& [k, l] : m_impl->lists) Impl::release_list(*l);
     m_impl->lists.clear();
     m_impl->shapes.clear();

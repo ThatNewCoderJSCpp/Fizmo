@@ -16,6 +16,16 @@
         #define VK_USE_PLATFORM_XLIB_KHR
     #endif
     #include <dlfcn.h>
+#elif defined(OS_MACOS)
+    #ifndef VK_USE_PLATFORM_METAL_EXT
+        #define VK_USE_PLATFORM_METAL_EXT
+    #endif
+    #include <dlfcn.h>
+#elif defined(OS_ANDROID)
+    #ifndef VK_USE_PLATFORM_ANDROID_KHR
+        #define VK_USE_PLATFORM_ANDROID_KHR
+    #endif
+    #include <dlfcn.h>
 #endif
 
 #include <vulkan/vulkan.h>
@@ -24,6 +34,8 @@
 
 #if defined(OS_LINUX)
     #include "../x11_compat.hpp"
+#elif defined(OS_MACOS)
+    #include "../macos_compat.hpp"
 #endif
 
 namespace fizmo {

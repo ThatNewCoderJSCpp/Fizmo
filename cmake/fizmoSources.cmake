@@ -1,4 +1,12 @@
 file(GLOB_RECURSE FIZMO_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/../Source/*.cpp")
+if(APPLE)
+    file(GLOB_RECURSE FIZMO_OBJCXX_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/../Source/*.mm")
+    list(APPEND FIZMO_SOURCES ${FIZMO_OBJCXX_SOURCES})
+    set_source_files_properties(${FIZMO_OBJCXX_SOURCES} PROPERTIES
+        COMPILE_OPTIONS "-fobjc-arc"
+        SKIP_PRECOMPILE_HEADERS ON
+        SKIP_UNITY_BUILD_INCLUSION ON)
+endif()
 
 set(FIZMO_COMPONENTS core random crypto string statistics numerics physics symbolic time collections system util net graphics)
 

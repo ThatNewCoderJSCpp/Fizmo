@@ -1,6 +1,7 @@
 #include "fizmo_library.hpp"
 #include "network_tracking.hpp"
 #include "platform_windows.hpp"
+#include "platform_macos.hpp"
 
 namespace fizmo {
 namespace system {
@@ -35,14 +36,14 @@ void NetworkTracking::finish(NetworkSample& s, double wall) {
     m_prev_app_received = recv;
 }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL) || defined(OS_MACOS)
 bool NetworkTracking::set_nonblocking(Socket s) {
     const int flags = ::fcntl(s, F_GETFL, 0);
     return flags >= 0 && ::fcntl(s, F_SETFL, flags | O_NONBLOCK) == 0;
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL) || defined(OS_MACOS)
 bool NetworkTracking::wait_writable(Socket s, int timeout_ms) {
     pollfd p{};
     p.fd = s;
@@ -51,7 +52,7 @@ bool NetworkTracking::wait_writable(Socket s, int timeout_ms) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL) || defined(OS_MACOS)
 std::map<std::string, std::vector<std::string>> NetworkTracking::addresses() const {
     std::map<std::string, std::vector<std::string>> out;
     ifaddrs* list = nullptr;
@@ -71,7 +72,7 @@ std::map<std::string, std::vector<std::string>> NetworkTracking::addresses() con
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 std::map<std::string, double> NetworkTracking::signals() const {
     std::map<std::string, double> out;
     std::string text;
@@ -89,10 +90,15 @@ std::map<std::string, double> NetworkTracking::signals() const {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void NetworkTracking::read_interfaces(NetworkSample& s, bool details) {
     std::string text;
-    if (!detail::lnx::read_text("/proc/net/dev", text)) return;
+    if (!detail::lnx::read_text("/proc/net/dev", text)) {
+#if defined(OS_ANDROID)
+        read_interfaces_ifaddrs(s, details);
+#endif // OS_ANDROID
+        return;
+    }
     std::map<std::string, std::vector<std::string>> addrs;
     std::map<std::string, double> sig;
     if (details) { addrs = addresses(); sig = signals(); }
@@ -136,7 +142,75 @@ void NetworkTracking::read_interfaces(NetworkSample& s, bool details) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_ANDROID)
+void NetworkTracking::read_interfaces_ifaddrs(NetworkSample& s, bool details) {
+    ifaddrs* list = nullptr;
+    if (::getifaddrs(&list) != 0) return;
+    std::map<std::string, std::size_t> index;
+    const std::map<std::string, double> sig = details ? signals() : std::map<std::string, double>();
+
+    for (ifaddrs* a = list; a; a = a->ifa_next) {
+        if (!a->ifa_name) continue;
+        auto it = index.find(a->ifa_name);
+        if (it == index.end()) {
+            NetworkInterfaceSample created;
+            created.name = a->ifa_name;
+            it = index.emplace(created.name, s.interfaces.size()).first;
+            s.interfaces.push_back(std::move(created));
+        }
+        NetworkInterfaceSample& i = s.interfaces[it->second];
+
+        if (details) {
+            if ((a->ifa_flags & IFF_UP) && (a->ifa_flags & IFF_RUNNING)) i.up = true;
+            if (a->ifa_flags & IFF_LOOPBACK) i.loopback = true;
+        }
+
+        if (!a->ifa_addr) continue;
+        const int family = a->ifa_addr->sa_family;
+
+        if (family == AF_PACKET) {
+            if (a->ifa_data) {
+                const rtnl_link_stats* st = static_cast<const rtnl_link_stats*>(a->ifa_data);
+                i.rx_bytes   = st->rx_bytes;
+                i.tx_bytes   = st->tx_bytes;
+                i.rx_errors  = st->rx_errors;
+                i.tx_errors  = st->tx_errors;
+                i.rx_dropped = st->rx_dropped;
+                i.tx_dropped = st->tx_dropped;
+                m_packets_rx[i.name] = st->rx_packets;
+                m_packets_tx[i.name] = st->tx_packets;
+            }
+
+            if (details) {
+                const sockaddr_ll* ll = reinterpret_cast<const sockaddr_ll*>(a->ifa_addr);
+                if (ll->sll_halen == 6) {
+                    char text[18];
+                    std::snprintf(text, sizeof(text), "%02x:%02x:%02x:%02x:%02x:%02x", ll->sll_addr[0], ll->sll_addr[1], ll->sll_addr[2], ll->sll_addr[3], ll->sll_addr[4], ll->sll_addr[5]);
+                    i.mac = text;
+                }
+            }
+        } else if (details && (family == AF_INET || family == AF_INET6)) {
+            char buf[INET6_ADDRSTRLEN] = {};
+            if (family == AF_INET) ::inet_ntop(AF_INET, &reinterpret_cast<sockaddr_in*>(a->ifa_addr)->sin_addr, buf, sizeof(buf));
+            else ::inet_ntop(AF_INET6, &reinterpret_cast<sockaddr_in6*>(a->ifa_addr)->sin6_addr, buf, sizeof(buf));
+            i.addresses.push_back(buf);
+        }
+    }
+
+    ::freeifaddrs(list);
+    if (!details) return;
+
+    for (NetworkInterfaceSample& i : s.interfaces) {
+        const std::string dir = "/sys/class/net/" + i.name;
+        i.wireless = detail::lnx::exists(dir + "/wireless") || detail::lnx::exists(dir + "/phy80211") || detail::starts_with(i.name, "wlan");
+        if (const auto mtu = detail::lnx::read_u64(dir + "/mtu")) i.mtu = static_cast<std::uint32_t>(*mtu);
+        const auto g = sig.find(i.name);
+        if (g != sig.end()) i.signal_dbm = g->second;
+    }
+}
+#endif // OS_ANDROID
+
+#if defined(OS_LINUX_KERNEL) || defined(OS_MACOS)
 auto NetworkTracking::collect() -> NetworkSample {
     NetworkSample s;
     read_interfaces(s, true);
@@ -148,9 +222,67 @@ auto NetworkTracking::collect() -> NetworkSample {
 }
 #endif
 
+#if defined(OS_MACOS)
+void NetworkTracking::read_interfaces(NetworkSample& s, bool details) {
+    int mib[6] = { CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0 };
+    std::size_t len = 0;
+    if (::sysctl(mib, 6, nullptr, &len, nullptr, 0) != 0 || len == 0) return;
+    std::vector<char> buf(len);
+    if (::sysctl(mib, 6, buf.data(), &len, nullptr, 0) != 0) return;
+    std::map<std::string, std::vector<std::string>> addrs;
+    if (details) addrs = addresses();
+    const char* p = buf.data();
+    const char* end = p + len;
+
+    while (p + sizeof(if_msghdr) <= end) {
+        const auto* ifm = reinterpret_cast<const if_msghdr*>(p);
+        if (ifm->ifm_msglen == 0) break;
+
+        if (ifm->ifm_type == RTM_IFINFO2 && p + sizeof(if_msghdr2) <= end) {
+            const auto* if2 = reinterpret_cast<const if_msghdr2*>(p);
+            const auto* sdl = reinterpret_cast<const sockaddr_dl*>(if2 + 1);
+            NetworkInterfaceSample i;
+            if (sdl->sdl_nlen > 0) i.name.assign(sdl->sdl_data, sdl->sdl_nlen);
+
+            if (!i.name.empty()) {
+                const if_data64& d = if2->ifm_data;
+                i.rx_bytes   = d.ifi_ibytes;
+                i.tx_bytes   = d.ifi_obytes;
+                i.rx_errors  = d.ifi_ierrors;
+                i.tx_errors  = d.ifi_oerrors;
+                i.rx_dropped = d.ifi_iqdrops;
+                m_packets_rx[i.name] = d.ifi_ipackets;
+                m_packets_tx[i.name] = d.ifi_opackets;
+
+                if (details) {
+                    i.up       = (if2->ifm_flags & IFF_UP) != 0 && (if2->ifm_flags & IFF_RUNNING) != 0;
+                    i.loopback = (if2->ifm_flags & IFF_LOOPBACK) != 0;
+                    i.mtu      = static_cast<std::uint32_t>(d.ifi_mtu);
+                    if (i.up && d.ifi_baudrate > 0) i.link_mbps = static_cast<double>(d.ifi_baudrate) / 1.0e6;
+
+                    if (sdl->sdl_alen == 6) {
+                        const auto* mac = reinterpret_cast<const unsigned char*>(LLADDR(sdl));
+                        char text[18];
+                        std::snprintf(text, sizeof(text), "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                        i.mac = text;
+                    }
+
+                    const auto a = addrs.find(i.name);
+                    if (a != addrs.end()) i.addresses = a->second;
+                }
+
+                s.interfaces.push_back(std::move(i));
+            }
+        }
+
+        p += ifm->ifm_msglen;
+    }
+}
+#endif
+
 bool NetworkTracking::resolve(const std::string& host, const std::string& port) {
     m_addr.clear();
-#if defined(OS_LINUX) || defined(OS_WINDOWS)
+#if defined(OS_LINUX_KERNEL) || defined(OS_WINDOWS) || defined(OS_MACOS)
     addrinfo hints{};
     hints.ai_family   = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -167,7 +299,7 @@ bool NetworkTracking::resolve(const std::string& host, const std::string& port) 
 }
 
 std::optional<double> NetworkTracking::connect_once(int timeout_ms) {
-#if defined(OS_LINUX) || defined(OS_WINDOWS)
+#if defined(OS_LINUX_KERNEL) || defined(OS_WINDOWS) || defined(OS_MACOS)
     if (m_addr.empty()) return std::nullopt;
     const Socket s = ::socket(m_family, SOCK_STREAM, IPPROTO_TCP);
     if (s == kBadSocket) return std::nullopt;

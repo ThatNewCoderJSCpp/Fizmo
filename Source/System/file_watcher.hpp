@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 #include <cerrno>
 #include <sys/inotify.h>
 #include <unistd.h>
@@ -76,7 +76,7 @@ private:
     std::chrono::milliseconds           m_poll_interval{ 500 };
     Clock::time_point                   m_last_scan{};
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
     int                                 m_fd = -1;
     std::map<Path, std::pair<int, int>> m_dir_wd;
     std::unordered_map<int, Path>       m_wd_dir;
@@ -84,6 +84,10 @@ private:
     struct WinDir;
     struct WinState;
     detail::Opaque<WinState> m_win;
+
+#elif defined(OS_MACOS)
+    struct MacState;
+    detail::Opaque<MacState> m_mac;
 
 #endif
 
@@ -99,7 +103,7 @@ private:
 
     void diff(Watch& w);
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
     static constexpr std::uint32_t kMask = IN_CLOSE_WRITE | IN_MODIFY | IN_ATTRIB | IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO | IN_DELETE_SELF | IN_MOVE_SELF;
 
     bool add_dir(const Path& dir);
@@ -138,6 +142,18 @@ private:
     bool add_dir(const Path& dir, bool subtree);
 
     void release_dir(const Path& dir, bool subtree);
+
+    bool attach_native(Watch& w);
+
+    void detach_native(Watch& w);
+
+    void read_native();
+
+    void open_native();
+
+    void close_native();
+
+#elif defined(OS_MACOS)
 
     bool attach_native(Watch& w);
 

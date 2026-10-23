@@ -226,6 +226,10 @@ public:
             extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
         #if defined(OS_WINDOWS)
             extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
+        #elif defined(OS_MACOS)
+            extensions.push_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
+        #elif defined(OS_ANDROID)
+            extensions.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
         #else
             extensions.push_back(VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
         #endif
@@ -243,6 +247,13 @@ public:
 
         for (const char* e : desc.extra_extensions) extensions.push_back(e);
         for (const char* l : desc.extra_layers)     layers.push_back(l);
+        VkInstanceCreateFlags create_flags = 0;
+    #if defined(OS_MACOS) && defined(VK_KHR_portability_enumeration)
+        if (detail::contains_name(available_ext, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
+            extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+            create_flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+        }
+    #endif
         auto app                       = detail::make<VkApplicationInfo>(VK_STRUCTURE_TYPE_APPLICATION_INFO);
         app.pApplicationName           = desc.app_name.c_str();
         app.applicationVersion         = desc.app_version;
@@ -258,6 +269,7 @@ public:
         auto info                      = detail::make<VkInstanceCreateInfo>(VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO);
         info.pNext                     = state->debug_utils ? &messenger_info : nullptr;  // also catches create/destroy errors
         info.pApplicationInfo          = &app;
+        info.flags                     = create_flags;
         info.enabledExtensionCount     = static_cast<std::uint32_t>(extensions.size());
         info.ppEnabledExtensionNames   = extensions.data();
         info.enabledLayerCount         = static_cast<std::uint32_t>(layers.size());
@@ -337,6 +349,18 @@ public:
         info.hinstance = GetModuleHandleW(nullptr);
         info.hwnd      = static_cast<HWND>(native_window);
         VkResult r = st->fn.vkCreateWin32SurfaceKHR(st->handle, &info, nullptr, &m_handle);
+    #elif defined(OS_MACOS)
+        if (!st->fn.vkCreateMetalSurfaceEXT) return Result::MissingEntryPoint;
+        const auto* h = static_cast<const fizmo::macos::Handle*>(native_window);
+        if (!h->layer) return Result::InvalidArgument;
+        auto info = detail::make<VkMetalSurfaceCreateInfoEXT>(VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT);
+        info.pLayer = static_cast<const CAMetalLayer*>(h->layer);
+        VkResult r = st->fn.vkCreateMetalSurfaceEXT(st->handle, &info, nullptr, &m_handle);
+    #elif defined(OS_ANDROID)
+        if (!st->fn.vkCreateAndroidSurfaceKHR) return Result::MissingEntryPoint;
+        auto info = detail::make<VkAndroidSurfaceCreateInfoKHR>(VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR);
+        info.window = static_cast<ANativeWindow*>(native_window);
+        VkResult r = st->fn.vkCreateAndroidSurfaceKHR(st->handle, &info, nullptr, &m_handle);
     #else
         if (!st->fn.vkCreateXlibSurfaceKHR) return Result::MissingEntryPoint;
         const auto* h = static_cast<const x11::Handle*>(native_window);

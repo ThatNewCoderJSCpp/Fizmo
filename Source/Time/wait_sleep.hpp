@@ -8,7 +8,7 @@
 namespace fizmo {
 namespace time {
 
-#ifdef OS_LINUX
+#ifdef OS_POSIX
     #ifndef FIZMO_STEADY_CLOCK_ID
         #define FIZMO_STEADY_CLOCK_ID CLOCK_MONOTONIC
     #endif
@@ -160,7 +160,7 @@ void cpu_relax() noexcept;
 
 namespace impl {
 
-#ifdef OS_LINUX
+#ifdef OS_POSIX
 std::uint64_t mono_ns() noexcept;
 
 bool sleep_until_ns(std::uint64_t deadline_ns) noexcept;

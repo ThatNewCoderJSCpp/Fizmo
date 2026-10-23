@@ -1,6 +1,7 @@
 #include "fizmo_library.hpp"
 #include "storage_tracking.hpp"
 #include "platform_windows.hpp"
+#include "platform_macos.hpp"
 
 namespace fizmo {
 namespace system {
@@ -9,13 +10,13 @@ void StorageTracking::finish_volume(VolumeSample& v) {
     v.usage_percent = v.total ? 100.0 * static_cast<double>(v.total - std::min(v.total, v.free)) / static_cast<double>(v.total) : 0.0;
 }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 bool StorageTracking::skip_block(const std::string& n) {
     return detail::starts_with(n, "loop") || detail::starts_with(n, "ram") || detail::starts_with(n, "zram") || detail::starts_with(n, "dm-") || detail::starts_with(n, "fd");
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void StorageTracking::discover() {
     for (const std::string& n : detail::lnx::list("/sys/block")) {
         if (skip_block(n)) continue;
@@ -43,7 +44,7 @@ void StorageTracking::discover() {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void StorageTracking::read_disks(StorageSample* out, double wall) {
     for (DiskState& d : m_disks) {
         const std::vector<std::string> f = detail::split_ws(detail::lnx::read_line("/sys/block/" + d.name + "/stat"));
@@ -86,7 +87,7 @@ void StorageTracking::read_disks(StorageSample* out, double wall) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void StorageTracking::read_process(std::uint64_t& read, std::uint64_t& write) {
     const auto io = detail::lnx::key_values("/proc/self/io");
     if (const auto r = detail::lnx::value_of(io, "read_bytes")) read = *r;
@@ -94,7 +95,7 @@ void StorageTracking::read_process(std::uint64_t& read, std::uint64_t& write) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 std::string StorageTracking::unescape_mount(const std::string& s) {
     std::string out;
     for (std::size_t i = 0; i < s.size(); ++i) {
@@ -107,7 +108,7 @@ std::string StorageTracking::unescape_mount(const std::string& s) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void StorageTracking::read_volumes(StorageSample& out) {
     std::string text;
     if (!detail::lnx::read_text("/proc/self/mounts", text)) return;
@@ -126,6 +127,9 @@ void StorageTracking::read_volumes(StorageSample& out) {
         if (pseudo.count(fs)) continue;
         if (path != "/" && !detail::starts_with(device, "/")) continue;
         if (detail::starts_with(device, "/dev/loop")) continue;
+#if defined(OS_ANDROID)
+        if (detail::starts_with(device, "/dev/block/loop") || detail::starts_with(path, "/apex/")) continue;
+#endif // OS_ANDROID
         if (!seen.insert(device).second) continue;
         struct statvfs vs;
         if (::statvfs((detail::lnx::root() + path).c_str(), &vs) != 0 || vs.f_blocks == 0) continue;
@@ -152,12 +156,70 @@ void StorageTracking::read_volumes(StorageSample& out) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 auto StorageTracking::collect() -> StorageSample {
     StorageSample s;
     const detail::Clock::time_point now = detail::Clock::now();
     const double wall = detail::seconds_between(m_prev_time, now);
     read_disks(&s, wall);
+    read_volumes(s);
+    std::uint64_t r = m_prev_proc_read, w = m_prev_proc_write;
+    read_process(r, w);
+    s.process_read_bytes          = r;
+    s.process_written_bytes       = w;
+    s.process_read_bytes_per_sec  = detail::per_second(r, m_prev_proc_read, wall);
+    s.process_write_bytes_per_sec = detail::per_second(w, m_prev_proc_write, wall);
+    m_prev_proc_read = r;
+    m_prev_proc_write = w;
+    m_prev_time = now;
+    return s;
+}
+#endif
+
+#if defined(OS_MACOS)
+void StorageTracking::read_process(std::uint64_t& read, std::uint64_t& write) {
+    rusage_info_v2 info{};
+    if (::proc_pid_rusage(::getpid(), RUSAGE_INFO_V2, reinterpret_cast<rusage_info_t*>(&info)) != 0) return;
+    read  = info.ri_diskio_bytesread;
+    write = info.ri_diskio_byteswritten;
+}
+
+void StorageTracking::read_volumes(StorageSample& out) {
+    struct statfs* mounts = nullptr;
+    const int n = ::getmntinfo(&mounts, MNT_NOWAIT);
+    if (n <= 0 || !mounts) return;
+
+    for (int k = 0; k < n; ++k) {
+        const struct statfs& m = mounts[k];
+        const std::string fs = m.f_fstypename;
+        if (fs == "devfs" || fs == "autofs" || fs == "nullfs") continue;
+        if ((m.f_flags & MNT_DONTBROWSE) != 0 && std::string(m.f_mntonname) != "/") continue;
+        if (m.f_blocks == 0) continue;
+        VolumeSample v;
+        v.path       = m.f_mntonname;
+        v.device     = m.f_mntfromname;
+        v.filesystem = fs;
+        const std::size_t slash = v.path.find_last_of('/');
+        v.label      = v.path == "/" ? std::string("Macintosh HD") : (slash == std::string::npos ? v.path : v.path.substr(slash + 1));
+        v.total      = static_cast<std::uint64_t>(m.f_blocks) * m.f_bsize;
+        v.free       = static_cast<std::uint64_t>(m.f_bfree) * m.f_bsize;
+        v.available  = static_cast<std::uint64_t>(m.f_bavail) * m.f_bsize;
+        v.read_only  = (m.f_flags & MNT_RDONLY) != 0;
+        v.removable  = (m.f_flags & MNT_LOCAL) == 0 || detail::starts_with(v.path, "/Volumes/");
+        finish_volume(v);
+        out.volumes.push_back(std::move(v));
+    }
+}
+
+void StorageTracking::discover() {
+    read_process(m_prev_proc_read, m_prev_proc_write);
+    m_prev_time = detail::Clock::now();
+}
+
+auto StorageTracking::collect() -> StorageSample {
+    StorageSample s;
+    const detail::Clock::time_point now = detail::Clock::now();
+    const double wall = detail::seconds_between(m_prev_time, now);
     read_volumes(s);
     std::uint64_t r = m_prev_proc_read, w = m_prev_proc_write;
     read_process(r, w);

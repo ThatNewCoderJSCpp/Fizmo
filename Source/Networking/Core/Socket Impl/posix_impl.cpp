@@ -6,7 +6,7 @@ namespace networking {
 namespace core {
 namespace detail {
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 void PosixImpl::suppress_sigpipe_once() noexcept {
     static const bool done = [] {
         struct sigaction sa;
@@ -20,7 +20,7 @@ void PosixImpl::suppress_sigpipe_once() noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 void PosixImpl::apply_socket_defaults() noexcept {
 #ifdef SO_NOSIGPIPE
     if (m_socket != kInvalidSocket) {
@@ -31,7 +31,7 @@ void PosixImpl::apply_socket_defaults() noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int PosixImpl::clamp_ssize(ssize_t n) noexcept {
     if (n < 0) return -1;
     if (n > static_cast<ssize_t>(INT_MAX)) return INT_MAX;
@@ -39,7 +39,7 @@ int PosixImpl::clamp_ssize(ssize_t n) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 auto PosixImpl::fill_sockaddr(const NetworkAddress& address, struct sockaddr_storage& storage) noexcept -> socklen_t {
     std::memset(&storage, 0, sizeof(storage));
 
@@ -59,7 +59,7 @@ auto PosixImpl::fill_sockaddr(const NetworkAddress& address, struct sockaddr_sto
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 auto PosixImpl::parse_sockaddr(const struct sockaddr_storage& storage) noexcept -> NetworkAddress {
     if (storage.ss_family == AF_INET6) {
         auto* a6 = reinterpret_cast<const struct sockaddr_in6*>(&storage);
@@ -75,7 +75,7 @@ auto PosixImpl::parse_sockaddr(const struct sockaddr_storage& storage) noexcept 
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 PosixImpl::PosixImpl(SocketType type, AddressFamily family) : SocketImplBase(type, family), m_socket(kInvalidSocket) {
     suppress_sigpipe_once();
     m_socket = create_socket();
@@ -83,14 +83,14 @@ PosixImpl::PosixImpl(SocketType type, AddressFamily family) : SocketImplBase(typ
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 PosixImpl::PosixImpl(int existing_socket, SocketType type, AddressFamily family) : SocketImplBase(type, family, true), m_socket(existing_socket) {
     suppress_sigpipe_once();
     apply_socket_defaults();
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 void PosixImpl::set_send_timeout(unsigned int milliseconds) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     m_send_timeout_ms = milliseconds;
@@ -104,7 +104,7 @@ void PosixImpl::set_send_timeout(unsigned int milliseconds) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 void PosixImpl::set_receive_timeout(unsigned int milliseconds) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     m_receive_timeout_ms = milliseconds;
@@ -118,7 +118,7 @@ void PosixImpl::set_receive_timeout(unsigned int milliseconds) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool PosixImpl::connect(const NetworkAddress& address) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return false;
@@ -187,7 +187,7 @@ bool PosixImpl::connect(const NetworkAddress& address) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool PosixImpl::bind(const NetworkAddress& address) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return false;
@@ -197,7 +197,7 @@ bool PosixImpl::bind(const NetworkAddress& address) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool PosixImpl::listen(int backlog) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return false;
@@ -205,7 +205,7 @@ bool PosixImpl::listen(int backlog) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 auto PosixImpl::accept() noexcept -> std::unique_ptr<SocketImplBase> {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return nullptr;
@@ -220,6 +220,7 @@ auto PosixImpl::accept() noexcept -> std::unique_ptr<SocketImplBase> {
 #else
     do { client = ::accept(m_socket, reinterpret_cast<struct sockaddr*>(&client_storage), &addr_len); }
     while (client < 0 && errno == EINTR);
+    if (client >= 0) ::fcntl(client, F_SETFD, ::fcntl(client, F_GETFD, 0) | FD_CLOEXEC);
 #endif
 
     if (client == kInvalidSocket) return nullptr;
@@ -228,7 +229,7 @@ auto PosixImpl::accept() noexcept -> std::unique_ptr<SocketImplBase> {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int PosixImpl::send(const void* data, std::size_t length) noexcept {
     if (m_socket == kInvalidSocket || !m_connected.load(std::memory_order_acquire)) return -1;
     ssize_t n;
@@ -238,7 +239,7 @@ int PosixImpl::send(const void* data, std::size_t length) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int PosixImpl::receive(void* buffer, std::size_t length) noexcept {
     if (m_socket == kInvalidSocket || !m_connected.load(std::memory_order_acquire)) return -1;
     ssize_t n;
@@ -248,7 +249,7 @@ int PosixImpl::receive(void* buffer, std::size_t length) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int PosixImpl::sendto(const void* data, std::size_t length, const NetworkAddress& dest) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return -1;
@@ -261,7 +262,7 @@ int PosixImpl::sendto(const void* data, std::size_t length, const NetworkAddress
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int PosixImpl::recvfrom(void* buffer, std::size_t length, NetworkAddress& source) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return -1;
@@ -276,7 +277,7 @@ int PosixImpl::recvfrom(void* buffer, std::size_t length, NetworkAddress& source
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int PosixImpl::scatter_receive(IOBuffer* buffers, std::size_t buffer_count) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return -1;
@@ -303,7 +304,7 @@ int PosixImpl::scatter_receive(IOBuffer* buffers, std::size_t buffer_count) noex
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int PosixImpl::gather_send(const IOBuffer* buffers, std::size_t buffer_count) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return -1;
@@ -326,7 +327,7 @@ int PosixImpl::gather_send(const IOBuffer* buffers, std::size_t buffer_count) no
     struct msghdr msg;
     std::memset(&msg, 0, sizeof(msg));
     msg.msg_iov    = iov;
-    msg.msg_iovlen = buffer_count;
+    msg.msg_iovlen = static_cast<decltype(msg.msg_iovlen)>(buffer_count);
     ssize_t n;
     do { n = ::sendmsg(m_socket, &msg, send_flags()); }
     while (n < 0 && errno == EINTR);
@@ -334,7 +335,7 @@ int PosixImpl::gather_send(const IOBuffer* buffers, std::size_t buffer_count) no
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int PosixImpl::scatter_recvfrom(IOBuffer* buffers, std::size_t buffer_count, NetworkAddress& source) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return -1;
@@ -361,7 +362,7 @@ int PosixImpl::scatter_recvfrom(IOBuffer* buffers, std::size_t buffer_count, Net
     msg.msg_name    = &storage;
     msg.msg_namelen = sizeof(storage);
     msg.msg_iov     = iov;
-    msg.msg_iovlen  = buffer_count;
+    msg.msg_iovlen  = static_cast<decltype(msg.msg_iovlen)>(buffer_count);
     ssize_t n;
     do { n = ::recvmsg(m_socket, &msg, 0); }
     while (n < 0 && errno == EINTR);
@@ -370,7 +371,7 @@ int PosixImpl::scatter_recvfrom(IOBuffer* buffers, std::size_t buffer_count, Net
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int PosixImpl::gather_sendto(const IOBuffer* buffers, std::size_t buffer_count, const NetworkAddress& dest) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return -1;
@@ -397,7 +398,7 @@ int PosixImpl::gather_sendto(const IOBuffer* buffers, std::size_t buffer_count, 
     msg.msg_name    = &storage;
     msg.msg_namelen = addr_len;
     msg.msg_iov     = iov;
-    msg.msg_iovlen  = buffer_count;
+    msg.msg_iovlen  = static_cast<decltype(msg.msg_iovlen)>(buffer_count);
     ssize_t n;
     do { n = ::sendmsg(m_socket, &msg, send_flags()); }
     while (n < 0 && errno == EINTR);
@@ -405,7 +406,7 @@ int PosixImpl::gather_sendto(const IOBuffer* buffers, std::size_t buffer_count, 
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 void PosixImpl::close() noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
 
@@ -418,7 +419,7 @@ void PosixImpl::close() noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool PosixImpl::shutdown(ShutdownMode mode) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return false;
@@ -434,7 +435,7 @@ bool PosixImpl::shutdown(ShutdownMode mode) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int PosixImpl::set_blocking(bool blocking) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return -1;
@@ -445,7 +446,7 @@ int PosixImpl::set_blocking(bool blocking) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int PosixImpl::set_option(int level, int option, const void* value, int length) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return -1;
@@ -453,7 +454,7 @@ int PosixImpl::set_option(int level, int option, const void* value, int length) 
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int PosixImpl::get_option(int level, int option, void* value, int* length) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket || !length) return -1;
@@ -464,7 +465,7 @@ int PosixImpl::get_option(int level, int option, void* value, int* length) noexc
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int PosixImpl::set_keepalive_params(unsigned long idle_ms, unsigned long interval_ms) noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return -1;
@@ -479,6 +480,14 @@ int PosixImpl::set_keepalive_params(unsigned long idle_ms, unsigned long interva
     if (::setsockopt(m_socket, IPPROTO_TCP, TCP_KEEPIDLE,  &idle,     sizeof(idle))     != 0) return -1;
     if (::setsockopt(m_socket, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval)) != 0) return -1;
     return 0;
+#elif defined(TCP_KEEPALIVE) && defined(TCP_KEEPINTVL)
+    int idle     = static_cast<int>(idle_ms / 1000);
+    int interval = static_cast<int>(interval_ms / 1000);
+    if (idle     < 1) idle     = 1;
+    if (interval < 1) interval = 1;
+    if (::setsockopt(m_socket, IPPROTO_TCP, TCP_KEEPALIVE, &idle,     sizeof(idle))     != 0) return -1;
+    if (::setsockopt(m_socket, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval)) != 0) return -1;
+    return 0;
 #else
     (void)idle_ms; (void)interval_ms;
     return -1;
@@ -486,7 +495,7 @@ int PosixImpl::set_keepalive_params(unsigned long idle_ms, unsigned long interva
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool PosixImpl::is_readable(int sock) noexcept {
     if (sock == kInvalidSocket) return false;
     struct pollfd pfd; pfd.fd = sock; pfd.events = POLLIN; pfd.revents = 0;
@@ -494,7 +503,7 @@ bool PosixImpl::is_readable(int sock) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool PosixImpl::is_writable(int sock) noexcept {
     if (sock == kInvalidSocket) return false;
     struct pollfd pfd; pfd.fd = sock; pfd.events = POLLOUT; pfd.revents = 0;
@@ -502,7 +511,7 @@ bool PosixImpl::is_writable(int sock) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool PosixImpl::check_connect_completed() noexcept {
     std::lock_guard<std::mutex> lock(m_impl_mutex);
     if (m_socket == kInvalidSocket) return false;

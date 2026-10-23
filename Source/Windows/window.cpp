@@ -61,7 +61,7 @@ void Window::poll_events() noexcept {
 }
 
 std::vector<MonitorInfo> monitors() {
-#if defined(OS_WINDOWS) || defined(OS_LINUX)
+#if defined(OS_WINDOWS) || defined(OS_LINUX) || defined(OS_MACOS)
     try { return detail::platform_monitors(); } catch (...) { return {}; }
 #else
     return {};

@@ -47,22 +47,57 @@ ProcessResult run_process(const std::string& program, const std::vector<std::str
     const std::string exe = find_program(program);
     if (exe.empty()) return result;
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
     int fds[2];
+#if defined(OS_LINUX_KERNEL)
     if (::pipe2(fds, O_CLOEXEC) != 0) return result;
-    posix_spawn_file_actions_t actions;
-    posix_spawn_file_actions_init(&actions);
-    posix_spawn_file_actions_adddup2(&actions, fds[1], 1);
-    if (capture_stderr) posix_spawn_file_actions_adddup2(&actions, fds[1], 2);
+#else
+    if (::pipe(fds) != 0) return result;
+    ::fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+    ::fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+#endif
     std::vector<char*> argv;
     argv.push_back(const_cast<char*>(exe.c_str()));
     for (const std::string& a : args) argv.push_back(const_cast<char*>(a.c_str()));
     argv.push_back(nullptr);
+#if defined(OS_ANDROID) && __ANDROID_API__ < 28
+    int err_fds[2];
+    if (::pipe2(err_fds, O_CLOEXEC) != 0) { ::close(fds[0]); ::close(fds[1]); return result; }
+    const pid_t pid = ::fork();
+    if (pid == 0) {
+        ::close(fds[0]);
+        ::close(err_fds[0]);
+        ::dup2(fds[1], 1);
+        if (capture_stderr) ::dup2(fds[1], 2);
+        ::execve(exe.c_str(), argv.data(), environ);
+        const int e = errno;
+        while (::write(err_fds[1], &e, sizeof(e)) < 0 && errno == EINTR) {}
+        ::_exit(127);
+    }
+    ::close(err_fds[1]);
+    ::close(fds[1]);
+    if (pid < 0) { ::close(err_fds[0]); ::close(fds[0]); return result; }
+    int child_errno = 0;
+    ssize_t en = 0;
+    do { en = ::read(err_fds[0], &child_errno, sizeof(child_errno)); } while (en < 0 && errno == EINTR);
+    ::close(err_fds[0]);
+    if (en == static_cast<ssize_t>(sizeof(child_errno))) {
+        ::close(fds[0]);
+        int ignored = 0;
+        while (::waitpid(pid, &ignored, 0) < 0 && errno == EINTR) {}
+        return result;
+    }
+#else
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_adddup2(&actions, fds[1], 1);
+    if (capture_stderr) posix_spawn_file_actions_adddup2(&actions, fds[1], 2);
     pid_t pid = 0;
     const int rc = posix_spawn(&pid, exe.c_str(), &actions, nullptr, argv.data(), environ);
     posix_spawn_file_actions_destroy(&actions);
     ::close(fds[1]);
     if (rc != 0) { ::close(fds[0]); return result; }
+#endif
     result.started = true;
     char buf[4096];
 

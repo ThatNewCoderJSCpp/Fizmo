@@ -4,8 +4,8 @@
         #error "Fizmo is only available in C++17 (201703L) or newer"
     #endif
 
-    #if !(defined(__linux__) || defined(_WIN32) || defined(_WIN64))
-        #error "Fizmo is only available on Windows and Linux"
+    #if !(defined(__linux__) || defined(_WIN32) || defined(_WIN64) || (defined(__APPLE__) && defined(__MACH__)))
+        #error "Fizmo is only available on Windows, Linux and macOS"
     #endif
 
     #ifdef ALL_FIZMO

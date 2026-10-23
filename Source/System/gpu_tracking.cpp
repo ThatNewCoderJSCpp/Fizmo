@@ -1,6 +1,8 @@
 #include "fizmo_library.hpp"
 #include "gpu_tracking.hpp"
 #include "platform_windows.hpp"
+#include "platform_macos.hpp"
+#include "smc_macos.hpp"
 
 namespace fizmo {
 namespace system {
@@ -92,7 +94,7 @@ void GPUTracking::apply_nvml(std::size_t index, GPUAdapterSample& a) const {
     else if (a.source.find("nvml") == std::string::npos) a.source += "+nvml";
 }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 std::optional<std::uint64_t> GPUTracking::parse_size(const std::string& v) {
     const std::vector<std::string> f = detail::split_ws(v);
     if (f.empty()) return std::nullopt;
@@ -106,7 +108,7 @@ std::optional<std::uint64_t> GPUTracking::parse_size(const std::string& v) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 std::optional<double> GPUTracking::max_dpm_clock(const std::string& path) {
     std::string text;
     if (!detail::lnx::read_text(path, text)) return std::nullopt;
@@ -121,7 +123,7 @@ std::optional<double> GPUTracking::max_dpm_clock(const std::string& path) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void GPUTracking::discover() {
     for (const std::string& n : detail::lnx::list("/sys/class/drm")) {
         if (!detail::starts_with(n, "card") || n.find('-') != std::string::npos) continue;
@@ -165,7 +167,7 @@ void GPUTracking::discover() {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void GPUTracking::read_hwmon(LinuxAdapter& la, GPUAdapterSample& a) {
     for (const std::string& h : la.hwmon) {
         for (const auto& t : detail::lnx::hwmon_temps(h)) {
@@ -206,7 +208,7 @@ void GPUTracking::read_hwmon(LinuxAdapter& la, GPUAdapterSample& a) {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void GPUTracking::sample_process_engines(double wall, std::vector<GPUAdapterSample>* out) {
     std::map<std::string, EngineCounter> now;
     std::map<std::string, std::uint64_t> memory;
@@ -294,7 +296,7 @@ void GPUTracking::sample_process_engines(double wall, std::vector<GPUAdapterSamp
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void GPUTracking::link_nvml() {
     m_nvml_of.assign(m_info.size(), -1);
     if (!m_nvml.valid()) return;
@@ -326,7 +328,7 @@ void GPUTracking::link_nvml() {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 auto GPUTracking::sample_adapters(double wall) -> std::vector<GPUAdapterSample> {
     std::vector<GPUAdapterSample> out(m_info.size());
 
@@ -616,6 +618,155 @@ auto GPUTracking::sample_adapters(double) -> std::vector<GPUAdapterSample> {
         a.max_clock_mhz    = p.max_clock_mhz;
         a.process_memory   = m_win.get().m_dxgi->process_local_usage(m_win.get().m_dxgi_of[k]);
         apply_nvml(k, a);
+    }
+
+    return out;
+}
+#endif
+
+#if defined(OS_MACOS)
+struct GPUTracking::MacState {
+    std::vector<std::uint64_t> entry_ids;
+    detail::mac::Smc           smc;
+    bool                       intel_host = false;
+};
+
+void GPUTracking::discover() {
+    MacState& st = m_mac.get();
+    const auto arm = detail::mac::sysctl_u64("hw.optional.arm64");
+    st.intel_host = !(arm && *arm != 0);
+    CFMutableDictionaryRef match = ::IOServiceMatching("IOAccelerator");
+    if (!match) return;
+    io_iterator_t raw_iter = IO_OBJECT_NULL;
+    if (::IOServiceGetMatchingServices(MACH_PORT_NULL, match, &raw_iter) != KERN_SUCCESS) return;
+    detail::mac::IORef iter(raw_iter);
+
+    while (io_object_t raw = ::IOIteratorNext(iter.get())) {
+        detail::mac::IORef svc(raw);
+        std::uint64_t id = 0;
+        if (::IORegistryEntryGetRegistryEntryID(svc.get(), &id) != KERN_SUCCESS) continue;
+        if (std::find(st.entry_ids.begin(), st.entry_ids.end(), id) != st.entry_ids.end()) continue;
+
+        GPUAdapterInfo info;
+        info.driver = detail::mac::class_name(svc.get());
+        {
+            auto v = detail::mac::search_property(svc.get(), "model", true);
+            info.name = detail::mac::cf_to_string(v.get());
+            if (info.name.find(',') != std::string::npos) info.name.clear();
+        }
+        {
+            auto v = detail::mac::search_property(svc.get(), "vendor-id", true);
+            info.vendor_id = static_cast<std::uint32_t>(detail::mac::cf_to_u64(v.get()).value_or(0) & 0xFFFFu);
+        }
+        {
+            auto v = detail::mac::search_property(svc.get(), "device-id", true);
+            info.device_id = static_cast<std::uint32_t>(detail::mac::cf_to_u64(v.get()).value_or(0) & 0xFFFFu);
+        }
+
+        const bool agx = detail::starts_with(info.driver, "AGX") || (info.vendor_id == 0 && detail::starts_with(info.name, "Apple"));
+        if (agx) {
+            info.vendor_id = 0x106B;
+            info.device_id = 0;
+            if (!detail::starts_with(info.name, "Apple")) {
+                const std::string soc = detail::mac::sysctl_string("machdep.cpu.brand_string");
+                info.name = soc.empty() ? std::string("Apple GPU") : soc + " GPU";
+            }
+        }
+        info.vendor = vendor_name(info.vendor_id);
+        info.integrated = agx || info.vendor_id == 0x8086 || info.vendor_id == 0x106B;
+
+        {
+            auto mb = detail::mac::search_property(svc.get(), "VRAM,totalMB", true);
+            if (const auto v = detail::mac::cf_to_u64(mb.get())) { if (*v > 0) info.memory_total = *v << 20; }
+            if (!info.memory_total) {
+                auto bytes = detail::mac::search_property(svc.get(), "VRAM,totalsize", true);
+                if (const auto v = detail::mac::cf_to_u64(bytes.get())) { if (*v > 0) info.memory_total = *v; }
+            }
+        }
+
+        if (info.integrated) {
+            if (const auto mem = detail::mac::sysctl_u64("hw.memsize")) info.shared_total = *mem;
+        }
+
+        if (info.name.empty()) {
+            char buf[64];
+            std::snprintf(buf, sizeof(buf), "%s GPU %04x:%04x", info.vendor.empty() ? "Unknown" : info.vendor.c_str(), info.vendor_id, info.device_id);
+            info.name = info.driver.empty() ? std::string(buf) : info.driver;
+        }
+
+        m_info.push_back(info);
+        st.entry_ids.push_back(id);
+    }
+
+    m_nvml_of.assign(m_info.size(), -1);
+    if (st.intel_host) st.smc.open();
+}
+
+auto GPUTracking::sample_adapters(double) -> std::vector<GPUAdapterSample> {
+    MacState& st = m_mac.get();
+    std::vector<GPUAdapterSample> out(m_info.size());
+    std::size_t discrete = 0;
+    for (const GPUAdapterInfo& info : m_info) if (!info.integrated) ++discrete;
+
+    for (std::size_t i = 0; i < m_info.size(); ++i) {
+        const GPUAdapterInfo& info = m_info[i];
+        GPUAdapterSample& a = out[i];
+        a.name         = info.name;
+        a.vendor       = info.vendor;
+        a.vendor_id    = info.vendor_id;
+        a.device_id    = info.device_id;
+        a.integrated   = info.integrated;
+        a.memory_total = info.memory_total;
+        a.shared_total = info.shared_total;
+        a.source       = "iokit";
+        if (i >= st.entry_ids.size()) continue;
+
+        CFMutableDictionaryRef match = ::IORegistryEntryIDMatching(st.entry_ids[i]);
+        if (!match) continue;
+        detail::mac::IORef svc(::IOServiceGetMatchingService(MACH_PORT_NULL, match));
+        if (!svc) continue;
+        auto stats_ref = detail::mac::property(svc.get(), "PerformanceStatistics");
+        if (!stats_ref || ::CFGetTypeID(stats_ref.get()) != ::CFDictionaryGetTypeID()) continue;
+        CFDictionaryRef stats = static_cast<CFDictionaryRef>(stats_ref.get());
+
+        auto num = [&](const char* key) { return detail::mac::cf_to_double(detail::mac::dict_value(stats, key)); };
+        auto u64 = [&](const char* key) { return detail::mac::cf_to_u64(detail::mac::dict_value(stats, key)); };
+
+        if (const auto v = num("Device Utilization %")) a.utilization_percent = detail::clamp_percent(*v);
+        else if (const auto x = num("GPU Activity(%)")) a.utilization_percent = detail::clamp_percent(*x);
+
+        const char* engine_keys[][2] = { { "Renderer Utilization %", "renderer" }, { "Tiler Utilization %", "tiler" } };
+        for (const auto& ek : engine_keys) {
+            if (const auto v = num(ek[0])) {
+                GPUEngine e;
+                e.name = ek[1];
+                e.utilization_percent = detail::clamp_percent(*v);
+                a.engines.push_back(e);
+            }
+        }
+
+        const auto vram_used = u64("vramUsedBytes");
+        const auto vram_free = u64("vramFreeBytes");
+        const auto in_use    = u64("In use system memory");
+        const auto alloc     = u64("Alloc system memory");
+        if (vram_used) a.memory_used = vram_used;
+        if (!a.memory_total && vram_used && vram_free) a.memory_total = *vram_used + *vram_free;
+        if (in_use) a.shared_used = in_use;
+        else if (alloc) a.shared_used = alloc;
+        if (!a.memory_used && info.integrated && a.shared_used) a.memory_used = a.shared_used;
+
+        if (const auto v = num("Temperature(C)")) { if (*v > 0.0) a.temperature_c = *v; }
+        if (const auto v = num("Fan Speed(RPM)")) a.fan_rpm = *v;
+        if (const auto v = num("Fan Speed(%)")) a.fan_percent = *v;
+        if (const auto v = num("Core Clock(MHz)")) { if (*v > 0.0) a.clock_mhz = *v; }
+        if (const auto v = num("Memory Clock(MHz)")) { if (*v > 0.0) a.memory_clock_mhz = *v; }
+        if (const auto v = num("Total Power(W)")) { if (*v > 0.0) a.power_watts = *v; }
+
+        if (!a.temperature_c && st.smc.valid() && (!info.integrated || discrete == 0)) {
+            static const char* keys[] = { "TG0D", "TG0P", "TG0H" };
+            for (const char* k : keys) if (const auto t = st.smc.read_temperature(k)) { a.temperature_c = t; break; }
+            if (a.temperature_c) a.source += "+smc";
+        }
     }
 
     return out;

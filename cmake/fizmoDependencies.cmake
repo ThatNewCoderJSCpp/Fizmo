@@ -17,6 +17,9 @@ if(WIN32)
         gdi32 user32 kernel32 ole32 oleaut32 uuid comdlg32 shell32
         winmm wsock32 ws2_32 bcrypt secur32 crypt32 ncrypt dwrite msimg32
         iphlpapi advapi32)
+elseif(APPLE)
+    list(APPEND FIZMO_CORE_DEPENDENCY_TARGETS ${CMAKE_DL_LIBS}
+        "-framework CoreFoundation" "-framework CoreServices" "-framework IOKit")
 elseif(UNIX)
     list(APPEND FIZMO_CORE_DEPENDENCY_TARGETS m ${CMAKE_DL_LIBS})
 endif()
@@ -26,7 +29,20 @@ if("graphics" IN_LIST FIZMO_DEPENDENCY_COMPONENTS)
     find_dependency(JPEG)                     # -ljpeg
     list(APPEND FIZMO_GRAPHICS_DEPENDENCY_TARGETS ZLIB::ZLIB JPEG::JPEG)
 
-    if(UNIX AND NOT WIN32)
+    if(APPLE)
+        find_dependency(Fontconfig)           # -lfontconfig
+        find_dependency(Freetype)             # -lfreetype
+
+        find_dependency(PkgConfig)
+        pkg_check_modules(FIZMO_HARFBUZZ REQUIRED IMPORTED_TARGET GLOBAL harfbuzz>=2.6)
+
+        list(APPEND FIZMO_GRAPHICS_DEPENDENCY_TARGETS
+            Fontconfig::Fontconfig Freetype::Freetype
+            PkgConfig::FIZMO_HARFBUZZ
+            "-framework Cocoa" "-framework QuartzCore" "-framework Metal"
+            "-framework Carbon" "-framework UniformTypeIdentifiers"
+            "-framework IOKit" "-framework CoreFoundation" "-framework CoreServices")
+    elseif(UNIX AND NOT WIN32)
         find_dependency(X11)                  # -lX11
         if(NOT TARGET X11::Xft OR NOT TARGET X11::Xrender)
             message(FATAL_ERROR

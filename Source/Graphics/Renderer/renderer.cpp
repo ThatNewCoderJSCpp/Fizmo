@@ -4,13 +4,56 @@
 namespace fizmo {
 namespace graphics {
 
+#if defined(OS_ANDROID)
+bool Renderer::bind_surface_impl() noexcept {
+    if (!m_surface || !m_surface->valid()) return false;
+    void* handle = m_surface->native_handle();
+    if (m_impl) release_surface_impl();
+    const bool any_gpu = m_requested == RendererBackend::Auto || m_requested == RendererBackend::GPU;
+    if (any_gpu || m_requested == RendererBackend::Vulkan) try_backend(handle, [] { return detail::make_gpu_renderer_impl(gpu::Backend::Vulkan); });
+    if (!m_impl && (m_requested == RendererBackend::Auto || m_requested == RendererBackend::Software || m_requested == RendererBackend::GPU)) try_backend(handle, [] { return detail::make_software_renderer_impl(); });
+    if (!m_impl) return false;
+    for (PassRecord& p : m_passes) { try { p.impl_id = m_impl->add_gpu_pass(p.stage, p.callback); } catch (...) { p.impl_id = 0; } }
+    m_surface->set_paint_callback([this](void* dc) { if (m_impl) m_impl->paint(dc); });
+    return true;
+}
+
+void Renderer::release_surface_impl() noexcept {
+    while (!m_target_frames.empty()) end_target();
+    if (m_surface) m_surface->set_paint_callback(nullptr);
+    if (m_impl) m_impl->shutdown();
+    m_impl.reset();
+    m_frame_open  = false;
+    m_has_present = false;
+}
+#endif
+
 bool Renderer::bind() noexcept {
+#if defined(OS_ANDROID)
+    if (m_surface) {
+        m_surface_auto = true;
+        if (!m_surface_listener) {
+            m_surface_listener = m_surface->add_listener(
+                [this](unsigned int w, unsigned int h) { if (m_impl) m_impl->resize(w, h); },
+                [this](android::SurfaceChange change) {
+                    if (change == android::SurfaceChange::Destroyed) {
+                        const bool was_bound = m_impl != nullptr;
+                        release_surface_impl();
+                        if (was_bound) notify_unbind();
+                    } else if (change == android::SurfaceChange::Created && m_surface_auto) {
+                        bind_surface_impl();
+                    }
+                });
+        }
+        return bind_surface_impl();
+    }
+#endif
     if (!m_window) return false;
     void* handle = m_window->native_handle();
     if (!handle) return false;
     if (m_impl) release();
 
-#if defined(OS_WINDOWS) || defined(OS_LINUX)
+#if defined(OS_WINDOWS) || defined(OS_LINUX) || defined(OS_MACOS)
     const bool any_gpu = m_requested == RendererBackend::Auto || m_requested == RendererBackend::GPU;
     if (any_gpu || m_requested == RendererBackend::Vulkan) try_backend(handle, [] { return detail::make_gpu_renderer_impl(gpu::Backend::Vulkan); });
     if (!m_impl && (any_gpu || m_requested == RendererBackend::OpenGL)) try_backend(handle, [] { return detail::make_gpu_renderer_impl(gpu::Backend::OpenGL); });
@@ -310,9 +353,9 @@ void Renderer::draw_vertices(const graphics::Vertex2D* vertices, std::size_t cou
     } catch (...) {}
 }
 
-unsigned int Renderer::viewport_width() const noexcept { return !m_target_frames.empty() ? m_target_frames.back().width : (m_window ? m_window->width() : 0); }
+unsigned int Renderer::viewport_width() const noexcept { return !m_target_frames.empty() ? m_target_frames.back().width : target_width(); }
 
-unsigned int Renderer::viewport_height() const noexcept { return !m_target_frames.empty() ? m_target_frames.back().height : (m_window ? m_window->height() : 0); }
+unsigned int Renderer::viewport_height() const noexcept { return !m_target_frames.empty() ? m_target_frames.back().height : target_height(); }
 
 void Renderer::visible_world_rect(double& x0, double& y0, double& x1, double& y1) const noexcept {
     const double w = viewport_width(), h = viewport_height();
@@ -810,6 +853,9 @@ bool Renderer::open_target(const graphics::RenderTarget& target, const colors::C
 
 void Renderer::release() noexcept {
     while (!m_target_frames.empty()) end_target();
+#if defined(OS_ANDROID)
+    if (m_surface) m_surface->set_paint_callback(nullptr);
+#endif
     if (m_window) {
         m_window->set_paint_callback(nullptr);
         m_window->remove_event_listeners(windows::WindowEventType::WindowResize);

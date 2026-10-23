@@ -7,7 +7,7 @@
 #include <limits>
 #include <cstring>
 
-#ifdef OS_LINUX
+#ifdef OS_POSIX
 #include <poll.h>
 #include <cerrno>
 #endif

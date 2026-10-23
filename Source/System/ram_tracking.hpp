@@ -5,6 +5,7 @@
 #include "smbios.hpp"
 #include "platform_linux.hpp"
 #include "win_library.hpp"
+#include "platform_macos.hpp"
 
 namespace fizmo {
 namespace system {
@@ -50,7 +51,7 @@ private:
     std::uint64_t             m_prev_faults = 0;
     detail::Clock::time_point m_prev_time   = detail::Clock::now();
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
     std::vector<std::string> m_dimm_sensors;
 
     std::uint64_t read_faults() const;
@@ -62,6 +63,13 @@ private:
 #elif defined(OS_WINDOWS)
     struct WinState;
     detail::Opaque<WinState> m_win;
+
+    void discover();
+
+    RAMSample collect();
+
+#elif defined(OS_MACOS)
+    static std::uint64_t read_faults();
 
     void discover();
 

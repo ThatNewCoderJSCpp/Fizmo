@@ -68,7 +68,7 @@ enum class OptionCategory {
     #define FIZMO_PLATFORM_EXPAND(M)      \
             FIZMO_COMMON_OPTIONS(M)        \
             FIZMO_WINDOWS_OPTIONS(M)
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX_KERNEL)
     #define FIZMO_PLATFORM_EXPAND(M)   \
             FIZMO_COMMON_OPTIONS(M)    \
             FIZMO_LINUX_OPTIONS(M)

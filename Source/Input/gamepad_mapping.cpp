@@ -152,6 +152,10 @@ const char* GamepadDatabase::platform_name() noexcept {
     return "Windows";
 #elif defined(OS_LINUX)
     return "Linux";
+#elif defined(OS_MACOS)
+    return "Mac OS X";
+#elif defined(OS_ANDROID)
+    return "Android";
 #else
     return "";
 #endif

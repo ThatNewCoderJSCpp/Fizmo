@@ -3,7 +3,7 @@
 
 #include "../Basic/basic_includes.hpp"
 
-#if defined(FIZMO_TIME_USE_TSC) && defined(OS_LINUX)
+#if defined(FIZMO_TIME_USE_TSC) && (defined(OS_LINUX_KERNEL) || defined(OS_MACOS))
     #if defined(ARCH_X86_64)
         #define FIZMO_TIME_TSC_BACKEND 1   // rdtsc
         #include <x86intrin.h>
@@ -122,7 +122,7 @@ inline std::uint64_t tsc_hz()     noexcept { return 0; }
 
 inline void tsc_warmup() noexcept { (void)tsc_active(); }
 
-#if defined(FIZMO_TIME_USE_TSC) && defined(OS_LINUX) && defined(ARCH_X86_64)
+#if defined(FIZMO_TIME_USE_TSC) && (defined(OS_LINUX_KERNEL) || defined(OS_MACOS)) && defined(ARCH_X86_64)
 inline std::uint64_t cycle_counter() noexcept {
     _mm_lfence();
     const std::uint64_t v = static_cast<std::uint64_t>(__rdtsc());

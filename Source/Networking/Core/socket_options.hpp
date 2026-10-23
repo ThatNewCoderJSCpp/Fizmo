@@ -6,7 +6,7 @@
 
 #ifdef OS_WINDOWS
 #include "Options Conversion/winsock_options.hpp"
-#elif defined(OS_LINUX)
+#elif defined(OS_POSIX)
 #include "Options Conversion/posix_options.hpp"
 #endif
 

@@ -8,6 +8,8 @@
     #include <fcntl.h>
     #include <sys/random.h>
     #include <unistd.h>
+#elif defined(OS_MACOS) || defined(OS_ANDROID)
+    #include <stdlib.h>
 #endif
 
 #if defined(_MSC_VER)
@@ -73,6 +75,8 @@ void os_random_bytes(void* buffer, std::size_t length) {
     }
 
     ::close(fd);
+#elif defined(OS_MACOS) || defined(OS_ANDROID)
+    ::arc4random_buf(buffer, length);
 #endif
 }
 
@@ -86,6 +90,10 @@ std::uint64_t RNG::rdtsc() noexcept {
 #elif defined(__i386__)
     std::uint64_t x;
     __asm__ volatile ("rdtsc" : "=A"(x));
+    return x;
+#elif defined(__aarch64__)
+    std::uint64_t x;
+    __asm__ volatile ("mrs %0, cntvct_el0" : "=r"(x));
     return x;
 #else
     return static_cast<std::uint64_t>(std::chrono::high_resolution_clock::now().time_since_epoch().count());

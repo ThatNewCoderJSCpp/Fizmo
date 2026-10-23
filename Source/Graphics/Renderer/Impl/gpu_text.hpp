@@ -20,7 +20,7 @@
     #if defined(_MSC_VER)
         #pragma comment(lib, "dwrite.lib")       
     #endif
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX) || defined(OS_MACOS) || defined(OS_ANDROID)
     #include <memory>
 #endif
 
@@ -763,7 +763,7 @@ private:
     }
 };
 
-#elif defined(OS_LINUX)
+#elif defined(OS_LINUX) || defined(OS_MACOS) || defined(OS_ANDROID)
 
 class TextEngine {
 public:

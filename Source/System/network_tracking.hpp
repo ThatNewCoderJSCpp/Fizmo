@@ -4,8 +4,9 @@
 #include "tracker.hpp"
 #include "platform_linux.hpp"
 #include "win_library.hpp"
+#include "platform_macos.hpp"
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL) || defined(OS_MACOS)
     #include <arpa/inet.h>
     #include <ifaddrs.h>
     #include <net/if.h>
@@ -15,6 +16,11 @@
     #include <sys/socket.h>
     #include <cerrno>
 #endif
+
+#if defined(OS_ANDROID)
+    #include <linux/if_link.h>
+    #include <netpacket/packet.h>
+#endif // OS_ANDROID
 
 namespace fizmo {
 namespace system {
@@ -97,7 +103,7 @@ private:
     std::map<std::string, std::uint64_t> m_packets_rx;
     std::map<std::string, std::uint64_t> m_packets_tx;
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
     using Socket = int;
     static constexpr Socket kBadSocket = -1;
     static void close_socket(Socket s) { ::close(s); }
@@ -118,6 +124,10 @@ private:
 
     void read_interfaces(NetworkSample& s, bool details);
 
+#if defined(OS_ANDROID)
+    void read_interfaces_ifaddrs(NetworkSample& s, bool details);
+#endif // OS_ANDROID
+
     NetworkSample collect();
 
 #elif defined(OS_WINDOWS)
@@ -135,6 +145,27 @@ private:
     std::map<unsigned long, std::vector<std::string>> addresses() const;
 
     void discover();
+
+    void read_interfaces(NetworkSample& s, bool details);
+
+    NetworkSample collect();
+
+#elif defined(OS_MACOS)
+    using Socket = int;
+    static constexpr Socket kBadSocket = -1;
+    static void close_socket(Socket s) { ::close(s); }
+    static bool set_nonblocking(Socket s);
+    static bool in_progress() { return errno == EINPROGRESS; }
+
+    static bool wait_writable(Socket s, int timeout_ms);
+
+    std::map<std::string, std::vector<std::string>> addresses() const;
+
+    void discover() {
+        NetworkSample s;
+        read_interfaces(s, false);
+        finish(s, 0.0);
+    }
 
     void read_interfaces(NetworkSample& s, bool details);
 

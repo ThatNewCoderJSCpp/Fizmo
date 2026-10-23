@@ -3,7 +3,7 @@
 
 #include "backend.hpp"
 
-#if defined(OS_WINDOWS) || defined(OS_LINUX)
+#if defined(OS_WINDOWS) || defined(OS_LINUX) || defined(OS_MACOS) || defined(OS_ANDROID)
 
 #include "../Vulkan/include.hpp"
 #include "vulkan_present.hpp"
@@ -1373,5 +1373,5 @@ private:
 } // namespace gpu
 } // namespace fizmo
 
-#endif // OS_WINDOWS || OS_LINUX
+#endif // OS_WINDOWS || OS_LINUX || OS_MACOS || OS_ANDROID
 #endif // FIZMO_GPU_VULKAN_BACKEND_HPP

@@ -62,6 +62,18 @@
     #error "Unknown operating system"
 #endif
 
+#if !defined(OS_WINDOWS)
+    #define OS_POSIX
+#endif
+
+#if defined(OS_MACOS)
+    #define OS_APPLE
+#endif
+
+#if defined(OS_LINUX) || defined(OS_ANDROID)
+    #define OS_LINUX_KERNEL
+#endif
+
 #if defined(__aarch64__) || defined(_M_ARM64)
     #define ARCH_ARM64
 #elif defined(__arm__) || defined(_M_ARM)

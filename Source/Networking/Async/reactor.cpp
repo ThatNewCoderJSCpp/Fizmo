@@ -8,6 +8,11 @@
     #include <sys/epoll.h>
     #include <sys/eventfd.h>
     #define FIZMO_ASYNC_EPOLL 1
+#elif defined(OS_MACOS)
+    #include <sys/types.h>
+    #include <sys/event.h>
+    #include <sys/time.h>
+    #define FIZMO_ASYNC_KQUEUE 1
 #endif
 
 namespace fizmo {
@@ -77,6 +82,84 @@ struct Reactor::Impl {
             const std::uint32_t e = events[i].events;
             const bool err = (e & (EPOLLERR | EPOLLHUP)) != 0;
             r.process(d, err || (e & (EPOLLIN | EPOLLPRI)) != 0, err || (e & EPOLLOUT) != 0, out);
+        }
+    }
+};
+
+#elif defined(FIZMO_ASYNC_KQUEUE)
+
+struct Reactor::Impl {
+    int kq = -1;
+    static constexpr bool interrupt_on_start = false;
+    static constexpr std::uintptr_t wake_ident = 1;
+
+    static void* to_udata(std::uint64_t id) noexcept { return reinterpret_cast<void*>(static_cast<std::uintptr_t>(id)); }
+    static std::uint64_t from_udata(void* p) noexcept { return static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(p)); }
+
+    Impl() {
+        kq = ::kqueue();
+        if (kq < 0) return;
+        ::fcntl(kq, F_SETFD, FD_CLOEXEC);
+        struct kevent ev;
+        EV_SET(&ev, wake_ident, EVFILT_USER, EV_ADD | EV_CLEAR, 0, 0, to_udata(0));
+        ::kevent(kq, &ev, 1, nullptr, 0, nullptr);
+    }
+
+    ~Impl() {
+        if (kq >= 0) ::close(kq);
+    }
+
+    bool add(native_socket_t fd, std::uint64_t id, std::error_code& ec) {
+        struct kevent evs[2];
+        EV_SET(&evs[0], static_cast<std::uintptr_t>(fd), EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, to_udata(id));
+        EV_SET(&evs[1], static_cast<std::uintptr_t>(fd), EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0, to_udata(id));
+
+        if (::kevent(kq, evs, 2, nullptr, 0, nullptr) != 0) {
+            ec = last_socket_error();
+            return false;
+        }
+
+        return true;
+    }
+
+    void remove(native_socket_t fd) {
+        struct kevent evs[2];
+        EV_SET(&evs[0], static_cast<std::uintptr_t>(fd), EVFILT_READ, EV_DELETE, 0, 0, nullptr);
+        EV_SET(&evs[1], static_cast<std::uintptr_t>(fd), EVFILT_WRITE, EV_DELETE, 0, 0, nullptr);
+        ::kevent(kq, &evs[0], 1, nullptr, 0, nullptr);
+        ::kevent(kq, &evs[1], 1, nullptr, 0, nullptr);
+    }
+
+    void interrupt() noexcept {
+        if (kq < 0) return;
+        struct kevent ev;
+        EV_SET(&ev, wake_ident, EVFILT_USER, 0, NOTE_TRIGGER, 0, to_udata(0));
+        ::kevent(kq, &ev, 1, nullptr, 0, nullptr);
+    }
+
+    void wait(Reactor& r, int timeout_ms, std::vector<UniqueFunction<void()>>& out) {
+        if (kq < 0) return;
+        struct kevent events[128];
+        struct timespec ts;
+        struct timespec* tsp = nullptr;
+
+        if (timeout_ms >= 0) {
+            ts.tv_sec  = timeout_ms / 1000;
+            ts.tv_nsec = static_cast<long>(timeout_ms % 1000) * 1000000L;
+            tsp = &ts;
+        }
+
+        const int n = ::kevent(kq, nullptr, 0, events, 128, tsp);
+        if (n < 0) return;
+
+        for (int i = 0; i < n; ++i) {
+            if (events[i].filter == EVFILT_USER) continue;
+            DescriptorPtr d = r.lookup(from_udata(events[i].udata));
+            if (!d) continue;
+            const bool err = (events[i].flags & (EV_EOF | EV_ERROR)) != 0;
+            const bool readable = events[i].filter == EVFILT_READ;
+            const bool writable = events[i].filter == EVFILT_WRITE;
+            r.process(d, err || readable, err || writable, out);
         }
     }
 };

@@ -6,7 +6,7 @@ namespace networking {
 namespace security {
 namespace detail {
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 void openssl_init_once() noexcept {
     static const bool done = [] {
         OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS | OPENSSL_INIT_LOAD_CRYPTO_STRINGS, nullptr);
@@ -17,7 +17,7 @@ void openssl_init_once() noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 std::string openssl_last_error() noexcept {
     unsigned long code = ERR_get_error();
     if (code == 0) return {};
@@ -28,7 +28,54 @@ std::string openssl_last_error() noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_ANDROID)
+std::vector<std::string> android_ca_files() {
+    static const char* const dirs[] = { "/apex/com.android.conscrypt/cacerts", "/system/etc/security/cacerts" };
+    std::vector<std::string> out;
+
+    for (const char* dir : dirs) {
+        DIR* d = ::opendir(dir);
+        if (!d) continue;
+
+        while (const dirent* e = ::readdir(d)) {
+            if (e->d_name[0] == '.') continue;
+            out.push_back(std::string(dir) + "/" + e->d_name);
+        }
+
+        ::closedir(d);
+        if (!out.empty()) break;
+    }
+
+    std::sort(out.begin(), out.end());
+    return out;
+}
+#endif
+
+#if defined(OS_ANDROID)
+int openssl_load_android_roots(X509_STORE* store) noexcept {
+    if (!store) return 0;
+    int added = 0;
+
+    for (const std::string& path : android_ca_files()) {
+        BIO* bio = BIO_new_file(path.c_str(), "rb");
+        if (!bio) { openssl_drain_errors(); continue; }
+
+        for (;;) {
+            X509* x = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+            if (!x) break;
+            if (X509_STORE_add_cert(store, x) == 1) ++added;
+            X509_free(x);
+        }
+
+        BIO_free(bio);
+        openssl_drain_errors();
+    }
+
+    return added;
+}
+#endif
+
+#if defined(OS_POSIX)
 auto OpenSSLCertificate::operator=(OpenSSLCertificate&& other) noexcept -> OpenSSLCertificate& {
     if (this != &other) {
         release();
@@ -41,7 +88,7 @@ auto OpenSSLCertificate::operator=(OpenSSLCertificate&& other) noexcept -> OpenS
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLCertificate::parse(const std::uint8_t* der, std::size_t len) noexcept {
     release();
     if (!der || len == 0) return false;
@@ -53,14 +100,14 @@ bool OpenSSLCertificate::parse(const std::uint8_t* der, std::size_t len) noexcep
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLCertificate::self_signed() const noexcept {
     if (!m_x509) return false;
     return X509_NAME_cmp(X509_get_subject_name(m_x509), X509_get_issuer_name(m_x509)) == 0;
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 void OpenSSLCertificate::fill_info() noexcept {
     m_info.clear();
     m_info.subject = name_to_string(X509_get_subject_name(m_x509));
@@ -73,7 +120,7 @@ void OpenSSLCertificate::fill_info() noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 std::string OpenSSLCertificate::name_to_string(X509_NAME* name) noexcept {
     if (!name) return {};
     BIO* bio = BIO_new(BIO_s_mem());
@@ -87,7 +134,7 @@ std::string OpenSSLCertificate::name_to_string(X509_NAME* name) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 std::string OpenSSLCertificate::serial_to_string() const noexcept {
     const ASN1_INTEGER* serial = X509_get0_serialNumber(m_x509);
     if (!serial || serial->length <= 0) return {};
@@ -105,7 +152,7 @@ std::string OpenSSLCertificate::serial_to_string() const noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 std::int64_t OpenSSLCertificate::asn1_time_to_unix(const ASN1_TIME* t) noexcept {
     if (!t) return 0;
     struct tm tm_value;
@@ -115,7 +162,7 @@ std::int64_t OpenSSLCertificate::asn1_time_to_unix(const ASN1_TIME* t) noexcept 
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 void OpenSSLCertificate::parse_sans() noexcept {
     auto* names = static_cast<GENERAL_NAMES*>(
         X509_get_ext_d2i(m_x509, NID_subject_alt_name, nullptr, nullptr)
@@ -158,7 +205,7 @@ void OpenSSLCertificate::parse_sans() noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 void OpenSSLCertificate::parse_key_usage() noexcept {
     auto* bits = static_cast<ASN1_BIT_STRING*>(
         X509_get_ext_d2i(m_x509, NID_key_usage, nullptr, nullptr)
@@ -179,7 +226,7 @@ void OpenSSLCertificate::parse_key_usage() noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLCertOps::issuer_links_to_subject(
     const NativeCertificateBase& child,
     const NativeCertificateBase& issuer
@@ -191,7 +238,7 @@ bool OpenSSLCertOps::issuer_links_to_subject(
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 auto OpenSSLCertOps::verify_chain(
     const NativeCertificateBase& leaf,
     const std::vector<const NativeCertificateBase*>& extras,
@@ -208,6 +255,9 @@ auto OpenSSLCertOps::verify_chain(
 
     if (ca_store_path.empty()) {
         X509_STORE_set_default_paths(store);
+    #if defined(OS_ANDROID)
+        openssl_load_android_roots(store);
+    #endif // OS_ANDROID
     } else if (!X509_STORE_load_locations(store, ca_store_path.c_str(), nullptr)) {
         openssl_drain_errors();
 
@@ -286,7 +336,7 @@ auto OpenSSLCertOps::verify_chain(
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 auto OpenSSLCertOps::map_verify_error(int error, int depth) noexcept -> VerifyResult {
     switch (error) {
         case X509_V_ERR_CERT_HAS_EXPIRED:
@@ -332,7 +382,7 @@ auto OpenSSLCertOps::map_verify_error(int error, int depth) noexcept -> VerifyRe
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLCredentials::acquire(const TLSConfig& config) noexcept {
     release();
 
@@ -375,7 +425,7 @@ bool OpenSSLCredentials::acquire(const TLSConfig& config) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLCredentials::apply_cipher_suites(const TLSConfig& config) noexcept {
     if (config.cipher_suites.empty()) return true;
     std::string list;
@@ -416,12 +466,30 @@ bool OpenSSLCredentials::apply_cipher_suites(const TLSConfig& config) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLCredentials::apply_trust_store(const TLSConfig& config) noexcept {
     bool loaded = false;
 
     if (config.ca_store_path.empty()) {
         SSL_CTX_set_default_verify_paths(m_ctx);
+    #if defined(OS_MACOS)
+        static const char* const mac_bundles[] = {
+            "/etc/ssl/cert.pem",
+            "/opt/homebrew/etc/openssl@3/cert.pem",
+            "/usr/local/etc/openssl@3/cert.pem",
+            "/opt/homebrew/etc/ca-certificates/cert.pem",
+            "/usr/local/etc/ca-certificates/cert.pem"
+        };
+        for (const char* bundle : mac_bundles) {
+            std::FILE* probe = std::fopen(bundle, "rb");
+            if (!probe) continue;
+            std::fclose(probe);
+            if (SSL_CTX_load_verify_locations(m_ctx, bundle, nullptr) != 1) openssl_drain_errors();
+        }
+    #endif
+    #if defined(OS_ANDROID)
+        openssl_load_android_roots(SSL_CTX_get_cert_store(m_ctx));
+    #endif // OS_ANDROID
         loaded = true;
     } else if (SSL_CTX_load_verify_locations(m_ctx, config.ca_store_path.c_str(), nullptr) == 1) {
         loaded = true;
@@ -451,7 +519,7 @@ bool OpenSSLCredentials::apply_trust_store(const TLSConfig& config) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLCredentials::apply_certificate(const TLSConfig& config) noexcept {
     if (config.certificate.empty()) return true;
     if (load_pkcs12(config)) return true;
@@ -459,7 +527,7 @@ bool OpenSSLCredentials::apply_certificate(const TLSConfig& config) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLCredentials::load_pkcs12(const TLSConfig& config) noexcept {
     BIO* bio = BIO_new_mem_buf(config.certificate.chain.data(), static_cast<int>(config.certificate.chain.size()));
     if (!bio) return false;
@@ -504,7 +572,7 @@ bool OpenSSLCredentials::load_pkcs12(const TLSConfig& config) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLCredentials::load_der_pair(const TLSConfig& config) noexcept {
     const auto& chain = config.certificate.chain;
 
@@ -534,7 +602,7 @@ bool OpenSSLCredentials::load_der_pair(const TLSConfig& config) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLSession::open(NativeCredentialsBase& credentials, bool server, const std::string& hostname) noexcept {
     close_session();
     auto ctx = static_cast<SSL_CTX*>(credentials.native());
@@ -592,7 +660,7 @@ bool OpenSSLSession::open(NativeCredentialsBase& credentials, bool server, const
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 auto OpenSSLSession::handshake(const std::uint8_t* input, std::size_t length) noexcept -> HandshakeIO {
     HandshakeIO io;
 
@@ -651,7 +719,7 @@ auto OpenSSLSession::handshake(const std::uint8_t* input, std::size_t length) no
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 int OpenSSLSession::encrypt(const std::uint8_t* plaintext, std::size_t length, std::vector<std::uint8_t>& out) noexcept {
     if (!m_ssl || !m_done || !plaintext || length == 0) return -1;
     std::size_t sent = 0;
@@ -676,7 +744,7 @@ int OpenSSLSession::encrypt(const std::uint8_t* plaintext, std::size_t length, s
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 auto OpenSSLSession::decrypt(const std::uint8_t* ciphertext, std::size_t length) noexcept -> DecryptIO {
     DecryptIO io;
     if (!m_ssl || !m_done) { io.status = IOStatus::Failed; return io; }
@@ -720,7 +788,7 @@ auto OpenSSLSession::decrypt(const std::uint8_t* ciphertext, std::size_t length)
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLSession::close_notify(std::vector<std::uint8_t>& out) noexcept {
     if (!m_ssl || !m_done) return false;
     ERR_clear_error();
@@ -731,7 +799,7 @@ bool OpenSSLSession::close_notify(std::vector<std::uint8_t>& out) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLSession::peer_chain(std::vector<std::vector<std::uint8_t>>& out) const noexcept {
     if (!m_ssl) return false;
     X509* leaf = FIZMO_SSL_GET1_PEER_CERT(m_ssl);
@@ -752,7 +820,7 @@ bool OpenSSLSession::peer_chain(std::vector<std::vector<std::uint8_t>>& out) con
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 std::string OpenSSLSession::cipher_name() const noexcept {
     if (!m_ssl || !m_done) return {};
     const char* name = SSL_get_cipher_name(m_ssl);
@@ -760,7 +828,7 @@ std::string OpenSSLSession::cipher_name() const noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 auto OpenSSLSession::protocol_version() const noexcept -> TLSVersion {
     if (!m_ssl || !m_done) return TLSVersion::TLS_1_2;
 
@@ -776,7 +844,7 @@ auto OpenSSLSession::protocol_version() const noexcept -> TLSVersion {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 void OpenSSLSession::drain_wbio(std::vector<std::uint8_t>& out) noexcept {
     if (!m_wbio) return;
 
@@ -797,7 +865,7 @@ void OpenSSLSession::drain_wbio(std::vector<std::uint8_t>& out) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLSession::append_der(X509* cert, std::vector<std::vector<std::uint8_t>>& out) noexcept {
     unsigned char* der = nullptr;
     const int len = i2d_X509(cert, &der);
@@ -808,7 +876,7 @@ bool OpenSSLSession::append_der(X509* cert, std::vector<std::vector<std::uint8_t
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 std::string OpenSSLSession::describe_failure(int reason) noexcept {
     std::string text = openssl_last_error();
     if (!text.empty()) return text;
@@ -816,7 +884,7 @@ std::string OpenSSLSession::describe_failure(int reason) noexcept {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 bool OpenSSLCredentials::keylog_supported() noexcept {
 #if defined(FIZMO_TLS_KEYLOG_ENABLE) && OPENSSL_VERSION_NUMBER >= 0x10101000L
     return true;
@@ -997,6 +1065,9 @@ X509_STORE* make_store(const std::string& ca_store_path) noexcept {
 
     if (ca_store_path.empty()) {
         X509_STORE_set_default_paths(store);
+    #if defined(OS_ANDROID)
+        openssl_load_android_roots(store);
+    #endif // OS_ANDROID
     } else if (!X509_STORE_load_locations(store, ca_store_path.c_str(), nullptr)) {
         openssl_drain_errors();
 
@@ -1099,6 +1170,12 @@ bool OpenSSLCertOps::load_system_roots(std::vector<std::vector<std::uint8_t>>& o
         "/etc/ssl/ca-bundle.pem",
         "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
         "/etc/ssl/cert.pem"
+    #if defined(OS_MACOS)
+        , "/opt/homebrew/etc/openssl@3/cert.pem",
+        "/usr/local/etc/openssl@3/cert.pem",
+        "/opt/homebrew/etc/ca-certificates/cert.pem",
+        "/usr/local/etc/ca-certificates/cert.pem"
+    #endif
     };
 
     const char* env = std::getenv("SSL_CERT_FILE");
@@ -1125,6 +1202,30 @@ bool OpenSSLCertOps::load_system_roots(std::vector<std::vector<std::uint8_t>>& o
         openssl_drain_errors();
         if (out.size() > before) return true;
     }
+
+#if defined(OS_ANDROID)
+    const std::size_t android_before = out.size();
+
+    for (const std::string& path : android_ca_files()) {
+        BIO* bio = BIO_new_file(path.c_str(), "rb");
+        if (!bio) { openssl_drain_errors(); continue; }
+
+        for (;;) {
+            X509* x = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
+            if (!x) break;
+            unsigned char* der = nullptr;
+            const int len = i2d_X509(x, &der);
+            if (len > 0 && der) out.emplace_back(der, der + len);
+            if (der) OPENSSL_free(der);
+            X509_free(x);
+        }
+
+        BIO_free(bio);
+        openssl_drain_errors();
+    }
+
+    if (out.size() > android_before) return true;
+#endif // OS_ANDROID
 
     return false;
 }

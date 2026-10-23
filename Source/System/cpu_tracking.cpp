@@ -1,6 +1,8 @@
 #include "fizmo_library.hpp"
 #include "cpu_tracking.hpp"
 #include "platform_windows.hpp"
+#include "platform_macos.hpp"
+#include "smc_macos.hpp"
 
 namespace fizmo {
 namespace system {
@@ -19,7 +21,7 @@ void CPUTracking::usage_from(const Times& now, const Times& before, double& busy
     if (iowait) *iowait = share(now.iowait, before.iowait, total);
 }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void CPUTracking::discover() {
     std::string text;
     std::set<std::pair<std::string, std::string>> cores;
@@ -83,7 +85,7 @@ void CPUTracking::discover() {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 bool CPUTracking::read_stat(Times& total, std::vector<Times>& cores, std::optional<std::uint64_t>& ctxt) const {
     std::string text;
     if (!detail::lnx::read_text("/proc/stat", text)) return false;
@@ -118,7 +120,7 @@ bool CPUTracking::read_stat(Times& total, std::vector<Times>& cores, std::option
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void CPUTracking::read_process(std::uint64_t& user, std::uint64_t& kernel, std::uint32_t& threads) const {
     std::string text;
     if (!detail::lnx::read_text("/proc/self/stat", text)) return;
@@ -132,7 +134,7 @@ void CPUTracking::read_process(std::uint64_t& user, std::uint64_t& kernel, std::
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void CPUTracking::read_frequencies(CPUSample& s) const {
     std::vector<double> mhz;
 
@@ -168,7 +170,7 @@ void CPUTracking::read_frequencies(CPUSample& s) const {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void CPUTracking::read_temperature(CPUSample& s) const {
     if (!m_temp_zone.empty()) {
         if (const auto v = detail::lnx::read_i64(m_temp_zone)) if (*v > -273000) s.temperature_c = *v / 1000.0;
@@ -194,7 +196,7 @@ void CPUTracking::read_temperature(CPUSample& s) const {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 void CPUTracking::prime() {
     read_stat(m_prev_total, m_prev_cores, m_prev_ctxt);
     std::uint32_t threads = 0;
@@ -203,13 +205,13 @@ void CPUTracking::prime() {
 }
 #endif
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX_KERNEL)
 auto CPUTracking::collect() -> CPUSample {
     CPUSample s;
     Times total;
     std::vector<Times> cores;
     std::optional<std::uint64_t> ctxt;
-    read_stat(total, cores, ctxt);
+    const bool have_stat = read_stat(total, cores, ctxt);
     std::uint64_t pu = m_prev_proc_user, pk = m_prev_proc_kernel;
     read_process(pu, pk, s.process_threads);
     const detail::Clock::time_point now = detail::Clock::now();
@@ -217,8 +219,8 @@ auto CPUTracking::collect() -> CPUSample {
 
     double iowait = 0.0;
     usage_from(total, m_prev_total, s.usage_percent, s.user_percent, s.kernel_percent, &iowait);
-    s.iowait_percent = iowait;
-    s.cores.resize(cores.size());
+    if (have_stat) s.iowait_percent = iowait;
+    s.cores.resize(have_stat ? cores.size() : static_cast<std::size_t>(m_info.logical_cores));
 
     for (std::size_t i = 0; i < cores.size(); ++i) {
         const Times before = i < m_prev_cores.size() ? m_prev_cores[i] : Times{};
@@ -252,6 +254,166 @@ auto CPUTracking::collect() -> CPUSample {
     m_prev_proc_user = pu;
     m_prev_proc_kernel = pk;
     m_prev_ctxt = ctxt;
+    m_prev_time = now;
+    s.frames = take_frames();
+    return s;
+}
+#endif
+
+#if defined(OS_MACOS)
+struct CPUTracking::MacState {
+    detail::mac::Smc         smc;
+    std::vector<std::string> package_keys;
+    std::vector<std::string> core_keys;
+    bool                     cluster_max = false;
+};
+
+void CPUTracking::discover_temperature() {
+    MacState& st = m_mac.get();
+    st.package_keys.clear();
+    st.core_keys.clear();
+    if (!st.smc.open()) return;
+    const auto arm = detail::mac::sysctl_u64("hw.optional.arm64");
+    const bool apple_silicon = arm && *arm != 0;
+
+    if (apple_silicon) {
+        static const char* keys[] = { "Tp09", "Tp0T", "Tp01", "Tp05", "Tp0D", "Tp0b" };
+        for (const char* k : keys) if (st.smc.read_temperature(k)) st.core_keys.push_back(k);
+        st.cluster_max = true;
+    } else {
+        static const char* keys[] = { "TC0P", "TC0D", "TC0E", "TC0F" };
+        for (const char* k : keys) if (st.smc.read_temperature(k)) st.package_keys.push_back(k);
+        for (int i = 0; i < 10; ++i) {
+            char k[5] = { 'T', 'C', static_cast<char>('0' + i), 'C', '\0' };
+            if (st.smc.read_temperature(k)) st.core_keys.push_back(k);
+        }
+        st.cluster_max = false;
+    }
+
+    if (st.package_keys.empty() && st.core_keys.empty()) st.smc.close();
+}
+
+void CPUTracking::read_temperature(CPUSample& s) const {
+    MacState& st = m_mac.get();
+    if (!st.smc.valid()) return;
+    std::optional<double> package;
+
+    for (const std::string& k : st.package_keys) {
+        if (const auto t = st.smc.read_temperature(k.c_str())) { package = t; break; }
+    }
+
+    for (const std::string& k : st.core_keys) {
+        if (const auto t = st.smc.read_temperature(k.c_str())) s.core_temperatures_c.push_back(*t);
+    }
+
+    if (package) s.temperature_c = package;
+    else if (!s.core_temperatures_c.empty()) s.temperature_c = *std::max_element(s.core_temperatures_c.begin(), s.core_temperatures_c.end());
+    if (s.temperature_c) s.temperature_source = st.cluster_max ? "smc (cpu clusters)" : "smc";
+}
+
+void CPUTracking::discover() {
+    m_info.model = detail::mac::sysctl_string("machdep.cpu.brand_string");
+    m_info.vendor = detail::mac::sysctl_string("machdep.cpu.vendor");
+    if (m_info.vendor == "GenuineIntel") m_info.vendor = "Intel";
+    else if (m_info.vendor.empty()) m_info.vendor = "Apple";
+    const auto logical = detail::mac::sysctl_u64("hw.logicalcpu");
+    const auto physical = detail::mac::sysctl_u64("hw.physicalcpu");
+    const long online = ::sysconf(_SC_NPROCESSORS_ONLN);
+    m_info.logical_cores = logical ? static_cast<unsigned int>(*logical) : static_cast<unsigned int>(online > 0 ? online : 1);
+    m_info.physical_cores = physical ? static_cast<unsigned int>(*physical) : m_info.logical_cores;
+    if (const auto v = detail::mac::sysctl_u64("hw.cpufrequency_max")) if (*v > 0) m_info.max_mhz = static_cast<double>(*v) / 1.0e6;
+    if (const auto v = detail::mac::sysctl_u64("hw.cpufrequency")) if (*v > 0) m_info.base_mhz = static_cast<double>(*v) / 1.0e6;
+    discover_temperature();
+}
+
+bool CPUTracking::read_ticks(Times& total, std::vector<Times>& cores) const {
+    natural_t count = 0;
+    processor_info_array_t info = nullptr;
+    mach_msg_type_number_t info_count = 0;
+    if (::host_processor_info(::mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &count, &info, &info_count) != KERN_SUCCESS || !info) return false;
+    const auto* load = reinterpret_cast<const processor_cpu_load_info_data_t*>(info);
+    cores.assign(count, Times{});
+    total = Times{};
+
+    for (natural_t i = 0; i < count; ++i) {
+        const std::uint64_t user = load[i].cpu_ticks[CPU_STATE_USER] + load[i].cpu_ticks[CPU_STATE_NICE];
+        const std::uint64_t kernel = load[i].cpu_ticks[CPU_STATE_SYSTEM];
+        const std::uint64_t idle = load[i].cpu_ticks[CPU_STATE_IDLE];
+        Times& t = cores[i];
+        t.user = user;
+        t.kernel = kernel;
+        t.idle = idle;
+        t.total = user + kernel + idle;
+        total.user += t.user;
+        total.kernel += t.kernel;
+        total.idle += t.idle;
+        total.total += t.total;
+    }
+
+    ::vm_deallocate(::mach_task_self(), reinterpret_cast<vm_address_t>(info), static_cast<vm_size_t>(info_count) * sizeof(integer_t));
+    return true;
+}
+
+void CPUTracking::read_process(std::uint64_t& user_us, std::uint64_t& kernel_us, std::uint32_t& threads) {
+    struct rusage ru{};
+    if (::getrusage(RUSAGE_SELF, &ru) == 0) {
+        user_us = static_cast<std::uint64_t>(ru.ru_utime.tv_sec) * 1000000ULL + static_cast<std::uint64_t>(ru.ru_utime.tv_usec);
+        kernel_us = static_cast<std::uint64_t>(ru.ru_stime.tv_sec) * 1000000ULL + static_cast<std::uint64_t>(ru.ru_stime.tv_usec);
+    }
+    struct proc_taskinfo ti{};
+    if (::proc_pidinfo(::getpid(), PROC_PIDTASKINFO, 0, &ti, sizeof(ti)) == static_cast<int>(sizeof(ti))) threads = static_cast<std::uint32_t>(ti.pti_threadnum);
+}
+
+void CPUTracking::prime() {
+    read_ticks(m_prev_total, m_prev_cores);
+    std::uint32_t threads = 0;
+    read_process(m_prev_proc_user, m_prev_proc_kernel, threads);
+    m_prev_time = detail::Clock::now();
+}
+
+auto CPUTracking::collect() -> CPUSample {
+    CPUSample s;
+    Times total;
+    std::vector<Times> cores;
+    read_ticks(total, cores);
+    std::uint64_t pu = m_prev_proc_user, pk = m_prev_proc_kernel;
+    read_process(pu, pk, s.process_threads);
+    const detail::Clock::time_point now = detail::Clock::now();
+    const double wall = detail::seconds_between(m_prev_time, now);
+
+    usage_from(total, m_prev_total, s.usage_percent, s.user_percent, s.kernel_percent, nullptr);
+    s.cores.resize(cores.size());
+
+    for (std::size_t i = 0; i < cores.size(); ++i) {
+        const Times before = i < m_prev_cores.size() ? m_prev_cores[i] : Times{};
+        double u = 0.0, k = 0.0;
+        usage_from(cores[i], before, s.cores[i].usage_percent, u, k, nullptr);
+    }
+
+    if (wall > 0.0) {
+        const double logical  = std::max(1u, m_info.logical_cores);
+        const double user_s   = static_cast<double>(pu >= m_prev_proc_user ? pu - m_prev_proc_user : 0) / 1.0e6;
+        const double kernel_s = static_cast<double>(pk >= m_prev_proc_kernel ? pk - m_prev_proc_kernel : 0) / 1.0e6;
+        s.process_core_percent   = 100.0 * (user_s + kernel_s) / wall;
+        s.process_percent        = detail::clamp_percent(s.process_core_percent / logical);
+        s.process_user_percent   = detail::clamp_percent(100.0 * user_s / wall / logical);
+        s.process_kernel_percent = detail::clamp_percent(100.0 * kernel_s / wall / logical);
+    }
+
+    if (m_info.base_mhz) {
+        s.frequency_mhz = m_info.base_mhz;
+        s.max_core_frequency_mhz = m_info.max_mhz ? m_info.max_mhz : m_info.base_mhz;
+    }
+
+    read_temperature(s);
+
+    double load[3] = { 0.0, 0.0, 0.0 };
+    if (::getloadavg(load, 3) == 3) s.load_average = std::array<double, 3>{ load[0], load[1], load[2] };
+
+    m_prev_total = total;
+    m_prev_cores = std::move(cores);
+    m_prev_proc_user = pu;
+    m_prev_proc_kernel = pk;
     m_prev_time = now;
     s.frames = take_frames();
     return s;

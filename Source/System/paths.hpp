@@ -13,9 +13,15 @@
 #include <system_error>
 #include <vector>
 
-#if defined(OS_LINUX)
+#if defined(OS_POSIX)
 #include <pwd.h>
 #include <unistd.h>
+#endif
+
+#if defined(OS_MACOS)
+#include <mach-o/dyld.h>
+#include <climits>
+#include <cstdlib>
 #endif
 
 namespace fizmo {
@@ -27,6 +33,8 @@ namespace fs = std::filesystem;
 namespace detail {
 
 fs::path u8(const std::string& s);
+
+fs::path android_temp_dir();
 
 inline std::string env(const char* name) {
     const char* v = std::getenv(name);
@@ -57,6 +65,10 @@ inline fs::path current_dir() {
 fs::path home_dir();
 
 inline fs::path temp_dir() {
+#if defined(OS_ANDROID)
+    const fs::path a = detail::android_temp_dir();
+    if (!a.empty()) return a;
+#endif // OS_ANDROID
     std::error_code ec;
     fs::path p = fs::temp_directory_path(ec);
     return ec ? fs::path(".") : p;
@@ -69,6 +81,8 @@ fs::path config_dir(const std::string& app = std::string());
 fs::path cache_dir(const std::string& app = std::string());
 
 fs::path documents_dir();
+
+void set_app_directories(const std::string& data, const std::string& cache, const std::string& external);
 
 inline fs::path ensure_dir(const fs::path& p) {
     std::error_code ec;
