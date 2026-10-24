@@ -71,6 +71,7 @@ public:
     std::string negotiated_cipher() const;
     security::TLSVersion negotiated_protocol_version() const;
     std::string requested_server_name() const;
+    bool client_hello(security::ClientHelloInfo& out) const;
     bool session_resumed() const;
     bool peer_certificate(security::Certificate& out) const;
     bool peer_chain(security::CertificateChain& out) const;

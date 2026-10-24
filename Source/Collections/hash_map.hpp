@@ -108,7 +108,7 @@ public:
     std::pair<size_type, bool> find_or_insert(const K& key, Make&& make) {
         const size_type found = find_index(key);
         if (found != npos) return { found, false };
-        reserve(m_values.size() + 1);
+        grow_buckets(m_values.size() + 1);
         const size_type idx = m_values.size();
         m_values.emplace_back(make());
 
@@ -125,7 +125,7 @@ public:
     std::pair<size_type, bool> insert_value(Value&& v) {
         const size_type found = find_index(key_of<Value>::get(v));
         if (found != npos) return { found, false };
-        reserve(m_values.size() + 1);
+        grow_buckets(m_values.size() + 1);
         const size_type idx = m_values.size();
         m_values.push_back(std::move(v));
         place(hash_of(key_of<Value>::get(m_values.back())), static_cast<std::uint32_t>(idx));
@@ -171,10 +171,14 @@ public:
     }
 
     void reserve(size_type n) {
+        grow_buckets(n);
+        m_values.reserve(n);
+    }
+
+    void grow_buckets(size_type n) {
         size_type need = m_buckets.empty() ? 8 : m_buckets.size();
         while (static_cast<float>(n) > static_cast<float>(need) * m_max_load) need <<= 1;
         if (need != m_buckets.size()) rebuild(need);
-        m_values.reserve(n);
     }
 
     void rehash(size_type count) {

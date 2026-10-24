@@ -1,7 +1,8 @@
 #ifndef FIZMO_NETWORKING_HPP
 #define FIZMO_NETWORKING_HPP
 
-#include "../x11_compat.hpp"
+#include "../Basic/platform_net_includes.hpp"
+#include "../x11_undef.hpp"
 
 #include "Core/addresses.hpp"
 #include "Core/buffer.hpp"
@@ -41,5 +42,6 @@
 
 #include "names.hpp"
 #include "Node/node.hpp"
+#include "Guard/guard.hpp"
 
 #endif // FIZMO_NETWORKING_HPP

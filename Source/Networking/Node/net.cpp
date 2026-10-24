@@ -640,6 +640,8 @@ std::string Socket::servername() const {
     return m_state->servername;
 }
 
+bool Socket::client_hello(security::ClientHelloInfo& out) const { auto* t = tls_of(connection()); return t && t->client_hello(out); }
+
 bool Socket::session_reused() const { auto* t = tls_of(connection()); return t && t->session_resumed(); }
 
 bool Socket::peer_certificate(security::Certificate& out) const { auto* t = tls_of(connection()); return t && t->peer_certificate(out); }

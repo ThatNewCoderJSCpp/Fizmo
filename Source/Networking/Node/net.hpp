@@ -8,6 +8,7 @@
 #include "../Async/endpoint.hpp"
 #include "../Security/tls_context.hpp"
 #include "../Security/certificate.hpp"
+#include "../Security/client_hello.hpp"
 
 #include <any>
 #include <chrono>
@@ -164,6 +165,7 @@ public:
     std::string protocol() const;
     std::string cipher() const;
     std::string servername() const;
+    bool client_hello(security::ClientHelloInfo& out) const;
     bool session_reused() const;
     bool peer_certificate(security::Certificate& out) const;
 

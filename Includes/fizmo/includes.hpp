@@ -145,5 +145,9 @@
         #if defined(FIZMO_NETWORKING) || defined(FIZMO_NET)
             #include "../networking.hpp"
         #endif
+
+        #if defined(FIZMO_DATABASE) || defined(FIZMO_DB)
+            #include "../database.hpp"
+        #endif
     #endif // FIZMO
 #endif //ALL_FIZMO_INCLUDES_FILE_HPP

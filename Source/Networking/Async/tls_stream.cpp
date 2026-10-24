@@ -603,6 +603,15 @@ std::string TlsStream::requested_server_name() const {
     return m_impl->hs ? m_impl->hs->requested_server_name() : std::string();
 }
 
+bool TlsStream::client_hello(security::ClientHelloInfo& out) const {
+    std::lock_guard<std::mutex> lk(m_impl->m);
+    if (!m_impl->hs || m_impl->hs->role() != security::HandshakeRole::Server) return false;
+    const security::ClientHelloInfo& hello = m_impl->hs->client_hello();
+    if (hello.cipher_suites.empty()) return false;
+    out = hello;
+    return true;
+}
+
 bool TlsStream::session_resumed() const {
     std::lock_guard<std::mutex> lk(m_impl->m);
     return m_impl->established && m_impl->hs->session().session_reused();

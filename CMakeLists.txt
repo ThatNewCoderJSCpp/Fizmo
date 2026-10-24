@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.3.1
+    VERSION 0.3.2
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -211,7 +211,7 @@ if(FIZMO_BUILD_COMPONENTS)
         endif()
 
         if(_fizmo_component STREQUAL "net")
-            target_link_libraries(fizmo_net PRIVATE ${FIZMO_NET_DEPENDENCY_TARGETS})
+            target_link_libraries(fizmo_net PUBLIC ${FIZMO_NET_DEPENDENCY_TARGETS})
         elseif(_fizmo_component STREQUAL "graphics")
             target_link_libraries(fizmo_graphics PRIVATE ${FIZMO_GRAPHICS_DEPENDENCY_TARGETS})
             if(ANDROID)
@@ -295,6 +295,32 @@ if(FIZMO_BUILD_NUMERICS_TESTS)
     endif()
     enable_testing()
     add_test(NAME fizmo-numerics COMMAND fizmo-numerics-tests)
+endif()
+
+option(FIZMO_BUILD_GUARD_TESTS "Build Testing/guard_tests.cpp as fizmo-guard-tests" OFF)
+if(FIZMO_BUILD_GUARD_TESTS)
+    add_executable(fizmo-guard-tests Testing/guard_tests.cpp)
+    target_compile_features(fizmo-guard-tests PRIVATE cxx_std_17)
+    if(TARGET fizmo::net)
+        target_link_libraries(fizmo-guard-tests PRIVATE fizmo::net)
+    else()
+        target_link_libraries(fizmo-guard-tests PRIVATE fizmo::fizmo)
+    endif()
+    enable_testing()
+    add_test(NAME fizmo-guard COMMAND fizmo-guard-tests)
+endif()
+
+option(FIZMO_BUILD_DATABASE_TESTS "Build Testing/database_tests.cpp as fizmo-database-tests" OFF)
+if(FIZMO_BUILD_DATABASE_TESTS)
+    add_executable(fizmo-database-tests Testing/database_tests.cpp)
+    target_compile_features(fizmo-database-tests PRIVATE cxx_std_17)
+    if(TARGET fizmo::db)
+        target_link_libraries(fizmo-database-tests PRIVATE fizmo::db)
+    else()
+        target_link_libraries(fizmo-database-tests PRIVATE fizmo::fizmo)
+    endif()
+    enable_testing()
+    add_test(NAME fizmo-database COMMAND fizmo-database-tests)
 endif()
 
 if(PROJECT_IS_TOP_LEVEL OR CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)

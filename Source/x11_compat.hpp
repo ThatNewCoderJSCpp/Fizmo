@@ -71,33 +71,7 @@ struct Handle {
 } // namespace x11
 } // namespace fizmo
 
-#undef None
-#undef Status
-#undef Success
-#undef Bool
-#undef True
-#undef False
-#undef Always
-#undef Above
-#undef Below
-#undef Complex
-#undef Convex
-#undef Unsorted
-#undef ZPixmap
-#undef AllPlanes
-#undef KeyPress
-#undef KeyRelease
-#undef ButtonPress
-#undef ButtonRelease
-#undef MotionNotify
-#undef EnterNotify
-#undef LeaveNotify
-#undef FocusIn
-#undef FocusOut
-#undef Expose
-#undef ConfigureNotify
-#undef DestroyNotify
-#undef CursorShape
+#include "x11_undef.hpp"
 
 #endif // OS_LINUX
 #endif // FIZMO_X11_COMPAT_HPP
