@@ -150,7 +150,7 @@ public:
     bool                                                       presented   = false;
     bool                                                       needs_resize = false;
     Extent2D                                                   pending;
-    bool                                                       vsync       = true;
+    bool                                                       vsync       = false;
     bool                                                       blit_present = false;
     Caps                                                       caps;
     std::string                                                error;

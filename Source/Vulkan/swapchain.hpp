@@ -8,7 +8,7 @@ namespace vulkan {
 
 struct SwapchainDesc {
     Extent2D      size;                           
-    bool          vsync       = true;             
+    bool          vsync       = false;             
     bool          srgb        = false;            
     std::uint32_t image_count = 3;                
     ImageUsage    usage       = ImageUsage::ColorAttachment | ImageUsage::TransferDst;

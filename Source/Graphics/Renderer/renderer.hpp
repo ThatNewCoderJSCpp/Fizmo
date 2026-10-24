@@ -75,7 +75,7 @@ private:
 #endif
     std::unique_ptr<detail::RendererImplBase> m_impl;
     RendererBackend m_requested = RendererBackend::Auto;
-    bool m_vsync = true;
+    bool m_vsync = false;
     bool m_gpu_timing = false;
     bool m_sprite_atlas = true;
 

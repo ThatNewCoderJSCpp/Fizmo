@@ -240,7 +240,7 @@ struct DeviceInput {
     Backend       backend          = Backend::Auto;
     void*         window           = nullptr;
     Extent2D      size;
-    bool          vsync            = true;
+    bool          vsync            = false;
     bool          debug            = false;
     std::uint32_t frames_in_flight = 2;
     const char*   app_name         = "fizmo";

@@ -44,7 +44,7 @@ struct ContextDesc {
     int  max_major = 4;
     int  max_minor = 6;
     bool debug     = false;
-    bool vsync     = true;
+    bool vsync     = false;
 };
 
 namespace detail {

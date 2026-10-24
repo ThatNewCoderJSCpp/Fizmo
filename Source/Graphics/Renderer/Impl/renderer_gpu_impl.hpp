@@ -532,7 +532,7 @@ private:
 
     bool                 m_ready          = false;
     bool                 m_text_ok        = false;
-    bool                 m_vsync          = true;
+    bool                 m_vsync          = false;
     bool                 m_target_fresh   = true;
     bool                 m_clear_pending  = false;
     bool                 m_clip_active    = false;
