@@ -189,6 +189,9 @@ It reports neighbors, degree, bond-order sums, lone pairs, the electrons around 
   - pH, pOH, Ka ↔ pKa, Kw(T)
   - exact strong, weak and polyprotic pH by charge balance (`equilibrium_ph` takes any mix of acids, bases, strong acid and strong base)
   - Henderson–Hasselbalch, buffer capacity, species fractions, titration curves
+  - `acid_base_species()`: about 100 acids and bases ready to mix or titrate, each marked strong or weak with its pK and how many protons it gives or takes. It covers strong and weak acids, cation acids like ammonium, strong hydroxides, weak bases like ammonia, and the polyatomic anions (carbonate, acetate, phosphate and the rest) as bases, plus amphoteric ones like hydrogen carbonate as acids. `find_acid_base_species(name, role)` looks one up (role 1 for acids, −1 for bases).
+  - `add_acid_base_species` puts one into an `equilibrium_ph` mix, and `solution_ph` gives the pH of one on its own
+  - `titrate(analyte, C, V, titrant, C, Vmax)` handles strong–strong, strong–weak, weak–strong and weak–weak, with an acid or a base in the flask. It returns the curve, every equivalence and half-equivalence volume and the starting pH; `titration_point_ph` gives one point.
 - **`solutions.hpp`:**
   - concentration conversions, dilution
   - colligative properties, with Kb and Kf computed from a solvent's properties
@@ -263,13 +266,40 @@ Hydrogen-like and Slater-type orbitals with Slater's-rules effective nuclear cha
 
 `predict_products("Zn + CuSO4")` recognizes combustion, synthesis, decomposition, single replacement (with the metal and halogen activity series), double replacement (precipitates, gases, water), neutralization, metal and nonmetal oxides with water, weak acid and base ionization (as equilibria) and esterification. It returns the balanced reaction, its type, an explanation, notes, and the complete and net ionic equations with spectators. `ionic_equations(reaction)` does the ionic equations for any reaction.
 
+## Gas stoichiometry (`gas_stoichiometry.hpp`)
+
+`solve_gas_stoichiometry(reaction, knowns, vessel)` does stoichiometry the way gas problems actually go. Each known amount (`GasKnown`) can be a mass, moles, particles, a solution volume, a gas volume, a partial pressure, or a volume of gas collected over water, and each can carry its own temperature, pressure and volume, so "5.0 L of H₂ measured at 27 °C and 750 torr" works directly. The `GasVessel` says where the gases end up: open at a fixed pressure, or a closed container of fixed volume, at a temperature, optionally collected over water, with or without some unreactive gas, using the ideal gas law or van der Waals.
+
+The result has the usual limiting reactant and amounts, plus every gas before and after the reaction with its moles, mole fraction, partial pressure (Dalton's law) and volume, the total pressure (closed container) or volume (open), the water vapor pressure and dry-gas pressure when collecting over water, and the steps. Species count as gases when they're marked `(g)` or when their data says they're volatile (`gas_behavior`), so `H2 + O2` works without phase labels. Vapors condense once their partial pressure would pass their vapor pressure, so water made by a combustion at room temperature mostly ends up liquid and the pressure drops accordingly.
+
+`gas_moles`, `gas_pressure` and `gas_volume` solve PV = nRT or the van der Waals equation (with `van_der_waals_constants(Tc, Pc)` and `van_der_waals_mixture`), and `water_vapor_pressure(T)` gives the vapor pressure used for gases collected over water.
+
 ## Solvers (`solvers.hpp`)
 
-`chemistry_equations()` lists over 60 equations from gases, stoichiometry, solutions, acids and bases, thermochemistry, kinetics, electrochemistry and light. Each has its variables with dimensions and default units, and `solve_equation(eq, values, unknown)` solves for whichever one is missing (a log-spaced scan followed by Brent's method, so nonlinear ones like van der Waals work).
+`chemistry_equations()` lists over 80 equations from gases, stoichiometry, solutions, acids and bases (pH, pOH, pK_a, pK_b, K_aK_b = K_w, Henderson–Hasselbalch for acids and bases, percent ionization), thermochemistry, kinetics, electrochemistry, light, and electricity and materials (Ohm's law, power, wire resistance and its temperature dependence, parallel-plate capacitors, Coulomb's law in a dielectric, Snell's law, n = √ε, skin depth, Fourier heat conduction, thermal expansion and the photoelectric effect). Each has its variables with dimensions and default units, and `solve_equation(eq, values, unknown)` solves for whichever one is missing (a log-spaced scan followed by Brent's method, so nonlinear ones like van der Waals work).
 
 `solve_stoichiometry(reaction, knowns, T, P)` takes amounts of any species, as mass, moles, particles, a gas volume or a solution volume with molarity. It finds the limiting reactant and the extent of reaction, and gives every species' amount used, left and made, with the steps.
 
 `bond_dissociation(a, b, order, T, P)` turns a bond's enthalpy into ΔH, ΔS (translational, rotational and electronic), ΔG, K and the fraction broken at any temperature and pressure, plus the temperature where half are broken. `percent_composition`, `empirical_formula_from_masses` and `molecular_formula` cover composition problems.
+
+## Heat, electricity and magnetism (`transport.hpp`)
+
+`element_transport(element, T, frequency)`, `metal_transport(alloy, T, frequency)` and `ionic_transport(crystal, T)` describe how a solid carries heat and current at a temperature:
+- **Heat:** the Debye temperature (Lindemann's estimate from the melting point), the lattice heat capacity from the Debye model plus the electrons' share, molar and specific heat, thermal conductivity, and thermal diffusivity.
+- **Electricity:** whether it's a metal, semimetal, semiconductor, insulator or ionic conductor, with resistivity and conductivity at any temperature. Metals use measured values at 20 °C, a temperature coefficient and Bloch–Grüneisen falloff when cold, and alloys use Nordheim's rule. Semiconductors use the band gap and intrinsic carriers.
+- **Free-electron details:** the Drude relaxation time, mean free path, mobility, Hall coefficient, plasma frequency and wavelength, and the skin depth at an AC frequency (induction).
+- **Magnetism:** dia-, para-, ferro- or antiferromagnetic, with Curie and Néel temperatures and a typical permeability.
+
+Thermal conductivity follows from the electrical one by the Wiedemann–Franz law when there's no measurement.
+
+## Dielectric, optical, mechanical and magnetic properties (`materials.hpp`)
+
+Each of these comes in an element, alloy (`metal_...`) and ionic-crystal version, and the dielectric one has a molecular version too.
+
+- **Dielectric and optical** (`element_dielectric`, `metal_dielectric`, `ionic_dielectric`, `molecular_dielectric`): relative and absolute permittivity, electric susceptibility, high-frequency permittivity, refractive index, polarizability (Å³ and C·m²/V), molar refraction, dielectric strength, the speed of light inside, normal-incidence reflectance, and the Brewster and critical angles. Values come from a table of about 80 liquids, solids and gases at 25 °C when there is one. Otherwise they are estimated: Clausius–Mossotti for nonpolar solids and liquids, Onsager for polar liquids, the Debye equation for gases (at any T and P), and ion polarizabilities for ionic crystals. Molecular polarizabilities use Miller's atomic hybrid values. Metals report the Drude permittivity and reflectance at a visible wavelength instead, plus how far light gets in.
+- **Mechanical** (`element_mechanics`, `metal_mechanics`, `ionic_mechanics`): Young's, bulk and shear moduli, Poisson's ratio, compressibility, longitudinal, transverse and bar sound speeds, acoustic impedance, linear and volume thermal expansion, the Grüneisen parameter and Mohs hardness. Ionic crystals get the bulk modulus from the Born–Landé lattice energy, K = (n − 1)U/9V, and their thermal expansion from the Grüneisen relation.
+- **Electron gas** (`electron_gas`, `element_electron_gas`, `metal_electron_gas`): Fermi energy, temperature, velocity and wavevector, density of states, work function, photoelectric threshold wavelength, thermionic (Richardson) current density, Seebeck coefficient (Mott), Thomas–Fermi screening length and Pauli susceptibility.
+- **Magnetic susceptibility** (`element_susceptibility`, `metal_susceptibility`, `ionic_susceptibility`): molar (CGS and SI), volume and mass susceptibility, unpaired electrons, the spin-only effective moment and the Curie constant. Measured values are used where there are any. Otherwise the estimate is Pauli paramagnetism for metals, Curie's law for free atoms and high-spin transition-metal ions, or Larmor diamagnetism.
 
 ## Where the data comes from
 
@@ -290,4 +320,6 @@ The tables in `Source/Chemistry/Data` are generated by `tools/chemistry/generate
 | Acid constants | LibreTexts reference table E1 |
 | Beattie–Bridgeman, Benedict–Webb–Rubin constants | Çengel & Boles, *Thermodynamics*, Table 3-4 |
 | Group contributions | Joback & Reid 1987 |
+| Resistivities and temperature coefficients, band gaps, Curie and Néel temperatures | CRC Handbook; Kittel, *Introduction to Solid State Physics* |
+| Permittivities, refractive indices, dielectric strengths, elastic constants, thermal expansion, hardness, work functions, magnetic susceptibilities | CRC Handbook; Kittel; Tessman, Kahn & Shockley 1953 (ion polarizabilities); Miller 1990 (atomic hybrid polarizabilities) |
 | Solubility rules, activity series, ion names | standard general-chemistry tables (IUPAC Red Book 2005 for names) |

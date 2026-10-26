@@ -418,6 +418,16 @@ void complete_phase_properties(PhaseProperties& p) {
         p.triple_pressure = lee_kesler_vapor_pressure(c, p.triple_temperature);
         mark(p, "triple point pressure");
     }
+    if (!(p.vaporization_enthalpy > 0) && p.boiling_point > 0 && p.critical_temperature > p.boiling_point && p.critical_pressure > 0) {
+        const double tbr = p.boiling_point / p.critical_temperature;
+        const double riedel = 1.093 * GAS_CONSTANT * p.critical_temperature * tbr * (std::log(p.critical_pressure / 1e5) - 1.013) / (0.930 - tbr);
+        p.vaporization_enthalpy = riedel > 0 ? riedel : 10.5 * GAS_CONSTANT * p.boiling_point;
+        mark(p, "enthalpy of vaporization");
+    }
+    if (!(p.vaporization_enthalpy > 0) && p.boiling_point > 0) {
+        p.vaporization_enthalpy = 10.5 * GAS_CONSTANT * p.boiling_point;
+        mark(p, "enthalpy of vaporization");
+    }
     if (!(p.fusion_enthalpy > 0) && p.melting_point > 0) {
         p.fusion_enthalpy = (metal_like ? 9.6 : (ionic_like ? 26.0 : 45.0)) * p.melting_point;
         mark(p, "enthalpy of fusion");

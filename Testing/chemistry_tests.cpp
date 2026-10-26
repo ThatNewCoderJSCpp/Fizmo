@@ -360,7 +360,113 @@ void test_prediction_and_solvers() {
     check(empirical_formula_from_masses({ { &element("C"), 40.0 }, { &element("H"), 6.71 }, { &element("O"), 53.3 } }).to_string() == "CH2O", "empirical formula");
 }
 
+void test_transport_and_estimates() {
+    const TransportProperties cu = element_transport(element("Cu"));
+    check(cu.kind == ConductorKind::Metal && near(cu.resistivity, 1.71e-8, 0.03e-8), "copper's resistivity at 25 C");
+    check(cu.thermal_conductivity > 380.0 && cu.debye_temperature > 280.0 && cu.debye_temperature < 380.0, "copper conducts heat and has a sensible Debye temperature");
+    check(cu.skin_depth > 0.007 && cu.skin_depth < 0.01, "copper's skin depth at 60 Hz is about 8.5 mm");
+    check(element_transport(element("Cu"), 20.0).resistivity < cu.resistivity / 20.0, "metals conduct much better when cold");
+    check(element_transport(element("Fe")).magnetic.order == MagneticOrder::Ferromagnetic && element_transport(element("Fe"), 1200.0).magnetic.order == MagneticOrder::Paramagnetic, "iron loses ferromagnetism above its Curie point");
+    const TransportProperties si = element_transport(element("Si"));
+    check(si.kind == ConductorKind::Semiconductor && near(si.band_gap, 1.12, 1e-9) && element_transport(element("Si"), 500.0).conductivity > si.conductivity * 100.0, "silicon is a semiconductor that conducts better when hot");
+    const TransportProperties brass = metal_transport(metallic_crystal({ { &element("Cu"), 0.7 }, { &element("Zn"), 0.3 } }));
+    check(brass.resistivity > 4e-8 && brass.resistivity < 9e-8, "brass conducts worse than copper or zinc");
+    const TransportProperties salt = ionic_transport(ionic_crystal(element("Na"), element("Cl")));
+    check(salt.kind == ConductorKind::Insulator && ionic_transport(ionic_crystal(element("Na"), element("Cl")), 1200.0).kind == ConductorKind::IonicConductor, "salt conducts only when molten");
+    check(near(debye_heat_capacity(5000.0, 300.0), 3.0 * GAS_CONSTANT, 0.05), "Debye heat capacity approaches 3R");
+    const PhaseProperties peroxide = find_phase_properties("H2O2");
+    check(peroxide.vaporization_enthalpy > 40000.0 && peroxide.vaporization_enthalpy < 60000.0, "hydrogen peroxide gets an estimated enthalpy of vaporization");
+    check(near(bond_energy(element("Xe"), element("F")), 130.0, 1e-9), "Xe-F has a bond energy");
+}
+
+void test_materials() {
+    const MechanicalProperties cu = element_mechanics(element("Cu"));
+    check(near(cu.youngs_modulus, 130.0, 1e-9) && cu.poisson_ratio > 0.3 && cu.poisson_ratio < 0.38, "copper's elastic constants");
+    check(cu.longitudinal_sound_speed > 4000.0 && cu.longitudinal_sound_speed < 5500.0, "sound in copper travels about 4.7 km/s");
+    const DielectricProperties si = element_dielectric(element("Si"));
+    check(near(si.relative_permittivity, 11.7, 1e-9) && near(si.refractive_index, 3.42, 1e-9) && si.reflectance > 0.25, "silicon's permittivity and refractive index");
+    const DielectricProperties ar = element_dielectric(element("Ar"), 500.0, 101325.0);
+    check(ar.permittivity_estimated && ar.relative_permittivity > 1.0001 && ar.relative_permittivity < 1.0005, "a hot gas's permittivity from its polarizability");
+    check(element_dielectric(element("Cu")).conductor && element_dielectric(element("Ag")).reflectance > 0.9, "metals reflect visible light");
+    const IonicCrystal kcl = ionic_crystal(element("K"), element("Cl"));
+    check(near(ionic_dielectric(kcl).relative_permittivity, 4.68, 1e-9), "KCl's permittivity is tabulated");
+    const DielectricProperties feo = ionic_dielectric(ionic_crystal(element("Fe"), element("O")));
+    check(feo.permittivity_estimated && feo.relative_permittivity > 8.0 && feo.relative_permittivity < 25.0, "an estimated permittivity for FeO");
+    const MechanicalProperties salt = ionic_mechanics(ionic_crystal(element("Na"), element("Cl")));
+    check(salt.bulk_modulus > 18.0 && salt.bulk_modulus < 30.0 && salt.linear_expansion > 3e-5 && salt.linear_expansion < 5.5e-5, "salt's bulk modulus and expansion from its lattice energy");
+    const DielectricProperties water = molecular_dielectric("water", Formula::parse("H2O"), 1.85, Phase::Liquid, 997.0);
+    check(near(water.relative_permittivity, 78.36, 1e-9) && near(water.polarizability_volume, 1.411, 0.01), "water's permittivity and polarizability");
+    const DielectricProperties steam = molecular_dielectric("steam", Formula::parse("H2O"), 1.85, Phase::Gas, 0.0, 373.15, 101325.0);
+    check(steam.relative_permittivity > 1.004 && steam.relative_permittivity < 1.008, "steam's permittivity from the Debye equation");
+    check(onsager_permittivity(1e28, polarizability_volume_to_si(6.0), 2.0 * DEBYE, 298.15) > clausius_mossotti_permittivity(1e28, polarizability_volume_to_si(6.0)), "dipoles raise the permittivity");
+    const ElectronGasProperties na = element_electron_gas(element("Na"));
+    check(near(na.fermi_energy, 3.24, 0.15) && na.seebeck_coefficient < 0.0 && near(na.work_function, 2.36, 1e-9), "sodium's Fermi energy and work function");
+    check(near(na.photoelectric_threshold, 525e-9, 5e-9), "sodium's photoelectric threshold is green light");
+    check(element_susceptibility(element("Bi")).volume_susceptibility < -1e-4, "bismuth is strongly diamagnetic");
+    check(element_susceptibility(element("Al")).volume_susceptibility > 0.0, "aluminum is paramagnetic");
+    check(element_susceptibility(element("Fe")).volume_susceptibility > 10.0, "iron is ferromagnetic");
+    const SusceptibilityInfo mn = ionic_susceptibility(ionic_crystal(element("Mn"), element("Cl")));
+    check(mn.unpaired_electrons == 5 && near(mn.effective_moment, 5.92, 0.01), "Mn2+ has five unpaired electrons");
+    check(near(spin_only_moment(1), 1.732, 1e-3), "spin-only moment");
+    const EquationSolution skin = solve_equation(*find_equation("skin_depth"), { NO_VALUE, 1.68e-8, 60.0, 1.0 });
+    check(skin.ok && near(skin.value * 1000.0, 8.42, 0.05), "copper's skin depth at 60 Hz");
+    const EquationSolution pkb = solve_equation(*find_equation("pka_pkb"), { 4.76, NO_VALUE, 14.0 });
+    check(pkb.ok && near(pkb.value, 9.24, 1e-6), "pKa + pKb = pKw");
+    const EquationSolution cap = solve_equation(*find_equation("capacitor"), { NO_VALUE, 1.0, 1.0, 1e-3 });
+    check(cap.ok && near(cap.value, 0.8854, 1e-3), "a 1 cm\xC2\xB2, 1 mm air capacitor is 0.885 pF");
+}
+
+void test_general_titration() {
+    const AcidBaseSpecies* acetic = find_acid_base_species("acetic acid", 1);
+    const AcidBaseSpecies* naoh = find_acid_base_species("NaOH", -1);
+    const AcidBaseSpecies* hcl = find_acid_base_species("hydrochloric acid", 1);
+    const AcidBaseSpecies* nh3 = find_acid_base_species("ammonia", -1);
+    const AcidBaseSpecies* carbonate = find_acid_base_species("carbonate", -1);
+    const AcidBaseSpecies* acetate = find_acid_base_species("acetate", -1);
+    const AcidBaseSpecies* ammonium = find_acid_base_species("ammonium", 1);
+    check(acetic && naoh && hcl && nh3 && carbonate && acetate && ammonium, "acids and bases are catalogued");
+    if (!(acetic && naoh && hcl && nh3 && carbonate && acetate && ammonium)) return;
+    check(hcl->strong && !acetic->strong && naoh->strong && !nh3->strong && carbonate->equivalents == 2, "strengths and equivalents");
+    check(near(solution_ph(*acetate, 0.1), 8.88, 0.03) && near(solution_ph(*ammonium, 0.1), 5.13, 0.03), "salts of weak acids and bases");
+    const TitrationResult ws = titrate(*acetic, 0.1, 0.025, *naoh, 0.1);
+    check(ws.ok && near(ws.equivalence_volumes[0], 0.025, 1e-12) && near(titration_point_ph(*acetic, 0.1, 0.025, *naoh, 0.1, 0.025), 8.72, 0.03), "weak acid with strong base");
+    check(near(titration_point_ph(*nh3, 0.1, 0.025, *hcl, 0.1, 0.025), 5.28, 0.03), "weak base with strong acid");
+    check(near(titration_point_ph(*hcl, 0.1, 0.025, *naoh, 0.1, 0.025), 7.0, 0.01), "strong with strong is neutral");
+    check(near(titration_point_ph(*acetic, 0.1, 0.025, *nh3, 0.1, 0.025), 7.0, 0.05), "acetic acid with ammonia is about neutral");
+    const TitrationResult carb = titrate(*carbonate, 0.1, 0.025, *hcl, 0.1);
+    check(carb.ok && carb.equivalence_volumes.size() == 2 && near(carb.equivalence_volumes[1], 0.05, 1e-12) && near(carb.start_ph, 11.66, 0.05), "carbonate takes two protons");
+    check(!titrate(*hcl, 0.1, 0.025, *acetic, 0.1).ok, "an acid can't titrate an acid");
+}
+
+void test_gas_stoichiometry() {
+    check(near(water_vapor_pressure(298.15), 3169.0, 40.0), "water's vapor pressure at 25 C");
+    check(gas_behavior(Formula::parse("H2"), 298.15).can_be_gas && gas_behavior(Formula::parse("O2"), 298.15).can_be_gas && !gas_behavior(Formula::parse("Zn"), 298.15).can_be_gas && !gas_behavior(Formula::parse("ZnCl2"), 298.15).can_be_gas, "which species are gases without (g)");
+    const VanDerWaalsConstants co2 = gas_behavior(Formula::parse("CO2"), 300.0).vdw;
+    check(co2.ok() && near(gas_pressure(1.0, 1e-3, 300.0, GasModel::VanDerWaals, co2) / ATMOSPHERE, 22.1, 0.3) && near(gas_pressure(1.0, 1e-3, 300.0) / ATMOSPHERE, 24.6, 0.1), "van der Waals versus ideal for CO2");
+    check(near(gas_moles(gas_pressure(0.7, 2e-3, 350.0, GasModel::VanDerWaals, co2), 2e-3, 350.0, GasModel::VanDerWaals, co2), 0.7, 1e-6), "van der Waals moles invert the pressure");
+    GasVessel open;
+    open.over_water = true;
+    const GasStoichiometryResult zn = solve_gas_stoichiometry(Reaction::parse("Zn + HCl -> ZnCl2 + H2"), { GasKnown{ 0, GasAmountKind::Mass, 0.5e-3 } }, open);
+    check(zn.ok && zn.after.size() == 1 && near(zn.volume_after * 1000.0, 0.1932, 0.002), "hydrogen collected over water");
+    GasVessel box;
+    box.mode = GasVesselMode::Rigid;
+    box.volume = 0.010;
+    const GasStoichiometryResult burn = solve_gas_stoichiometry(Reaction::parse("CH4 + O2 -> CO2 + H2O"), { GasKnown{ 0, GasAmountKind::PartialPressure, ATMOSPHERE }, GasKnown{ 1, GasAmountKind::PartialPressure, 2.0 * ATMOSPHERE } }, box);
+    check(burn.ok && near(burn.pressure_before / ATMOSPHERE, 3.0, 1e-6) && near(burn.pressure_after / ATMOSPHERE, 1.031, 0.003), "methane burned in a closed box, water condensing");
+    bool condensed = false;
+    for (const GasSpeciesState& g : burn.after) condensed = condensed || g.condensed_moles > 0.5;
+    check(condensed, "most of the water condenses");
+    GasVessel hot = box;
+    hot.temperature = 500.0;
+    const GasStoichiometryResult steam = solve_gas_stoichiometry(Reaction::parse("CH4 + O2 -> CO2 + H2O"), { GasKnown{ 0, GasAmountKind::PartialPressure, ATMOSPHERE, NO_VALUE, 298.15 }, GasKnown{ 1, GasAmountKind::PartialPressure, 2.0 * ATMOSPHERE, NO_VALUE, 298.15 } }, hot);
+    check(steam.ok && near(steam.moles_after, steam.moles_before, 1e-9), "at 500 K the water stays as steam, so the moles of gas don't change");
+}
+
 int main() {
+    test_transport_and_estimates();
+    test_materials();
+    test_general_titration();
+    test_gas_stoichiometry();
     test_elements();
     test_isotopes();
     test_ions_and_configurations();

@@ -1,5 +1,9 @@
 #include "acid_base.hpp"
 
+#include "nomenclature.hpp"
+
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <stdexcept>
 
@@ -163,6 +167,198 @@ std::vector<std::pair<double, double>> titration_curve(double acid_concentration
 
 double equivalence_volume(double analyte_moles, double titrant_concentration, int protons) noexcept {
     return analyte_moles * protons / titrant_concentration;
+}
+
+namespace {
+
+bool same_text(std::string_view a, std::string_view b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i]))) return false;
+    }
+    return true;
+}
+
+std::vector<double> pkas_of(const AcidConstantEntry& a) {
+    std::vector<double> out;
+    for (int i = 1; i <= a.protons(); ++i) out.push_back(a.pka(i));
+    return out;
+}
+
+std::vector<AcidBaseSpecies> build_species() {
+    std::vector<AcidBaseSpecies> out;
+    for (const AcidConstantEntry& a : acid_constants()) {
+        const std::string_view name = a.name;
+        if (name == "water" || name == "hydronium") continue;
+        AcidBaseSpecies s;
+        s.name = a.name;
+        s.formula = a.formula;
+        s.role = AcidBaseRole::Acid;
+        s.strong = a.strong;
+        s.pka = pkas_of(a);
+        s.equivalents = a.protons();
+        s.pk = a.pka1;
+        const std::string_view f = a.formula;
+        if (!f.empty() && f.back() == '+') {
+            s.charge_of_most_protonated = 1;
+            s.strong_acid_per_mole = 1.0;
+            s.kind = "weak acid (cation, as its chloride)";
+        } else if (a.strong && a.protons() == 1) {
+            s.pka.clear();
+            s.strong_acid_per_mole = 1.0;
+            s.kind = "strong acid";
+        } else if (a.strong) {
+            s.kind = "strong acid (polyprotic)";
+        } else {
+            s.kind = a.protons() > 1 ? "weak acid (polyprotic)" : "weak acid";
+        }
+        out.push_back(std::move(s));
+    }
+    struct StrongBase {
+        const char* name;
+        const char* formula;
+        int oh;
+    };
+    static const StrongBase strong_bases[] = {
+        { "sodium hydroxide", "NaOH", 1 }, { "potassium hydroxide", "KOH", 1 }, { "lithium hydroxide", "LiOH", 1 },
+        { "rubidium hydroxide", "RbOH", 1 }, { "cesium hydroxide", "CsOH", 1 }, { "calcium hydroxide", "Ca(OH)2", 2 },
+        { "strontium hydroxide", "Sr(OH)2", 2 }, { "barium hydroxide", "Ba(OH)2", 2 },
+    };
+    for (const StrongBase& b : strong_bases) {
+        AcidBaseSpecies s;
+        s.name = b.name;
+        s.formula = b.formula;
+        s.role = AcidBaseRole::Base;
+        s.strong = true;
+        s.kind = "strong base";
+        s.equivalents = b.oh;
+        s.strong_base_per_mole = b.oh;
+        out.push_back(std::move(s));
+    }
+    for (const BaseConstantEntry& b : base_constants()) {
+        AcidBaseSpecies s;
+        s.name = b.name;
+        s.formula = b.formula;
+        s.role = AcidBaseRole::Base;
+        s.kind = "weak base";
+        s.pka = { b.pka_of_conjugate_acid(WATER_PKW) };
+        s.charge_of_most_protonated = 1;
+        s.pk = b.pkb;
+        out.push_back(std::move(s));
+    }
+    for (const PolyatomicIonEntry& ion : polyatomic_ions()) {
+        if (ion.charge >= 0 || !ion.acid || !*ion.acid) continue;
+        const AcidConstantEntry* parent = find_acid(ion.acid);
+        if (!parent && ion.acid_formula && *ion.acid_formula) parent = find_acid(ion.acid_formula);
+        if (!parent || std::string_view(parent->name) == "water") continue;
+        const std::vector<double> p = pkas_of(*parent);
+        const int k = -ion.charge;
+        if (k > static_cast<int>(p.size())) continue;
+        int accepts = 0;
+        for (int i = 0; i < k; ++i) {
+            if (p[static_cast<std::size_t>(i)] >= 1.5) ++accepts;
+        }
+        const std::string label = std::string(ion.name) + " (as its sodium salt)";
+        if (accepts > 0) {
+            AcidBaseSpecies s;
+            s.name = ion.name;
+            s.formula = ion.formula;
+            s.role = AcidBaseRole::Base;
+            s.kind = "weak base (anion)";
+            s.pka = p;
+            s.charge_of_most_protonated = 0;
+            s.strong_base_per_mole = k;
+            s.equivalents = accepts;
+            s.pk = WATER_PKW - p[static_cast<std::size_t>(k - 1)];
+            out.push_back(std::move(s));
+        }
+        if (k < static_cast<int>(p.size()) && p[static_cast<std::size_t>(k)] < 13.5) {
+            AcidBaseSpecies s;
+            s.name = ion.name;
+            s.formula = ion.formula;
+            s.role = AcidBaseRole::Acid;
+            s.kind = "weak acid (anion, amphoteric)";
+            s.pka = p;
+            s.charge_of_most_protonated = 0;
+            s.strong_base_per_mole = k;
+            s.equivalents = static_cast<int>(p.size()) - k;
+            s.pk = p[static_cast<std::size_t>(k)];
+            out.push_back(std::move(s));
+        }
+    }
+    return out;
+}
+
+} // namespace
+
+const std::vector<AcidBaseSpecies>& acid_base_species() {
+    static const std::vector<AcidBaseSpecies> list = build_species();
+    return list;
+}
+
+const AcidBaseSpecies* find_acid_base_species(std::string_view key, int role) {
+    while (!key.empty() && key.front() == ' ') key.remove_prefix(1);
+    while (!key.empty() && key.back() == ' ') key.remove_suffix(1);
+    const auto wanted = [&](const AcidBaseSpecies& s) { return role == 0 || (role > 0 && s.is_acid()) || (role < 0 && s.is_base()); };
+    for (const AcidBaseSpecies& s : acid_base_species()) {
+        if (wanted(s) && (same_text(s.name, key) || s.formula == key)) return &s;
+    }
+    for (const AcidBaseSpecies& s : acid_base_species()) {
+        if (wanted(s) && same_text(s.formula, key)) return &s;
+    }
+    return nullptr;
+}
+
+void add_acid_base_species(const AcidBaseSpecies& s, double c, std::vector<AcidBaseComponent>& components, double& strong_acid, double& strong_base) {
+    if (!(c > 0.0)) return;
+    if (!s.pka.empty()) components.push_back(AcidBaseComponent{ c, s.pka, s.charge_of_most_protonated });
+    strong_acid += s.strong_acid_per_mole * c;
+    strong_base += s.strong_base_per_mole * c;
+}
+
+double solution_ph(const AcidBaseSpecies& s, double c, double kw) {
+    std::vector<AcidBaseComponent> comps;
+    double sa = 0.0, sb = 0.0;
+    add_acid_base_species(s, c, comps, sa, sb);
+    return equilibrium_ph(comps, sa, sb, kw);
+}
+
+double titration_point_ph(const AcidBaseSpecies& analyte, double ca, double va, const AcidBaseSpecies& titrant, double ct, double v, double kw) {
+    const double total = va + v;
+    if (!(total > 0.0)) throw std::invalid_argument("fizmo::chemistry: volume must be positive");
+    std::vector<AcidBaseComponent> comps;
+    double sa = 0.0, sb = 0.0;
+    add_acid_base_species(analyte, ca * va / total, comps, sa, sb);
+    add_acid_base_species(titrant, ct * v / total, comps, sa, sb);
+    return equilibrium_ph(comps, sa, sb, kw);
+}
+
+TitrationResult titrate(const AcidBaseSpecies& analyte, double ca, double va, const AcidBaseSpecies& titrant, double ct, double vmax, int points, double kw) {
+    TitrationResult r;
+    if (analyte.role == titrant.role) {
+        r.error = analyte.is_acid() ? "titrate an acid with a base" : "titrate a base with an acid";
+        return r;
+    }
+    if (!(ca > 0.0) || !(va > 0.0) || !(ct > 0.0)) {
+        r.error = "concentrations and volume must be positive";
+        return r;
+    }
+    r.kind = std::string(analyte.strong ? "strong " : "weak ") + (analyte.is_acid() ? "acid" : "base") + " titrated with a " + (titrant.strong ? "strong " : "weak ") + (titrant.is_acid() ? "acid" : "base");
+    const double per = ct * std::max(1, titrant.equivalents);
+    const int n = std::max(1, analyte.equivalents);
+    for (int k = 1; k <= n; ++k) {
+        r.equivalence_volumes.push_back(ca * va * k / per);
+        if (!analyte.strong || analyte.pka.size() > 1) r.half_equivalence_volumes.push_back(ca * va * (k - 0.5) / per);
+    }
+    if (!(vmax > 0.0)) vmax = 1.5 * r.equivalence_volumes.back();
+    points = std::max(10, points);
+    for (int i = 0; i <= points; ++i) {
+        const double v = vmax * i / points;
+        r.curve.emplace_back(v, titration_point_ph(analyte, ca, va, titrant, ct, v, kw));
+    }
+    r.start_ph = r.curve.front().second;
+    r.ok = true;
+    return r;
 }
 
 } // namespace chemistry

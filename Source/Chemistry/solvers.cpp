@@ -157,6 +157,24 @@ std::vector<ChemistryEquation> build_equations() {
           V("Mb", "base molarity", D::Concentration, "M"), V("Vb", "base volume", D::Volume, "mL"), V("nb", "hydroxides per base", D::Dimensionless, "") },
         [](Vec v) { return v[2] * v[0] * v[1] - v[5] * v[3] * v[4]; });
 
+    add("pkb", "pK_b and K_b", "Acids and bases", "pK_b = -log K_b",
+        { V("pKb", "pK_b", D::Dimensionless, "", false), V("Kb", "K_b", D::Dimensionless, "") },
+        [](Vec v) { return v[0] + std::log10(v[1]); });
+    add("ka_kb", "Conjugate pair", "Acids and bases", "K_a \xC2\xB7 K_b = K_w",
+        { V("Ka", "K_a of the acid", D::Dimensionless, ""), V("Kb", "K_b of its conjugate base", D::Dimensionless, ""), V("Kw", "K_w", D::Dimensionless, "") },
+        [](Vec v) { return std::log10(v[0]) + std::log10(v[1]) - std::log10(v[2]); }, "K_w = 1.0\xC3\x97" "10\xE2\x81\xBB\xC2\xB9\xE2\x81\xB4 at 25 \xC2\xB0" "C");
+    add("pka_pkb", "pK_a + pK_b", "Acids and bases", "pK_a + pK_b = pK_w",
+        { V("pKa", "pK_a of the acid", D::Dimensionless, "", false), V("pKb", "pK_b of its conjugate base", D::Dimensionless, "", false), V("pKw", "pK_w", D::Dimensionless, "") },
+        [](Vec v) { return v[0] + v[1] - v[2]; }, "pK_w = 14.00 at 25 \xC2\xB0" "C");
+    add("henderson_base", "Henderson-Hasselbalch (bases)", "Acids and bases", "pOH = pK_b + log([BH\xE2\x81\xBA]/[B])",
+        { V("pOH", "pOH", D::Dimensionless, "", false), V("pKb", "pK_b", D::Dimensionless, "", false), V("BH", "[BH\xE2\x81\xBA]", D::Concentration, "M"), V("B", "[B]", D::Concentration, "M") },
+        [](Vec v) { return v[0] - v[1] - std::log10(v[2] / v[3]); });
+    add("kw", "Water's ion product", "Acids and bases", "K_w = [H\xE2\x82\x83O\xE2\x81\xBA][OH\xE2\x81\xBB]",
+        { V("Kw", "K_w", D::Dimensionless, ""), V("H", "[H\xE2\x82\x83O\xE2\x81\xBA]", D::Concentration, "M"), V("OH", "[OH\xE2\x81\xBB]", D::Concentration, "M") },
+        [](Vec v) { return std::log10(v[0]) - std::log10(v[1] / 1000.0) - std::log10(v[2] / 1000.0); });
+    add("percent_ionization", "Percent ionization", "Acids and bases", "% = [H\xE2\x82\x83O\xE2\x81\xBA]/C \xC3\x97 100",
+        { V("pct", "percent ionized", D::Dimensionless, "", true, "%"), V("H", "[H\xE2\x82\x83O\xE2\x81\xBA] (or [OH\xE2\x81\xBB])", D::Concentration, "M"), V("C", "starting concentration", D::Concentration, "M") },
+        [](Vec v) { return v[0] - 100.0 * v[1] / v[2]; });
     add("calorimetry", "Heat (q = mc\xCE\x94T)", "Thermochemistry", "q = mc\xCE\x94T",
         { V("q", "heat", D::Energy, "J", false), V("m", "mass", D::Mass, "g"), V("c", "specific heat", D::SpecificHeat, "J/(g\xC2\xB7K)"), V("dT", "temperature change", D::TemperatureDifference, "K", false) },
         [](Vec v) { return v[0] - v[1] * v[2] * v[3]; }, "water: c = 4.184 J/(g\xC2\xB7K)");
@@ -233,6 +251,42 @@ std::vector<ChemistryEquation> build_equations() {
         { V("lambda", "wavelength", D::Length, "nm"), V("n1", "lower level", D::Dimensionless, ""), V("n2", "upper level", D::Dimensionless, "") },
         [](Vec v) { return 1.0 / v[0] - RYDBERG_CONSTANT / (1.0 + ELECTRON_MASS / PROTON_MASS) * (1.0 / (v[1] * v[1]) - 1.0 / (v[2] * v[2])); },
         "Balmer lines have n\xE2\x82\x81 = 2");
+    add("ohm", "Ohm's law", "Electricity and materials", "V = IR",
+        { V("V", "voltage", D::Potential, "V"), V("I", "current", D::Current, "A"), V("R", "resistance", D::Dimensionless, "", true, "\xCE\xA9") },
+        [](Vec v) { return v[0] - v[1] * v[2]; });
+    add("power", "Electric power", "Electricity and materials", "P = IV = I\xC2\xB2R",
+        { V("P", "power", D::Dimensionless, "", true, "W"), V("I", "current", D::Current, "A"), V("V", "voltage", D::Potential, "V") },
+        [](Vec v) { return v[0] - v[1] * v[2]; });
+    add("wire_resistance", "Resistance of a wire", "Electricity and materials", "R = \xCF\x81L/A",
+        { V("R", "resistance", D::Dimensionless, "", true, "\xCE\xA9"), V("rho", "resistivity", D::Dimensionless, "", true, "\xCE\xA9\xC2\xB7m"), V("L", "length", D::Length, "m"), V("A", "cross-section area", D::Dimensionless, "", true, "mm\xC2\xB2") },
+        [](Vec v) { return v[0] * v[3] * 1e-6 - v[1] * v[2]; }, "copper: \xCF\x81 = 1.68\xC3\x97" "10\xE2\x81\xBB\xE2\x81\xB8 \xCE\xA9\xC2\xB7m");
+    add("resistance_temperature", "Resistance and temperature", "Electricity and materials", "R = R\xE2\x82\x80(1 + \xCE\xB1\xCE\x94T)",
+        { V("R", "resistance when hot", D::Dimensionless, "", true, "\xCE\xA9"), V("R0", "resistance at the start", D::Dimensionless, "", true, "\xCE\xA9"), V("alpha", "temperature coefficient", D::Dimensionless, "", false, "per K"), V("dT", "temperature change", D::TemperatureDifference, "K", false) },
+        [](Vec v) { return v[0] - v[1] * (1.0 + v[2] * v[3]); }, "copper: \xCE\xB1 = 0.00404 per K");
+    add("capacitor", "Parallel-plate capacitor", "Electricity and materials", "C = \xCE\xB5\xE1\xB5\xA3\xCE\xB5\xE2\x82\x80" "A/d",
+        { V("C", "capacitance", D::Dimensionless, "", true, "pF"), V("er", "relative permittivity \xCE\xB5\xE1\xB5\xA3", D::Dimensionless, ""), V("A", "plate area", D::Dimensionless, "", true, "cm\xC2\xB2"), V("d", "gap", D::Length, "mm") },
+        [](Vec v) { return v[0] * 1e-12 - v[1] * VACUUM_PERMITTIVITY * v[2] * 1e-4 / v[3]; }, "water \xCE\xB5\xE1\xB5\xA3 = 78.4, glass about 5, air 1.0006");
+    add("coulomb_medium", "Coulomb's law in a material", "Electricity and materials", "F = q\xE2\x82\x81q\xE2\x82\x82/(4\xCF\x80\xCE\xB5\xE1\xB5\xA3\xCE\xB5\xE2\x82\x80r\xC2\xB2)",
+        { V("F", "force", D::Dimensionless, "", false, "N"), V("q1", "charge 1", D::Charge, "C", false), V("q2", "charge 2", D::Charge, "C", false), V("er", "relative permittivity \xCE\xB5\xE1\xB5\xA3", D::Dimensionless, ""), V("r", "distance", D::Length, "nm") },
+        [](Vec v) { return v[0] * 4.0 * PI * VACUUM_PERMITTIVITY * v[3] * v[4] * v[4] - v[1] * v[2]; }, "in water the pull between ions is 78 times weaker than in vacuum");
+    add("refraction", "Snell's law", "Electricity and materials", "n\xE2\x82\x81 sin \xCE\xB8\xE2\x82\x81 = n\xE2\x82\x82 sin \xCE\xB8\xE2\x82\x82",
+        { V("n1", "refractive index 1", D::Dimensionless, ""), V("t1", "angle 1", D::Dimensionless, "", true, "\xC2\xB0"), V("n2", "refractive index 2", D::Dimensionless, ""), V("t2", "angle 2", D::Dimensionless, "", true, "\xC2\xB0") },
+        [](Vec v) { return v[0] * std::sin(v[1] * PI / 180.0) - v[2] * std::sin(v[3] * PI / 180.0); }, "air 1.000, water 1.333, glass 1.5, diamond 2.42");
+    add("refractive_permittivity", "Refractive index and permittivity", "Electricity and materials", "n = \xE2\x88\x9A\xCE\xB5\xE1\xB5\xA3 (at optical frequencies)",
+        { V("n", "refractive index", D::Dimensionless, ""), V("er", "optical permittivity", D::Dimensionless, "") },
+        [](Vec v) { return v[0] * v[0] - v[1]; });
+    add("skin_depth", "Skin depth", "Electricity and materials", "\xCE\xB4 = \xE2\x88\x9A(2\xCF\x81/(\xCF\x89\xCE\xBC))",
+        { V("delta", "skin depth", D::Length, "mm"), V("rho", "resistivity", D::Dimensionless, "", true, "\xCE\xA9\xC2\xB7m"), V("f", "frequency", D::Frequency, "Hz"), V("mur", "relative permeability", D::Dimensionless, "") },
+        [](Vec v) { return v[0] * v[0] * PI * v[2] * v[3] * 4e-7 * PI - v[1]; });
+    add("heat_conduction", "Heat conduction (Fourier)", "Electricity and materials", "P = kA\xCE\x94T/d",
+        { V("P", "heat flow", D::Dimensionless, "", true, "W"), V("k", "thermal conductivity", D::Dimensionless, "", true, "W/(m\xC2\xB7K)"), V("A", "area", D::Dimensionless, "", true, "m\xC2\xB2"), V("dT", "temperature difference", D::TemperatureDifference, "K"), V("d", "thickness", D::Length, "cm") },
+        [](Vec v) { return v[0] * v[4] - v[1] * v[2] * v[3]; }, "copper 401, glass about 1, wood about 0.12, air 0.026 W/(m\xC2\xB7K)");
+    add("thermal_expansion", "Thermal expansion", "Electricity and materials", "\xCE\x94L = \xCE\xB1L\xCE\x94T",
+        { V("dL", "change in length", D::Length, "mm", false), V("alpha", "expansion coefficient", D::Dimensionless, "", true, "\xC2\xB5m/(m\xC2\xB7K)"), V("L", "length", D::Length, "m"), V("dT", "temperature change", D::TemperatureDifference, "K", false) },
+        [](Vec v) { return v[0] - v[1] * 1e-6 * v[2] * v[3]; }, "steel about 12, aluminum 23, glass 9 \xC2\xB5m/(m\xC2\xB7K)");
+    add("work_function", "Photoelectric effect", "Electricity and materials", "KE = h\xCE\xBD \xE2\x88\x92 \xCF\x86",
+        { V("KE", "electron kinetic energy", D::Dimensionless, "", false, "eV"), V("lambda", "light wavelength", D::Length, "nm"), V("phi", "work function", D::Dimensionless, "", true, "eV") },
+        [](Vec v) { return v[0] - (PLANCK_CONSTANT * SPEED_OF_LIGHT / v[1] / ELECTRONVOLT - v[2]); }, "sodium 2.36 eV, copper 4.65 eV");
     return e;
 }
 

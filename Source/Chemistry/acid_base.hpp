@@ -6,7 +6,10 @@
 #include "reference_types.hpp"
 #include "Data/reference_data.hpp"
 
+#include <cstdint>
+#include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace fizmo {
@@ -63,6 +66,46 @@ double equilibrium_ph(const std::vector<AcidBaseComponent>& components, double s
 double titration_ph(double acid_moles, const std::vector<double>& pka, double titrant_moles, double total_volume, bool titrant_is_base = true, double kw = WATER_ION_PRODUCT);
 std::vector<std::pair<double, double>> titration_curve(double acid_concentration, double acid_volume, const std::vector<double>& pka, double titrant_concentration, double max_volume, int points, bool titrant_is_base = true);
 double equivalence_volume(double analyte_moles, double titrant_concentration, int protons = 1) noexcept;
+
+enum class AcidBaseRole : std::uint8_t {
+    Acid,
+    Base
+};
+
+struct AcidBaseSpecies {
+    std::string name;
+    std::string formula;
+    AcidBaseRole role = AcidBaseRole::Acid;
+    bool strong = false;
+    std::string kind;
+    int equivalents = 1;
+    std::vector<double> pka;
+    int charge_of_most_protonated = 0;
+    double strong_acid_per_mole = 0.0;
+    double strong_base_per_mole = 0.0;
+    double pk = NO_VALUE;
+
+    bool is_acid() const noexcept { return role == AcidBaseRole::Acid; }
+    bool is_base() const noexcept { return role == AcidBaseRole::Base; }
+};
+
+const std::vector<AcidBaseSpecies>& acid_base_species();
+const AcidBaseSpecies* find_acid_base_species(std::string_view name_or_formula, int role = 0);
+void add_acid_base_species(const AcidBaseSpecies& species, double concentration, std::vector<AcidBaseComponent>& components, double& strong_acid, double& strong_base);
+double solution_ph(const AcidBaseSpecies& species, double concentration, double kw = WATER_ION_PRODUCT);
+
+struct TitrationResult {
+    bool ok = false;
+    std::string error;
+    std::string kind;
+    std::vector<std::pair<double, double>> curve;
+    std::vector<double> equivalence_volumes;
+    std::vector<double> half_equivalence_volumes;
+    double start_ph = NO_VALUE;
+};
+
+double titration_point_ph(const AcidBaseSpecies& analyte, double analyte_concentration, double analyte_volume, const AcidBaseSpecies& titrant, double titrant_concentration, double added_volume, double kw = WATER_ION_PRODUCT);
+TitrationResult titrate(const AcidBaseSpecies& analyte, double analyte_concentration, double analyte_volume, const AcidBaseSpecies& titrant, double titrant_concentration, double max_volume = 0.0, int points = 400, double kw = WATER_ION_PRODUCT);
 
 } // namespace chemistry
 } // namespace fizmo
