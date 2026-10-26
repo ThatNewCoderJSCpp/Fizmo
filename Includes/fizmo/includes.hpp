@@ -69,6 +69,10 @@
         #ifndef FIZMO_NUMERICS
             #define FIZMO_NUMERICS
         #endif
+
+        #ifndef FIZMO_CHEMISTRY
+            #define FIZMO_CHEMISTRY
+        #endif
     #endif // ALL_FIZMO
 
     #ifdef FIZMO
@@ -128,6 +132,10 @@
 
         #if defined(FIZMO_NUMERICS) || defined(FIZMO_NUMERIC)
             #include "../numerics.hpp"
+        #endif
+
+        #if defined(FIZMO_CHEMISTRY) || defined(FIZMO_CHEM)
+            #include "../chemistry.hpp"
         #endif
 
         #if defined(FIZMO_GRAPHS) || defined(FIZMO_GRAPH)

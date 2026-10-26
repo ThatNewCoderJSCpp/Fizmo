@@ -50,13 +50,16 @@ jobs:
             libvulkan-dev libgl-dev
 
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_BUILD_NUMERICS_TESTS=ON -DFIZMO_PACKAGE_PLATFORM=linux-${{ matrix.arch }}
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_BUILD_NUMERICS_TESTS=ON -DFIZMO_BUILD_CHEMISTRY_TESTS=ON -DFIZMO_PACKAGE_PLATFORM=linux-${{ matrix.arch }}
 
       - name: Build
         run: cmake --build build -j 4
 
       - name: Run the numerics tests
         run: build/fizmo-numerics-tests
+
+      - name: Run the chemistry tests
+        run: build/fizmo-chemistry-tests
 
       - name: Check each component links with only the components and system libraries it declares
         working-directory: build
@@ -71,7 +74,7 @@ jobs:
           check random libfizmo_core.a
           check crypto libfizmo_random.a libfizmo_core.a
           check string libfizmo_random.a libfizmo_core.a
-          for c in statistics numerics physics symbolic time collections system util; do
+          for c in statistics numerics chemistry physics symbolic time collections system util; do
             check $c libfizmo_core.a
           done
           check net libfizmo_crypto.a libfizmo_util.a libfizmo_random.a libfizmo_core.a -lssl -lcrypto
@@ -131,7 +134,7 @@ jobs:
       - name: Configure
         run: |
           prefix=$(brew --prefix)
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_BUILD_NUMERICS_TESTS=ON \
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_BUILD_NUMERICS_TESTS=ON -DFIZMO_BUILD_CHEMISTRY_TESTS=ON \
             -DFIZMO_PACKAGE_PLATFORM=macos-${{ matrix.arch }} \
             -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" \
             -DFIZMO_VULKAN_INCLUDE_DIR="$FIZMO_VULKAN_INC" \
@@ -142,6 +145,9 @@ jobs:
 
       - name: Run the numerics tests
         run: build/fizmo-numerics-tests
+
+      - name: Run the chemistry tests
+        run: build/fizmo-chemistry-tests
 
       - name: Package
         working-directory: build

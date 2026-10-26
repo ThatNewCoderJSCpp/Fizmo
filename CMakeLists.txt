@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.3.4
+    VERSION 0.3.5
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -295,6 +295,19 @@ if(FIZMO_BUILD_NUMERICS_TESTS)
     endif()
     enable_testing()
     add_test(NAME fizmo-numerics COMMAND fizmo-numerics-tests)
+endif()
+
+option(FIZMO_BUILD_CHEMISTRY_TESTS "Build Testing/chemistry_tests.cpp as fizmo-chemistry-tests" OFF)
+if(FIZMO_BUILD_CHEMISTRY_TESTS)
+    add_executable(fizmo-chemistry-tests Testing/chemistry_tests.cpp)
+    target_compile_features(fizmo-chemistry-tests PRIVATE cxx_std_17)
+    if(TARGET fizmo::chemistry)
+        target_link_libraries(fizmo-chemistry-tests PRIVATE fizmo::chemistry)
+    else()
+        target_link_libraries(fizmo-chemistry-tests PRIVATE fizmo::fizmo)
+    endif()
+    enable_testing()
+    add_test(NAME fizmo-chemistry COMMAND fizmo-chemistry-tests)
 endif()
 
 option(FIZMO_BUILD_GUARD_TESTS "Build Testing/guard_tests.cpp as fizmo-guard-tests" OFF)
