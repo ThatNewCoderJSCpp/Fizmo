@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "../Source/Chemistry/chemistry.hpp"
 
 #include <cmath>
@@ -438,6 +439,60 @@ void test_general_titration() {
     check(!titrate(*hcl, 0.1, 0.025, *acetic, 0.1).ok, "an acid can't titrate an acid");
 }
 
+void test_organic_naming() {
+    const char* smiles[][2] = {
+        { "CC(C)C", "2-methylpropane" }, { "CCC(CC)C(C)CC", "3-ethyl-4-methylhexane" }, { "CC(C)CC(C)(C)C", "2,2,4-trimethylpentane" },
+        { "CCCC(C(C)C)CCC", "4-isopropylheptane" }, { "C#CCC=C", "pent-1-en-4-yne" }, { "C=CC(O)C", "but-3-en-2-ol" },
+        { "OCCO", "ethane-1,2-diol" }, { "CC(C)CC(=O)O", "3-methylbutanoic acid" }, { "CC1CCCCC1C", "1,2-dimethylcyclohexane" },
+        { "Cc1ccc(O)cc1", "4-methylphenol" }, { "CCOCC", "ethoxyethane" }, { "CC(Cl)C(Br)C", "2-bromo-3-chlorobutane" }
+    };
+    for (const auto& t : smiles) {
+        const std::string got = iupac_name(Molecule::from_smiles(t[0]));
+        check(got == t[1], std::string("IUPAC name of ") + t[0] + ": " + got);
+    }
+    const char* condensed[][2] = {
+        { "CH3CH(CH3)CH2CH3", "2-methylbutane" }, { "(CH3)3CCl", "2-chloro-2-methylpropane" }, { "CH3(CH2)4CH3", "hexane" },
+        { "CH3CH=CHCH3", "but-2-ene" }, { "CH3COCH3", "propan-2-one" }, { "CH3CH2C(CH3)2CH(CH2CH3)CH2CH3", "4-ethyl-3,3-dimethylhexane" }
+    };
+    for (const auto& t : condensed) {
+        const std::string got = iupac_name_from_condensed(t[0]);
+        check(got == t[1], std::string("condensed ") + t[0] + ": " + got);
+    }
+    check(name_compound("CH3CH(CH3)CH2CH3").name == "2-methylbutane", "name_compound names condensed structures");
+    const CompoundName acetic = name_compound("CH3COOH");
+    check(std::find(acetic.other_names.begin(), acetic.other_names.end(), "ethanoic acid") != acetic.other_names.end() || acetic.name == "ethanoic acid", "a common name also lists the IUPAC name");
+}
+
+void test_intermolecular() {
+    const IntermolecularForces water = intermolecular_forces(Molecule::from_smiles("O"), 1.85);
+    check(water.ok && water.hydrogen_bonds_per_molecule == 2 && water.strongest == "hydrogen bonding", "water makes two hydrogen bonds per molecule");
+    check(rel(intermolecular_forces(Molecule::from_smiles("CCCCCC"), 0.0).polarizability, 11.9, 0.03), "hexane's polarizability");
+    const IntermolecularForces acetone = intermolecular_forces(Molecule::from_smiles("CC(=O)C"), 2.88);
+    check(acetone.hydrogen_bonds_per_molecule == 0 && acetone.hydrogen_acceptor_pairs == 2 && acetone.strongest == "dipole\xE2\x80\x93" "dipole", "acetone accepts but can't donate hydrogen bonds");
+    check(intermolecular_forces(Molecule::from_smiles("CCCCCCCCO"), 1.7).water_solubility.find("slightly") != std::string::npos, "octanol is only slightly soluble");
+}
+
+void test_stoichiometry_roles() {
+    const Reaction r = Reaction::parse("Na2CO3 + CuCl -> Cu2CO3 + NaCl");
+    StoichiometryResult st = solve_stoichiometry(r, { { 0, AmountKind::Moles, 5.0, NO_VALUE }, { 2, AmountKind::Moles, 5.0, NO_VALUE } });
+    check(st.ok && rel(st.species[1].start_moles, 10.0, 1e-9) && st.species[1].assumed && rel(st.species[3].final_moles, 10.0, 1e-9), "a product amount counts as made and fills in the rest");
+    check(!st.assumptions.empty(), "the missing reactant is reported as assumed");
+    st = solve_stoichiometry(r, { { 2, AmountKind::Moles, 5.0, NO_VALUE } });
+    check(st.ok && rel(st.species[0].start_moles, 5.0, 1e-9) && rel(st.species[3].final_moles, 10.0, 1e-9), "a product alone works backward to every reactant");
+    st = solve_stoichiometry(r, { { 0, AmountKind::Moles, 5.0, NO_VALUE }, { 1, AmountKind::Moles, 4.0, NO_VALUE } });
+    check(st.ok && st.limiting == 1 && rel(st.species[0].final_moles, 3.0, 1e-9) && st.assumed_complete, "two starting amounts find the limiting reactant");
+    st = solve_stoichiometry(r, { { 0, AmountKind::Moles, 5.0, NO_VALUE }, { 1, AmountKind::Moles, 10.0, NO_VALUE }, { 2, AmountKind::Moles, 4.0, NO_VALUE } });
+    check(st.ok && rel(st.percent_yield, 80.0, 1e-9), "percent yield");
+    st = solve_stoichiometry(r, { { 0, AmountKind::Moles, 5.0, NO_VALUE }, { 2, AmountKind::Moles, 7.0, NO_VALUE } });
+    check(!st.ok && st.message.find("isn't enough") != std::string::npos, "more product than the reactant allows is an error");
+    st = solve_stoichiometry(r, { { 2, AmountKind::Moles, 5.0, NO_VALUE }, { 3, AmountKind::Moles, 7.0, NO_VALUE } });
+    check(!st.ok && st.message.find("don't fit") != std::string::npos, "inconsistent amounts are an error");
+    st = solve_stoichiometry(r, { { 1, AmountKind::Moles, 2.0, NO_VALUE, AmountRole::Left } });
+    check(!st.ok, "a leftover amount alone can't be solved");
+    st = solve_stoichiometry(r, { { 1, AmountKind::Moles, 2.0, NO_VALUE, AmountRole::Left }, { 3, AmountKind::Moles, 6.0, NO_VALUE } });
+    check(st.ok && rel(st.species[1].start_moles, 8.0, 1e-9), "leftover plus product gives the starting amount");
+}
+
 void test_gas_stoichiometry() {
     check(near(water_vapor_pressure(298.15), 3169.0, 40.0), "water's vapor pressure at 25 C");
     check(gas_behavior(Formula::parse("H2"), 298.15).can_be_gas && gas_behavior(Formula::parse("O2"), 298.15).can_be_gas && !gas_behavior(Formula::parse("Zn"), 298.15).can_be_gas && !gas_behavior(Formula::parse("ZnCl2"), 298.15).can_be_gas, "which species are gases without (g)");
@@ -462,11 +517,36 @@ void test_gas_stoichiometry() {
     check(steam.ok && near(steam.moles_after, steam.moles_before, 1e-9), "at 500 K the water stays as steam, so the moles of gas don't change");
 }
 
+void test_emission() {
+    const Srgb8 red = wavelength_color(650.0), green = wavelength_color(530.0), blue = wavelength_color(450.0);
+    check(red.r > red.g && red.r > red.b && green.g > green.r && green.g > green.b && blue.b > blue.r && blue.b > blue.g, "wavelengths have the right colors");
+    const Srgb8 sodium = spectrum_color(emission_spectrum({ { 11, 1.0 } }));
+    check(sodium.r > 200 && sodium.g > 100 && sodium.b < 90, "sodium light is yellow-orange");
+    check(emission_lines_of(1, 380.0, 780.0).size() >= 4 && near(strongest_emission_line(11).wavelength_nm, 588.995, 1e-9), "line lists");
+    const Spectrum mix = emission_spectrum({ { 11, 30.0 }, { 3, 70.0 } });
+    const SpectrumFit two = fit_emission_spectrum(mix, { 3, 11, 19, 20 });
+    check(two.ok && two.percentages.size() == 2 && near(two.percentages[0].second, 70.0, 0.5) && two.percentages[0].first == 3, "lithium and sodium are recovered from their mixed light");
+    const SpectrumFit all = fit_emission_spectrum(emission_spectrum({ { 11, 20.0 }, { 38, 50.0 }, { 29, 30.0 } }));
+    bool found = all.ok && all.percentages.size() >= 3;
+    double sr = 0.0;
+    for (const auto& p : all.percentages) if (p.first == 38) sr = p.second;
+    check(found && near(sr, 50.0, 2.0), "a three-element mixture is found among every element");
+    const Srgb8 purple = linear_to_srgb8(LinearRgb{ 0.5 * srgb8_to_linear(flame_color(38)).r + 0.5 * srgb8_to_linear(flame_color(55)).r, 0.5 * srgb8_to_linear(flame_color(38)).g + 0.5 * srgb8_to_linear(flame_color(55)).g, 0.5 * srgb8_to_linear(flame_color(38)).b + 0.5 * srgb8_to_linear(flame_color(55)).b }, false);
+    const ColorFit cf = fit_color_mixture(purple, { 38, 55, 29 }, true);
+    check(cf.ok && cf.distance < 6.0, "a flame color is matched by mixing flame colors");
+    Srgb8 h;
+    check(parse_hex_color("#ff8800", h) && h.r == 255 && h.g == 136 && to_hex(h) == "#ff8800", "hex colors");
+}
+
 int main() {
     test_transport_and_estimates();
     test_materials();
     test_general_titration();
     test_gas_stoichiometry();
+    test_emission();
+    test_stoichiometry_roles();
+    test_organic_naming();
+    test_intermolecular();
     test_elements();
     test_isotopes();
     test_ions_and_configurations();

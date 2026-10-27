@@ -59,11 +59,24 @@ enum class AmountKind : std::uint8_t {
 
 const char* to_string(AmountKind k) noexcept;
 
+enum class AmountRole : std::uint8_t {
+    Auto,
+    Start,
+    Used,
+    Left,
+    Made,
+    End
+};
+
+const char* to_string(AmountRole r) noexcept;
+AmountRole resolve_role(AmountRole role, bool reactant) noexcept;
+
 struct StoichiometryKnown {
     std::size_t species = 0;
     AmountKind kind = AmountKind::Moles;
     double value = NO_VALUE;
     double molarity = NO_VALUE;
+    AmountRole role = AmountRole::Auto;
 };
 
 struct StoichiometrySpecies {
@@ -76,6 +89,8 @@ struct StoichiometrySpecies {
     double final_moles = NO_VALUE;
     bool limiting = false;
     bool gas = false;
+    double start_moles = NO_VALUE;
+    bool assumed = false;
 };
 
 struct StoichiometryResult {
@@ -86,6 +101,10 @@ struct StoichiometryResult {
     int limiting = -1;
     std::vector<StoichiometrySpecies> species;
     std::vector<std::string> steps;
+    std::vector<std::string> assumptions;
+    bool assumed_complete = false;
+    double theoretical_extent = NO_VALUE;
+    double percent_yield = NO_VALUE;
 };
 
 StoichiometryResult solve_stoichiometry(const Reaction& reaction, const std::vector<StoichiometryKnown>& knowns, double temperature = STANDARD_TEMPERATURE, double pressure = ATMOSPHERE);

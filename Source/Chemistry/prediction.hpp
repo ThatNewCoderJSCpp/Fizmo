@@ -44,6 +44,10 @@ struct IonicEquation {
 
 IonicEquation ionic_equations(const Reaction& reaction);
 
+Phase likely_phase(const Formula& formula, double temperature, double pressure, bool in_solution);
+bool reaction_in_solution(const Reaction& reaction);
+std::vector<Phase> likely_phases(const Reaction& reaction, double temperature, double pressure);
+
 } // namespace chemistry
 } // namespace fizmo
 

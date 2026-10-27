@@ -60,6 +60,7 @@ struct GasKnown {
     double temperature = NO_VALUE;
     double pressure = NO_VALUE;
     double volume = NO_VALUE;
+    AmountRole role = AmountRole::Auto;
 };
 
 enum class GasVesselMode : std::uint8_t {

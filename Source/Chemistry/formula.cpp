@@ -239,6 +239,70 @@ ChargeSplit split_charge(std::string_view s) {
     return out;
 }
 
+int script_digit(std::string_view s, std::size_t i, std::size_t& length, bool& superscript) {
+    const auto byte = [&](std::size_t k) { return k < s.size() ? static_cast<unsigned char>(s[k]) : 0u; };
+    length = 0;
+    if (byte(i) == 0xE2 && byte(i + 1) == 0x82 && byte(i + 2) >= 0x80 && byte(i + 2) <= 0x89) {
+        length = 3;
+        superscript = false;
+        return '0' + static_cast<int>(byte(i + 2) - 0x80);
+    }
+    if (byte(i) == 0xE2 && byte(i + 1) == 0x81) {
+        const unsigned c = byte(i + 2);
+        superscript = true;
+        length = 3;
+        if (c == 0xB0) return '0';
+        if (c >= 0xB4 && c <= 0xB9) return '4' + static_cast<int>(c - 0xB4);
+        if (c == 0xBA) return '+';
+        if (c == 0xBB) return '-';
+        length = 0;
+    }
+    if (byte(i) == 0xC2 && (byte(i + 1) == 0xB9 || byte(i + 1) == 0xB2 || byte(i + 1) == 0xB3)) {
+        superscript = true;
+        length = 2;
+        return byte(i + 1) == 0xB9 ? '1' : byte(i + 1) == 0xB2 ? '2' : '3';
+    }
+    if (byte(i) == 0xE2 && byte(i + 1) == 0x88 && byte(i + 2) == 0x92) {
+        superscript = false;
+        length = 3;
+        return '-';
+    }
+    return 0;
+}
+
+std::string plain_scripts(std::string_view s) {
+    std::string out;
+    out.reserve(s.size());
+    bool in_superscript = false;
+    for (std::size_t i = 0; i < s.size();) {
+        std::size_t length = 0;
+        bool superscript = false;
+        const int c = script_digit(s, i, length, superscript);
+        if (length > 0) {
+            if (superscript && !in_superscript) out += '^';
+            in_superscript = superscript;
+            out += static_cast<char>(c);
+            i += length;
+            continue;
+        }
+        in_superscript = false;
+        if (s[i] == '_') {
+            if (i + 1 < s.size() && s[i + 1] == '{') {
+                const std::size_t close = s.find('}', i + 2);
+                if (close != std::string_view::npos) {
+                    out.append(s.substr(i + 2, close - i - 2));
+                    i = close + 1;
+                    continue;
+                }
+            }
+            ++i;
+            continue;
+        }
+        out += s[i++];
+    }
+    return out;
+}
+
 bool dot_is_separator(std::string_view body, std::size_t i) {
     const bool digit_before = i > 0 && is_ascii_digit(body[i - 1]);
     const bool digit_after = i + 1 < body.size() && is_ascii_digit(body[i + 1]);
@@ -285,7 +349,8 @@ void Formula::add(const Element* e, int mass_number, double count) {
 
 Formula Formula::parse(std::string_view text) {
     Formula f;
-    std::string_view s = trim(text);
+    const std::string plain = plain_scripts(trim(text));
+    std::string_view s = trim(plain);
     f.m_source = std::string(s);
     if (s.empty()) return f;
 

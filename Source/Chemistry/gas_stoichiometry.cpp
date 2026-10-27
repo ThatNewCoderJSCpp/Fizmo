@@ -317,10 +317,10 @@ GasStoichiometryResult solve_gas_stoichiometry(const Reaction& input, const std:
         if (k.species >= terms.size()) continue;
         std::string step;
         const double n = gas_known_moles(k, terms[k.species]->formula, vessel, &step);
-        if (!step.empty()) out.steps.push_back(step);
+        if (!step.empty() && k.kind != GasAmountKind::Moles) out.steps.push_back(step);
         if (!known(n)) continue;
         out.given_moles[k.species] = n;
-        moles.push_back(StoichiometryKnown{ k.species, AmountKind::Moles, n, NO_VALUE });
+        moles.push_back(StoichiometryKnown{ k.species, AmountKind::Moles, n, NO_VALUE, k.role });
     }
     if (moles.empty()) {
         out.message = "give an amount for at least one substance";
@@ -347,8 +347,8 @@ GasStoichiometryResult solve_gas_stoichiometry(const Reaction& input, const std:
         g.formula = sp.formula;
         g.reactant = i < nr;
         g.vapor_pressure = b.condensable ? b.vapor_pressure : NO_VALUE;
-        const double start = i < nr ? (known(out.given_moles[i]) ? out.given_moles[i] : sp.reacted_moles) : 0.0;
-        if (i < nr && known(start) && start > 0.0) {
+        const double start = known(sp.start_moles) ? sp.start_moles : (i < nr ? sp.reacted_moles : 0.0);
+        if (known(start) && start > 0.0) {
             GasSpeciesState before = g;
             before.moles = start;
             out.before.push_back(before);

@@ -477,6 +477,35 @@ double moles_to_amount(AmountKind kind, double n, double molar_mass, double t, d
     }
 }
 
+const char* to_string(AmountRole r) noexcept {
+    switch (r) {
+        case AmountRole::Start: return "at the start";
+        case AmountRole::Used: return "used";
+        case AmountRole::Left: return "left over";
+        case AmountRole::Made: return "made";
+        case AmountRole::End: return "at the end";
+        default: return "auto";
+    }
+}
+
+AmountRole resolve_role(AmountRole role, bool reactant) noexcept {
+    if (role == AmountRole::Auto) return reactant ? AmountRole::Start : AmountRole::Made;
+    if (reactant) {
+        if (role == AmountRole::Made) return AmountRole::Used;
+        if (role == AmountRole::End) return AmountRole::Left;
+    } else {
+        if (role == AmountRole::Used) return AmountRole::Made;
+        if (role == AmountRole::Left) return AmountRole::End;
+    }
+    return role;
+}
+
+namespace {
+
+std::string moles_text(double n) { return format_number(n, 5) + " mol"; }
+
+}
+
 StoichiometryResult solve_stoichiometry(const Reaction& input, const std::vector<StoichiometryKnown>& knowns, double t, double p) {
     StoichiometryResult out;
     Reaction r = input;
@@ -502,51 +531,153 @@ StoichiometryResult solve_stoichiometry(const Reaction& input, const std::vector
         out.message = "give an amount for at least one substance";
         return out;
     }
+    std::vector<AmountRole> roles(out.species.size(), AmountRole::Auto);
+    std::vector<bool> given(out.species.size(), false);
     for (const StoichiometryKnown& k : knowns) {
         if (k.species >= out.species.size()) continue;
         StoichiometrySpecies& s = out.species[k.species];
-        s.given_moles = amount_to_moles(k.kind, k.value, s.molar_mass, t, p, k.molarity);
-        out.steps.push_back(s.formula + ": " + format_number(s.given_moles, 5) + " mol (from " + to_string(k.kind) + ")");
+        const double n = amount_to_moles(k.kind, k.value, s.molar_mass, t, p, k.molarity);
+        if (!has_value(n)) continue;
+        if (n < 0.0) {
+            out.message = "the amount of " + s.formula + " is negative";
+            return out;
+        }
+        s.given_moles = n;
+        given[k.species] = true;
+        roles[k.species] = resolve_role(k.role, s.reactant);
+        out.steps.push_back(s.formula + " " + to_string(roles[k.species]) + ": " + moles_text(n) + (k.kind == AmountKind::Moles ? std::string() : " (from " + std::string(to_string(k.kind)) + ")"));
     }
-    double extent = 1e300;
+    bool any = false;
+    for (bool g : given) any = any || g;
+    if (!any) {
+        out.message = "give an amount for at least one substance";
+        return out;
+    }
+
+    double limit = NO_VALUE;
     int limiting = -1;
     for (std::size_t i = 0; i < nr; ++i) {
-        const StoichiometrySpecies& s = out.species[i];
-        if (!(s.given_moles == s.given_moles)) continue;
-        const double x = s.given_moles / s.coefficient;
-        if (x < extent) {
-            extent = x;
+        if (!given[i] || roles[i] != AmountRole::Start) continue;
+        const double x = out.species[i].given_moles / out.species[i].coefficient;
+        if (!has_value(limit) || x < limit) {
+            limit = x;
             limiting = static_cast<int>(i);
         }
     }
-    if (limiting < 0) {
-        for (std::size_t i = nr; i < out.species.size(); ++i) {
-            const StoichiometrySpecies& s = out.species[i];
-            if (!(s.given_moles == s.given_moles)) continue;
-            extent = s.given_moles / s.coefficient;
-            out.steps.push_back("working backward from " + s.formula);
-            break;
+
+    double extent = NO_VALUE;
+    int fixed_by = -1;
+    for (std::size_t i = 0; i < out.species.size(); ++i) {
+        if (!given[i]) continue;
+        const AmountRole role = roles[i];
+        if (role != AmountRole::Used && role != AmountRole::Made && role != AmountRole::End) continue;
+        const StoichiometrySpecies& s = out.species[i];
+        const double x = s.given_moles / s.coefficient;
+        if (!has_value(extent)) {
+            extent = x;
+            fixed_by = static_cast<int>(i);
+            continue;
         }
-    } else {
-        out.species[static_cast<std::size_t>(limiting)].limiting = true;
-        int known_reactants = 0;
-        for (std::size_t i = 0; i < nr; ++i) known_reactants += out.species[i].given_moles == out.species[i].given_moles;
-        if (known_reactants > 1) out.steps.push_back(out.species[static_cast<std::size_t>(limiting)].formula + " runs out first, so it's the limiting reactant");
+        if (std::fabs(x - extent) > 5e-3 * std::max(std::fabs(x), std::fabs(extent))) {
+            const StoichiometrySpecies& f = out.species[static_cast<std::size_t>(fixed_by)];
+            out.message = "the amounts don't fit the equation: " + moles_text(f.given_moles) + " of " + f.formula + " " + to_string(roles[static_cast<std::size_t>(fixed_by)])
+                + " goes with " + moles_text(extent * s.coefficient) + " of " + s.formula + ", not " + moles_text(s.given_moles) + "; remove one of them or fix it";
+            return out;
+        }
     }
-    if (!(extent < 1e299)) {
-        out.message = "no usable amounts";
+
+    if (has_value(extent)) {
+        const StoichiometrySpecies& f = out.species[static_cast<std::size_t>(fixed_by)];
+        out.steps.push_back("from " + f.formula + ": \xCE\xBE = " + moles_text(f.given_moles) + " \xC3\xB7 " + format_number(f.coefficient, 6) + " = " + moles_text(extent));
+        if (has_value(limit)) {
+            if (std::fabs(extent - limit) <= 5e-3 * limit && extent != limit) {
+                out.steps.push_back("\xCE\xBE = " + moles_text(extent) + " is within rounding of what " + out.species[static_cast<std::size_t>(limiting)].formula + " allows (" + moles_text(limit) + "), so they're taken as equal");
+                extent = limit;
+            }
+            if (extent > limit * (1.0 + 1e-9)) {
+                const StoichiometrySpecies& l = out.species[static_cast<std::size_t>(limiting)];
+                out.message = "there isn't enough " + l.formula + ": its " + moles_text(l.given_moles) + " can only react to \xCE\xBE = " + moles_text(limit)
+                    + ", but " + f.formula + " " + to_string(roles[static_cast<std::size_t>(fixed_by)]) + " needs \xCE\xBE = " + moles_text(extent) + " (" + moles_text(extent * l.coefficient) + " of " + l.formula + ")";
+                return out;
+            }
+            out.theoretical_extent = limit;
+            bool all_starts = true;
+            std::string missing;
+            for (std::size_t i = 0; i < nr; ++i) {
+                if (given[i] && (roles[i] == AmountRole::Start || roles[i] == AmountRole::Left)) continue;
+                all_starts = false;
+                if (!missing.empty()) missing += ", ";
+                missing += out.species[i].formula;
+            }
+            const double yield = 100.0 * extent / limit;
+            if (extent < limit * (1.0 - 1e-9)) {
+                if (all_starts) {
+                    out.percent_yield = yield;
+                    out.steps.push_back(out.species[static_cast<std::size_t>(limiting)].formula + " could react to \xCE\xBE = " + moles_text(limit) + ", so the reaction got " + format_number(yield, 4) + "% of the way (percent yield)");
+                } else {
+                    out.assumptions.push_back("assumed " + missing + " ran out and stopped the reaction, so some " + out.species[static_cast<std::size_t>(limiting)].formula + " is left over; if " + missing + " was in excess instead, the reaction only got " + format_number(yield, 4) + "% of the way (percent yield)");
+                }
+            } else if (all_starts) {
+                out.percent_yield = 100.0;
+            }
+        }
+    } else if (has_value(limit)) {
+        extent = limit;
+        out.assumed_complete = true;
+        out.theoretical_extent = limit;
+        int known_starts = 0;
+        for (std::size_t i = 0; i < nr; ++i) known_starts += given[i] && roles[i] == AmountRole::Start;
+        if (known_starts > 1) out.steps.push_back(out.species[static_cast<std::size_t>(limiting)].formula + " runs out first, so it's the limiting reactant");
+        out.assumptions.push_back("assumed the reaction goes to completion: it stops when " + out.species[static_cast<std::size_t>(limiting)].formula + " runs out (\xCE\xBE = " + moles_text(extent) + ")");
+    } else {
+        std::string what;
+        for (std::size_t i = 0; i < out.species.size(); ++i) {
+            if (!given[i]) continue;
+            if (!what.empty()) what += " and ";
+            what += "how much " + out.species[i].formula + " is " + to_string(roles[i]);
+        }
+        out.message = "knowing only " + what + " doesn't say how far the reaction went; also give a starting amount of a reactant, or an amount used or made";
         return out;
     }
     out.extent = extent;
-    out.limiting = limiting;
-    out.steps.push_back("reaction extent \xCE\xBE = " + format_number(extent, 5) + " mol");
+    out.steps.push_back("reaction extent \xCE\xBE = " + moles_text(extent));
+
+    bool reached_limit = has_value(limit) && extent >= limit * (1.0 - 1e-9);
     for (std::size_t i = 0; i < out.species.size(); ++i) {
         StoichiometrySpecies& s = out.species[i];
         s.reacted_moles = s.coefficient * extent;
-        if (s.reactant) s.final_moles = s.given_moles == s.given_moles ? s.given_moles - s.reacted_moles : 0.0;
-        else s.final_moles = (s.given_moles == s.given_moles && limiting >= 0 ? s.given_moles : 0.0) + (limiting >= 0 || !(s.given_moles == s.given_moles) ? s.reacted_moles : 0.0);
+        if (s.reactant) {
+            if (given[i] && roles[i] == AmountRole::Start) {
+                s.start_moles = s.given_moles;
+                s.final_moles = s.given_moles - s.reacted_moles;
+                if (reached_limit && static_cast<int>(i) == limiting) s.limiting = true;
+            } else if (given[i] && roles[i] == AmountRole::Left) {
+                s.start_moles = s.given_moles + s.reacted_moles;
+                s.final_moles = s.given_moles;
+                out.steps.push_back(s.formula + " at the start = " + moles_text(s.given_moles) + " left + " + moles_text(s.reacted_moles) + " used = " + moles_text(s.start_moles));
+            } else {
+                s.start_moles = s.reacted_moles;
+                s.final_moles = 0.0;
+                s.assumed = true;
+                if (given[i]) out.assumptions.push_back("only the amount of " + s.formula + " used is known, so it's taken as all there was: " + moles_text(s.start_moles) + " at the start and none left");
+                else out.assumptions.push_back(s.formula + " wasn't given, so it's taken as exactly enough: " + moles_text(s.start_moles) + " (" + format_number(s.start_moles * s.molar_mass, 5) + " g) at the start; any more would just be left over");
+            }
+        } else {
+            if (given[i] && roles[i] == AmountRole::Start) {
+                s.start_moles = s.given_moles;
+                s.final_moles = s.given_moles + s.reacted_moles;
+            } else if (given[i] && roles[i] == AmountRole::End) {
+                s.start_moles = 0.0;
+                s.final_moles = s.given_moles;
+                out.assumptions.push_back("assumed there was no " + s.formula + " at the start, so all " + moles_text(s.given_moles) + " of it was made");
+            } else {
+                s.start_moles = 0.0;
+                s.final_moles = s.reacted_moles;
+            }
+        }
         if (s.final_moles < 0 && s.final_moles > -1e-12) s.final_moles = 0.0;
     }
+    if (reached_limit) out.limiting = limiting;
     out.ok = true;
     return out;
 }

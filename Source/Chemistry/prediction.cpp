@@ -948,5 +948,78 @@ IonicEquation ionic_equations(const Reaction& reaction) {
     return out;
 }
 
+Phase likely_phase(const Formula& formula, double temperature, double pressure, bool in_solution) {
+    if (formula.phase() != Phase::Unknown) return formula.phase();
+    if (formula.is_electron()) return Phase::Unknown;
+    Formula plain = formula;
+    plain.set_phase(Phase::Unknown);
+    const std::string text = plain.display_string(false);
+    if (formula.charge() != 0) return Phase::Aqueous;
+    const std::string marked = with_phase(text, in_solution);
+    if (marked.size() > text.size()) {
+        const std::string tag = marked.substr(text.size());
+        if (tag == "(aq)") return Phase::Aqueous;
+        if (tag == "(s)") return Phase::Solid;
+        if (tag == "(l)") {
+            if (text == "H2O" && temperature > 0.0) {
+                for (const Substance* s : find_substances(plain)) {
+                    const Phase p = s->phase_at(temperature, pressure);
+                    if (p != Phase::Unknown) return p;
+                }
+            }
+            return Phase::Liquid;
+        }
+        if (tag == "(g)") return Phase::Gas;
+    }
+    for (const Substance* s : find_substances(plain)) {
+        const Phase p = s->phase_at(temperature, pressure);
+        if (p != Phase::Unknown) return p;
+        if (s->standard_state != Phase::Unknown) return s->standard_state;
+    }
+    const auto comp = plain.composition();
+    if (comp.size() == 1) {
+        const Element& e = *comp.front().first;
+        if (e.is_metal()) return Phase::Solid;
+    }
+    return Phase::Unknown;
+}
+
+bool reaction_in_solution(const Reaction& reaction) {
+    int dissolved = 0;
+    for (const auto* side : { &reaction.reactants(), &reaction.products() }) {
+        for (const ReactionTerm& t : *side) {
+            if (t.formula.phase() == Phase::Aqueous || t.formula.charge() != 0) return true;
+        }
+    }
+    for (const ReactionTerm& t : reaction.reactants()) {
+        Formula plain = t.formula;
+        plain.set_phase(Phase::Unknown);
+        const std::string text = plain.display_string(false);
+        if (text == "H2O") continue;
+        try {
+            if (is_strong_acid(text) || is_weak_acid(text) || is_strong_base(text)) return true;
+            if (is_soluble(text) && plain.composition().size() > 1) ++dissolved;
+        } catch (...) {
+        }
+    }
+    return dissolved >= 2;
+}
+
+std::vector<Phase> likely_phases(const Reaction& reaction, double temperature, double pressure) {
+    const bool solution = reaction_in_solution(reaction);
+    std::vector<Phase> out;
+    for (const auto* side : { &reaction.reactants(), &reaction.products() }) {
+        for (const ReactionTerm& t : *side) {
+            Phase p = Phase::Unknown;
+            try {
+                p = likely_phase(t.formula, temperature, pressure, solution);
+            } catch (...) {
+            }
+            out.push_back(p);
+        }
+    }
+    return out;
+}
+
 } // namespace chemistry
 } // namespace fizmo

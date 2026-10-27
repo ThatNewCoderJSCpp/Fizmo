@@ -1,4 +1,5 @@
 #include "reaction.hpp"
+#include "units.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -631,6 +632,83 @@ double atom_economy(const Reaction& reaction, std::size_t desired_product) {
     for (const ReactionTerm& t : reaction.reactants()) reactant_mass += t.coefficient * t.formula.molar_mass();
     const ReactionTerm& p = reaction.products().at(desired_product);
     return 100.0 * p.coefficient * p.formula.molar_mass() / reactant_mass;
+}
+
+} // namespace chemistry
+} // namespace fizmo
+
+namespace fizmo {
+namespace chemistry {
+
+namespace {
+
+std::string phase_label_text(Phase p) {
+    switch (p) {
+        case Phase::Aqueous: return "dissolved";
+        case Phase::Solid: return "as a solid";
+        case Phase::Liquid: return "as a liquid";
+        case Phase::Gas: return "as a gas";
+        default: return "in this state";
+    }
+}
+
+}
+
+ReactionHeat reaction_heat(const Reaction& reaction, double t) {
+    ReactionHeat out;
+    double h = 0.0;
+    const auto add = [&](const ReactionTerm& term, double sign) {
+        if (term.formula.is_electron()) return;
+        const Phase phase = term.formula.phase();
+        Formula plain = term.formula;
+        plain.set_phase(Phase::Unknown);
+        try {
+            if (Species::exists(term.formula, phase)) {
+                const double value = Species::of(term.formula, phase).enthalpy(t);
+                if (value == value) {
+                    h += sign * term.coefficient * value;
+                    return;
+                }
+            }
+            if (phase != Phase::Unknown && Species::exists(plain, Phase::Unknown)) {
+                const Species s = Species::of(plain, Phase::Unknown);
+                const double value = s.enthalpy(t);
+                if (value == value) {
+                    h += sign * term.coefficient * value;
+                    out.notes.push_back("no data for " + plain.to_string() + " " + phase_label_text(phase) + ", so its value as " + to_string(s.phase()) + " was used");
+                    return;
+                }
+            }
+        } catch (...) {
+        }
+        if (term.formula.elements().size() == 1 && term.formula.charge() == 0) {
+            out.notes.push_back(term.formula.to_string() + " was taken as an element in its standard form, so its enthalpy of formation is 0");
+            return;
+        }
+        out.missing.push_back(term.formula.to_string());
+    };
+    bool unstated = false;
+    for (const ReactionTerm& term : reaction.reactants()) {
+        add(term, -1.0);
+        unstated = unstated || (term.formula.phase() == Phase::Unknown && !term.formula.is_electron());
+    }
+    for (const ReactionTerm& term : reaction.products()) {
+        add(term, 1.0);
+        unstated = unstated || (term.formula.phase() == Phase::Unknown && !term.formula.is_electron());
+    }
+    if (unstated) out.notes.push_back("some states weren't given, so those substances were taken in their usual state at 25 \xC2\xB0" "C; add (aq), (s), (l) or (g) to be exact, since dissolving or condensing changes the heat");
+    if (!out.missing.empty()) return out;
+    out.ok = true;
+    out.delta_h = h;
+    return out;
+}
+
+std::string heat_description(double joules) {
+    if (!(joules == joules)) return std::string();
+    const double kj = joules / 1000.0;
+    if (std::fabs(kj) < 1e-9) return "no heat is released or absorbed";
+    if (kj < 0) return format_number(-kj, 4) + " kJ of heat is released (exothermic: the surroundings warm up)";
+    return format_number(kj, 4) + " kJ of heat is absorbed (endothermic: the surroundings cool down)";
 }
 
 } // namespace chemistry

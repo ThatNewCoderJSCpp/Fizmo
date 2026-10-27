@@ -121,6 +121,16 @@ private:
     bool m_reversible = false;
 };
 
+struct ReactionHeat {
+    bool ok = false;
+    double delta_h = NO_VALUE;
+    std::vector<std::string> missing;
+    std::vector<std::string> notes;
+};
+
+ReactionHeat reaction_heat(const Reaction& reaction, double t = STANDARD_TEMPERATURE);
+std::string heat_description(double joules);
+
 double percent_yield(double actual, double theoretical) noexcept;
 double atom_economy(const Reaction& reaction, std::size_t desired_product) ;
 

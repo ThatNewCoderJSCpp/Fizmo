@@ -1,4 +1,5 @@
 #include "nomenclature.hpp"
+#include "organic_naming.hpp"
 
 #include "oxidation_state.hpp"
 #include "substance.hpp"
@@ -1140,6 +1141,7 @@ CompoundName name_compound(std::string_view formula_text, Phase phase) {
         return r;
     };
 
+    const std::string structural = (charge == 0 && waters == 0 && !has_metal(comp)) ? iupac_name_from_condensed(base) : std::string();
     if (charge == 0 && waters == 0) {
         const std::vector<const CommonCompoundEntry*> common = find_common_compounds(base);
         const CommonCompoundEntry* exact = nullptr;
@@ -1159,6 +1161,7 @@ CompoundName name_compound(std::string_view formula_text, Phase phase) {
             r.kind = cat == "carbohydrate" ? CompoundKind::Carbohydrate : (cat == "inorganic" ? CompoundKind::Covalent : CompoundKind::Organic);
             if (cat == "carboxylic acid") r.kind = CompoundKind::Acid;
             r.explanation = std::string("A common ") + exact->category + (cat == "inorganic" ? " compound." : ".");
+            if (!structural.empty() && structural != r.name && std::find(r.other_names.begin(), r.other_names.end(), structural) == r.other_names.end()) r.other_names.insert(r.other_names.begin(), structural);
             if (common.size() > 1) {
                 for (const CommonCompoundEntry* cc : common) {
                     if (cc != exact) r.other_names.push_back(std::string(cc->name) + " (same formula)");
@@ -1333,6 +1336,13 @@ CompoundName name_compound(std::string_view formula_text, Phase phase) {
         }
     }
 
+    if (!structural.empty()) {
+        CompoundName r;
+        r.kind = ends_with(structural, "acid") ? CompoundKind::Acid : CompoundKind::Organic;
+        r.name = structural;
+        r.explanation = "Named from its structure with IUPAC rules: the longest carbon chain (or the ring) is the parent, it is numbered to give the main group and then the branches the lowest numbers, and the branches are listed in alphabetical order.";
+        return finish(r);
+    }
     if (!is_inorganic_carbon(comp) && !metal) {
         const std::string org = organic_name(f, base);
         if (!org.empty()) {
