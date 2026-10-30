@@ -632,8 +632,8 @@ void Simulation2D::generate_contacts(RigidBody2D* a, RigidBody2D* b) {
             mf.collider_a = i;
             mf.collider_b = j;
             if (!collide_shapes(ca.shape, wa, cb.shape, wb, mf)) continue;
-            mf.friction    = std::sqrt(ca.material.friction * cb.material.friction);
-            mf.restitution = std::max(ca.material.restitution, cb.material.restitution);
+            mf.friction    = combined_friction(ca, cb);
+            mf.restitution = combined_restitution(ca, cb);
 
             mf.restitution_threshold = std::min(
                 ca.material.restitution_threshold,
@@ -1079,6 +1079,18 @@ void Simulation2D::cleanup_bodies() {
     }
 
     flush_pending_removals();
+}
+
+double Simulation2D::combined_friction(const Collider2D& a, const Collider2D& b) const {
+    const CombineMode m = resolve_combine(a.material.friction_combine, b.material.friction_combine, m_cfg.friction_combine);
+    if (m == CombineMode::Custom && m_friction_combiner) return m_friction_combiner(a, b);
+    return combine_values(m, a.material.friction, b.material.friction);
+}
+
+double Simulation2D::combined_restitution(const Collider2D& a, const Collider2D& b) const {
+    const CombineMode m = resolve_combine(a.material.restitution_combine, b.material.restitution_combine, m_cfg.restitution_combine);
+    if (m == CombineMode::Custom && m_restitution_combiner) return m_restitution_combiner(a, b);
+    return combine_values(m, a.material.restitution, b.material.restitution);
 }
 
 } // namespace physics

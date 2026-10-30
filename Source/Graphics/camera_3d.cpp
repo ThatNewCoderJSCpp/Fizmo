@@ -33,29 +33,43 @@ void Camera3D::move_local(double right_amount, double up_amount, double forward_
 }
 
 void Camera3D::move_flat(double forward_amount, double right_amount, double up_amount) noexcept {
-    const linalg::vector3d ff = flat_forward();
+    rebuild_view_if_dirty();
+    linalg::vector3d ff{m_forward_r.x, 0.0, m_forward_r.z};
+    if (ff.magnitude_squared() <= EPS) ff = m_forward_r.y < 0.0 ? linalg::vector3d{m_up_r.x, 0.0, m_up_r.z} : linalg::vector3d{-m_up_r.x, 0.0, -m_up_r.z};
+    ff = ff.unit_vector();
     const linalg::vector3d fr = ff.cross(world_up());
-    m_position += ff * forward_amount + fr * right_amount + world_up() * up_amount;
+    m_position += m_axes.from_render(ff) * forward_amount + m_axes.from_render(fr) * right_amount + m_axes.up() * up_amount;
     mark_view_dirty();
 }
 
 void Camera3D::set_rotation(double yaw_degrees, double pitch_degrees, double roll_degrees) noexcept {
-    m_orientation = (axis_angle(world_up(), yaw_degrees)
+    const double s = m_axes.sign();
+    m_orientation = (axis_angle(world_up(), yaw_degrees * s)
                    * axis_angle(linalg::vector3d{1.0, 0.0, 0.0}, pitch_degrees)
-                   * axis_angle(linalg::vector3d{0.0, 0.0, 1.0}, roll_degrees)).normalized();
+                   * axis_angle(linalg::vector3d{0.0, 0.0, 1.0}, roll_degrees * s)).normalized();
+    mark_view_dirty();
+}
+
+void Camera3D::orbit(const linalg::vector3d& target, double yaw_degrees, double pitch_degrees, double distance) noexcept {
+    m_position = m_axes.orbit_eye(target, yaw_degrees, pitch_degrees, distance, true);
+    m_orientation = (axis_angle(world_up(), -yaw_degrees * m_axes.sign())
+                   * axis_angle(linalg::vector3d{1.0, 0.0, 0.0}, -pitch_degrees)).normalized();
     mark_view_dirty();
 }
 
 double Camera3D::pitch() const noexcept {
     rebuild_view_if_dirty();
-    return to_degrees(std::asin(clamp(m_forward.y, -1.0, 1.0)));
+    return to_degrees(std::asin(clamp(m_forward_r.y, -1.0, 1.0)));
 }
 
 double Camera3D::roll() const noexcept {
     rebuild_view_if_dirty();
-    const linalg::vector3d level_right = flat_forward().cross(world_up());
-    const linalg::vector3d back = -m_forward;
-    return to_degrees(std::atan2(level_right.cross(m_right).dot(back), level_right.dot(m_right)));
+    linalg::vector3d ff{m_forward_r.x, 0.0, m_forward_r.z};
+    if (ff.magnitude_squared() <= EPS) ff = m_forward_r.y < 0.0 ? linalg::vector3d{m_up_r.x, 0.0, m_up_r.z} : linalg::vector3d{-m_up_r.x, 0.0, -m_up_r.z};
+    ff = ff.unit_vector();
+    const linalg::vector3d level_right = ff.cross(world_up());
+    const linalg::vector3d back = -m_forward_r;
+    return to_degrees(std::atan2(level_right.cross(m_right_r).dot(back), level_right.dot(m_right_r))) * m_axes.sign();
 }
 
 void Camera3D::add_yaw_pitch(double dyaw_degrees, double dpitch_degrees) noexcept {
@@ -64,7 +78,7 @@ void Camera3D::add_yaw_pitch(double dyaw_degrees, double dpitch_degrees) noexcep
 }
 
 void Camera3D::rotate(const linalg::vector3d& world_axis, double degrees) noexcept {
-    m_orientation = (axis_angle(world_axis, degrees) * m_orientation).normalized();
+    m_orientation = (axis_angle(m_axes.to_render(world_axis), degrees * m_axes.sign()) * m_orientation).normalized();
     mark_view_dirty();
 }
 
@@ -73,7 +87,9 @@ void Camera3D::rotate_local(const linalg::vector3d& local_axis, double degrees) 
     mark_view_dirty();
 }
 
-void Camera3D::look_in(const linalg::vector3d& direction, const linalg::vector3d& up_hint) noexcept {
+void Camera3D::look_in(const linalg::vector3d& world_direction, const linalg::vector3d& world_up_hint) noexcept {
+    const linalg::vector3d direction = m_axes.to_render(world_direction);
+    const linalg::vector3d up_hint = m_axes.to_render(world_up_hint);
     const double len = direction.magnitude();
     if (!(len > EPS)) return;
     const linalg::vector3d f = direction / len;
@@ -94,11 +110,11 @@ void Camera3D::look_in(const linalg::vector3d& direction, const linalg::vector3d
 
 auto Camera3D::flat_forward() const noexcept -> linalg::vector3d {
     rebuild_view_if_dirty();
-    linalg::vector3d ff{m_forward.x, 0.0, m_forward.z};
+    linalg::vector3d ff{m_forward_r.x, 0.0, m_forward_r.z};
     if (ff.magnitude_squared() <= EPS) {
-        ff = m_forward.y < 0.0 ? linalg::vector3d{m_up.x, 0.0, m_up.z} : linalg::vector3d{-m_up.x, 0.0, -m_up.z};
+        ff = m_forward_r.y < 0.0 ? linalg::vector3d{m_up_r.x, 0.0, m_up_r.z} : linalg::vector3d{-m_up_r.x, 0.0, -m_up_r.z};
     }
-    return ff.unit_vector();
+    return m_axes.from_render(ff.unit_vector());
 }
 
 void Camera3D::set_perspective(double fov_y_degrees, double near_plane, double far_plane) noexcept {
@@ -187,9 +203,12 @@ void Camera3D::rebuild_view_if_dirty() const noexcept {
     if (!m_view_dirty) return;
     m_view_dirty = false;
     const auto R = m_orientation.to_rotation_matrix(); 
-    m_right   = linalg::vector3d{R[0], R[3], R[6]};
-    m_up      = linalg::vector3d{R[1], R[4], R[7]};
-    const linalg::vector3d back{R[2], R[5], R[8]};
+    m_right_r   = linalg::vector3d{R[0], R[3], R[6]};
+    m_up_r      = linalg::vector3d{R[1], R[4], R[7]};
+    m_forward_r = linalg::vector3d{-R[2], -R[5], -R[8]};
+    m_right   = m_axes.from_render(m_right_r);
+    m_up      = m_axes.from_render(m_up_r);
+    const linalg::vector3d back = -m_axes.from_render(m_forward_r);
     m_forward = -back;
     const linalg::vector3d& p = m_position;
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.3.7
+    VERSION 0.3.8
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -29,6 +29,19 @@ else()
     set(FIZMO_SHARED_DEFAULT OFF)
 endif()
 option(FIZMO_SHARED "Make fizmo::fizmo the shared library (.so / .dll) instead of the static one" ${FIZMO_SHARED_DEFAULT})
+
+option(FIZMO_BUILD_PHYSICS_TESTS "Build Testing/physics_tests.cpp as fizmo-physics-tests" OFF)
+if(FIZMO_BUILD_PHYSICS_TESTS)
+    add_executable(fizmo-physics-tests Testing/physics_tests.cpp)
+    target_compile_features(fizmo-physics-tests PRIVATE cxx_std_17)
+    if(TARGET fizmo::physics)
+        target_link_libraries(fizmo-physics-tests PRIVATE fizmo::physics)
+    else()
+        target_link_libraries(fizmo-physics-tests PRIVATE fizmo::fizmo)
+    endif()
+    enable_testing()
+    add_test(NAME fizmo-physics COMMAND fizmo-physics-tests)
+endif()
 
 if(PROJECT_IS_TOP_LEVEL OR CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(FIZMO_BUILD_STATIC_DEFAULT ON)

@@ -463,7 +463,8 @@ public:
 
     bool begin_3d(const graphics::Camera3D& camera, int x, int y, unsigned int w, unsigned int h) noexcept;
 
-    void end_3d() noexcept { if (m_impl) m_impl->end_3d(); }
+    void end_3d() noexcept { m_mirror_3d = false; if (m_impl) m_impl->end_3d(); }
+    bool mirrored_3d() const noexcept { return m_mirror_3d; }
     bool in_3d() const noexcept { return m_impl && m_impl->in_3d(); }
 
     void set_light_3d(const graphics::Light3D& light) noexcept { if (m_impl) m_impl->set_light_3d(light); }
@@ -632,6 +633,14 @@ private:
     graphics::BlendMode                   m_blend = graphics::BlendMode::Normal;
 
     linalg::vector3d              m_origin_3d{};
+    bool                          m_mirror_3d = false;
+
+    graphics::Material3D facing(const graphics::Material3D& material) const noexcept {
+        if (!m_mirror_3d || material.cull == graphics::Cull3D::None) return material;
+        graphics::Material3D m = material;
+        m.cull = material.cull == graphics::Cull3D::Back ? graphics::Cull3D::Front : graphics::Cull3D::Back;
+        return m;
+    }
     std::vector<linalg::vector3d> m_line_scratch;
     std::vector<detail::QuadBatchDraw> m_batch_scratch;
 

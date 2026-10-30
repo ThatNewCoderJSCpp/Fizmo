@@ -522,6 +522,14 @@ void RigidBody3D::set_euler_angles(double roll, double pitch, double yaw, bool i
     set_orientation(fast::from_euler(roll, pitch, yaw));
 }
 
+void RigidBody3D::set_yaw_pitch_roll(double yaw, double pitch, double roll, bool in_rad) noexcept {
+    set_yaw_pitch_roll(default_axes3d(), yaw, pitch, roll, in_rad);
+}
+
+std::array<double, 3> RigidBody3D::yaw_pitch_roll(bool in_rad) const noexcept {
+    return yaw_pitch_roll(default_axes3d(), in_rad);
+}
+
 void RigidBody3D::set_density(double d) noexcept {
     if (is_frozen(FrozenProperty::Density)) return;
     ensure_mass_uptodate();

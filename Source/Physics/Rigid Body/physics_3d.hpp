@@ -296,6 +296,8 @@ struct Material3D {
     double     friction    = 0.3;           // unitless [0, 1]
     double     restitution = 0.0;           // unitless [0, 1]
     double     restitution_threshold = 1.0; // m/s
+    CombineMode friction_combine = CombineMode::Default;
+    CombineMode restitution_combine = CombineMode::Default;
 
     constexpr Material3D() noexcept = default;
     explicit constexpr Material3D(double density) noexcept : mass_spec(MassSpec3D::from_density(density)) {}
@@ -437,6 +439,18 @@ public:
     std::array<double, 3> euler_angles(bool in_rad = true) const noexcept;
 
     void set_euler_angles(double roll, double pitch, double yaw, bool in_rad = true) noexcept;
+
+    std::array<double, 3> euler_xyz(bool in_rad = true) const noexcept { return euler_angles(in_rad); }
+
+    void set_euler_xyz(double about_x, double about_y, double about_z, bool in_rad = true) noexcept { set_euler_angles(about_x, about_y, about_z, in_rad); }
+
+    void set_yaw_pitch_roll(double yaw, double pitch, double roll, bool in_rad = true) noexcept;
+
+    std::array<double, 3> yaw_pitch_roll(bool in_rad = true) const noexcept;
+
+    void set_yaw_pitch_roll(const Axes3D& axes, double yaw, double pitch, double roll, bool in_rad = true) noexcept { set_orientation(axes.from_yaw_pitch_roll(yaw, pitch, roll, !in_rad)); }
+
+    std::array<double, 3> yaw_pitch_roll(const Axes3D& axes, bool in_rad = true) const noexcept { return axes.to_yaw_pitch_roll(m_transform.orientation, !in_rad); }
 
 public:
     linalg::vector3d linear_velocity() const noexcept { return m_linear_velocity; }

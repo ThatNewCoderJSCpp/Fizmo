@@ -6,6 +6,7 @@
 #include <utility>
 #include <algorithm>
 #include "../Vectors/vectors.hpp"
+#include "../Vectors/axes.hpp"
 
 namespace fizmo {
 namespace graphics {
@@ -41,6 +42,9 @@ public:
 
     void zoom_at(double factor, double world_x, double world_y) noexcept;
 
+    const Axes2D& axes() const noexcept { return m_axes; }
+    void set_axes(const Axes2D& axes) noexcept { if (axes != m_axes) { m_axes = axes; mark_dirty(); } }
+
     double rotation() const noexcept { return m_rotation; }
     void set_rotation(double degrees) noexcept { m_rotation = degrees; mark_dirty(); }
     void rotate(double degrees) noexcept { m_rotation += degrees; mark_dirty(); }
@@ -75,6 +79,7 @@ private:
     double m_y        = 0.0;
     double m_zoom     = 1.0;
     double m_rotation = 0.0;   // degrees
+    Axes2D m_axes = default_axes2d();
     unsigned int m_vp_w = 0;
     unsigned int m_vp_h = 0;
 

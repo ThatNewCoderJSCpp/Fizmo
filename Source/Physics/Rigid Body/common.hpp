@@ -14,12 +14,15 @@
 #include <algorithm>
 #include <unordered_map>
 #include <limits>
+#include <optional>
+#include <string_view>
 
 #include "../../Vectors/vectors.hpp"
 #include "../../Converters/quantity.hpp"
 #include "../../Matrices/square_matrices.hpp"
 #include "../../Quaternions/quaternion.hpp"
 #include "../../Vectors/fast_math.hpp"
+#include "../../Vectors/axes.hpp"
 
 #ifdef OS_LINUX
 #endif
@@ -99,7 +102,7 @@ enum class PhysicsFlags : std::uint64_t {
     LockRotationY       = 1ULL << 19,  // freeze rotation about Y
     LockRotationZ       = 1ULL << 20,  // freeze rotation about Z
 
-    LockRotation2D      = LockRotationX | LockRotationY,
+    LockRotation2D      = LockRotationZ,
     LockRotation3D      = LockRotationX | LockRotationY | LockRotationZ,
 
     CollisionResponse   = 1ULL << 21,  // participates in collision resolution
@@ -358,6 +361,88 @@ public:
 private:
     StorageP m_storage;
 };
+
+enum class CombineMode : std::uint8_t {
+    Default = 0,
+    Average,
+    GeometricMean,
+    HarmonicMean,
+    QuadraticMean,
+    Minimum,
+    Multiply,
+    Maximum,
+    Sum,
+    Custom
+};
+
+inline constexpr int combine_priority(CombineMode m) noexcept {
+    switch (m) {
+    case CombineMode::Average: return 1;
+    case CombineMode::GeometricMean: return 2;
+    case CombineMode::HarmonicMean: return 3;
+    case CombineMode::QuadraticMean: return 4;
+    case CombineMode::Minimum: return 5;
+    case CombineMode::Multiply: return 6;
+    case CombineMode::Maximum: return 7;
+    case CombineMode::Sum: return 8;
+    case CombineMode::Custom: return 9;
+    case CombineMode::Default: break;
+    }
+    return 0;
+}
+
+inline constexpr CombineMode resolve_combine(CombineMode a, CombineMode b, CombineMode fallback) noexcept {
+    if (fallback == CombineMode::Default) fallback = CombineMode::Average;
+    if (a == CombineMode::Default) a = fallback;
+    if (b == CombineMode::Default) b = fallback;
+    return combine_priority(a) >= combine_priority(b) ? a : b;
+}
+
+inline double combine_values(CombineMode m, double a, double b) noexcept {
+    switch (m) {
+    case CombineMode::GeometricMean: return a * b > 0.0 ? std::sqrt(a * b) : 0.0;
+    case CombineMode::HarmonicMean: return a + b > 0.0 ? 2.0 * a * b / (a + b) : 0.0;
+    case CombineMode::QuadraticMean: return std::sqrt(0.5 * (a * a + b * b));
+    case CombineMode::Minimum: return std::min(a, b);
+    case CombineMode::Multiply: return a * b;
+    case CombineMode::Maximum: return std::max(a, b);
+    case CombineMode::Sum: return a + b;
+    case CombineMode::Average:
+    case CombineMode::Default:
+    case CombineMode::Custom: break;
+    }
+    return 0.5 * (a + b);
+}
+
+inline const char* to_string(CombineMode m) noexcept {
+    switch (m) {
+    case CombineMode::Default: return "default";
+    case CombineMode::Average: return "average";
+    case CombineMode::GeometricMean: return "geometric-mean";
+    case CombineMode::HarmonicMean: return "harmonic-mean";
+    case CombineMode::QuadraticMean: return "quadratic-mean";
+    case CombineMode::Minimum: return "minimum";
+    case CombineMode::Multiply: return "multiply";
+    case CombineMode::Maximum: return "maximum";
+    case CombineMode::Sum: return "sum";
+    case CombineMode::Custom: return "custom";
+    }
+    return "default";
+}
+
+inline std::optional<CombineMode> parse_combine_mode(std::string_view text) noexcept {
+    if (text == "default") return CombineMode::Default;
+    if (text == "average" || text == "mean") return CombineMode::Average;
+    if (text == "geometric-mean" || text == "geometric" || text == "sqrt") return CombineMode::GeometricMean;
+    if (text == "harmonic-mean" || text == "harmonic") return CombineMode::HarmonicMean;
+    if (text == "quadratic-mean" || text == "quadratic" || text == "rms") return CombineMode::QuadraticMean;
+    if (text == "minimum" || text == "min") return CombineMode::Minimum;
+    if (text == "multiply" || text == "product") return CombineMode::Multiply;
+    if (text == "maximum" || text == "max") return CombineMode::Maximum;
+    if (text == "sum" || text == "add") return CombineMode::Sum;
+    if (text == "custom") return CombineMode::Custom;
+    return std::nullopt;
+}
 
 } // namespace physics
 } // namespace fizmo

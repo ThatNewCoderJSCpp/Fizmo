@@ -171,7 +171,7 @@ struct ContactEvent {
 };
 
 struct Simulation2DConfig {
-    linalg::vector2d gravity           = {0.0, -constants::gravity()}; // m/s2
+    linalg::vector2d gravity           = default_axes2d().gravity(constants::gravity()); // m/s2
     double   fixed_dt          = 1.0 / 60.0;     // s
     int      velocity_iters    = 8;
     int      position_iters    = 3;
@@ -183,6 +183,8 @@ struct Simulation2DConfig {
     bool     warm_starting     = true;
     bool     allow_sleeping    = true;
     double   world_half_extent = 500.0;          // m
+    CombineMode friction_combine = CombineMode::GeometricMean;
+    CombineMode restitution_combine = CombineMode::Maximum;
 };
 
 class Simulation2D {
@@ -222,6 +224,8 @@ public:
           Config& config()       noexcept { return m_cfg; }
     const Config& config() const noexcept { return m_cfg; }
 
+    void set_axes(const Axes2D& axes) noexcept { m_cfg.gravity = axes.gravity(fast::length(m_cfg.gravity)); }
+
     void set_gravity(const linalg::vector2d& g) noexcept { m_cfg.gravity = g; }
     linalg::vector2d gravity() const noexcept { return m_cfg.gravity; }
 
@@ -229,6 +233,11 @@ public:
     void on_contact_end(std::function<void(const ContactEvent&)> cb)   { m_on_end     = std::move(cb); }
     void on_pre_solve(std::function<bool(RigidBody2D& a, RigidBody2D& b, const ContactManifold&)> cb)    { m_pre_solve  = std::move(cb); }
     void on_post_solve(std::function<bool(RigidBody2D& a, RigidBody2D& b, const ContactManifold&)> cb)  { m_post_solve = std::move(cb); }
+    using CombineCallback = std::function<double(const Collider2D& a, const Collider2D& b)>;
+    void set_friction_combiner(CombineCallback cb) { m_friction_combiner = std::move(cb); }
+    void set_restitution_combiner(CombineCallback cb) { m_restitution_combiner = std::move(cb); }
+    double combined_friction(const Collider2D& a, const Collider2D& b) const;
+    double combined_restitution(const Collider2D& a, const Collider2D& b) const;
 
     const std::vector<ContactManifold>& contacts() const noexcept { return m_manifolds; }
 
@@ -337,6 +346,8 @@ private:
     std::function<void(const ContactEvent&)> m_on_end;
     std::function<bool(RigidBody2D& a, RigidBody2D& b, const ContactManifold&)> m_pre_solve;
     std::function<bool(RigidBody2D& a, RigidBody2D& b, const ContactManifold&)> m_post_solve;
+    CombineCallback m_friction_combiner;
+    CombineCallback m_restitution_combiner;
 };
 
 } // namespace physics

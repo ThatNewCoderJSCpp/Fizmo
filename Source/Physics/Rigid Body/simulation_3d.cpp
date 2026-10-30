@@ -910,8 +910,8 @@ void Simulation3D::generate_contacts(RigidBody3D* a, RigidBody3D* b) {
             mf.collider_b = j;
             const bool sensor = ca.is_sensor || cb.is_sensor || !responds(*a, *b);
             if (!collide_shapes(ca.shape, wa, cb.shape, wb, mf, sensor ? 0.0 : m_cfg.speculative_distance)) continue;
-            mf.friction    = std::sqrt(ca.material.friction * cb.material.friction);
-            mf.restitution = std::max(ca.material.restitution, cb.material.restitution);
+            mf.friction    = combined_friction(ca, cb);
+            mf.restitution = combined_restitution(ca, cb);
             mf.restitution_threshold = std::min(ca.material.restitution_threshold, cb.material.restitution_threshold);
 
             for (int p = 0; p < mf.point_count; ++p) {
@@ -1371,6 +1371,18 @@ void Simulation3D::cleanup_bodies() {
     }
 
     flush_pending_removals();
+}
+
+double Simulation3D::combined_friction(const Collider3D& a, const Collider3D& b) const {
+    const CombineMode m = resolve_combine(a.material.friction_combine, b.material.friction_combine, m_cfg.friction_combine);
+    if (m == CombineMode::Custom && m_friction_combiner) return m_friction_combiner(a, b);
+    return combine_values(m, a.material.friction, b.material.friction);
+}
+
+double Simulation3D::combined_restitution(const Collider3D& a, const Collider3D& b) const {
+    const CombineMode m = resolve_combine(a.material.restitution_combine, b.material.restitution_combine, m_cfg.restitution_combine);
+    if (m == CombineMode::Custom && m_restitution_combiner) return m_restitution_combiner(a, b);
+    return combine_values(m, a.material.restitution, b.material.restitution);
 }
 
 } // namespace physics

@@ -466,7 +466,7 @@ void RigidBody2D::integrate_velocities(double dt) {
         center += dv;
     }
 
-    if (has(PhysicsFlags::AngularVelocity) && !has(PhysicsFlags::LockRotation2D)) m_transform.set_angle(m_transform.angle + m_angular_velocity * dt);
+    if (has(PhysicsFlags::AngularVelocity) && !rotation_locked()) m_transform.set_angle(m_transform.angle + m_angular_velocity * dt);
     m_transform.position = center - m_transform.rotate(m_local_center);
     m_sweep.position1 = center;
     m_sweep.angle1    = m_transform.angle;
@@ -573,7 +573,7 @@ void RigidBody2D::recompute_mass_data(double gravity) const {
         m_inv_mass = 1.0;
     }
 
-    if (total.inertia > 0.0 && !has(PhysicsFlags::LockRotation2D)) {
+    if (total.inertia > 0.0 && !rotation_locked()) {
         m_inertia     = total.inertia;
         m_inv_inertia = 1.0 / m_inertia;
     } else {
@@ -732,7 +732,7 @@ void RigidBody2D::recompute_inertia_from_density() noexcept {
     MassData combined = MassData::combine(parts.data(), parts.size());
     m_local_center = combined.center;
 
-    if (combined.inertia > 0.0 && !has(PhysicsFlags::LockRotation2D)) {
+    if (combined.inertia > 0.0 && !rotation_locked()) {
         m_inertia     = combined.inertia;
         m_inv_inertia = 1.0 / m_inertia;
     } else {

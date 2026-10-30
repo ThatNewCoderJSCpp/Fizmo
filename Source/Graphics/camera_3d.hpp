@@ -9,6 +9,7 @@
 #include "../Quaternions/quaternion.hpp"
 #include <cmath>
 #include "../Vectors/vectors.hpp"
+#include "../Vectors/axes.hpp"
 #include "ray.hpp"
 
 namespace fizmo {
@@ -64,6 +65,10 @@ public:
 
     static linalg::vector3d world_up() { return linalg::vector3d{0.0, 1.0, 0.0}; }
 
+    const Axes3D& axes() const noexcept { return m_axes; }
+    void set_axes(const Axes3D& axes) noexcept { if (axes != m_axes) { m_axes = axes; mark_view_dirty(); } }
+    linalg::vector3d up_direction() const noexcept { return m_axes.up(); }
+
 public: 
     unsigned int viewport_width()  const noexcept { return m_vp_w; }
     unsigned int viewport_height() const noexcept { return m_vp_h; }
@@ -96,8 +101,10 @@ public:
     void set_rotation(double yaw_degrees, double pitch_degrees, double roll_degrees = 0.0) noexcept;
 
     double yaw() const noexcept {
-        const linalg::vector3d ff = flat_forward();
-        return to_degrees(std::atan2(-ff.x, -ff.z));
+        rebuild_view_if_dirty();
+        linalg::vector3d ff{m_forward_r.x, 0.0, m_forward_r.z};
+        if (ff.magnitude_squared() <= EPS) ff = m_forward_r.y < 0.0 ? linalg::vector3d{m_up_r.x, 0.0, m_up_r.z} : linalg::vector3d{-m_up_r.x, 0.0, -m_up_r.z};
+        return to_degrees(std::atan2(-ff.x, -ff.z)) * m_axes.sign();
     }
 
     double pitch() const noexcept;
@@ -113,11 +120,17 @@ public:
 
     void rotate_local(const linalg::vector3d& local_axis, double degrees) noexcept;
 
-    void look_at(const linalg::vector3d& target, const linalg::vector3d& up_hint = world_up()) noexcept {
+    void look_at(const linalg::vector3d& target, const linalg::vector3d& up_hint) noexcept {
         look_in(target - m_position, up_hint);
     }
 
-    void look_in(const linalg::vector3d& direction, const linalg::vector3d& up_hint = world_up()) noexcept;
+    void look_at(const linalg::vector3d& target) noexcept { look_in(target - m_position, m_axes.up()); }
+
+    void look_in(const linalg::vector3d& direction, const linalg::vector3d& up_hint) noexcept;
+
+    void look_in(const linalg::vector3d& direction) noexcept { look_in(direction, m_axes.up()); }
+
+    void orbit(const linalg::vector3d& target, double yaw_degrees, double pitch_degrees, double distance) noexcept;
 
     const linalg::vector3d& forward() const noexcept { rebuild_view_if_dirty(); return m_forward; }
     const linalg::vector3d& right()   const noexcept { rebuild_view_if_dirty(); return m_right; }
@@ -197,9 +210,14 @@ private:
     unsigned int m_vp_w = 0;
     unsigned int m_vp_h = 0;
 
+    Axes3D       m_axes = default_axes3d();
+
     mutable linalg::vector3d m_forward{0.0, 0.0, -1.0};
     mutable linalg::vector3d m_right{1.0, 0.0, 0.0};
     mutable linalg::vector3d m_up{0.0, 1.0, 0.0};
+    mutable linalg::vector3d m_forward_r{0.0, 0.0, -1.0};
+    mutable linalg::vector3d m_right_r{1.0, 0.0, 0.0};
+    mutable linalg::vector3d m_up_r{0.0, 1.0, 0.0};
 
     mutable linalg::Matrix4d m_view          = linalg::Matrix4d::identity();
     mutable linalg::Matrix4d m_inv_view      = linalg::Matrix4d::identity();

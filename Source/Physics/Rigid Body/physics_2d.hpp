@@ -274,6 +274,8 @@ struct Material {
     double   friction    = 0.3;           // unitless [0, 1]
     double   restitution = 0.0;           // unitless [0, 1]
     double   restitution_threshold = 1.0; // m/s
+    CombineMode friction_combine = CombineMode::Default;
+    CombineMode restitution_combine = CombineMode::Default;
 
     constexpr Material() noexcept = default;
     explicit constexpr Material(double density) noexcept : mass_spec(MassSpec::from_density(density)) {}
@@ -348,10 +350,14 @@ public:
 
 public:
     bool has(PhysicsFlags f)                    const noexcept { return has_flag(m_flags, f); }
-    void set_flag(PhysicsFlags f)                     noexcept { m_flags |= f;  }
-    void clear_flag(PhysicsFlags f)                   noexcept { m_flags &= ~f; }
-    void toggle_flag(PhysicsFlags f)                  noexcept { m_flags ^= f;  }
+    void set_flag(PhysicsFlags f)                     noexcept { m_flags |= f;  touch_rotation_lock(f); }
+    void clear_flag(PhysicsFlags f)                   noexcept { m_flags &= ~f; touch_rotation_lock(f); }
+    void toggle_flag(PhysicsFlags f)                  noexcept { m_flags ^= f;  touch_rotation_lock(f); }
     void set_flag_to(PhysicsFlags f, bool on)         noexcept { on ? set_flag(f) : clear_flag(f); }
+
+    bool rotation_locked() const noexcept {
+        return has(PhysicsFlags::LockRotationZ) || has(PhysicsFlags::LockRotationX | PhysicsFlags::LockRotationY);
+    }
 
     bool is_frozen(FrozenProperty prop) const noexcept { return has_frozen(m_frozen, prop); }
     void unfreeze(FrozenProperty prop)        noexcept { m_frozen &= ~prop; }
@@ -360,6 +366,13 @@ public:
 public:
     // Call after externally mutating colliders, materials, offsets, or flags
     void mark_mass_dirty() const noexcept { m_mass_dirty = true; }
+
+private:
+    void touch_rotation_lock(PhysicsFlags f) noexcept {
+        if (has_any(f, PhysicsFlags::LockRotationX | PhysicsFlags::LockRotationY | PhysicsFlags::LockRotationZ)) m_mass_dirty = true;
+    }
+
+public:
 
     bool can_collide_with(const RigidBody2D& other) const noexcept;
 

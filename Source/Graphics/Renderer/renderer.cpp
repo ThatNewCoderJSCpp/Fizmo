@@ -655,6 +655,7 @@ bool Renderer::begin_3d(const graphics::Camera3D& camera, int x, int y, unsigned
     for (std::size_t i = 0; i < 16; ++i) scene.view_proj[i] = static_cast<float>(vp.data[i]);
     scene.origin[0] = m_origin_3d.x; scene.origin[1] = m_origin_3d.y; scene.origin[2] = m_origin_3d.z;
     scene.x = x; scene.y = y; scene.width = w; scene.height = h;
+    m_mirror_3d = camera.axes().mirrored();
     m_impl->begin_3d(scene);
     return m_impl->in_3d();
 }
@@ -663,14 +664,14 @@ void Renderer::draw_mesh(const graphics::Mesh3D& mesh, const linalg::Matrix4d& m
     if (!m_impl) return;
     float m[16];
     to_origin_relative(model, m);
-    m_impl->draw_mesh_3d(mesh, m, material);
+    m_impl->draw_mesh_3d(mesh, m, facing(material));
 }
 
 void Renderer::draw_quads(const graphics::QuadMesh3D& quads, const linalg::Matrix4d& model, const graphics::Material3D& material) noexcept {
     if (!m_impl) return;
     float m[16];
     to_origin_relative(model, m);
-    m_impl->draw_quads_3d(quads, m, nullptr, material);
+    m_impl->draw_quads_3d(quads, m, nullptr, facing(material));
 }
 
 void Renderer::draw_quads_at(const graphics::QuadMesh3D& quads, const linalg::vector3d& offset, const graphics::Material3D& material) noexcept {
@@ -679,7 +680,7 @@ void Renderer::draw_quads_at(const graphics::QuadMesh3D& quads, const linalg::ve
     std::int32_t cell[3];
     to_origin_relative(translation(offset), m);
     cell_origin(offset, cell);
-    m_impl->draw_quads_3d(quads, m, cell, material);
+    m_impl->draw_quads_3d(quads, m, cell, facing(material));
 }
 
 auto Renderer::upload_mesh(graphics::Mesh3D mesh, bool keep_cpu_copy) -> graphics::MeshHandle3D {
@@ -698,7 +699,7 @@ void Renderer::draw_mesh(const graphics::MeshHandle3D& mesh, const linalg::Matri
     if (!m_impl || mesh.empty()) return;
     float m[16];
     to_origin_relative(model, m);
-    m_impl->draw_handle_3d(mesh.slot(), m, nullptr, material);
+    m_impl->draw_handle_3d(mesh.slot(), m, nullptr, facing(material));
 }
 
 void Renderer::draw_mesh_at(const graphics::MeshHandle3D& mesh, const linalg::vector3d& offset, const graphics::Material3D& material) noexcept {
@@ -707,7 +708,7 @@ void Renderer::draw_mesh_at(const graphics::MeshHandle3D& mesh, const linalg::ve
     std::int32_t cell[3];
     to_origin_relative(translation(offset), m);
     cell_origin(offset, cell);
-    m_impl->draw_handle_3d(mesh.slot(), m, cell, material);
+    m_impl->draw_handle_3d(mesh.slot(), m, cell, facing(material));
 }
 
 void Renderer::draw_quad_batch(const graphics::QuadBatch3D& batch, const graphics::Material3D& material) noexcept {
@@ -742,7 +743,7 @@ void Renderer::draw_quad_batch(const graphics::QuadBatch3D& batch, const graphic
             m_batch_scratch.push_back(d);
         }
 
-        m_impl->draw_quad_batch_3d(m_batch_scratch.data(), m_batch_scratch.size(), camera_frac, material);
+        m_impl->draw_quad_batch_3d(m_batch_scratch.data(), m_batch_scratch.size(), camera_frac, facing(material));
     } catch (...) {}
 }
 
@@ -751,21 +752,21 @@ void Renderer::draw_instances(const graphics::Mesh3D& mesh, const linalg::vector
     if (!m_impl || !instances || count == 0) return;
     float m[16];
     to_origin_relative(translation(origin), m);
-    m_impl->draw_instances_3d(mesh, m, instances, count, material);
+    m_impl->draw_instances_3d(mesh, m, instances, count, facing(material));
 }
 
 void Renderer::draw_triangles_3d(const graphics::Vertex3D* vertices, std::size_t count, const graphics::Material3D& material) noexcept {
     if (!m_impl) return;
     float m[16];
     to_origin_relative(linalg::Matrix4d::identity(), m);
-    m_impl->draw_triangles_3d(vertices, count, m, material);
+    m_impl->draw_triangles_3d(vertices, count, m, facing(material));
 }
 
 void Renderer::draw_triangles_3d(const graphics::Vertex3D* vertices, std::size_t count, const linalg::Matrix4d& model, const graphics::Material3D& material) noexcept {
     if (!m_impl) return;
     float m[16];
     to_origin_relative(model, m);
-    m_impl->draw_triangles_3d(vertices, count, m, material);
+    m_impl->draw_triangles_3d(vertices, count, m, facing(material));
 }
 
 void Renderer::draw_line_3d(const linalg::vector3d& a, const linalg::vector3d& b, const colors::Color& color, float width, bool depth_test) noexcept {
@@ -991,6 +992,12 @@ void Renderer::emit_texture(const graphics::Texture& tex, int dx, int dy, unsign
     }
 
     const double x0 = dx, y0 = dy, x1 = dx + static_cast<double>(dw), y1 = dy + static_cast<double>(dh);
+    const auto& t = m_xform.data;
+    if (t[0] * t[4] - t[1] * t[3] < 0.0) {
+        const RenderPoint upright[4] = { mapped(x0, y1), mapped(x1, y1), mapped(x1, y0), mapped(x0, y0) };
+        m_impl->draw_texture_quad(upright, tex, opacity, src);
+        return;
+    }
     const RenderPoint quad[4] = { mapped(x0, y0), mapped(x1, y0), mapped(x1, y1), mapped(x0, y1) };
     m_impl->draw_texture_quad(quad, tex, opacity, src);
 }

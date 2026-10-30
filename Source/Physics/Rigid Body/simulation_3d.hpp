@@ -206,7 +206,7 @@ struct ContactEvent3D {
 };
 
 struct Simulation3DConfig {
-    linalg::vector3d gravity           = {0.0, -constants::gravity(), 0.0}; // m/s2
+    linalg::vector3d gravity           = default_axes3d().gravity(constants::gravity()); // m/s2
     double   fixed_dt          = 1.0 / 60.0;        // s
     int      velocity_iters    = 10;
     int      position_iters    = 3;
@@ -220,6 +220,8 @@ struct Simulation3DConfig {
     bool     allow_sleeping    = true;
     bool     gyroscopic        = true;              // integrate w x Iw for non-spherical bodies
     double   world_half_extent = 500.0;             // m
+    CombineMode friction_combine = CombineMode::GeometricMean;
+    CombineMode restitution_combine = CombineMode::Maximum;
 };
 
 class Simulation3D {
@@ -261,6 +263,8 @@ public:
           Config& config()       noexcept { return m_cfg; }
     const Config& config() const noexcept { return m_cfg; }
 
+    void set_axes(const Axes3D& axes) noexcept { m_cfg.gravity = axes.gravity(fast::length(m_cfg.gravity)); }
+
     void set_gravity(const linalg::vector3d& g) noexcept { m_cfg.gravity = g; }
     linalg::vector3d gravity() const noexcept { return m_cfg.gravity; }
 
@@ -268,6 +272,11 @@ public:
     void on_contact_end(std::function<void(const ContactEvent3D&)> cb)   { m_on_end     = std::move(cb); }
     void on_pre_solve(std::function<bool(RigidBody3D& a, RigidBody3D& b, const ContactManifold3D&)> cb)   { m_pre_solve  = std::move(cb); }
     void on_post_solve(std::function<bool(RigidBody3D& a, RigidBody3D& b, const ContactManifold3D&)> cb) { m_post_solve = std::move(cb); }
+    using CombineCallback = std::function<double(const Collider3D& a, const Collider3D& b)>;
+    void set_friction_combiner(CombineCallback cb) { m_friction_combiner = std::move(cb); }
+    void set_restitution_combiner(CombineCallback cb) { m_restitution_combiner = std::move(cb); }
+    double combined_friction(const Collider3D& a, const Collider3D& b) const;
+    double combined_restitution(const Collider3D& a, const Collider3D& b) const;
 
     const std::vector<ContactManifold3D>& contacts() const noexcept { return m_manifolds; }
 
@@ -390,6 +399,8 @@ private:
     std::function<void(const ContactEvent3D&)> m_on_end;
     std::function<bool(RigidBody3D& a, RigidBody3D& b, const ContactManifold3D&)> m_pre_solve;
     std::function<bool(RigidBody3D& a, RigidBody3D& b, const ContactManifold3D&)> m_post_solve;
+    CombineCallback m_friction_combiner;
+    CombineCallback m_restitution_combiner;
 };
 
 } // namespace physics
