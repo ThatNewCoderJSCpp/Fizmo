@@ -7,6 +7,10 @@
 #include <cmath>
 #include "wide_float_ops.hpp"
 
+#ifdef hyper
+#undef hyper
+#endif
+
 namespace fizmo {
 namespace multiprecision {
 namespace fpmath {
