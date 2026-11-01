@@ -2,6 +2,8 @@
 #define FIZMO_MULTIPRECISION_FAST_FLOAT_DETAIL_HPP
 
 #include "bigfloat_bridge.hpp"
+#include "../../fixed_point_math.hpp"
+#include "../../fixed_point_gamma.hpp"
 
 #include <cmath>
 #include <cstdint>
@@ -24,10 +26,16 @@ enum class fop {
     log, log1p, log2, log10,
     sqrt, cbrt,
     sinc, normalized_sinc, gudermannian, inv_gudermannian,
-    erf, erfc, gamma, log_abs_gamma
+    erf, erfc, gamma, log_abs_gamma,
+    erfi, inv_erf, inv_erfc, inv_erfi, elliptic_k, elliptic_e, lambert_w0, lambert_wm1,
+    log_gamma, factorial, digamma, trigamma
 };
 
-enum class fop2 { atan2, pow };
+enum class fop2 {
+    atan2, pow,
+    jacobi_am, jacobi_sn, jacobi_cn, jacobi_dn, jacobi_ns, jacobi_nc, jacobi_nd,
+    jacobi_sc, jacobi_sd, jacobi_cs, jacobi_cd, jacobi_ds, jacobi_dc
+};
 
 inline double two_sum(double a, double b, double& e) noexcept {
     const double s  = a + b;
@@ -908,6 +916,8 @@ inline bool binary_double(fop2 o, double a, double b, double& r) noexcept {
             if (!(a > 0.0) && std::nearbyint(b) != b) return false;
             r = std::pow(a, b);
             break;
+        default:
+            return false;
     }
     return std::isfinite(r);
 }
@@ -1126,7 +1136,124 @@ bool finish_w(const W& w, C& out) noexcept {
 }
 
 template <class F>
-bool unary(fop o, const F& x, F& out) noexcept {
+bool wide_sqrt(const F& x, F& out) noexcept {
+    using C = multiprecision::floatmp<F::math_bits, F::mantissa_bits, multiprecision::sign::is_signed>;
+    using K = multiprecision::fdetail::wide_ops<F::math_bits, F::mantissa_bits>;
+    const C& xc = x.as_signed_core();
+    if (!xc.is_finite() || xc.is_zero() || xc.is_negative()) return false;
+    constexpr std::size_t L = F::math_bits / 64;
+    std::uint64_t a[L], r[L];
+    multiprecision::umag_limbs<F::math_bits>::store(xc.get_bits().magnitude(), a);
+    const auto k = K::sqrt(a, r);
+    if (k == K::kind::zero) out = F(C::zero(false));
+    else if (k == K::kind::infinite) out = F(C::infinity(false));
+    else out = F(C::from_raw(false, typename C::store_t(multiprecision::umag_limbs<F::math_bits>::load(r))));
+    return true;
+}
+
+template <class F>
+bool fixed_point_unary(fop o, const F& x, F& out) noexcept {
+    using C = multiprecision::floatmp<F::math_bits, F::mantissa_bits, multiprecision::sign::is_signed>;
+    using K = multiprecision::fpmath::fixed_for<F>;
+    if constexpr (!K::usable) {
+        (void)o;
+        (void)x;
+        (void)out;
+        return false;
+    } else {
+        const C& xc = x.as_signed_core();
+        if (!xc.is_finite() || xc.is_zero()) return false;
+        C rc;
+        bool ok = false;
+        switch (o) {
+            case fop::sin: ok = K::trig(0, xc, rc); break;
+            case fop::cos: ok = K::trig(1, xc, rc); break;
+            case fop::tan: ok = K::trig(2, xc, rc); break;
+            case fop::csc: ok = K::trig(3, xc, rc); break;
+            case fop::sec: ok = K::trig(4, xc, rc); break;
+            case fop::cot: ok = K::trig(5, xc, rc); break;
+            case fop::sinh: ok = K::hyper(0, xc, rc); break;
+            case fop::cosh: ok = K::hyper(1, xc, rc); break;
+            case fop::tanh: ok = K::hyper(2, xc, rc); break;
+            case fop::csch: ok = K::hyper(3, xc, rc); break;
+            case fop::sech: ok = K::hyper(4, xc, rc); break;
+            case fop::coth: ok = K::hyper(5, xc, rc); break;
+            case fop::arcsin: ok = K::asin(xc, rc); break;
+            case fop::arccos: ok = K::acos(xc, rc); break;
+            case fop::arctan: ok = K::atan(xc, rc); break;
+            case fop::arccot: ok = K::acot(xc, rc); break;
+            case fop::arcsec: ok = K::asec(xc, rc); break;
+            case fop::arccsc: ok = K::acsc(xc, rc); break;
+            case fop::arcsinh: ok = K::asinh(xc, rc); break;
+            case fop::arccosh: ok = K::acosh(xc, rc); break;
+            case fop::arctanh: ok = K::atanh(xc, rc); break;
+            case fop::arccoth: ok = K::acoth(xc, rc); break;
+            case fop::arcsech: ok = K::asech(xc, rc); break;
+            case fop::arccsch: ok = K::acsch(xc, rc); break;
+            case fop::exp: ok = K::exp(xc, rc); break;
+            case fop::expm1: ok = K::expm1(xc, rc); break;
+            case fop::pow2: ok = K::pow2(xc, rc); break;
+            case fop::pow10: ok = K::pow10(xc, rc); break;
+            case fop::log: ok = K::log(xc, rc); break;
+            case fop::log1p: ok = K::log1p(xc, rc); break;
+            case fop::log2: ok = K::log2(xc, rc); break;
+            case fop::log10: ok = K::log10(xc, rc); break;
+            case fop::sinc: ok = K::sinc(xc, rc); break;
+            case fop::normalized_sinc: ok = K::nsinc(xc, rc); break;
+            case fop::gudermannian: ok = K::gd(xc, rc); break;
+            case fop::inv_gudermannian: ok = K::inv_gd(xc, rc); break;
+            case fop::erf: ok = K::erf(xc, rc); break;
+            case fop::erfc: ok = K::erfc(xc, rc); break;
+            case fop::erfi: ok = K::erfi(xc, rc); break;
+            case fop::inv_erf: ok = K::inv_erf(xc, rc); break;
+            case fop::inv_erfc: ok = K::inv_erfc(xc, rc); break;
+            case fop::inv_erfi: ok = K::inv_erfi(xc, rc); break;
+            case fop::elliptic_k: ok = K::elliptic_k(xc, rc); break;
+            case fop::elliptic_e: ok = K::elliptic_e(xc, rc); break;
+            case fop::lambert_w0: ok = K::lambert(xc, false, rc); break;
+            case fop::lambert_wm1: ok = K::lambert(xc, true, rc); break;
+            case fop::gamma: ok = multiprecision::fpmath::fixed_gamma<F>::gamma(xc, rc); break;
+            case fop::log_gamma: ok = !xc.is_negative() && multiprecision::fpmath::fixed_gamma<F>::log_gamma(xc, rc); break;
+            case fop::log_abs_gamma: ok = multiprecision::fpmath::fixed_gamma<F>::log_abs_gamma(xc, rc); break;
+            case fop::factorial: ok = multiprecision::fpmath::fixed_gamma<F>::factorial(xc, rc); break;
+            case fop::digamma: ok = multiprecision::fpmath::fixed_gamma<F>::digamma(xc, rc); break;
+            case fop::trigamma: ok = multiprecision::fpmath::fixed_gamma<F>::trigamma(xc, rc); break;
+            default: return false;
+        }
+        if (!ok) return false;
+        if (!std::is_same<F, C>::value && rc.is_negative() && !rc.is_zero()) return false;
+        out = F(rc);
+        return true;
+    }
+}
+
+template <class F>
+bool fixed_point_binary(fop2 o, const F& a, const F& b, F& out) noexcept {
+    using C = multiprecision::floatmp<F::math_bits, F::mantissa_bits, multiprecision::sign::is_signed>;
+    using K = multiprecision::fpmath::fixed_for<F>;
+    if constexpr (!K::usable) {
+        (void)o;
+        (void)a;
+        (void)b;
+        (void)out;
+        return false;
+    } else {
+        const C& ac = a.as_signed_core();
+        const C& bc = b.as_signed_core();
+        C rc;
+        bool ok = false;
+        if (o == fop2::atan2) ok = K::atan2(ac, bc, rc);
+        else if (o == fop2::pow) ok = K::pow(ac, bc, rc);
+        else ok = K::jacobi(static_cast<int>(o) - static_cast<int>(fop2::jacobi_am), ac, bc, rc);
+        if (!ok) return false;
+        if (!std::is_same<F, C>::value && rc.is_negative() && !rc.is_zero()) return false;
+        out = F(rc);
+        return true;
+    }
+}
+
+template <class F>
+bool level_unary(fop o, const F& x, F& out) noexcept {
     if constexpr (!enabled<F>) {
         (void)o;
         (void)x;
@@ -1162,7 +1289,20 @@ bool unary(fop o, const F& x, F& out) noexcept {
 }
 
 template <class F>
-bool binary(fop2 o, const F& a, const F& b, F& out) noexcept {
+bool unary(fop o, const F& x, F& out) noexcept {
+    if constexpr (multiprecision::fdetail::wide_format<F::math_bits, F::mantissa_bits>::value) {
+        if (o == fop::sqrt) return wide_sqrt(x, out) || level_unary(o, x, out);
+        if (fixed_point_unary(o, x, out)) return true;
+        return level_unary(o, x, out);
+    } else {
+        if (level_unary(o, x, out)) return true;
+        if constexpr (F::math_bits >= 32 && F::math_bits <= 64 && F::math_bits - F::mantissa_bits <= 16) return fixed_point_unary(o, x, out);
+        return false;
+    }
+}
+
+template <class F>
+bool level_binary(fop2 o, const F& a, const F& b, F& out) noexcept {
     if constexpr (!enabled<F>) {
         (void)o;
         (void)a;
@@ -1202,6 +1342,18 @@ bool binary(fop2 o, const F& a, const F& b, F& out) noexcept {
         if (!std::is_same<F, C>::value && rc.is_negative()) return false;
         out = F(rc);
         return true;
+    }
+}
+
+template <class F>
+bool binary(fop2 o, const F& a, const F& b, F& out) noexcept {
+    if constexpr (multiprecision::fdetail::wide_format<F::math_bits, F::mantissa_bits>::value) {
+        if (fixed_point_binary(o, a, b, out)) return true;
+        return level_binary(o, a, b, out);
+    } else {
+        if (level_binary(o, a, b, out)) return true;
+        if constexpr (F::math_bits >= 32 && F::math_bits <= 64 && F::math_bits - F::mantissa_bits <= 16) return fixed_point_binary(o, a, b, out);
+        return false;
     }
 }
 

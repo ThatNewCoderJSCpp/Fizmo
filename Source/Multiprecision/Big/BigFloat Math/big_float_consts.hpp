@@ -101,6 +101,8 @@ inline BigUInt zeta2_fixed(std::size_t N) {
 
 BigUInt apery_fixed(std::size_t N);
 
+BigUInt catalan_fixed(std::size_t N);
+
 bool round_is_safe(const BigUInt& mag, std::size_t prec, std::size_t err_bits);
 
 typedef BigUInt (*fixed_fn)(std::size_t);
@@ -158,6 +160,7 @@ FIZMO_BIGFLOAT_CONST(sqrt_pi)
 FIZMO_BIGFLOAT_CONST(inv_sqrt_pi)
 FIZMO_BIGFLOAT_CONST(zeta2)
 FIZMO_BIGFLOAT_CONST(apery)
+FIZMO_BIGFLOAT_CONST(catalan)
 
 FIZMO_BIGFLOAT_CONST_SCALED(two_pi,            pi,           1)
 FIZMO_BIGFLOAT_CONST_SCALED(half_pi,           pi,          -1)

@@ -7,6 +7,7 @@
 #include "float.hpp"
 #include "decimal_conversion.hpp"
 #include "small_float_ops.hpp"
+#include "wide_float_ops.hpp"
 
 namespace fizmo {
 namespace multiprecision {
@@ -46,6 +47,27 @@ private:
         : m_is_negative(neg), m_data(bits) {}
 
     static constexpr bool small_fast = fdetail::small_format<TotalBits, MantissaBits>::value;
+    static constexpr bool wide_fast  = !small_fast && fdetail::wide_format<TotalBits, MantissaBits>::value;
+    using wide_k = fdetail::wide_ops<(wide_fast ? TotalBits : 128), (wide_fast ? MantissaBits : 112)>;
+    static constexpr std::size_t limb_count = TotalBits / 64 > 0 ? TotalBits / 64 : 1;
+
+    void store_limbs(std::uint64_t* out) const noexcept { umag_limbs<TotalBits>::store(m_data.magnitude(), out); }
+
+    static floatmp from_wide_kind(bool neg, typename wide_k::kind k, const std::uint64_t* bits) noexcept {
+        if (k == wide_k::kind::zero) return zero(neg);
+        if (k == wide_k::kind::infinite) return infinity(neg);
+        return floatmp(raw_tag{}, neg, store_t(umag_limbs<TotalBits>::load(bits)));
+    }
+
+    static bool wide_runtime() noexcept {
+#if defined(__cpp_lib_is_constant_evaluated)
+        return !std::is_constant_evaluated();
+#elif defined(__GNUC__) || defined(__clang__)
+        return !__builtin_is_constant_evaluated();
+#else
+        return false;
+#endif
+    }
     using small_t = fdetail::small_ops<(small_fast ? TotalBits : 32), (small_fast ? MantissaBits : 23)>;
 
     OPTIONAL_CPP14_CONSTEXPR std::uint64_t raw_bits() const noexcept { return m_data.get_lowest_bits(); }
@@ -354,16 +376,50 @@ public:
 public:
     OPTIONAL_CPP14_CONSTEXPR floatmp operator+(const floatmp& o) const noexcept {
         if constexpr (small_fast) return from_small(small_t::add(m_is_negative, raw_bits(), o.m_is_negative, o.raw_bits()));
+        else if constexpr (wide_fast) {
+            if (wide_runtime()) {
+                std::uint64_t a[limb_count], b[limb_count], r[limb_count];
+                store_limbs(a); o.store_limbs(b);
+                if (wide_k::finite_nonzero(a) && wide_k::finite_nonzero(b)) {
+                    bool sr = false;
+                    const auto k = wide_k::add(m_is_negative, a, o.m_is_negative, b, sr, r);
+                    return from_wide_kind(sr, k, r);
+                }
+            }
+            return add_impl(*this, o);
+        }
         else return add_impl(*this, o);
     }
 
     OPTIONAL_CPP14_CONSTEXPR floatmp operator-(const floatmp& o) const noexcept {
         if constexpr (small_fast) return from_small(small_t::sub(m_is_negative, raw_bits(), o.m_is_negative, o.raw_bits()));
+        else if constexpr (wide_fast) {
+            if (wide_runtime()) {
+                std::uint64_t a[limb_count], b[limb_count], r[limb_count];
+                store_limbs(a); o.store_limbs(b);
+                if (wide_k::finite_nonzero(a) && wide_k::finite_nonzero(b)) {
+                    bool sr = false;
+                    const auto k = wide_k::add(m_is_negative, a, !o.m_is_negative, b, sr, r);
+                    return from_wide_kind(sr, k, r);
+                }
+            }
+            return add_impl(*this, -o);
+        }
         else return add_impl(*this, -o);
     }
 
     OPTIONAL_CPP14_CONSTEXPR floatmp operator*(const floatmp& o) const noexcept {
         if constexpr (small_fast) return from_small(small_t::mul(m_is_negative, raw_bits(), o.m_is_negative, o.raw_bits()));
+        if constexpr (wide_fast) {
+            if (wide_runtime()) {
+                std::uint64_t a[limb_count], b[limb_count], r[limb_count];
+                store_limbs(a); o.store_limbs(b);
+                if (wide_k::finite_nonzero(a) && wide_k::finite_nonzero(b)) {
+                    const bool sr = m_is_negative != o.m_is_negative;
+                    return from_wide_kind(sr, wide_k::mul(a, b, r), r);
+                }
+            }
+        }
         if (is_unordered() || o.is_unordered()) return unordered_result(*this, o);
         if (is_infinite())   { if (o.is_zero()) return indeterminate(); return infinity(m_is_negative != o.m_is_negative); }
         if (o.is_infinite()) { if (is_zero())  return indeterminate(); return infinity(m_is_negative != o.m_is_negative); }
@@ -373,6 +429,16 @@ public:
 
     OPTIONAL_CPP14_CONSTEXPR floatmp operator/(const floatmp& o) const noexcept {
         if constexpr (small_fast) return from_small(small_t::div(m_is_negative, raw_bits(), o.m_is_negative, o.raw_bits()));
+        if constexpr (wide_fast) {
+            if (wide_runtime()) {
+                std::uint64_t a[limb_count], b[limb_count], r[limb_count];
+                store_limbs(a); o.store_limbs(b);
+                if (wide_k::finite_nonzero(a) && wide_k::finite_nonzero(b)) {
+                    const bool sr = m_is_negative != o.m_is_negative;
+                    return from_wide_kind(sr, wide_k::div(a, b, r), r);
+                }
+            }
+        }
         if (is_unordered() || o.is_unordered()) return unordered_result(*this, o);
         if (o.is_zero())   return is_zero() ? indeterminate() : undefined();
         if (is_infinite()) { if (o.is_infinite()) return indeterminate(); return infinity(m_is_negative != o.m_is_negative); }
@@ -688,14 +754,11 @@ private:
         mb = mb << static_cast<std::size_t>(mantissa_index - lb);
         ea = ea - sstore_t(mantissa_index - la);
         eb = eb - sstore_t(mantissa_index - lb);
-        const wide_t one_w(std::uint64_t(1));
         const wide_t D = wide_t(mb);
         const wide_t N = wide_t(ma) << static_cast<std::size_t>(mantissa_index + 2);
-        wide_t q = (wide_t(ma) * reciprocal_scaled(mb)) >> static_cast<std::size_t>(mantissa_index + 1);
-        wide_t p = q * D;
-        while (p > N)      { p = p - D; q = q - one_w; }
-        while (N - p >= D) { p = p + D; q = q + one_w; }
-        return pack_wide(sr, q, ea - eb - sstore_t(mantissa_index + 2), N != p);
+        umag<TotalBits * 2> q, r;
+        N.magnitude().divmod(D.magnitude(), q, r);
+        return pack_wide(sr, wide_t(q), ea - eb - sstore_t(mantissa_index + 2), !r.is_zero());
     }
 
 private:
@@ -738,16 +801,25 @@ private:
 
     static fdetail::decimal::bignum to_big(const store_t& v) {
         fdetail::decimal::bignum b;
-        const bit_index top = top_bit(v);
-        for (bit_index i = 0; i <= top; ++i) if (v.get_bit(static_cast<std::size_t>(i))) b.set_bit(i);
+        constexpr std::size_t L = TotalBits >= 64 ? TotalBits / 64 : 1;
+        std::uint64_t limbs[L];
+        umag_limbs<TotalBits>::store(v.magnitude(), limbs);
+        b.limbs.resize(2 * L);
+        for (std::size_t i = 0; i < L; ++i) {
+            b.limbs[2 * i]     = static_cast<std::uint32_t>(limbs[i]);
+            b.limbs[2 * i + 1] = static_cast<std::uint32_t>(limbs[i] >> 32);
+        }
+        b.trim();
         return b;
     }
 
     static wide_t wide_from_big(const fdetail::decimal::bignum& b) {
-        wide_t w;
-        const long long n = b.bit_length();
-        for (long long i = 0; i < n; ++i) if (b.get_bit(i)) w.set_bit(static_cast<std::size_t>(i));
-        return w;
+        constexpr std::size_t WB = TotalBits * 2;
+        constexpr std::size_t L = WB >= 64 ? WB / 64 : 1;
+        std::uint64_t limbs[L] = {};
+        for (std::size_t i = 0; i < b.limbs.size() && i / 2 < L; ++i) limbs[i / 2] |= static_cast<std::uint64_t>(b.limbs[i]) << (32 * (i % 2));
+        if constexpr (WB < 64) limbs[0] &= (std::uint64_t(1) << WB) - 1u;
+        return wide_t(umag_limbs<WB>::load(limbs));
     }
 
     fdetail::decimal::digits_result decimal_digits(long long sig) const {

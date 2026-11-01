@@ -8,6 +8,10 @@
 #define FIZMO_SMALL_FLOAT_FAST 1
 #endif
 
+#ifndef FIZMO_USE_INT128
+#define FIZMO_USE_INT128 0
+#endif
+
 namespace fizmo {
 namespace multiprecision {
 namespace fdetail {
@@ -44,7 +48,7 @@ constexpr std::uint64_t low_mask(int n) noexcept {
 }
 
 constexpr void mul_wide(std::uint64_t a, std::uint64_t b, std::uint64_t& hi, std::uint64_t& lo) noexcept {
-#if defined(__SIZEOF_INT128__)
+#if FIZMO_USE_INT128 && defined(__SIZEOF_INT128__)
     const unsigned __int128 p = static_cast<unsigned __int128>(a) * b;
     hi = static_cast<std::uint64_t>(p >> 64);
     lo = static_cast<std::uint64_t>(p);
@@ -62,7 +66,7 @@ constexpr void mul_wide(std::uint64_t a, std::uint64_t b, std::uint64_t& hi, std
 }
 
 constexpr std::uint64_t div_wide(std::uint64_t hi, std::uint64_t lo, std::uint64_t d, std::uint64_t& rem) noexcept {
-#if defined(__SIZEOF_INT128__)
+#if FIZMO_USE_INT128 && defined(__SIZEOF_INT128__)
     const unsigned __int128 n = (static_cast<unsigned __int128>(hi) << 64) | lo;
     const unsigned __int128 q = n / d;
     rem = static_cast<std::uint64_t>(n - q * d);

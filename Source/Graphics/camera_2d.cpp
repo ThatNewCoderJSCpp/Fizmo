@@ -60,8 +60,9 @@ void Camera2D::rebuild_if_dirty() const noexcept {
     auto r_neg_rot  = linalg::Matrix3d::rotation_2d(-m_rotation, true);
 
     const double flip = m_axes.screen_y_sign();
+    const double flip_x = m_axes.screen_x_sign();
     auto s_zoom     = linalg::Matrix3d{
-        m_zoom, 0.0,    0.0,
+        m_zoom * flip_x, 0.0,    0.0,
         0.0,    m_zoom * flip, 0.0,
         0.0,    0.0,    1.0
     };

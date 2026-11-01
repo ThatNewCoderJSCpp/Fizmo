@@ -56,10 +56,20 @@ public:
     static bignum div_bits(bignum a, const bignum& b, long long qbits, bool& remainder_nonzero);
 
     std::uint32_t div_digit(const bignum& s) {
-        std::uint32_t d = 0;
+        if (compare(*this, s) < 0) return 0;
+        std::uint32_t d = estimate_quotient(s);
+        if (d) sub_mul_small(s, d);
         while (compare(*this, s) >= 0) { sub(s); ++d; }
         return d;
     }
+
+    std::uint32_t estimate_quotient(const bignum& s) const noexcept;
+
+    void sub_mul_small(const bignum& s, std::uint32_t k) noexcept;
+
+    static int compare_sum(const bignum& a, const bignum& b, const bignum& c) noexcept;
+
+    static const bignum& pow5_cached(long long n);
 };
 
 struct digits_result {

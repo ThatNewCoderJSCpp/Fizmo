@@ -29,6 +29,9 @@ constexpr int ctz64_recursive(std::uint64_t x) noexcept {
 }
 
 constexpr inline int clz64(std::uint64_t x) noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+    return x == 0 ? 64 : __builtin_clzll(x);
+#else
     if (x == 0) return 64;
     int n = 0;
     if (!(x & 0xFFFFFFFF00000000ull)) { x <<= 32; n += 32; }
@@ -38,10 +41,15 @@ constexpr inline int clz64(std::uint64_t x) noexcept {
     if (!(x & 0xC000000000000000ull)) { x <<=  2; n +=  2; }
     if (!(x & 0x8000000000000000ull)) {           n +=  1; }
     return n;
+#endif
 }
 
-constexpr int ctz64(std::uint64_t x) noexcept {          
+constexpr int ctz64(std::uint64_t x) noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+    return x == 0 ? 64 : __builtin_ctzll(x);
+#else
     return 63 - clz64(x & (~x + std::uint64_t(1)));
+#endif
 }
 
 namespace multiprecision {
@@ -94,7 +102,7 @@ public:
     }
 
     OPTIONAL_CPP14_CONSTEXPR long long highest_bit() const noexcept {
-        return v ? (63 - static_cast<long long>(clz64_recursive(v))) : -1;
+        return v ? (63 - static_cast<long long>(clz64(v))) : -1;
     }
 
     OPTIONAL_CPP14_CONSTEXPR long long count_leading_zeros() const noexcept {
@@ -199,6 +207,73 @@ to_native_half(const umag<HalfBits>& h) noexcept { return h.to_u64(); }
 template <std::size_t HalfBits>
 constexpr typename std::enable_if<(HalfBits > 64), umag<HalfBits>>::type
 to_native_half(const umag<HalfBits>& h) noexcept { return h; }
+
+namespace udiv {
+
+inline int clz32(std::uint32_t x) noexcept { return x == 0 ? 32 : clz64(x) - 32; }
+
+inline void knuth_divide(std::uint32_t* q, std::uint32_t* r, const std::uint32_t* u, const std::uint32_t* v, int m, int n, std::uint32_t* un, std::uint32_t* vn) noexcept {
+    const std::uint64_t b = std::uint64_t(1) << 32;
+
+    if (n == 1) {
+        std::uint64_t k = 0;
+        for (int j = m - 1; j >= 0; --j) {
+            const std::uint64_t cur = k * b + u[j];
+            q[j] = static_cast<std::uint32_t>(cur / v[0]);
+            k = cur - static_cast<std::uint64_t>(q[j]) * v[0];
+        }
+        r[0] = static_cast<std::uint32_t>(k);
+        return;
+    }
+
+    const int s = clz32(v[n - 1]);
+    for (int i = n - 1; i > 0; --i) vn[i] = static_cast<std::uint32_t>((static_cast<std::uint64_t>(v[i]) << s) | (static_cast<std::uint64_t>(v[i - 1]) >> (32 - s)));
+    vn[0] = static_cast<std::uint32_t>(static_cast<std::uint64_t>(v[0]) << s);
+
+    un[m] = static_cast<std::uint32_t>(static_cast<std::uint64_t>(u[m - 1]) >> (32 - s));
+    for (int i = m - 1; i > 0; --i) un[i] = static_cast<std::uint32_t>((static_cast<std::uint64_t>(u[i]) << s) | (static_cast<std::uint64_t>(u[i - 1]) >> (32 - s)));
+    un[0] = static_cast<std::uint32_t>(static_cast<std::uint64_t>(u[0]) << s);
+
+    for (int j = m - n; j >= 0; --j) {
+        const std::uint64_t num = static_cast<std::uint64_t>(un[j + n]) * b + un[j + n - 1];
+        std::uint64_t qhat = num / vn[n - 1];
+        std::uint64_t rhat = num - qhat * vn[n - 1];
+
+        while (qhat >= b || qhat * vn[n - 2] > b * rhat + un[j + n - 2]) {
+            --qhat;
+            rhat += vn[n - 1];
+            if (rhat >= b) break;
+        }
+
+        std::int64_t k = 0, t = 0;
+        for (int i = 0; i < n; ++i) {
+            const std::uint64_t p = qhat * vn[i];
+            t = static_cast<std::int64_t>(un[i + j]) - k - static_cast<std::int64_t>(p & 0xFFFFFFFFull);
+            un[i + j] = static_cast<std::uint32_t>(t);
+            k = static_cast<std::int64_t>(p >> 32) - (t >> 32);
+        }
+        t = static_cast<std::int64_t>(un[j + n]) - k;
+        un[j + n] = static_cast<std::uint32_t>(t);
+
+        q[j] = static_cast<std::uint32_t>(qhat);
+        if (t < 0) {
+            q[j] = q[j] - 1u;
+            std::uint64_t c = 0;
+            for (int i = 0; i < n; ++i) {
+                const std::uint64_t sum = static_cast<std::uint64_t>(un[i + j]) + vn[i] + c;
+                un[i + j] = static_cast<std::uint32_t>(sum);
+                c = sum >> 32;
+            }
+            un[j + n] = static_cast<std::uint32_t>(static_cast<std::uint64_t>(un[j + n]) + c);
+        }
+    }
+
+    for (int i = 0; i < n; ++i) r[i] = static_cast<std::uint32_t>((static_cast<std::uint64_t>(un[i]) >> s) | (static_cast<std::uint64_t>(un[i + 1]) << (32 - s)));
+}
+
+} // namespace udiv
+
+template <std::size_t B> struct umag_limbs;
 
 template <std::size_t Bits>
 class umag<Bits, typename std::enable_if<(Bits >= 128)>::type> {
@@ -330,11 +405,40 @@ public:
         return from_bits(ll_l, ll_h + hl_l + lh_l);
     }
 
+    void divmod_knuth(const umag& divisor, umag& quotient, umag& remainder) const noexcept {
+        constexpr std::size_t L = Bits / 64;
+        std::uint64_t a[L], d[L], qa[L], ra[L];
+        umag_limbs<Bits>::store(*this, a);
+        umag_limbs<Bits>::store(divisor, d);
+        std::uint32_t u[2 * L], v[2 * L], q[2 * L], r[2 * L], un[2 * L + 1], vn[2 * L];
+        for (std::size_t i = 0; i < L; ++i) {
+            u[2 * i] = static_cast<std::uint32_t>(a[i]); u[2 * i + 1] = static_cast<std::uint32_t>(a[i] >> 32);
+            v[2 * i] = static_cast<std::uint32_t>(d[i]); v[2 * i + 1] = static_cast<std::uint32_t>(d[i] >> 32);
+            q[2 * i] = q[2 * i + 1] = 0u;
+            r[2 * i] = r[2 * i + 1] = 0u;
+        }
+        int m = static_cast<int>(2 * L), n = static_cast<int>(2 * L);
+        while (m > 1 && u[m - 1] == 0u) --m;
+        while (n > 1 && v[n - 1] == 0u) --n;
+        udiv::knuth_divide(q, r, u, v, m, n, un, vn);
+        for (std::size_t i = 0; i < L; ++i) {
+            qa[i] = static_cast<std::uint64_t>(q[2 * i]) | (static_cast<std::uint64_t>(q[2 * i + 1]) << 32);
+            ra[i] = static_cast<std::uint64_t>(r[2 * i]) | (static_cast<std::uint64_t>(r[2 * i + 1]) << 32);
+        }
+        quotient  = umag_limbs<Bits>::load(qa);
+        remainder = umag_limbs<Bits>::load(ra);
+    }
+
     OPTIONAL_CPP14_CONSTEXPR void divmod(const umag& divisor, umag& quotient, umag& remainder) const noexcept {
         quotient = umag(); remainder = umag();
         if (divisor.is_zero()) return;
         if (*this <  divisor) { remainder = *this; return; }
         if (*this == divisor) { quotient = umag(std::uint64_t(1)); return; }
+#if defined(__cpp_lib_is_constant_evaluated)
+        if (!std::is_constant_evaluated()) { divmod_knuth(divisor, quotient, remainder); return; }
+#elif defined(__GNUC__) || defined(__clang__)
+        if (!__builtin_is_constant_evaluated()) { divmod_knuth(divisor, quotient, remainder); return; }
+#endif
         const long long ha = highest_bit();
         const long long hb = divisor.highest_bit();
         const long long shift = ha - hb;                 
@@ -392,6 +496,32 @@ public:
 
         for (std::size_t i = 0, j = s.size(); i < j; ++i, --j) { char t = s[i]; s[i] = s[j - 1]; s[j - 1] = t; }
         return s;
+    }
+};
+
+
+template <std::size_t B>
+struct umag_limbs {
+    static constexpr std::size_t count = B <= 64 ? 1 : B / 64;
+
+    static OPTIONAL_CPP14_CONSTEXPR void store(const umag<B>& x, std::uint64_t* out) noexcept {
+        if constexpr (B <= 64) {
+            out[0] = x.to_u64();
+        } else if constexpr (B == 128) {
+            out[0] = x.get_low_bits();
+            out[1] = x.get_high_bits();
+        } else {
+            umag_limbs<B / 2>::store(x.get_low_bits(), out);
+            umag_limbs<B / 2>::store(x.get_high_bits(), out + B / 128);
+        }
+    }
+
+    static OPTIONAL_CPP14_CONSTEXPR umag<B> load(const std::uint64_t* in) noexcept {
+        if constexpr (B <= 64) {
+            return umag<B>(in[0]);
+        } else {
+            return umag<B>::from_bits(umag_limbs<B / 2>::load(in), umag_limbs<B / 2>::load(in + B / 128));
+        }
     }
 };
 

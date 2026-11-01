@@ -120,6 +120,57 @@ auto bignum::mul(const bignum& a, const bignum& b) -> bignum {
     return r;
 }
 
+std::uint32_t bignum::estimate_quotient(const bignum& s) const noexcept {
+    const std::size_t n = s.limbs.size();
+    if (n == 0 || limbs.size() < n || limbs.size() > n + 1) return 0;
+    const std::uint64_t top = (limbs.size() > n ? static_cast<std::uint64_t>(limbs[n]) << 32 : 0u) | limbs[n - 1];
+    const std::uint64_t q = top / (static_cast<std::uint64_t>(s.limbs[n - 1]) + 1u);
+    return static_cast<std::uint32_t>(q > 0xFFFFFFFFull ? 0xFFFFFFFFull : q);
+}
+
+void bignum::sub_mul_small(const bignum& s, std::uint32_t k) noexcept {
+    std::uint64_t carry = 0;
+    std::int64_t borrow = 0;
+    for (std::size_t i = 0; i < limbs.size(); ++i) {
+        std::uint64_t p = carry;
+        if (i < s.limbs.size()) p += static_cast<std::uint64_t>(s.limbs[i]) * k;
+        carry = p >> 32;
+        std::int64_t t = static_cast<std::int64_t>(limbs[i]) - static_cast<std::int64_t>(p & 0xFFFFFFFFull) - borrow;
+        borrow = t < 0 ? 1 : 0;
+        if (t < 0) t += (std::int64_t(1) << 32);
+        limbs[i] = static_cast<std::uint32_t>(t);
+    }
+    trim();
+}
+
+int bignum::compare_sum(const bignum& a, const bignum& b, const bignum& c) noexcept {
+    const std::size_t n = std::max(std::max(a.limbs.size(), b.limbs.size()), c.limbs.size()) + 1;
+    std::uint64_t carry = 0;
+    int result = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        const std::uint64_t t = static_cast<std::uint64_t>(i < a.limbs.size() ? a.limbs[i] : 0u) + (i < b.limbs.size() ? b.limbs[i] : 0u) + carry;
+        carry = t >> 32;
+        const std::uint32_t sl = static_cast<std::uint32_t>(t);
+        const std::uint32_t cl = i < c.limbs.size() ? c.limbs[i] : 0u;
+        if (sl != cl) result = sl < cl ? -1 : 1;
+    }
+    return result;
+}
+
+const bignum& bignum::pow5_cached(long long n) {
+    thread_local std::vector<bignum> cache;
+    thread_local std::vector<bool> have;
+    constexpr long long limit = 4096;
+    if (n < 0 || n > limit) {
+        thread_local bignum scratch;
+        scratch = pow5(n);
+        return scratch;
+    }
+    if (cache.size() <= static_cast<std::size_t>(n)) { cache.resize(static_cast<std::size_t>(n) + 1); have.resize(static_cast<std::size_t>(n) + 1, false); }
+    if (!have[static_cast<std::size_t>(n)]) { cache[static_cast<std::size_t>(n)] = pow5(n); have[static_cast<std::size_t>(n)] = true; }
+    return cache[static_cast<std::size_t>(n)];
+}
+
 auto bignum::pow5(long long n) -> bignum {
     bignum result(1), base(5);
     while (n > 0) {
@@ -132,6 +183,23 @@ auto bignum::pow5(long long n) -> bignum {
 
 auto bignum::div_bits(bignum a, const bignum& b, long long qbits, bool& remainder_nonzero) -> bignum {
     bignum q;
+
+    if (!b.is_zero() && compare(a, b) >= 0) {
+        const int m = static_cast<int>(a.limbs.size()), n = static_cast<int>(b.limbs.size());
+        std::vector<std::uint32_t> qq(static_cast<std::size_t>(m), 0u), rr(static_cast<std::size_t>(n), 0u), un(static_cast<std::size_t>(m) + 1, 0u), vn(static_cast<std::size_t>(n), 0u);
+        udiv::knuth_divide(qq.data(), rr.data(), a.limbs.data(), b.limbs.data(), m, n, un.data(), vn.data());
+        q.limbs.assign(qq.begin(), qq.begin() + (m - n + 1));
+        q.trim();
+        bignum r;
+        r.limbs = rr;
+        r.trim();
+        remainder_nonzero = !r.is_zero();
+        if (q.bit_length() <= qbits) return q;
+        q = bignum();
+    } else if (!b.is_zero()) {
+        remainder_nonzero = !a.is_zero();
+        return q;
+    }
 
     for (long long i = qbits - 1; i >= 0; --i) {
         bignum t = b;
@@ -174,17 +242,17 @@ digits_result shortest(const bignum& f, long long e, bool lower_gap_half, bool e
     long long k = static_cast<long long>(static_cast<double>(bits) * 0.30102999566398119521) - 1;
 
     if (k >= 0) {
-        s = bignum::mul(s, bignum::pow10(k));
+        s = bignum::mul(s, bignum::pow5_cached(k));
+        s.shl(k);
     } else {
-        const bignum p = bignum::pow10(-k);
-        r = bignum::mul(r, p);
-        mplus = bignum::mul(mplus, p);
-        mminus = bignum::mul(mminus, p);
+        const bignum& p = bignum::pow5_cached(-k);
+        r = bignum::mul(r, p); r.shl(-k);
+        mplus = bignum::mul(mplus, p); mplus.shl(-k);
+        mminus = bignum::mul(mminus, p); mminus.shl(-k);
     }
 
     for (;;) {
-        bignum high = r; high.add(mplus);
-        const int c = bignum::compare(high, s);
+        const int c = bignum::compare_sum(r, mplus, s);
         if (even ? c >= 0 : c > 0) { s.mul_small(10); ++k; }
         else break;
     }
@@ -196,8 +264,7 @@ digits_result shortest(const bignum& f, long long e, bool lower_gap_half, bool e
         r.mul_small(10); mplus.mul_small(10); mminus.mul_small(10);
         std::uint32_t d = r.div_digit(s);
         const int lowc = bignum::compare(r, mminus);
-        bignum high = r; high.add(mplus);
-        const int highc = bignum::compare(high, s);
+        const int highc = bignum::compare_sum(r, mplus, s);
         const bool tc1 = even ? lowc <= 0 : lowc < 0;
         const bool tc2 = even ? highc >= 0 : highc > 0;
 
@@ -223,7 +290,8 @@ digits_result fixed_digits(const bignum& f, long long e, long long count) {
     if (e >= 0) r.shl(e); else s.shl(-e);
     const long long bits = f.bit_length() + e - 1;
     long long k = static_cast<long long>(static_cast<double>(bits) * 0.30102999566398119521) - 1;
-    if (k >= 0) s = bignum::mul(s, bignum::pow10(k)); else r = bignum::mul(r, bignum::pow10(-k));
+    if (k >= 0) { s = bignum::mul(s, bignum::pow5_cached(k)); s.shl(k); }
+    else { r = bignum::mul(r, bignum::pow5_cached(-k)); r.shl(-k); }
     while (bignum::compare(r, s) >= 0) { s.mul_small(10); ++k; }
 
     digits_result out;

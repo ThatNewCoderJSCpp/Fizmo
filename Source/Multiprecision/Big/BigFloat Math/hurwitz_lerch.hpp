@@ -47,6 +47,8 @@ inline BigUInt hz_upow(BigUInt b, std::uint64_t e) {
 
 bool hz_int64(const BigFloat& s, std::int64_t& k);
 
+bool hz_shift_powers(const BigFloat& s, const BigFloat& a, std::uint64_t N, const BigFloatContext& wc, std::vector<BigFloat>& out);
+
 template <typename Eval>
 inline BigFloat hz_drive(std::size_t guard, const BigFloatContext& ctx, Eval eval) {
     for (;;) {

@@ -43,6 +43,22 @@ std::size_t zt_guard0(const BigFloat& s);
 
 std::vector<BigFloat> zt_powers(const BigFloat& s, std::uint64_t M, const BigFloatContext& wc);
 
+std::vector<BigFloat> zt_powers_exp(const BigFloat& s, std::uint64_t M, const BigFloatContext& wc);
+
+BigUInt zt_one_minus_pow(std::uint64_t m, unsigned q, std::uint64_t u, std::uint64_t D, std::size_t W);
+
+BigUInt zt_one_minus_pow_x(std::uint64_t m, unsigned q, unsigned e, std::uint64_t D, std::size_t W);
+
+BigUInt zt_one_minus_pow_short(std::uint64_t m, unsigned q, std::uint64_t D, std::size_t W);
+
+BigUInt zt_atanh_pow2_fixed(unsigned e, std::uint64_t v, std::size_t W);
+
+bool zt_short_fraction(const BigUInt& ffix, std::size_t W, unsigned qmax, std::uint64_t& m, unsigned& q, BigUInt& fl);
+
+BigUInt zt_exp_small_neg(const BigUInt& y, std::size_t W);
+
+bool zt_split(const BigFloat& s, std::size_t W, std::int64_t& n, BigUInt& ffix);
+
 void zt_borwein_step(BigUInt& c, std::uint64_t n, std::uint64_t i);
 
 zt_val zt_core(const BigFloat& s, const BigFloat& om, std::size_t want);

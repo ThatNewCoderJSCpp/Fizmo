@@ -5,6 +5,14 @@ namespace multiprecision {
 namespace budetail {
 
 std::uint64_t div_wide(std::uint64_t hi, std::uint64_t lo, std::uint64_t d, std::uint64_t& rem) noexcept {
+#if !defined(FIZMO_NO_ASM_MUL) && (defined(__GNUC__) || defined(__clang__)) && defined(__x86_64__)
+    if (hi < d) {
+        std::uint64_t q, r;
+        __asm__ __volatile__("divq %4" : "=a"(q), "=d"(r) : "a"(lo), "d"(hi), "rm"(d) : "cc");
+        rem = r;
+        return q;
+    }
+#endif // FIZMO_NO_ASM_MUL
     if (d <= mask32) {
         std::uint64_t cur = (hi << 32) | (lo >> 32);
         const std::uint64_t qh = cur / d; cur %= d;
@@ -304,10 +312,36 @@ std::uint64_t BigUInt::divmod_small_mutable(std::uint64_t d) noexcept {
     if (m_data.empty()) return no_remainder;
     if (d == 0) { set_undefined(); return no_remainder; }
     if (d == 1) return 0;
-    std::uint64_t rem = 0;
-    for (std::size_t i = m_data.size(); i > 0; --i) { m_data[i - 1] = budetail::div_wide(rem, m_data[i - 1], d, rem); }
+    const std::size_t n = m_data.size();
+    if (n == 1) {
+        const std::uint64_t v = m_data[0];
+        m_data[0] = v / d;
+        trim();
+        return v % d;
+    }
+    const unsigned      sh = static_cast<unsigned>(clz64(d));
+    const std::uint64_t dn = d << sh;
+    std::uint64_t       junk;
+    const std::uint64_t inv = budetail::div_wide(~dn, ~std::uint64_t(0), dn, junk);
+    std::uint64_t       r   = (sh == 0) ? 0 : (m_data[n - 1] >> (64 - sh));
+
+    for (std::size_t i = n; i > 0; --i) {
+        const std::uint64_t cur = m_data[i - 1];
+        const std::uint64_t nlo = (sh == 0) ? cur : ((cur << sh) | ((i > 1) ? (m_data[i - 2] >> (64 - sh)) : 0));
+        std::uint64_t q1, q0;
+        mdetail::mul_wide64(inv, r, q1, q0);
+        const std::uint64_t t0 = q0 + nlo;
+        q1 += r + 1 + ((t0 < q0) ? 1u : 0u);
+        q0 = t0;
+        std::uint64_t rr = nlo - q1 * dn;
+        if (rr > q0) { --q1; rr += dn; }
+        if (rr >= dn) { ++q1; rr -= dn; }
+        m_data[i - 1] = q1;
+        r = rr;
+    }
+
     trim();
-    return rem;
+    return r >> sh;
 }
 
 auto BigUInt::mod_small_mutable(std::uint64_t d) noexcept -> BigUInt& {

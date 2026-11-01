@@ -37,7 +37,7 @@ namespace constants {
     }
 
 FIZMO_FW_CONSTANT(euler_mascheroni, euler_mascheroni(c))
-FIZMO_FW_CONSTANT(catalan, math::dirichlet_beta(BigFloat(2.0), c))
+FIZMO_FW_CONSTANT(catalan, catalan(c))
 FIZMO_FW_CONSTANT(silver_ratio, silver_ratio(c))
 FIZMO_FW_CONSTANT(bronze_ratio, bronze_ratio(c))
 FIZMO_FW_CONSTANT(silver_constant, silver_constant(c))

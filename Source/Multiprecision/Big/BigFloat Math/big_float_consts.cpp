@@ -123,6 +123,40 @@ BigUInt apery_fixed(std::size_t N) {
     return pos;
 }
 
+BigUInt catalan_fixed(std::size_t N) {
+    BigUInt x = inv_sqrt_int_fixed(3, N);
+    BigUInt term = x;
+    BigUInt lnv = x;
+    for (std::uint64_t k = 3; ; k += 2) {
+        term.div_small_mutable(3);
+        if (term.is_zero()) break;
+        BigUInt t = term;
+        t.div_small_mutable(k);
+        if (t.is_zero()) break;
+        lnv.add_mutable(t);
+    }
+    lnv.shift_left_mutable(1);
+    BigUInt a = fx_mul(pi_fixed(N), lnv, N);
+    a.shift_right_mutable(3);
+
+    BigUInt inv = unit(N);
+    BigUInt sum = inv;
+    for (std::uint64_t k = 1; ; ++k) {
+        inv.mul_small_mutable(k);
+        inv.div_small_mutable(2 * (2 * k - 1));
+        if (inv.is_zero()) break;
+        BigUInt t = inv;
+        const std::uint64_t d = 2 * k + 1;
+        t.div_small_mutable(d * d);
+        if (t.is_zero()) break;
+        sum.add_mutable(t);
+    }
+    sum.mul_small_mutable(3);
+    sum.shift_right_mutable(3);
+    a.add_mutable(sum);
+    return a;
+}
+
 bool round_is_safe(const BigUInt& mag, std::size_t prec, std::size_t err_bits) {
     const std::size_t L = mag.bit_length();
     if (L <= prec) return true;

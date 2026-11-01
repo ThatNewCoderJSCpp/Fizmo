@@ -165,6 +165,81 @@ hz_plan hz_choose(const hz_sinfo& si, double la, std::size_t want) {
     return best;
 }
 
+bool hz_shift_powers(const BigFloat& s, const BigFloat& a, std::uint64_t N, const BigFloatContext& wc, std::vector<BigFloat>& out) {
+    using multiprecision::constants::bfdetail::unit;
+    using multiprecision::constants::bfdetail::fx_mul;
+    if (N < 4 || N > (std::uint64_t(1) << 32) || !a.is_finite() || a.is_zero() || a.signbit()) return false;
+    const BigUInt&     A  = a.significand();
+    const std::int64_t E  = a.exponent();
+    if (E < -62 || A.bit_length() > 61 || (E > 0 && static_cast<std::int64_t>(A.bit_length()) + E > 61)) return false;
+    const unsigned      e  = (E < 0) ? static_cast<unsigned>(-E) : 0u;
+    const std::uint64_t A0 = (E > 0) ? (A.get_lowest_bits() << E) : A.get_lowest_bits();
+    if (ztdetail::zt_bitlen(N) + e > 61) return false;
+    const std::size_t W = wc.precision + 2 * ztdetail::zt_bitlen(N) + ztdetail::zt_bitlen(wc.precision) + 24;
+    std::int64_t      n = 0;
+    BigUInt           ffix;
+    if (!ztdetail::zt_split(s, W, n, ffix)) return false;
+    const std::uint64_t an   = static_cast<std::uint64_t>(n < 0 ? -n : n);
+    const bool          frac = !ffix.is_zero();
+    std::uint64_t       m    = 0;
+    unsigned            q    = 0;
+    BigUInt             fl   = BigUInt::zero();
+    bool                shrt = false;
+
+    if (frac) {
+        shrt = ztdetail::zt_short_fraction(ffix, W, 40, m, q, fl);
+        if (!shrt) ztdetail::zt_short_fraction(ffix, W, 62 - e, m, q, fl);
+    }
+
+    const BigFloatContext xc(BigFloatContext::clamp_precision(W), RoundingMode::nearest_even);
+    const std::uint64_t   two = std::uint64_t(1) << (e + 1);
+    std::uint64_t         ks  = 0;
+    while (A0 + ks * (std::uint64_t(1) << e) < two) ++ks;
+    if (ks >= N) return false;
+    out.assign(static_cast<std::size_t>(N), BigFloat::zero());
+    const BigFloat fs = frac ? BigFloat(ffix, false, -static_cast<std::int64_t>(W)) : BigFloat::zero();
+    BigUInt P;
+
+    for (std::uint64_t k = 0; k < N; ++k) {
+        const std::uint64_t D    = A0 + k * (std::uint64_t(1) << e);
+        const BigFloat      base = BigFloat(BigUInt(D), false, -static_cast<std::int64_t>(e));
+
+        if (k < ks) {
+            out[k] = exp(-BigFloat::mul(s, ln(base, wc), wc), wc);
+            continue;
+        }
+
+        if (frac) {
+            if (k == ks) {
+                const BigFloat st = exp(-BigFloat::mul(fs, ln(base, xc), xc), xc);
+                P = st.scaled_pow2(static_cast<std::int64_t>(W)).get_integer_part().magnitude();
+            } else {
+                BigUInt r = (m == 0) ? unit(W) : (shrt ? ztdetail::zt_one_minus_pow_x(m, q, e, D, W) : ztdetail::zt_one_minus_pow(m, q, std::uint64_t(1) << e, D, W));
+                if (!fl.is_zero()) {
+                    BigUInt L = ztdetail::zt_atanh_pow2_fixed(e, 2 * D - (std::uint64_t(1) << e), W);
+                    L.shift_left_mutable(1);
+                    r = fx_mul(r, ztdetail::zt_exp_small_neg(fx_mul(fl, L, W), W), W);
+                }
+                P = fx_mul(P, r, W);
+            }
+        }
+
+        BigFloat v = frac ? BigFloat(P, false, -static_cast<std::int64_t>(W)) : BigFloat::one();
+
+        if (n != 0) {
+            const bool exact = static_cast<double>(an) * static_cast<double>(ztdetail::zt_bitlen(D)) <= 2.0 * static_cast<double>(wc.precision) + 128.0;
+            const BigFloat bn = exact ? BigFloat(hz_upow(BigUInt(D), an), false, -static_cast<std::int64_t>(an * e)) : gmdetail::gm_powi(base, an, xc);
+            v = (n > 0) ? BigFloat::div(v, bn, wc) : BigFloat::mul(v, bn, wc);
+        } else {
+            v = v.rounded(wc);
+        }
+
+        out[k] = std::move(v);
+    }
+
+    return true;
+}
+
 zt_val hz_em(const BigFloat& s, const BigFloat& om, const BigFloat& a, const hz_plan& pl, std::size_t want) {
     using gmdetail::gm_zeta_t;
     const double          l2pi = 2.651496129472319;                                     
@@ -173,8 +248,14 @@ zt_val hz_em(const BigFloat& s, const BigFloat& om, const BigFloat& a, const hz_
     const double          sd = ztdetail::zt_to_double(s);
     BigFloat S1 = BigFloat::zero();
 
-    for (std::uint64_t k = 0; k < pl.N; ++k) {
-        S1 = BigFloat::add(S1, exp(-BigFloat::mul(s, ln(hz_xadd(a, BigFloat(k)), wc), wc), wc), ac);
+    std::vector<BigFloat> spw;
+
+    if (hz_shift_powers(s, a, pl.N, wc, spw)) {
+        for (std::uint64_t k = 0; k < pl.N; ++k) S1 = BigFloat::add(S1, spw[k], ac);
+    } else {
+        for (std::uint64_t k = 0; k < pl.N; ++k) {
+            S1 = BigFloat::add(S1, exp(-BigFloat::mul(s, ln(hz_xadd(a, BigFloat(k)), wc), wc), wc), ac);
+        }
     }
 
     const BigFloat X  = hz_xadd(a, BigFloat(pl.N));

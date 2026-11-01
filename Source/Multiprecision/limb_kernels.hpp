@@ -4,6 +4,10 @@
 #include <cstdint>
 #include <cstddef>
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#endif // _MSC_VER
+
 #if !defined(FIZMO_MUL_THRESHOLDS_RUNTIME) && defined(__has_include)
 #if __has_include(<fizmo_mul_tuning.hpp>)
 #include <fizmo_mul_tuning.hpp>
@@ -14,6 +18,25 @@ namespace fizmo {
 namespace multiprecision {
 namespace mdetail {
 
+#if !defined(FIZMO_NO_ASM_MUL) && (defined(__GNUC__) || defined(__clang__)) && defined(__x86_64__)
+inline void mul_wide64(std::uint64_t a, std::uint64_t b, std::uint64_t& hi, std::uint64_t& lo) noexcept {
+    __asm__("mulq %3" : "=a"(lo), "=d"(hi) : "a"(a), "rm"(b) : "cc");
+}
+#elif !defined(FIZMO_NO_ASM_MUL) && (defined(__GNUC__) || defined(__clang__)) && defined(__aarch64__)
+inline void mul_wide64(std::uint64_t a, std::uint64_t b, std::uint64_t& hi, std::uint64_t& lo) noexcept {
+    lo = a * b;
+    __asm__("umulh %0, %1, %2" : "=r"(hi) : "r"(a), "r"(b));
+}
+#elif !defined(FIZMO_NO_ASM_MUL) && defined(_MSC_VER) && defined(_M_X64)
+inline void mul_wide64(std::uint64_t a, std::uint64_t b, std::uint64_t& hi, std::uint64_t& lo) noexcept {
+    lo = _umul128(a, b, &hi);
+}
+#elif !defined(FIZMO_NO_ASM_MUL) && defined(_MSC_VER) && defined(_M_ARM64)
+inline void mul_wide64(std::uint64_t a, std::uint64_t b, std::uint64_t& hi, std::uint64_t& lo) noexcept {
+    lo = a * b;
+    hi = __umulh(a, b);
+}
+#else
 inline void mul_wide64(std::uint64_t a, std::uint64_t b, std::uint64_t& hi, std::uint64_t& lo) noexcept {
     const std::uint64_t al = a & 0xFFFFFFFFull, ah = a >> 32;
     const std::uint64_t bl = b & 0xFFFFFFFFull, bh = b >> 32;
@@ -23,12 +46,8 @@ inline void mul_wide64(std::uint64_t a, std::uint64_t b, std::uint64_t& hi, std:
     lo = p0 + (m << 32);
     hi = p3 + (m >> 32) + mc + ((lo < p0) ? 1ull : 0ull);
 }
+#endif // FIZMO_NO_ASM_MUL
 
-// Numbers approximated after multiple runs on my machine
-// 64 GB RAM, DDR5
-// 64 Bit Windows 11 Home
-// AMD Ryzen 7 9850x3D
-// VS-Code, G++ and CLANG using -O3
 #ifndef FIZMO_MUL_KARATSUBA_THRESHOLD
 #define FIZMO_MUL_KARATSUBA_THRESHOLD   35
 #endif

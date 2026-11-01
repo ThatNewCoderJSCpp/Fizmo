@@ -51,7 +51,7 @@ std::size_t zt_guard0(const BigFloat& s) {
     return 32 + ((e > 0 && e < 4096) ? static_cast<std::size_t>(e) : 0);
 }
 
-std::vector<BigFloat> zt_powers(const BigFloat& s, std::uint64_t M, const BigFloatContext& wc) {
+std::vector<BigFloat> zt_powers_exp(const BigFloat& s, std::uint64_t M, const BigFloatContext& wc) {
     std::vector<BigFloat>      pw(static_cast<std::size_t>(M) + 1, BigFloat::one());
     std::vector<std::uint64_t> spf(static_cast<std::size_t>(M) + 1, 0);
 
@@ -62,6 +62,250 @@ std::vector<BigFloat> zt_powers(const BigFloat& s, std::uint64_t M, const BigFlo
 
         if (spf[k] == k) pw[k] = exp(-BigFloat::mul(s, ln(BigFloat(k), wc), wc), wc);
         else             pw[k] = BigFloat::mul(pw[spf[k]], pw[k / spf[k]], wc);
+    }
+
+    return pw;
+}
+
+BigUInt zt_one_minus_pow(std::uint64_t m, unsigned q, std::uint64_t u, std::uint64_t D, std::size_t W) {
+    using multiprecision::constants::bfdetail::unit;
+    BigUInt t = unit(W);
+    t.mul_small_mutable(m);
+    t.shift_right_mutable(q);
+    t.mul_small_mutable(u);
+    t.div_small_mutable(D);
+    BigUInt acc = t;
+    BigUInt v;
+    const bool fuse = D < (std::uint64_t(1) << 40);
+
+    for (std::uint64_t j = 2; !t.is_zero(); ++j) {
+        v = t;
+        v.mul_small_mutable(m);
+        v.shift_right_mutable(q);
+        t.mul_small_mutable(j - 1);
+        t.sub_mutable(v);
+        if (u != 1) t.mul_small_mutable(u);
+        if (fuse) t.div_small_mutable(j * D);
+        else { t.div_small_mutable(j); t.div_small_mutable(D); }
+        acc.add_mutable(t);
+    }
+
+    BigUInt r = unit(W);
+    r.sub_mutable(acc);
+    return r;
+}
+
+BigUInt zt_one_minus_pow_x(std::uint64_t m, unsigned q, unsigned e, std::uint64_t D, std::size_t W) {
+    using multiprecision::constants::bfdetail::unit;
+    BigUInt t = unit(W + e);
+    t.mul_small_mutable(m);
+    t.shift_right_mutable(q);
+    t.div_small_mutable(D);
+    BigUInt             acc  = t;
+    const std::uint64_t jcap = ~std::uint64_t(0) / D;
+
+    for (std::uint64_t j = 2; !t.is_zero(); ++j) {
+        t.mul_small_mutable(((j - 1) << q) - m);
+        if (e >= q) t.shift_left_mutable(e - q); else t.shift_right_mutable(q - e);
+        if (j <= jcap) t.div_small_mutable(j * D);
+        else { t.div_small_mutable(j); t.div_small_mutable(D); }
+        acc.add_mutable(t);
+    }
+
+    BigUInt r = unit(W);
+    r.sub_mutable(acc);
+    return r;
+}
+
+BigUInt zt_one_minus_pow_short(std::uint64_t m, unsigned q, std::uint64_t D, std::size_t W) {
+    return zt_one_minus_pow_x(m, q, 0, D, W);
+}
+
+BigUInt zt_atanh_pow2_fixed(unsigned e, std::uint64_t v, std::size_t W) {
+    using multiprecision::constants::bfdetail::unit;
+    BigUInt term = unit(W + e);
+    term.div_small_mutable(v);
+    BigUInt sum = term;
+
+    for (std::uint64_t k = 3; ; k += 2) {
+        term.shift_left_mutable(2 * e);
+        term.div_small_mutable(v);
+        term.div_small_mutable(v);
+        if (term.is_zero()) break;
+        BigUInt t = term;
+        t.div_small_mutable(k);
+        if (t.is_zero()) break;
+        sum.add_mutable(t);
+    }
+
+    return sum;
+}
+
+bool zt_short_fraction(const BigUInt& ffix, std::size_t W, unsigned qmax, std::uint64_t& m, unsigned& q, BigUInt& fl) {
+    using multiprecision::constants::bfdetail::unit;
+    BigUInt hi = ffix;
+    hi.shift_right_mutable(W - qmax);
+    m  = hi.is_zero() ? 0 : hi.get_lowest_bits();
+    q  = qmax;
+    hi.shift_left_mutable(W - qmax);
+    fl = ffix;
+    fl.sub_mutable(hi);
+    while (m != 0 && (m & 1u) == 0 && q > 0) { m >>= 1; --q; }
+    return fl.is_zero();
+}
+
+BigUInt zt_exp_small_neg(const BigUInt& y, std::size_t W) {
+    using multiprecision::constants::bfdetail::unit;
+    using multiprecision::constants::bfdetail::fx_mul;
+    BigUInt pos = unit(W);
+    BigUInt neg = BigUInt::zero();
+    BigUInt t   = unit(W);
+
+    for (std::uint64_t k = 1; ; ++k) {
+        t = fx_mul(t, y, W);
+        t.div_small_mutable(k);
+        if (t.is_zero()) break;
+        if (k & 1u) neg.add_mutable(t); else pos.add_mutable(t);
+    }
+
+    pos.sub_mutable(neg);
+    return pos;
+}
+
+bool zt_split(const BigFloat& s, std::size_t W, std::int64_t& n, BigUInt& ffix) {
+    using multiprecision::constants::bfdetail::unit;
+    if (!s.is_finite()) return false;
+    ffix = BigUInt::zero();
+    if (s.is_zero()) { n = 0; return true; }
+    const BigUInt&     M = s.significand();
+    const std::int64_t E = s.exponent();
+
+    if (E >= 0) {
+        if (static_cast<std::int64_t>(M.bit_length()) + E > 40) return false;
+        n = static_cast<std::int64_t>(M.get_lowest_bits() << E);
+        if (s.signbit()) n = -n;
+        return true;
+    }
+
+    const std::size_t e  = static_cast<std::size_t>(-E);
+    BigUInt           ip = M;
+    ip.shift_right_mutable(e);
+    if (ip.bit_length() > 40) return false;
+    BigUInt fr = M;
+    BigUInt mask = unit(e);
+    mask.sub_small_mutable(1);
+    fr.and_mutable(mask);
+    n = static_cast<std::int64_t>(ip.is_zero() ? 0 : ip.get_lowest_bits());
+    if (e <= W) fr.shift_left_mutable(W - e); else fr.shift_right_mutable(e - W);
+
+    if (!s.signbit()) {
+        ffix = std::move(fr);
+        return true;
+    }
+
+    n = -n;
+    if (fr.is_zero()) return true;
+    n -= 1;
+    ffix = unit(W);
+    ffix.sub_mutable(fr);
+    return true;
+}
+
+std::vector<BigFloat> zt_powers(const BigFloat& s, std::uint64_t M, const BigFloatContext& wc) {
+    using multiprecision::constants::bfdetail::unit;
+    using multiprecision::constants::bfdetail::fx_mul;
+    using multiprecision::constants::bfdetail::atanh_inv_fixed;
+    using multiprecision::constants::bfdetail::ln2_fixed;
+    const std::size_t W = wc.precision + 2 * zt_bitlen(M) + zt_bitlen(wc.precision) + 24;
+    std::int64_t      n = 0;
+    BigUInt           ffix;
+    if (M < 2 || M >= (std::uint64_t(1) << 32) || !zt_split(s, W, n, ffix)) return zt_powers_exp(s, M, wc);
+    const std::uint64_t an = static_cast<std::uint64_t>(n < 0 ? -n : n);
+    if (static_cast<double>(an) * std::log2(static_cast<double>(M)) > 64.0 * static_cast<double>(wc.precision) + 4096.0) return zt_powers_exp(s, M, wc);
+
+    std::vector<BigFloat>      pw(static_cast<std::size_t>(M) + 1, BigFloat::one());
+    std::vector<std::uint64_t> spf(static_cast<std::size_t>(M) + 1, 0);
+    const bool                 frac = !ffix.is_zero();
+    std::uint64_t              m = 0;
+    unsigned                   q = 62;
+    BigUInt                    fl = BigUInt::zero();
+
+    bool short_f = false;
+
+    if (frac) {
+        BigUInt lo = ffix;
+        BigUInt msk = unit(W - 40);
+        msk.sub_small_mutable(1);
+        lo.and_mutable(msk);
+        if (lo.is_zero()) {
+            BigUInt hi = ffix;
+            hi.shift_right_mutable(W - 40);
+            m = hi.get_lowest_bits();
+            q = 40;
+            while ((m & 1u) == 0 && q > 0) { m >>= 1; --q; }
+            short_f = true;
+        }
+    }
+
+    if (frac && !short_f) {
+        BigUInt hi = ffix;
+        hi.shift_right_mutable(W - 62);
+        m  = hi.is_zero() ? 0 : hi.get_lowest_bits();
+        hi.shift_left_mutable(W - 62);
+        fl = ffix;
+        fl.sub_mutable(hi);
+        while (m != 0 && (m & 1u) == 0 && q > 0) { m >>= 1; --q; }
+    }
+
+    const bool          use_lo = frac && !fl.is_zero();
+    std::vector<BigUInt> P, L;
+    if (frac) P.assign(static_cast<std::size_t>(M) + 1, unit(W));
+    if (use_lo) L.assign(static_cast<std::size_t>(M) + 1, BigUInt::zero());
+
+    for (std::uint64_t k = 2; k <= M; ++k) {
+        if (spf[k] == 0) {
+            for (std::uint64_t j = k; j <= M; j += k) if (spf[j] == 0) spf[j] = k;
+        }
+
+        const std::uint64_t a = spf[k], b = k / spf[k];
+
+        if (a != k) {
+            if (frac)   P[k] = fx_mul(P[a], P[b], W);
+            if (use_lo) { L[k] = L[a]; L[k].add_mutable(L[b]); }
+            pw[k] = BigFloat::mul(pw[a], pw[b], wc);
+            continue;
+        }
+
+        BigFloat v = BigFloat::one();
+
+        if (frac) {
+            if (short_f)     P[k] = fx_mul(P[k - 1], zt_one_minus_pow_short(m, q, k, W), W);
+            else if (m != 0) P[k] = fx_mul(P[k - 1], zt_one_minus_pow(m, q, 1, k, W), W);
+            else        P[k] = P[k - 1];
+            BigUInt pk = P[k];
+
+            if (use_lo) {
+                if (k == 2) L[k] = ln2_fixed(W);
+                else {
+                    BigUInt t = atanh_inv_fixed(2 * k - 1, W);
+                    t.shift_left_mutable(1);
+                    L[k] = L[k - 1];
+                    L[k].add_mutable(t);
+                }
+                pk = fx_mul(pk, zt_exp_small_neg(fx_mul(fl, L[k], W), W), W);
+            }
+
+            v = BigFloat(std::move(pk), false, -static_cast<std::int64_t>(W));
+        }
+
+        if (n != 0) {
+            const BigFloat kn(hzdetail::hz_upow(BigUInt(k), an));
+            v = (n > 0) ? BigFloat::div(v, kn, wc) : BigFloat::mul(v, kn, wc);
+        } else {
+            v = v.rounded(wc);
+        }
+
+        pw[k] = std::move(v);
     }
 
     return pw;
@@ -123,7 +367,7 @@ zt_val zt_core(const BigFloat& s, const BigFloat& om, std::size_t want) {
     }
 
     const BigFloat h   = BigFloat::mul(om, multiprecision::constants::ln2(wc), wc).scaled_pow2(-1);
-    const BigFloat em1 = BigFloat::mul(sinh(h, wc), exp(h, wc), wc).scaled_pow2(1);      
+    const BigFloat em1 = (sd >= 1.5) ? BigFloat::sub(pw[2].scaled_pow2(1), BigFloat::one(), wc) : BigFloat::mul(sinh(h, wc), exp(h, wc), wc).scaled_pow2(1);
     const BigFloat q   = BigFloat::div(BigFloat(A).scaled_pow2(-F), BigFloat::mul(BigFloat(dn), em1, wc), wc);
     const double ce  = 3.0 * as * std::log(static_cast<double>(n) + 1.0) + 2.0 * std::log2(static_cast<double>(n) + 1.0) + 4.0;
     const double ah  = std::fabs(zt_to_double(h));
