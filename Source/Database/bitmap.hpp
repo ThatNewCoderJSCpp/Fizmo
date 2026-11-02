@@ -13,18 +13,28 @@ namespace fizmo {
 namespace database {
 
 inline unsigned count_trailing_zeros(std::uint64_t x) noexcept {
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64))
     unsigned long i;
     _BitScanForward64(&i, x);
     return static_cast<unsigned>(i);
+#elif defined(_MSC_VER)
+    unsigned long i;
+    if (_BitScanForward(&i, static_cast<unsigned long>(x))) return static_cast<unsigned>(i);
+    _BitScanForward(&i, static_cast<unsigned long>(x >> 32));
+    return static_cast<unsigned>(i) + 32u;
 #else
     return static_cast<unsigned>(__builtin_ctzll(x));
 #endif // defined(_MSC_VER)
 }
 
 inline unsigned popcount64(std::uint64_t x) noexcept {
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && defined(_M_X64)
     return static_cast<unsigned>(__popcnt64(x));
+#elif defined(_MSC_VER)
+    x = x - ((x >> 1) & 0x5555555555555555ull);
+    x = (x & 0x3333333333333333ull) + ((x >> 2) & 0x3333333333333333ull);
+    x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0Full;
+    return static_cast<unsigned>((x * 0x0101010101010101ull) >> 56);
 #else
     return static_cast<unsigned>(__builtin_popcountll(x));
 #endif // defined(_MSC_VER)

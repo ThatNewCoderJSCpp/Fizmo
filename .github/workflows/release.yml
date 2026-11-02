@@ -151,13 +151,14 @@ jobs:
 
       - name: Package
         working-directory: build
-        run: cpack -G "TGZ;ZIP"
+        run: cpack -G "TGZ;TXZ;ZIP"
 
       - uses: actions/upload-artifact@v4
         with:
           name: fizmo-macos-${{ matrix.arch }}
           path: |
             build/fizmo-*.tar.gz
+            build/fizmo-*.tar.xz
             build/fizmo-*.zip
           if-no-files-found: error
 
@@ -276,6 +277,7 @@ jobs:
     name: Windows MSVC ${{ matrix.arch }}
     needs: version
     runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.arch == 'x86' }}
     strategy:
       fail-fast: false
       matrix:
@@ -284,6 +286,8 @@ jobs:
             runner: windows-latest
           - arch: arm64
             runner: windows-11-arm
+          - arch: x86
+            runner: windows-latest
     defaults:
       run:
         shell: pwsh
@@ -333,10 +337,52 @@ jobs:
             build/fizmo-*.exe
           if-no-files-found: error
 
+  android:
+    name: Android ${{ matrix.abi }}
+    needs: version
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=${{ matrix.abi }} -DANDROID_PLATFORM=android-26 -DANDROID_STL=c++_static \
+            -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \
+            -DFIZMO_TUNE=OFF -DFIZMO_BUILD_SHARED=OFF -DFIZMO_BUILD_SHADER_TOOL=OFF \
+            -DFIZMO_PACKAGE_PLATFORM=android-${{ matrix.abi }}
+
+      - name: Build
+        run: cmake --build build -j 4
+
+      - name: Package
+        working-directory: build
+        run: cpack -G "TGZ;TXZ;ZIP"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fizmo-android-${{ matrix.abi }}
+          path: |
+            build/fizmo-*.tar.gz
+            build/fizmo-*.tar.xz
+            build/fizmo-*.zip
+          if-no-files-found: error
+
   publish:
     name: Attach packages to the release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, linux-i686, macos, mingw, msvc]
+    needs: [linux, linux-i686, macos, mingw, msvc, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
