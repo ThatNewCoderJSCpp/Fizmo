@@ -26,7 +26,7 @@ public:
         VkResult r = d->fn.vkCreateShaderModule(d->handle, &info, nullptr, &h);
         if (r != VK_SUCCESS) return to_result(r);
         m_module = { d, h };
-        if (name) d->set_name(VK_OBJECT_TYPE_SHADER_MODULE, reinterpret_cast<std::uint64_t>(h), name);
+        if (name) d->set_name(VK_OBJECT_TYPE_SHADER_MODULE, h, name);
         return Result::Success;
     }
 
@@ -515,7 +515,7 @@ public:
         m_pipeline   = { d, h };
         m_layout     = desc.layout->handle();
         m_bind_point = BindPoint::Graphics;
-        if (desc.name) d->set_name(VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<std::uint64_t>(h), desc.name);
+        if (desc.name) d->set_name(VK_OBJECT_TYPE_PIPELINE, h, desc.name);
         return Result::Success;
     }
 
@@ -536,7 +536,7 @@ public:
         m_pipeline   = { d, h };
         m_layout     = desc.layout->handle();
         m_bind_point = BindPoint::Compute;
-        if (desc.name) d->set_name(VK_OBJECT_TYPE_PIPELINE, reinterpret_cast<std::uint64_t>(h), desc.name);
+        if (desc.name) d->set_name(VK_OBJECT_TYPE_PIPELINE, h, desc.name);
         return Result::Success;
     }
 

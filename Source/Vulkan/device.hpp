@@ -99,6 +99,11 @@ struct DeviceState {
         info.pObjectName  = name;
         instance->fn.vkSetDebugUtilsObjectNameEXT(handle, &info);
     }
+
+    template <typename T>
+    void set_name(VkObjectType type, T* object, const char* name) const noexcept {
+        set_name(type, static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(object)), name);
+    }
 };
 
 template <typename H, typename PFN, PFN DeviceDispatch::* Destroy>
@@ -520,7 +525,7 @@ public:
 
     template <typename H>
     void set_debug_name(H handle, VkObjectType type, const char* name) const noexcept {
-        if (m_state) m_state->set_name(type, reinterpret_cast<std::uint64_t>(handle), name);
+        if (m_state) m_state->set_name(type, handle, name);
     }
 };
 

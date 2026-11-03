@@ -125,7 +125,7 @@ public:
         m_size = desc.size;
         m_usage = usage;
         m_memory_usage = desc.memory;
-        if (desc.name) d->set_name(VK_OBJECT_TYPE_BUFFER, reinterpret_cast<std::uint64_t>(buf), desc.name);
+        if (desc.name) d->set_name(VK_OBJECT_TYPE_BUFFER, buf, desc.name);
         return Result::Success;
     }
 
@@ -312,7 +312,7 @@ public:
         if (r != VK_SUCCESS) { destroy(); return to_result(r); }
         res = m_view.create(device, *this);
         if (failed(res)) { destroy(); return res; }
-        if (desc.name) d->set_name(VK_OBJECT_TYPE_IMAGE, reinterpret_cast<std::uint64_t>(img), desc.name);
+        if (desc.name) d->set_name(VK_OBJECT_TYPE_IMAGE, img, desc.name);
         return Result::Success;
     }
 
@@ -413,7 +413,7 @@ public:
         m_pool = { d, h };
         m_count = count;
         m_period_ns = static_cast<double>(d->properties.limits.timestampPeriod);
-        if (name) d->set_name(VK_OBJECT_TYPE_QUERY_POOL, reinterpret_cast<std::uint64_t>(h), name);
+        if (name) d->set_name(VK_OBJECT_TYPE_QUERY_POOL, h, name);
         return Result::Success;
     }
 
@@ -464,7 +464,7 @@ public:
         VkResult r = d->fn.vkCreateSampler(d->handle, &info, nullptr, &h);
         if (r != VK_SUCCESS) return to_result(r);
         m_sampler = { d, h };
-        if (desc.name) d->set_name(VK_OBJECT_TYPE_SAMPLER, reinterpret_cast<std::uint64_t>(h), desc.name);
+        if (desc.name) d->set_name(VK_OBJECT_TYPE_SAMPLER, h, desc.name);
         return Result::Success;
     }
 
