@@ -1100,19 +1100,24 @@ void test_recorder() {
     check(player.start(out_cfg, &err), "the player opens a playback stream " + err);
     player.seek(1.0);
     player.play();
+    const auto played_at = std::chrono::steady_clock::now();
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     TrackRecorder live;
     StreamConfig in_cfg;
     in_cfg.sample_rate = 48000;
     in_cfg.channels = 1;
     in_cfg.latency_ms = 10;
+    const auto recording_at = std::chrono::steady_clock::now();
     check(live.start(in_cfg, &player, 0.0, &err), "start recording from a capture stream " + err);
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
     check(live.recording() && live.recorded_seconds() > 0.15, "frames arrive from the capture stream");
     Clip got = live.finish("overdub");
+    const auto finished_at = std::chrono::steady_clock::now();
+    const double waited_before = std::chrono::duration<double>(recording_at - played_at).count();
+    const double recorded_for = std::chrono::duration<double>(finished_at - recording_at).count();
     const double expected = live.start_position();
-    check(got.length > 0.15 && got.length < 0.6 && got.source->channels() == 1, "the overdub clip has the captured audio (" + fmt(got.length, 3) + " s)");
-    check(expected > 1.05 && expected < 1.3 && got.position < expected && got.position > expected - 0.1, "the overdub lands at the transport position minus device latency (" + fmt(got.position, 3) + " vs " + fmt(expected, 3) + ")");
+    check(got.length > 0.15 && got.length < recorded_for + 0.3 && got.source->channels() == 1, "the overdub clip has the captured audio (" + fmt(got.length, 3) + " s)");
+    check(expected > 1.05 && expected < 1.2 + waited_before && got.position < expected && got.position > expected - 0.1, "the overdub lands at the transport position minus device latency (" + fmt(got.position, 3) + " vs " + fmt(expected, 3) + ")");
     player.stop_output();
     set_backend("auto");
 }

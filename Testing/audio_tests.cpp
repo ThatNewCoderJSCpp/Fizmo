@@ -534,11 +534,13 @@ void test_null_device() {
         ++calls;
         for (std::size_t i = 0; i < frames * 2; ++i) out[i] = 0.0f;
     }, &err), "open a null playback stream " + err);
+    const auto began = std::chrono::steady_clock::now();
     check(s.start(&err), "start it");
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     s.stop();
+    const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
     const double secs = s.seconds_processed();
-    check(calls > 10 && secs > 0.12 && secs < 0.32, "the null device runs in real time (" + std::to_string(secs) + " s)");
+    check(calls > 10 && secs > 0.6 * elapsed - 0.02 && secs < elapsed + 0.05, "the null device runs in real time (" + std::to_string(secs) + " s in " + std::to_string(elapsed) + " s)");
     s.close();
     Stream bad;
     check(bad.open_playback(cfg, [](float*, std::size_t) { throw std::runtime_error("boom"); }) && bad.start(), "open a stream whose callback throws");
