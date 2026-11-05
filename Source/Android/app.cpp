@@ -1382,6 +1382,16 @@ void App::set_saved_state(std::vector<std::uint8_t> bytes) {
 } // namespace android
 } // namespace fizmo
 
+extern "C" void* fizmo_android_app_java_vm() {
+    fizmo::android::App* app = fizmo::android::App::current();
+    return app ? app->java_vm() : nullptr;
+}
+
+extern "C" void* fizmo_android_app_activity() {
+    fizmo::android::App* app = fizmo::android::App::current();
+    return app ? app->activity_object() : nullptr;
+}
+
 extern "C" JNIEXPORT void ANativeActivity_onCreate(ANativeActivity* activity, void* saved_state, size_t saved_size) {
     using namespace fizmo::android;
     std::call_once(g_stdio_once, [] { redirect_stdio("fizmo"); });

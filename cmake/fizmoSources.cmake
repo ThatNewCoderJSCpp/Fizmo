@@ -8,9 +8,9 @@ if(APPLE)
         SKIP_UNITY_BUILD_INCLUSION ON)
 endif()
 
-set(FIZMO_COMPONENTS core random crypto string statistics numerics chemistry physics symbolic time collections system util net db graphics)
+set(FIZMO_COMPONENTS core random crypto string statistics numerics chemistry physics symbolic time collections system util net db graphics audio video)
 
-set(FIZMO_COMPONENT_LINK_ORDER net db graphics crypto string statistics physics chemistry numerics symbolic time collections system util random core)
+set(FIZMO_COMPONENT_LINK_ORDER net db graphics video audio crypto string statistics physics chemistry numerics symbolic time collections system util random core)
 
 set(FIZMO_COMPONENT_DIRS_core        Multiprecision)
 set(FIZMO_COMPONENT_DIRS_random      Random)
@@ -28,9 +28,12 @@ set(FIZMO_COMPONENT_DIRS_util        "Util Hpp")
 set(FIZMO_COMPONENT_DIRS_net         Networking)
 set(FIZMO_COMPONENT_DIRS_db          Database)
 set(FIZMO_COMPONENT_DIRS_graphics    Android Colors GPU Game Graphics Images Input OpenGL Text UI Vulkan Windows)
+set(FIZMO_COMPONENT_DIRS_audio       Audio)
+set(FIZMO_COMPONENT_DIRS_video       Video)
 
 set(FIZMO_COMPONENT_FILES_graphics System/hot_reload.cpp)
 set(FIZMO_COMPONENT_FILES_core Arrays/common/memory/windows/allocator.cpp)
+set(FIZMO_COMPONENT_FILES_audio Video/demux.cpp Video/mp4.cpp Video/matroska.cpp Video/demux_ogg.cpp Video/demux_es.cpp Video/av1_demux.cpp Video/ivf.cpp)
 
 set(FIZMO_COMPONENT_USES_core        "")
 set(FIZMO_COMPONENT_USES_random      core)
@@ -48,6 +51,8 @@ set(FIZMO_COMPONENT_USES_util        core)
 set(FIZMO_COMPONENT_USES_net         crypto util)
 set(FIZMO_COMPONENT_USES_db          crypto)
 set(FIZMO_COMPONENT_USES_graphics    system util string)
+set(FIZMO_COMPONENT_USES_audio       core)
+set(FIZMO_COMPONENT_USES_video       audio)
 
 foreach(_fizmo_component IN LISTS FIZMO_COMPONENTS)
     set(FIZMO_COMPONENT_SOURCES_${_fizmo_component} "")

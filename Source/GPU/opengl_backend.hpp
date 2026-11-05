@@ -35,6 +35,7 @@ inline PixelFormat pixel_format(Format f) noexcept {
         case Format::RGBA8Srgb:      return { gl::SRGB8_ALPHA8, gl::RGBA, gl::UNSIGNED_BYTE };
         case Format::BGRA8Unorm:     return { gl::RGBA8, gl::BGRA, gl::UNSIGNED_BYTE };
         case Format::R16Float:       return { gl::R16F, gl::RED, gl::HALF_FLOAT };
+        case Format::R16Unorm:       return { gl::R16, gl::RED, gl::UNSIGNED_SHORT };
         case Format::RGBA16Float:    return { gl::RGBA16F, gl::RGBA, gl::HALF_FLOAT };
         case Format::R32Uint:        return { gl::R32UI, gl::RED_INTEGER, gl::UNSIGNED_INT };
         case Format::R32Float:       return { gl::R32F, gl::RED, gl::FLOAT };

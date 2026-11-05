@@ -12,6 +12,7 @@
 #include "gpu_text.hpp"
 #include "gl_shaders.hpp"
 #include "gpu_shaders_extra.hpp"
+#include "gpu_shaders_video.hpp"
 #include "../raster_3d.hpp"
 
 #include "../../../Basic/constants.hpp"
@@ -72,6 +73,31 @@ private:
         gpu::Rect2D         scissor;
         std::uint64_t       target  = 0;
         graphics::BlendMode blend   = graphics::BlendMode::Normal;
+        std::int32_t        video   = -1;
+    };
+
+    struct VideoPush {
+        float inv_half_size[2];
+        float chroma_scale[2];
+        float coeffs[4];
+        float levels[4];
+        float siting[4];
+        float sizes[4];
+    };
+    static_assert(sizeof(VideoPush) == 80, "video push constants must match video2d shaders");
+
+    struct VideoPlanes {
+        std::array<std::unique_ptr<gpu::Texture>, 3> planes;
+        std::array<gpu::Extent2D, 3>                 sizes{};
+        gpu::Format                                  format    = gpu::Format::Undefined;
+        int                                          count     = 0;
+        std::uint64_t                                stamp     = 0;
+        std::uint64_t                                last_used = 0;
+    };
+
+    struct VideoDraw {
+        std::array<const gpu::Texture*, 3> planes{};
+        VideoPush                          push{};
     };
 
     struct TargetRes {
@@ -117,6 +143,7 @@ private:
         std::size_t   offset = 0;
         gpu::Offset2D at;
         gpu::Extent2D size;
+        std::uint32_t row_pixels = 0;
     };
 
     struct CachedTexture {
@@ -529,6 +556,15 @@ private:
     std::unordered_map<std::uint64_t, std::vector<CachedLayout>> m_layouts;
     std::vector<Retired>                                         m_retired;
     gfx::TextEngine                                              m_text;
+    gpu::ShaderModule                                            m_video_vs;
+    gpu::ShaderModule                                            m_video_fs;
+    gpu::BindGroupLayout                                         m_video_set_layout;
+    gpu::PipelineLayout                                          m_video_layout;
+    gpu::RenderPipeline                                          m_video_pipeline;
+    std::array<gpu::RenderPipeline, 4>                           m_video_blend;
+    std::unordered_map<std::uint64_t, VideoPlanes>               m_videos;
+    std::vector<VideoDraw>                                       m_video_draws;
+    bool                                                         m_video_r16 = false;
 
     bool                 m_ready          = false;
     bool                 m_text_ok        = false;
@@ -816,6 +852,15 @@ public:
         for (auto& p : m_sprite_blend) p.destroy();
         m_sprite_vs.destroy();
         m_sprite_fs.destroy();
+        m_videos.clear();
+        m_video_draws.clear();
+        m_video_pipeline.destroy();
+        for (auto& p : m_video_blend) p.destroy();
+        m_video_layout.destroy();
+        m_video_set_layout.destroy();
+        m_video_fs.destroy();
+        m_video_vs.destroy();
+        m_video_r16 = false;
         m_upscale_pipeline.destroy();
         m_upscale_layout.destroy();
         m_upscale_fs.destroy();
@@ -1090,6 +1135,53 @@ public:
                 gfx::pack_premul(tint.red(), tint.green(), tint.blue(), a), view, sampler_for(tex)
             );
         } catch (...) {}
+    }
+
+    bool supports_video(int bit_depth, int bytes_per_sample, int plane_count, int chroma_shift_x, int chroma_shift_y, unsigned int width, unsigned int height) const noexcept override {
+        if (!m_ready || !m_video_pipeline.valid()) return false;
+        if (!graphics::VideoTexture::supported_layout(bit_depth, bytes_per_sample, plane_count, chroma_shift_x, chroma_shift_y)) return false;
+        if (bytes_per_sample > 1 && !m_video_r16) return false;
+        const std::uint32_t limit = m_device.caps().max_texture_size;
+        return width > 0 && height > 0 && width <= limit && height <= limit;
+    }
+
+    bool draw_video_quad(const RenderPoint* quad, const graphics::VideoTexture& tex, float opacity, const graphics::TextureRect& src) noexcept override {
+        if (!quad || !tex.valid()) return false;
+        if (!supports_video(tex.bit_depth(), tex.bytes_per_sample(), tex.plane_count(), tex.chroma_shift_x(), tex.chroma_shift_y(), tex.width(), tex.height())) return false;
+        if (src.is_empty()) return true;
+        const std::uint8_t a = gfx::scale_alpha(255, opacity);
+        if (a == 0 || m_clip_empty) return true;
+
+        try {
+            VideoDraw d;
+            if (!video_planes(tex, d.planes)) return false;
+            fill_video_push(tex, d.push);
+            const float tw = static_cast<float>(tex.width()), th = static_cast<float>(tex.height());
+            const gfx::Vec2 p[4] = { { quad[0].x, quad[0].y }, { quad[1].x, quad[1].y }, { quad[2].x, quad[2].y }, { quad[3].x, quad[3].y } };
+            const float u0 = src.x / tw, v0 = src.y / th;
+            const float u1 = (src.x + static_cast<float>(src.w)) / tw, v1 = (src.y + static_cast<float>(src.h)) / th;
+            const std::uint32_t color = gfx::pack_opacity(a);
+            m_video_draws.push_back(d);
+            Batch b;
+            b.first   = static_cast<std::uint32_t>(m_vertices.size());
+            b.count   = 6;
+            b.view    = &m_white;
+            b.sampler = NearestClamp;
+            b.scissor = m_scissor;
+            b.target  = m_active_target;
+            b.blend   = m_blend_mode;
+            b.video   = static_cast<std::int32_t>(m_video_draws.size() - 1);
+            const gfx::Vertex va{ p[0].x, p[0].y, u0, v0, color, 0, { 0, 0, 0, 0 } };
+            const gfx::Vertex vb{ p[1].x, p[1].y, u1, v0, color, 0, { 0, 0, 0, 0 } };
+            const gfx::Vertex vc{ p[2].x, p[2].y, u1, v1, color, 0, { 0, 0, 0, 0 } };
+            const gfx::Vertex vd{ p[3].x, p[3].y, u0, v1, color, 0, { 0, 0, 0, 0 } };
+            m_vertices.push_back(va); m_vertices.push_back(vb); m_vertices.push_back(vc);
+            m_vertices.push_back(va); m_vertices.push_back(vc); m_vertices.push_back(vd);
+            m_batches.push_back(b);
+            return true;
+        } catch (...) {
+            return false;
+        }
     }
 
     void draw_vertices_2d(const graphics::Vertex2D* v, std::size_t count, const graphics::Texture* tex) noexcept override {
@@ -3068,6 +3160,7 @@ private:
         if (failed(m_draw_pipeline.create(m_device, draw))) return false;
         create_blend_variants(draw, m_draw_blend);
         create_sprite_pipeline();
+        create_video_pipeline();
         gpu::PipelineLayoutDesc ul;
         ul.groups               = { &m_present_set_layout };
         ul.push_constant_size   = kUpscalePushBytes;
@@ -3469,6 +3562,7 @@ private:
         m_vertices.clear();
         m_sprites.clear();
         m_batches.clear();
+        m_video_draws.clear();
         m_uploads.clear();
         m_staging.clear();
         m_ramp_rows.clear();
@@ -3485,6 +3579,7 @@ private:
             Batch& b = m_batches.back();
 
             if (
+                b.video < 0 &&
                 b.view == view &&
                 b.sampler == sampler &&
                 b.sprites == sprites &&
@@ -4074,6 +4169,15 @@ private:
             m_meshes.erase(oldest);
         }
 
+        for (auto it = m_videos.begin(); it != m_videos.end();) {
+            if (it->second.last_used + kEvictAfterFrames <= now) {
+                retire_video(it->second);
+                it = m_videos.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
         for (auto it = m_textures.begin(); it != m_textures.end();) {
             if (it->second.last_used + kEvictAfterFrames <= now) {
                 m_texture_bytes -= static_cast<std::uint64_t>(it->second.width) * it->second.height * 4;
@@ -4197,6 +4301,12 @@ private:
         for (std::size_t i = from; i < to; ++i) {
             const Batch& b = m_batches[i];
             if (b.target != target || b.count == 0 || b.scissor.extent.width == 0 || b.scissor.extent.height == 0) continue;
+
+            if (b.video >= 0) {
+                if (record_video_batch(cmd, pf, b, w, h)) bound = -1;
+                continue;
+            }
+
             const gpu::RenderPipeline& pipe = pipeline_for(b.sprites, b.blend);
             if (!pipe.valid()) continue;
             const gpu::BindGroup set = descriptor_for(pf, b.view, b.sampler, sets, b.sprites);
@@ -4368,6 +4478,208 @@ private:
         d.name          = "fizmo sprites";
         if (failed(m_sprite_pipeline.create(m_device, d))) { m_sprite_pipeline.destroy(); m_sprite_vs.destroy(); m_sprite_fs.destroy(); return; }
         create_blend_variants(d, m_sprite_blend);
+    }
+
+    void create_video_pipeline() {
+        m_video_r16 = m_device.supports(gpu::Format::R16Unorm, gpu::TextureUsage::Sampled | gpu::TextureUsage::CopyDst);
+        if (!m_device.supports(gpu::Format::R8Unorm, gpu::TextureUsage::Sampled | gpu::TextureUsage::CopyDst)) return;
+        if (m_device.caps().max_push_constants < sizeof(VideoPush)) return;
+        if (failed(m_video_vs.create(m_device, video_glsl::video2d_vert())) || failed(m_video_fs.create(m_device, video_glsl::video2d_frag()))) {
+            m_video_vs.destroy();
+            m_video_fs.destroy();
+            return;
+        }
+
+        const gpu::BindGroupLayoutEntry entries[] = {
+            { 0, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+            { 1, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+            { 2, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+        };
+
+        gpu::PipelineLayoutDesc l;
+        l.groups               = { &m_video_set_layout };
+        l.push_constant_size   = static_cast<std::uint32_t>(sizeof(VideoPush));
+        l.push_constant_stages = gpu::ShaderStage::Graphics;
+        gpu::RenderPipelineDesc d;
+        d.vertex            = &m_video_vs;
+        d.fragment          = &m_video_fs;
+        d.layout            = &m_video_layout;
+        d.vertex_bindings   = { { 0, sizeof(gfx::Vertex), gpu::VertexRate::PerVertex } };
+        d.vertex_attributes = {
+            { 0, 0, gpu::Format::RG32Float,  0  },
+            { 1, 0, gpu::Format::RG32Float,  8  },
+            { 2, 0, gpu::Format::RGBA8Unorm, 16 },
+        };
+        d.samples       = m_samples;
+        d.color_formats = { gpu::Format::RGBA8Unorm };
+        d.blend         = gpu::BlendState::premultiplied();
+        d.name          = "fizmo video";
+
+        if (failed(m_video_set_layout.create(m_device, { entries, "fizmo video set" })) || failed(m_video_layout.create(m_device, l)) || failed(m_video_pipeline.create(m_device, d))) {
+            m_video_pipeline.destroy();
+            m_video_layout.destroy();
+            m_video_set_layout.destroy();
+            m_video_vs.destroy();
+            m_video_fs.destroy();
+            return;
+        }
+
+        create_blend_variants(d, m_video_blend);
+    }
+
+    const gpu::RenderPipeline& video_pipeline_for(graphics::BlendMode blend) const noexcept {
+        const std::size_t i = static_cast<std::size_t>(blend);
+        if (i == 0 || i >= 4 || !m_video_blend[i].valid()) return m_video_pipeline;
+        return m_video_blend[i];
+    }
+
+    bool record_video_batch(gpu::CommandList& cmd, PerFrame& pf, const Batch& b, unsigned int w, unsigned int h) {
+        if (b.video < 0 || static_cast<std::size_t>(b.video) >= m_video_draws.size()) return false;
+        const VideoDraw& d = m_video_draws[static_cast<std::size_t>(b.video)];
+        const gpu::RenderPipeline& pipe = video_pipeline_for(b.blend);
+        if (!pipe.valid() || !d.planes[0]) return false;
+        const gpu::Texture& p0 = *d.planes[0];
+        const gpu::Texture& p1 = d.planes[1] ? *d.planes[1] : p0;
+        const gpu::Texture& p2 = d.planes[2] ? *d.planes[2] : p0;
+
+        const gpu::BindGroupEntry entries[] = {
+            gpu::BindGroupEntry::sampled(0, p0, m_samplers[NearestClamp]),
+            gpu::BindGroupEntry::sampled(1, p1, m_samplers[NearestClamp]),
+            gpu::BindGroupEntry::sampled(2, p2, m_samplers[NearestClamp]),
+        };
+
+        const gpu::BindGroup set = frame_group(m_video_set_layout, entries);
+        if (!set.valid()) return false;
+        VideoPush push = d.push;
+        push.inv_half_size[0] = 2.0f / static_cast<float>(w);
+        push.inv_half_size[1] = 2.0f / static_cast<float>(h);
+        cmd.set_pipeline(pipe);
+        cmd.push_constants(push);
+        cmd.set_vertex_buffer(0, pf.vertices);
+        cmd.set_scissor(b.scissor);
+        cmd.set_bind_group(0, set);
+        cmd.draw(b.count, 1, b.first);
+        return true;
+    }
+
+    static void fill_video_push(const graphics::VideoTexture& tex, VideoPush& p) noexcept {
+        const graphics::VideoConversion c = tex.conversion();
+        const bool chroma = tex.plane_count() > 1;
+        p.inv_half_size[0] = p.inv_half_size[1] = 0.0f;
+        p.chroma_scale[0] = std::ldexp(1.0f, -tex.chroma_shift_x());
+        p.chroma_scale[1] = std::ldexp(1.0f, -tex.chroma_shift_y());
+        p.coeffs[0] = c.cr_to_r;
+        p.coeffs[1] = c.cb_to_g;
+        p.coeffs[2] = c.cr_to_g;
+        p.coeffs[3] = c.cb_to_b;
+        p.levels[0] = c.y_offset;
+        p.levels[1] = c.y_scale;
+        p.levels[2] = c.c_offset;
+        p.levels[3] = c.sample_scale;
+        p.siting[0] = c.chroma_offset_x;
+        p.siting[1] = c.chroma_offset_y;
+        p.siting[2] = static_cast<float>(c.mode);
+        p.siting[3] = tex.filter() == graphics::SampleFilter::Bilinear ? 1.0f : 0.0f;
+        p.sizes[0] = static_cast<float>(tex.width());
+        p.sizes[1] = static_cast<float>(tex.height());
+        p.sizes[2] = static_cast<float>(chroma ? tex.plane_width(1) : tex.width());
+        p.sizes[3] = static_cast<float>(chroma ? tex.plane_height(1) : tex.height());
+    }
+
+    void retire_video(VideoPlanes& e) {
+        for (auto& t : e.planes) if (t) m_retired.push_back({ e.last_used, std::move(t) });
+    }
+
+    bool make_video_planes(const graphics::VideoTexture& tex, gpu::Format format, std::array<std::unique_ptr<gpu::Texture>, 3>& out) {
+        for (int i = 0; i < tex.plane_count(); ++i) {
+            auto t = std::make_unique<gpu::Texture>();
+            gpu::TextureDesc d;
+            d.extent = { tex.plane_width(i), tex.plane_height(i), 1 };
+            d.format = format;
+            d.usage  = gpu::TextureUsage::Sampled | gpu::TextureUsage::CopyDst;
+            d.name   = "fizmo video plane";
+            if (failed(t->create(m_device, d))) return false;
+            out[static_cast<std::size_t>(i)] = std::move(t);
+        }
+
+        return true;
+    }
+
+    void upload_video_planes(const graphics::VideoTexture& tex, const std::array<std::unique_ptr<gpu::Texture>, 3>& planes) {
+        const std::size_t bps = static_cast<std::size_t>(tex.bytes_per_sample());
+
+        for (int i = 0; i < tex.plane_count(); ++i) {
+            const std::size_t k = static_cast<std::size_t>(i);
+            const std::uint32_t pw = tex.plane_width(i), ph = tex.plane_height(i);
+            const std::size_t stride = tex.plane_stride(i);
+            const std::size_t bytes = stride * (ph - 1) + static_cast<std::size_t>(pw) * bps;
+            const std::size_t offset = push_staging(tex.plane_data(i), bytes);
+            const std::uint32_t row = tex.plane_row_pixels(i);
+            Upload u;
+            u.image      = planes[k].get();
+            u.offset     = offset;
+            u.at         = { 0, 0 };
+            u.size       = { pw, ph };
+            u.row_pixels = row == pw ? 0u : row;
+            m_uploads.push_back(u);
+        }
+    }
+
+    bool video_planes(const graphics::VideoTexture& tex, std::array<const gpu::Texture*, 3>& out) {
+        const gpu::Format format = tex.bytes_per_sample() > 1 ? gpu::Format::R16Unorm : gpu::Format::R8Unorm;
+        const int count = tex.plane_count();
+        auto it = m_videos.find(tex.id());
+        bool fits = it != m_videos.end() && it->second.format == format && it->second.count == count;
+
+        for (int i = 0; fits && i < count; ++i) {
+            const gpu::Extent2D& s = it->second.sizes[static_cast<std::size_t>(i)];
+            fits = s.width == tex.plane_width(i) && s.height == tex.plane_height(i) && it->second.planes[static_cast<std::size_t>(i)];
+        }
+
+        if (fits) {
+            VideoPlanes& e = it->second;
+
+            if (e.stamp != tex.version() && e.last_used == m_frame_serial) {
+                std::array<std::unique_ptr<gpu::Texture>, 3> tmp;
+                if (!make_video_planes(tex, format, tmp)) return false;
+                upload_video_planes(tex, tmp);
+                out = {};
+
+                for (std::size_t k = 0; k < 3; ++k) {
+                    if (!tmp[k]) continue;
+                    out[k] = tmp[k].get();
+                    m_retired.push_back({ m_frame_serial, std::move(tmp[k]) });
+                }
+
+                return true;
+            }
+
+            if (e.stamp != tex.version()) {
+                upload_video_planes(tex, e.planes);
+                e.stamp = tex.version();
+            }
+
+            e.last_used = m_frame_serial;
+            for (std::size_t k = 0; k < 3; ++k) out[k] = e.planes[k].get();
+            return true;
+        }
+
+        if (it != m_videos.end()) {
+            retire_video(it->second);
+            m_videos.erase(it);
+        }
+
+        VideoPlanes e;
+        if (!make_video_planes(tex, format, e.planes)) return false;
+        e.format = format;
+        e.count = count;
+        for (int i = 0; i < count; ++i) e.sizes[static_cast<std::size_t>(i)] = { tex.plane_width(i), tex.plane_height(i) };
+        upload_video_planes(tex, e.planes);
+        e.stamp = tex.version();
+        e.last_used = m_frame_serial;
+        for (std::size_t k = 0; k < 3; ++k) out[k] = e.planes[k].get();
+        m_videos.emplace(tex.id(), std::move(e));
+        return true;
     }
 
     void plan_point_shadows(SceneLightRec& sl, std::size_t scene) {
@@ -5062,7 +5374,7 @@ private:
             gpu::TextureRegion region;
             region.origin = { u.at.x, u.at.y, 0 };
             region.extent = { u.size.width, u.size.height, 1 };
-            cmd.copy_buffer_to_texture(pf.staging, u.offset, 0, *u.image, region);
+            cmd.copy_buffer_to_texture(pf.staging, u.offset, u.row_pixels, *u.image, region);
         }
 
         for (const BufferUpload& u : m_buffer_uploads) cmd.copy_buffer(pf.staging, u.offset, *u.dst, u.dst_offset, u.bytes);

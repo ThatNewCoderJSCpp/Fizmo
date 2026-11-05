@@ -28,10 +28,18 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_LATEST_HOME/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=${{ matrix.abi }} -DANDROID_PLATFORM=android-26 -DANDROID_STL=c++_static \
             -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON \
-            -DFIZMO_TUNE=OFF -DFIZMO_BUILD_SHARED=OFF -DFIZMO_BUILD_SHADER_TOOL=OFF
+            -DFIZMO_TUNE=OFF -DFIZMO_BUILD_SHARED=OFF -DFIZMO_BUILD_SHADER_TOOL=OFF \
+            -DFIZMO_BUILD_AUDIO_TESTS=ON -DFIZMO_BUILD_VIDEO_TESTS=ON
 
       - name: Build
         run: cmake --build build -j 4
+
+      - name: Check the audio and video test programs were built
+        run: |
+          set -e
+          test -x build/fizmo-audio-tests
+          test -x build/fizmo-video-demux-tests
+          ls -l build/fizmo-audio-*tests build/fizmo-video-*-tests
 
       - name: Install
         run: cmake --install build --prefix "$RUNNER_TEMP/fizmo-android"

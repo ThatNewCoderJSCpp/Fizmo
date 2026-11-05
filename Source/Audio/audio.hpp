@@ -1,0 +1,33 @@
+#ifndef FIZMO_AUDIO_AUDIO_HPP
+#define FIZMO_AUDIO_AUDIO_HPP
+
+#include "aac.hpp"
+#include "buffer.hpp"
+#include "codec.hpp"
+#include "device.hpp"
+#include "dynamics.hpp"
+#include "edit.hpp"
+#include "effect.hpp"
+#include "fft.hpp"
+#include "filters.hpp"
+#include "flac.hpp"
+#include "format.hpp"
+#include "loudness.hpp"
+#include "mixer.hpp"
+#include "modulation.hpp"
+#include "mp3.hpp"
+#include "mp3_encoder.hpp"
+#include "noise.hpp"
+#include "ogg.hpp"
+#include "opus.hpp"
+#include "pitch.hpp"
+#include "presets.hpp"
+#include "resampler.hpp"
+#include "stretch.hpp"
+#include "time_effects.hpp"
+#include "timeline.hpp"
+#include "voice.hpp"
+#include "vorbis.hpp"
+#include "wav.hpp"
+
+#endif // FIZMO_AUDIO_AUDIO_HPP

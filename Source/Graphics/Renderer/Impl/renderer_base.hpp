@@ -4,6 +4,7 @@
 #include "../../../Colors/color.hpp"
 #include "../../paint.hpp"
 #include "../../texture.hpp"
+#include "../../video_texture.hpp"
 #include "../../render_target.hpp"
 #include "../../draw_types_2d.hpp"
 #include "../../../Text/text_style.hpp"
@@ -354,6 +355,8 @@ public:
     virtual const gpu::Texture* gpu_texture(const graphics::Texture&) noexcept { return nullptr; }
     virtual const gpu::Texture* gpu_texture(const graphics::RenderTarget&) noexcept { return nullptr; }
     virtual const gpu::Texture* gpu_back_buffer() noexcept { return nullptr; }
+    virtual bool supports_video(int, int, int, int, int, unsigned int, unsigned int) const noexcept { return false; }
+    virtual bool draw_video_quad(const RenderPoint*, const graphics::VideoTexture&, float, const graphics::TextureRect&) noexcept { return false; }
     virtual std::uint64_t add_gpu_pass(GpuPassStage, GpuPassCallback) { return 0; }
     virtual bool remove_gpu_pass(std::uint64_t) noexcept { return false; }
 
@@ -735,4 +738,4 @@ private:
 } // namespace graphics
 } // namespace fizmo
 
-#endif // FIZMO_RENDERER_BASE_HPP
+#endif // FIZMO_RENDERER_BASE_HPP

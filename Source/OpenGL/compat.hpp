@@ -157,6 +157,7 @@ inline constexpr Enum RGBA                                  = 0x1908;
 inline constexpr Enum DEPTH_STENCIL                         = 0x84F9;
 inline constexpr Enum RGBA8                                 = 0x8058;
 inline constexpr Enum R8                                    = 0x8229;
+inline constexpr Enum R16                                   = 0x822A;
 inline constexpr Enum R32F                                  = 0x822E;
 inline constexpr Enum RGBA32F                               = 0x8814;
 inline constexpr Enum RGBA16F                               = 0x881A;

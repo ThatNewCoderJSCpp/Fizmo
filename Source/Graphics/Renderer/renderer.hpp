@@ -363,6 +363,26 @@ public:
 
     void draw_texture_quad(const graphics::Texture& tex, const RenderPoint quad[4], float opacity, const graphics::TextureRect& src) noexcept;
 
+    bool supports_video(const graphics::VideoTexture& tex) const noexcept;
+
+    bool supports_video(const graphics::VideoFrameView& frame) const noexcept;
+
+    bool draw_video(const graphics::VideoTexture& tex, int dx, int dy, float opacity = 1.0f) noexcept {
+        return draw_video(tex, dx, dy, tex.width(), tex.height(), opacity, tex.full_rect());
+    }
+
+    bool draw_video(const graphics::VideoTexture& tex, int dx, int dy, unsigned int dw, unsigned int dh, float opacity = 1.0f) noexcept {
+        return draw_video(tex, dx, dy, dw, dh, opacity, tex.full_rect());
+    }
+
+    bool draw_video(const graphics::VideoTexture& tex, int dx, int dy, unsigned int dw, unsigned int dh, float opacity, const graphics::TextureRect& src) noexcept;
+
+    bool draw_video_quad(const graphics::VideoTexture& tex, const RenderPoint quad[4], float opacity = 1.0f) noexcept {
+        return draw_video_quad(tex, quad, opacity, tex.full_rect());
+    }
+
+    bool draw_video_quad(const graphics::VideoTexture& tex, const RenderPoint quad[4], float opacity, const graphics::TextureRect& src) noexcept;
+
     void draw_sprite(const graphics::Sprite& sprite) noexcept { draw_sprite(sprite, 0.0, 0.0); }
 
     void draw_sprite(const graphics::Sprite& sprite, double offset_x, double offset_y) noexcept;
@@ -656,4 +676,4 @@ void blit_framebuffer(void* hdc_raw, const graphics::Framebuffer& fb);
 } // namespace graphics
 } // namespace fizmo
 
-#endif // FIZMO_RENDERER_HPP
+#endif // FIZMO_RENDERER_HPP

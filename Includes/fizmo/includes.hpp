@@ -157,5 +157,13 @@
         #if defined(FIZMO_DATABASE) || defined(FIZMO_DB)
             #include "../database.hpp"
         #endif
+
+        #ifdef FIZMO_AUDIO
+            #include "../audio.hpp"
+        #endif
+
+        #ifdef FIZMO_VIDEO
+            #include "../video.hpp"
+        #endif
     #endif // FIZMO
 #endif //ALL_FIZMO_INCLUDES_FILE_HPP

@@ -143,6 +143,7 @@ enum class Format : std::uint32_t {
     BGRA8Srgb        = VK_FORMAT_B8G8R8A8_SRGB,
     A2BGR10Unorm     = VK_FORMAT_A2B10G10R10_UNORM_PACK32,
     R16Float         = VK_FORMAT_R16_SFLOAT,
+    R16Unorm         = VK_FORMAT_R16_UNORM,
     RG16Float        = VK_FORMAT_R16G16_SFLOAT,
     RGBA16Float      = VK_FORMAT_R16G16B16A16_SFLOAT,
     R32Uint          = VK_FORMAT_R32_UINT,

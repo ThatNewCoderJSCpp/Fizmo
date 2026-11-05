@@ -315,6 +315,45 @@ void Renderer::draw_texture_quad(const graphics::Texture& tex, const RenderPoint
     m_impl->draw_texture_quad(map_points(quad, 4), tex, opacity, src);
 }
 
+bool Renderer::supports_video(const graphics::VideoTexture& tex) const noexcept {
+    if (!m_impl || !tex.valid()) return false;
+    return m_impl->supports_video(tex.bit_depth(), tex.bytes_per_sample(), tex.plane_count(), tex.chroma_shift_x(), tex.chroma_shift_y(), tex.width(), tex.height());
+}
+
+bool Renderer::supports_video(const graphics::VideoFrameView& frame) const noexcept {
+    if (!m_impl || frame.width == 0 || frame.height == 0) return false;
+    const int sx = frame.plane_count > 1 ? frame.chroma_shift_x : 0;
+    const int sy = frame.plane_count > 1 ? frame.chroma_shift_y : 0;
+    return m_impl->supports_video(frame.bit_depth, frame.sample_bytes(), frame.plane_count, sx, sy, frame.width, frame.height);
+}
+
+bool Renderer::draw_video(const graphics::VideoTexture& tex, int dx, int dy, unsigned int dw, unsigned int dh, float opacity, const graphics::TextureRect& src) noexcept {
+    if (!m_impl || !tex.valid()) return false;
+    if (dw == 0 || dh == 0 || src.is_empty()) return supports_video(tex);
+    const double x0 = dx, y0 = dy, x1 = dx + static_cast<double>(dw), y1 = dy + static_cast<double>(dh);
+
+    if (m_xform_kind != XformKind::Identity) {
+        const auto& t = m_xform.data;
+
+        if (t[0] * t[4] - t[1] * t[3] < 0.0) {
+            const RenderPoint upright[4] = { mapped(x0, y1), mapped(x1, y1), mapped(x1, y0), mapped(x0, y0) };
+            return m_impl->draw_video_quad(upright, tex, opacity, src);
+        }
+
+        const RenderPoint quad[4] = { mapped(x0, y0), mapped(x1, y0), mapped(x1, y1), mapped(x0, y1) };
+        return m_impl->draw_video_quad(quad, tex, opacity, src);
+    }
+
+    const RenderPoint quad[4] = { { x0, y0 }, { x1, y0 }, { x1, y1 }, { x0, y1 } };
+    return m_impl->draw_video_quad(quad, tex, opacity, src);
+}
+
+bool Renderer::draw_video_quad(const graphics::VideoTexture& tex, const RenderPoint quad[4], float opacity, const graphics::TextureRect& src) noexcept {
+    if (!m_impl || !tex.valid() || !quad) return false;
+    if (src.is_empty()) return supports_video(tex);
+    return m_impl->draw_video_quad(map_points(quad, 4), tex, opacity, src);
+}
+
 void Renderer::draw_sprite(const graphics::Sprite& sprite, double offset_x, double offset_y) noexcept {
     if (!m_impl || !sprite.drawable()) return;
     const graphics::SpriteQuad q = sprite.quad();

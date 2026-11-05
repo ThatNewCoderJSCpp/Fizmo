@@ -87,6 +87,7 @@ enum class Format : std::uint8_t {
     D16Unorm,
     D24UnormS8Uint,
     D32Float,
+    R16Unorm,
 };
 
 inline constexpr bool is_depth(Format f) noexcept { return f == Format::D16Unorm || f == Format::D24UnormS8Uint || f == Format::D32Float; }
@@ -96,6 +97,7 @@ inline constexpr std::uint32_t texel_size(Format f) noexcept {
     switch (f) {
         case Format::R8Unorm:        return 1;
         case Format::R16Float:
+        case Format::R16Unorm:
         case Format::D16Unorm:       return 2;
         case Format::RGBA8Unorm:
         case Format::RGBA8Srgb:

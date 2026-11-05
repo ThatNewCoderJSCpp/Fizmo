@@ -25,6 +25,7 @@ inline vk::Format format(Format f) noexcept {
         case Format::RGBA8Srgb:      return vk::Format::RGBA8Srgb;
         case Format::BGRA8Unorm:     return vk::Format::BGRA8Unorm;
         case Format::R16Float:       return vk::Format::R16Float;
+        case Format::R16Unorm:       return vk::Format::R16Unorm;
         case Format::RGBA16Float:    return vk::Format::RGBA16Float;
         case Format::R32Uint:        return vk::Format::R32Uint;
         case Format::R32Float:       return vk::Format::R32Float;
