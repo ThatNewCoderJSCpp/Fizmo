@@ -6,6 +6,8 @@
 #include "../Source/Audio/time_effects.hpp"
 #include "../Source/Audio/voice.hpp"
 
+#include "portable_random.hpp"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -242,7 +244,7 @@ long measured_delay(const std::vector<float>& in, const std::vector<float>& out,
 
 std::vector<float> noise(std::size_t n, float amp, unsigned seed) {
     std::mt19937 rng(seed);
-    std::uniform_real_distribution<float> u(-amp, amp);
+    auto u = [&](auto& gen) { return fizmo_test::random_float(gen, -amp, amp); };
     std::vector<float> v(n);
     for (float& x : v) x = u(rng);
     return v;
@@ -271,7 +273,7 @@ void test_detector() {
     double worst_vowel = 0.0;
     double worst_noisy = 0.0;
     std::mt19937 rng(7);
-    std::normal_distribution<float> g(0.0f, 1.0f);
+    auto g = [&](auto& gen) { return fizmo_test::random_normal_float(gen, 0.0f, 1.0f); };
     for (double f : freqs) {
         worst_sine = std::max(worst_sine, rel_err(detect_pitch(sine(f, 24000).data(), 24000, k_rate), f));
         worst_saw = std::max(worst_saw, rel_err(detect_pitch(saw(f, 24000).data(), 24000, k_rate), f));

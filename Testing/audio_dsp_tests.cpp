@@ -4,6 +4,8 @@
 #include "../Source/Audio/filters.hpp"
 #include "../Source/Audio/loudness.hpp"
 
+#include "portable_random.hpp"
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -469,7 +471,7 @@ void test_compressor_timing() {
 
 AudioBuffer nasty_signal(std::uint32_t rate, std::size_t frames) {
     std::mt19937 rng(1234);
-    std::normal_distribution<float> n(0.0f, 1.0f);
+    auto n = [&](auto& gen) { return fizmo_test::random_normal_float(gen, 0.0f, 1.0f); };
     AudioBuffer b(2, rate, frames);
     for (std::size_t i = 0; i < frames; ++i) {
         const double t = static_cast<double>(i) / rate;
@@ -494,7 +496,7 @@ void test_limiter() {
             AudioBuffer b = nasty_signal(rate, rate * 3);
             lim.prepare(rate, 2);
             std::mt19937 rng(7);
-            std::uniform_int_distribution<int> bs(1, 700);
+            auto bs = [&](auto& gen) { return fizmo_test::random_int<int>(gen, 1, 700); };
             for (std::size_t pos = 0; pos < b.frames();) {
                 const std::size_t n = std::min<std::size_t>(static_cast<std::size_t>(bs(rng)), b.frames() - pos);
                 lim.process(b.frame(pos), n);

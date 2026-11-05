@@ -1,5 +1,7 @@
 #include "../Source/Audio/flac.hpp"
 
+#include "portable_random.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -46,8 +48,8 @@ AudioBuffer grid_signal(std::size_t channels, std::uint32_t rate, std::size_t fr
     const std::int64_t hi = static_cast<std::int64_t>(scale) - 1;
     const std::int64_t lo = -static_cast<std::int64_t>(scale);
     std::mt19937 rng(seed);
-    std::uniform_int_distribution<std::int64_t> any(lo, hi);
-    std::uniform_int_distribution<int> small(-4, 4);
+    auto any = [&](auto& gen) { return fizmo_test::random_int<std::int64_t>(gen, lo, hi); };
+    auto jitter = [&](auto& gen) { return fizmo_test::random_int<int>(gen, -4, 4); };
     for (std::size_t i = 0; i < frames; ++i) {
         for (std::size_t c = 0; c < channels; ++c) {
             std::int64_t v = 0;
@@ -59,7 +61,7 @@ AudioBuffer grid_signal(std::size_t channels, std::uint32_t rate, std::size_t fr
                 v = 0;
             } else {
                 const double s = 0.6 * std::sin(2.0 * k_pi * (220.0 + 110.0 * c) * static_cast<double>(i) / rate) + 0.2 * std::sin(2.0 * k_pi * 3000.0 * static_cast<double>(i) / rate);
-                v = static_cast<std::int64_t>(std::floor(s * scale)) + small(rng);
+                v = static_cast<std::int64_t>(std::floor(s * scale)) + jitter(rng);
                 v = std::max(lo, std::min(hi, v));
             }
             b.at(i, c) = static_cast<float>(static_cast<double>(v) / scale);
@@ -128,7 +130,7 @@ void test_pcm_depths() {
         std::mt19937 rng(bits);
         const std::int64_t hi = (std::int64_t(1) << (bits - 1)) - 1;
         const std::int64_t lo = -(std::int64_t(1) << (bits - 1));
-        std::uniform_int_distribution<std::int64_t> any(lo, hi);
+        auto any = [&](auto& gen) { return fizmo_test::random_int<std::int64_t>(gen, lo, hi); };
         std::vector<std::int32_t> pcm(frames * channels);
         for (std::size_t i = 0; i < frames; ++i) {
             const double s = std::sin(static_cast<double>(i) * 0.013);
@@ -232,7 +234,7 @@ void test_seeking() {
         check(opened, "open for " + name);
         check(r.info().has_seek_table == (k == 0), "seek table presence for " + name);
         std::mt19937 rng(static_cast<std::uint32_t>(k + 3));
-        std::uniform_int_distribution<std::uint64_t> pick(0, music.frames() - 1);
+        auto pick = [&](auto& gen) { return fizmo_test::random_int<std::uint64_t>(gen, 0, music.frames() - 1); };
         bool all_ok = true;
         std::vector<std::uint64_t> targets = { 0, 1, 1151, 1152, 1153, music.frames() - 1, music.frames() - 1152 };
         for (int i = 0; i < 60; ++i) targets.push_back(pick(rng));

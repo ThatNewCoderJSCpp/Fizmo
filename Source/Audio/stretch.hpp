@@ -136,6 +136,10 @@ private:
     std::vector<float> m_cand;
 
     std::vector<float> m_ola;
+    std::vector<float> m_deficit;
+    std::vector<double> m_energy;
+    long long m_pending_onset = 0;
+    bool m_onset_pending = false;
 
     std::vector<float> m_stretched;
     std::size_t m_st_cap = 0;

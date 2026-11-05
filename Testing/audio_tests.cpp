@@ -1,5 +1,7 @@
 #include "../Source/Audio/audio.hpp"
 
+#include "portable_random.hpp"
+
 #include <complex>
 
 #include <atomic>
@@ -412,7 +414,7 @@ void test_fft_and_effects() {
     for (std::size_t n : { 4u, 8u, 64u, 1024u }) {
         Fft fft(n);
         std::mt19937 rng(static_cast<unsigned>(n));
-        std::uniform_real_distribution<float> u(-1.0f, 1.0f);
+        auto u = [&](auto& gen) { return fizmo_test::random_float(gen, -1.0f, 1.0f); };
         std::vector<float> x(n);
         for (float& v : x) v = u(rng);
         std::vector<std::complex<float>> X(n / 2 + 1);

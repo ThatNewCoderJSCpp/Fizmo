@@ -711,26 +711,120 @@ void HumRemover::process(float* interleaved, std::size_t frames) noexcept {
     }
 }
 
+namespace {
+
+bool click_model(const double* y, const double* window, double* windowed, double* r, double* a, double* tmp, double* ra, std::size_t n, std::size_t p, double regularization) noexcept {
+    for (std::size_t i = 0; i < n; ++i) windowed[i] = y[i] * window[i];
+    for (std::size_t lag = 0; lag <= p; ++lag) {
+        double acc = 0.0;
+        for (std::size_t i = lag; i < n; ++i) acc += windowed[i] * windowed[i - lag];
+        r[lag] = acc;
+    }
+    std::fill(a, a + p + 1, 0.0);
+    a[0] = 1.0;
+    bool modelled = false;
+    if (r[0] > 1e-18) {
+        r[0] *= 1.0 + regularization;
+        double err = r[0];
+        bool stable = true;
+        for (std::size_t i = 1; i <= p; ++i) {
+            double acc = r[i];
+            for (std::size_t j = 1; j < i; ++j) acc += a[j] * r[i - j];
+            const double k = -acc / err;
+            for (std::size_t j = 1; j < i; ++j) tmp[j] = a[j] + k * a[i - j];
+            for (std::size_t j = 1; j < i; ++j) a[j] = tmp[j];
+            a[i] = k;
+            err *= 1.0 - k * k;
+            if (!(err > 0.0)) {
+                stable = false;
+                break;
+            }
+        }
+        if (stable) {
+            modelled = true;
+        } else {
+            std::fill(a, a + p + 1, 0.0);
+            a[0] = 1.0;
+        }
+    }
+    for (std::size_t m = 0; m <= p; ++m) {
+        double acc = 0.0;
+        for (std::size_t j = 0; j + m <= p; ++j) acc += a[j] * a[j + m];
+        ra[m] = acc;
+    }
+    return modelled;
+}
+
+bool toeplitz_solve(const double* t, const double* rhs, double* out, double* f, double* scratch, std::size_t n) noexcept {
+    if (n == 0) return true;
+    if (!(t[0] > 0.0)) return false;
+    f[0] = 1.0 / t[0];
+    out[0] = rhs[0] / t[0];
+    for (std::size_t m = 1; m < n; ++m) {
+        double ef = 0.0;
+        for (std::size_t i = 0; i < m; ++i) ef += t[m - i] * f[i];
+        const double denom = 1.0 - ef * ef;
+        if (!(denom > 1e-12)) return false;
+        for (std::size_t i = 0; i <= m; ++i) {
+            const double fe = i < m ? f[i] : 0.0;
+            const double be = i > 0 ? f[m - i] : 0.0;
+            scratch[i] = (fe - ef * be) / denom;
+        }
+        for (std::size_t i = 0; i <= m; ++i) f[i] = scratch[i];
+        double ex = 0.0;
+        for (std::size_t i = 0; i < m; ++i) ex += t[m - i] * out[i];
+        const double g = rhs[m] - ex;
+        out[m] = 0.0;
+        for (std::size_t i = 0; i <= m; ++i) out[i] += g * f[m - i];
+    }
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!std::isfinite(out[i])) return false;
+    }
+    return true;
+}
+
+double click_median(float* v, std::size_t count) noexcept {
+    if (count == 0) return 0.0;
+    std::nth_element(v, v + count / 2, v + count);
+    return static_cast<double>(v[count / 2]);
+}
+
+} // namespace
+
 struct ClickRemover::State {
     std::size_t block = 512;
     std::size_t order = 32;
     std::size_t channels = 0;
+    std::size_t segment = 32;
+    std::size_t segments = 48;
     double rate = 48000.0;
     std::vector<std::vector<float>> buffer;
     std::vector<std::vector<float>> output;
+    std::vector<double> y;
     std::vector<double> windowed;
     std::vector<double> window;
     std::vector<double> r;
     std::vector<double> a;
     std::vector<double> tmp;
-    std::vector<double> c;
-    std::vector<float> residual;
-    static const std::size_t reach = 64;
-    std::vector<float> magnitude;
-    std::vector<float> backward;
-    std::vector<float> local;
-    std::vector<double> fwd;
-    std::vector<double> bwd;
+    std::vector<double> ra;
+    std::vector<double> forward;
+    std::vector<double> backward;
+    std::vector<float> scratch;
+    std::vector<double> seg_forward;
+    std::vector<double> seg_backward;
+    std::vector<double> scale_forward;
+    std::vector<double> scale_backward;
+    std::vector<unsigned char> mask;
+    std::vector<std::size_t> region_start;
+    std::vector<std::size_t> region_end;
+    std::vector<unsigned char> region_ok;
+    std::size_t regions = 0;
+    std::vector<double> e0;
+    std::vector<double> toeplitz;
+    std::vector<double> rhs;
+    std::vector<double> solution;
+    std::vector<double> lev_f;
+    std::vector<double> lev_tmp;
     std::size_t pos = 0;
     std::atomic<std::uint64_t> repaired{ 0 };
 };
@@ -761,23 +855,37 @@ void ClickRemover::prepare(std::uint32_t sample_rate, std::size_t channels) {
     s.channels = channels;
     s.rate = static_cast<double>(sample_rate);
     s.block = sample_rate > 64000 ? 1024 : 512;
-    s.order = 32;
+    s.order = sample_rate > 64000 ? 48 : 32;
+    s.segment = s.block / 16;
     const std::size_t n = 3 * s.block;
+    s.segments = n / s.segment;
     s.buffer.assign(channels, std::vector<float>(n, 0.0f));
     s.output.assign(channels, std::vector<float>(s.block, 0.0f));
+    s.y.assign(n, 0.0);
     s.windowed.assign(n, 0.0);
     s.window.resize(n);
     for (std::size_t i = 0; i < n; ++i) s.window[i] = 0.5 - 0.5 * std::cos(2.0 * k_pi * (static_cast<double>(i) + 0.5) / static_cast<double>(n));
     s.r.assign(s.order + 1, 0.0);
     s.a.assign(s.order + 1, 0.0);
     s.tmp.assign(s.order + 1, 0.0);
-    s.c.assign(s.order + 1, 0.0);
-    s.residual.assign(n, 0.0f);
-    s.magnitude.assign(n, 0.0f);
-    s.backward.assign(n, 0.0f);
-    s.local.assign(2 * State::reach + 2, 0.0f);
-    s.fwd.assign(s.block + 2 * s.order + 8, 0.0);
-    s.bwd.assign(s.block + 2 * s.order + 8, 0.0);
+    s.ra.assign(s.order + 1, 0.0);
+    s.forward.assign(n, 0.0);
+    s.backward.assign(n, 0.0);
+    s.scratch.assign(n, 0.0f);
+    s.seg_forward.assign(s.segments, 0.0);
+    s.seg_backward.assign(s.segments, 0.0);
+    s.scale_forward.assign(s.segments, 0.0);
+    s.scale_backward.assign(s.segments, 0.0);
+    s.mask.assign(n, 0);
+    s.region_start.assign(n, 0);
+    s.region_end.assign(n, 0);
+    s.region_ok.assign(n, 0);
+    s.e0.assign(n + s.order + 1, 0.0);
+    s.toeplitz.assign(n, 0.0);
+    s.rhs.assign(n, 0.0);
+    s.solution.assign(n, 0.0);
+    s.lev_f.assign(n, 0.0);
+    s.lev_tmp.assign(n, 0.0);
     reset();
 }
 
@@ -794,118 +902,204 @@ void ClickRemover::run_block(std::size_t channel) noexcept {
     const std::size_t n = 3 * s.block;
     const std::size_t p = s.order;
     const std::size_t b = s.block;
-    for (std::size_t i = 0; i < n; ++i) s.magnitude[i] = std::fabs(x[i]);
-    std::nth_element(s.magnitude.begin(), s.magnitude.begin() + static_cast<std::ptrdiff_t>(n / 2), s.magnitude.begin() + static_cast<std::ptrdiff_t>(n));
-    const double clip = 6.0 * static_cast<double>(s.magnitude[n / 2]) / 0.6745;
-    for (std::size_t i = 0; i < n; ++i) s.windowed[i] = std::max(-clip, std::min(clip, static_cast<double>(x[i]))) * s.window[i];
-    for (std::size_t lag = 0; lag <= p; ++lag) {
-        double acc = 0.0;
-        for (std::size_t i = lag; i < n; ++i) acc += s.windowed[i] * s.windowed[i - lag];
-        s.r[lag] = acc;
+    const std::size_t seg = s.segment;
+    const std::size_t segs = s.segments;
+    double* y = s.y.data();
+    double* a = s.a.data();
+    double* ra = s.ra.data();
+    double* fw = s.forward.data();
+    double* bw = s.backward.data();
+    unsigned char* mask = s.mask.data();
+    double power = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+        y[i] = static_cast<double>(x[i]);
+        mask[i] = 0;
+        power += y[i] * y[i];
     }
-    std::fill(s.c.begin(), s.c.end(), 0.0);
-    if (s.r[0] > 1e-14) {
-        s.r[0] *= 1.0001;
-        std::fill(s.a.begin(), s.a.end(), 0.0);
-        s.a[0] = 1.0;
-        double err = s.r[0];
-        bool stable = true;
-        for (std::size_t i = 1; i <= p; ++i) {
-            double acc = s.r[i];
-            for (std::size_t j = 1; j < i; ++j) acc += s.a[j] * s.r[i - j];
-            const double k = -acc / err;
-            for (std::size_t j = 1; j < i; ++j) s.tmp[j] = s.a[j] + k * s.a[i - j];
-            for (std::size_t j = 1; j < i; ++j) s.a[j] = s.tmp[j];
-            s.a[i] = k;
-            err *= 1.0 - k * k;
-            if (err <= 0.0) {
-                stable = false;
-                break;
+    if (!(power > 0.0)) return;
+    const double k = 4.0 + 8.0 * (1.0 - static_cast<double>(sensitivity.get()));
+    const std::size_t limit = std::min<std::size_t>(b - 2 * p - 8, std::max<std::size_t>(1, static_cast<std::size_t>(static_cast<double>(max_width.get()) * 0.001 * s.rate)));
+    const std::size_t gap = 4;
+    const std::size_t pad = 1;
+    const std::size_t pair_window = 2;
+    const std::size_t lo = b;
+    const std::size_t hi = n - 2 * p - limit - 2 * gap;
+    const std::size_t reach_end = std::min(n - p, hi + pair_window + 1);
+    const double scale_floor = std::max(1e-6, 1e-2 * std::sqrt(power / static_cast<double>(n)));
+    const double regularization = 1.5e-2;
+    const double peak_fraction = 0.35;
+    const double accept_ratio = 0.25;
+
+    auto residuals = [&]() {
+        for (std::size_t t = 0; t < n; ++t) {
+            fw[t] = 0.0;
+            bw[t] = 0.0;
+        }
+        for (std::size_t t = p; t < n; ++t) {
+            double acc = y[t];
+            for (std::size_t j = 1; j <= p; ++j) acc += a[j] * y[t - j];
+            fw[t] = acc;
+        }
+        for (std::size_t t = 0; t + p < n; ++t) {
+            double acc = y[t];
+            for (std::size_t j = 1; j <= p; ++j) acc += a[j] * y[t + j];
+            bw[t] = acc;
+        }
+        for (std::size_t g = 0; g < segs; ++g) {
+            const std::size_t from = g * seg;
+            const std::size_t to = std::min(n, from + seg);
+            std::size_t m = 0;
+            for (std::size_t t = std::max(from, p); t < to; ++t) s.scratch[m++] = static_cast<float>(std::fabs(fw[t]));
+            s.seg_forward[g] = click_median(s.scratch.data(), m) / 0.6745;
+            m = 0;
+            for (std::size_t t = from; t < to && t + p < n; ++t) s.scratch[m++] = static_cast<float>(std::fabs(bw[t]));
+            s.seg_backward[g] = click_median(s.scratch.data(), m) / 0.6745;
+        }
+        const std::size_t reach = 4;
+        for (std::size_t g = 0; g < segs; ++g) {
+            const std::size_t from = g > reach ? g - reach : 0;
+            const std::size_t to = std::min(segs, g + reach + 1);
+            std::size_t m = 0;
+            for (std::size_t q = from; q < to; ++q) s.scratch[m++] = static_cast<float>(s.seg_forward[q]);
+            s.scale_forward[g] = std::max(scale_floor, click_median(s.scratch.data(), m));
+            m = 0;
+            for (std::size_t q = from; q < to; ++q) s.scratch[m++] = static_cast<float>(s.seg_backward[q]);
+            s.scale_backward[g] = std::max(scale_floor, click_median(s.scratch.data(), m));
+        }
+    };
+
+    auto detect = [&]() {
+        bool found = false;
+        for (std::size_t t = lo; t < reach_end; ++t) {
+            const std::size_t g = t / seg;
+            unsigned char m = static_cast<unsigned char>(mask[t] & 1);
+            if (std::fabs(fw[t]) > k * s.scale_forward[g]) m = static_cast<unsigned char>(m | 2);
+            if (std::fabs(bw[t]) > k * s.scale_backward[g]) m = static_cast<unsigned char>(m | 4);
+            mask[t] = m;
+        }
+        for (std::size_t t = lo; t < reach_end; ++t) {
+            if ((mask[t] & 6) == 0) continue;
+            const double own = std::max(std::fabs(fw[t]), std::fabs(bw[t]));
+            const std::size_t from = t > lo + p ? t - p : lo;
+            const std::size_t to = std::min(reach_end, t + p + 1);
+            double peak = 0.0;
+            for (std::size_t q = from; q < to; ++q) peak = std::max(peak, std::min(std::fabs(fw[q]), std::fabs(bw[q])));
+            if (own < peak_fraction * peak) mask[t] = static_cast<unsigned char>(mask[t] & 1);
+        }
+        for (std::size_t f = lo; f < hi; ++f) {
+            if (!(mask[f] & 2)) continue;
+            std::size_t last = f;
+            bool paired = false;
+            const std::size_t stop = std::min(reach_end, f + pair_window + 1);
+            for (std::size_t q = f; q < stop; ++q) {
+                if (mask[q] & 4) {
+                    last = q;
+                    paired = true;
+                }
+            }
+            if (!paired) continue;
+            for (std::size_t q = f; q <= last; ++q) {
+                if (!(mask[q] & 1)) found = true;
+                mask[q] = static_cast<unsigned char>(mask[q] | 1);
             }
         }
-        if (stable) {
-            for (std::size_t j = 1; j <= p; ++j) s.c[j] = -s.a[j];
-        }
-    }
-    std::size_t count = 0;
-    for (std::size_t i = 0; i < n; ++i) {
-        s.residual[i] = 0.0f;
-        s.backward[i] = 0.0f;
-    }
-    for (std::size_t i = p; i < n; ++i) {
-        double pred = 0.0;
-        for (std::size_t j = 1; j <= p; ++j) pred += s.c[j] * x[i - j];
-        const float e = static_cast<float>(x[i] - pred);
-        s.residual[i] = e;
-        s.magnitude[count++] = std::fabs(e);
-    }
-    for (std::size_t i = 0; i + p < n; ++i) {
-        double pred = 0.0;
-        for (std::size_t j = 1; j <= p; ++j) pred += s.c[j] * x[i + j];
-        s.backward[i] = static_cast<float>(x[i] - pred);
-    }
-    const std::size_t mid = count / 2;
-    std::nth_element(s.magnitude.begin(), s.magnitude.begin() + static_cast<std::ptrdiff_t>(mid), s.magnitude.begin() + static_cast<std::ptrdiff_t>(count));
-    const double sigma = static_cast<double>(s.magnitude[mid]) / 0.6745;
-    const double k = 4.0 + 8.0 * (1.0 - static_cast<double>(sensitivity.get()));
-    const std::size_t reach = State::reach;
-    auto scale = [&](const std::vector<float>& res, std::size_t at, std::size_t lo_bound, std::size_t hi_bound) -> double {
-        const std::size_t lo = std::max(lo_bound, at > reach ? at - reach : 0);
-        const std::size_t hi = std::min(hi_bound, at + reach + 1);
-        std::size_t m = 0;
-        for (std::size_t q = lo; q < hi; ++q) s.local[m++] = std::fabs(res[q]);
-        if (m == 0) return 0.0;
-        std::nth_element(s.local.begin(), s.local.begin() + static_cast<std::ptrdiff_t>(m / 2), s.local.begin() + static_cast<std::ptrdiff_t>(m));
-        return static_cast<double>(s.local[m / 2]) / 0.6745;
+        return found;
     };
-    auto exceeds = [&](std::size_t at) -> bool {
-        const double ef = std::fabs(static_cast<double>(s.residual[at]));
-        const double eb = std::fabs(static_cast<double>(s.backward[at]));
-        const double floor = std::max(1e-5, 0.5 * k * sigma);
-        if (ef < floor || eb < floor) return false;
-        if (ef <= k * scale(s.residual, at, p, n)) return false;
-        return eb > k * scale(s.backward, at, 0, n - p);
+
+    auto build_regions = [&]() {
+        s.regions = 0;
+        std::size_t t = lo;
+        while (t < hi) {
+            if (!(mask[t] & 1)) {
+                ++t;
+                continue;
+            }
+            std::size_t last = t;
+            std::size_t m = t + 1;
+            while (m < hi && m <= last + gap) {
+                if (mask[m] & 1) last = m;
+                ++m;
+            }
+            const std::size_t start = std::max(lo, t - pad);
+            const std::size_t end = last + pad + 1;
+            s.region_start[s.regions] = start;
+            s.region_end[s.regions] = end;
+            s.region_ok[s.regions] = end - start <= limit + 2 * pad ? 1 : 0;
+            ++s.regions;
+            t = last + 1;
+        }
     };
-    const std::size_t limit = std::min<std::size_t>(b - p - 4, std::max<std::size_t>(1, static_cast<std::size_t>(static_cast<double>(max_width.get()) * 0.001 * s.rate)));
-    const std::size_t gap = 3;
-    std::size_t i = b;
-    while (i < 2 * b) {
-        if (!exceeds(i)) {
-            ++i;
-            continue;
+
+    auto residual_energy = [&](std::size_t len, const double* values) {
+        double total = 0.0;
+        for (std::size_t q = 0; q < len + p; ++q) {
+            double e = s.e0[q];
+            const std::size_t first = q > p ? q - p : 0;
+            const std::size_t last = std::min(q + 1, len);
+            for (std::size_t i = first; i < last; ++i) e += a[q - i] * values[i];
+            total += e * e;
         }
-        std::size_t last = i;
-        for (std::size_t m = i + 1; m < n - p - 1 && m <= last + gap && m - i <= limit + gap; ++m) {
-            if (exceeds(m)) last = m;
+        return total;
+    };
+
+    auto interpolate = [&](std::size_t start, std::size_t end, bool judge) {
+        const std::size_t len = end - start;
+        for (std::size_t q = 0; q < len + p; ++q) {
+            const std::size_t t = start + q;
+            double acc = 0.0;
+            for (std::size_t j = 0; j <= p; ++j) {
+                const std::size_t at = t - j;
+                if (at >= start && at < end) continue;
+                acc += a[j] * y[at];
+            }
+            s.e0[q] = acc;
         }
-        const std::size_t start = i - 1;
-        const std::size_t end = std::min(last + 1, n - p - 1);
-        const std::size_t len = end - start + 1;
-        if (len > limit + 2) {
-            i = last + 1;
-            continue;
+        for (std::size_t i = 0; i < len; ++i) {
+            double acc = 0.0;
+            for (std::size_t j = 0; j <= p; ++j) acc += a[j] * s.e0[i + j];
+            s.rhs[i] = -acc;
+            s.toeplitz[i] = i <= p ? ra[i] : 0.0;
         }
-        double* f = s.fwd.data();
-        for (std::size_t k = 0; k < p; ++k) f[k] = x[start - p + k];
-        for (std::size_t k = 0; k < len; ++k) {
-            double pred = 0.0;
-            for (std::size_t j = 1; j <= p; ++j) pred += s.c[j] * f[p + k - j];
-            f[p + k] = pred;
+        s.toeplitz[0] *= 1.0 + 1e-9;
+        if (!toeplitz_solve(s.toeplitz.data(), s.rhs.data(), s.solution.data(), s.lev_f.data(), s.lev_tmp.data(), len)) return false;
+        if (judge) {
+            for (std::size_t i = 0; i < len; ++i) s.lev_tmp[i] = static_cast<double>(x[start + i]);
+            const double before = residual_energy(len, s.lev_tmp.data());
+            const double after = residual_energy(len, s.solution.data());
+            if (!(after < accept_ratio * before)) return false;
         }
-        double* w = s.bwd.data();
-        for (std::size_t k = 0; k < p; ++k) w[len + k] = x[end + 1 + k];
-        for (std::size_t k = len; k-- > 0;) {
-            double pred = 0.0;
-            for (std::size_t j = 1; j <= p; ++j) pred += s.c[j] * w[k + j];
-            w[k] = pred;
+        for (std::size_t i = 0; i < len; ++i) y[start + i] = s.solution[i];
+        return true;
+    };
+
+    for (int pass = 0; pass < 2; ++pass) {
+        click_model(y, s.window.data(), s.windowed.data(), s.r.data(), a, s.tmp.data(), ra, n, p, regularization);
+        residuals();
+        const bool found = detect();
+        if (pass == 0 && !found) return;
+        if (pass == 1) break;
+        build_regions();
+        for (std::size_t q = 0; q < s.regions; ++q) {
+            if (s.region_ok[q]) interpolate(s.region_start[q], s.region_end[q], false);
         }
-        for (std::size_t k = 0; k < len; ++k) {
-            const double t = static_cast<double>(k + 1) / static_cast<double>(len + 1);
-            x[start + k] = static_cast<float>((1.0 - t) * f[p + k] + t * w[k]);
-        }
-        s.repaired.fetch_add(1, std::memory_order_relaxed);
-        i = end + 1;
     }
+    build_regions();
+    for (int sweep = 0; sweep < 2; ++sweep) {
+        for (std::size_t q = 0; q < s.regions; ++q) {
+            if (!s.region_ok[q]) continue;
+            if (!interpolate(s.region_start[q], s.region_end[q], sweep == 1)) {
+                for (std::size_t t = s.region_start[q]; t < s.region_end[q]; ++t) y[t] = static_cast<double>(x[t]);
+                if (sweep == 1) s.region_ok[q] = 0;
+            }
+        }
+    }
+    std::uint64_t count = 0;
+    for (std::size_t q = 0; q < s.regions; ++q) {
+        if (!s.region_ok[q] || s.region_start[q] >= 2 * b) continue;
+        for (std::size_t t = s.region_start[q]; t < s.region_end[q]; ++t) x[t] = static_cast<float>(y[t]);
+        ++count;
+    }
+    if (count) s.repaired.fetch_add(count, std::memory_order_relaxed);
 }
 
 void ClickRemover::process(float* interleaved, std::size_t frames) noexcept {

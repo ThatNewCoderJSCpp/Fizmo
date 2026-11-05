@@ -2,6 +2,8 @@
 #include "../Source/Audio/noise.hpp"
 #include "../Source/Audio/timeline.hpp"
 
+#include "portable_random.hpp"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -49,7 +51,7 @@ std::string temp_path(const std::string& name) {
 
 AudioBuffer speech_like(std::uint32_t rate, std::size_t channels, double seconds, unsigned seed) {
     std::mt19937 rng(seed);
-    std::uniform_real_distribution<double> uni(0.0, 1.0);
+    auto uni = [&](auto& gen) { return fizmo_test::random_real(gen, 0.0, 1.0); };
     const std::size_t n = static_cast<std::size_t>(seconds * rate);
     AudioBuffer b(channels, rate, n);
     std::size_t i = 0;
@@ -84,7 +86,7 @@ AudioBuffer speech_like(std::uint32_t rate, std::size_t channels, double seconds
 
 AudioBuffer make_noise(std::uint32_t rate, std::size_t channels, double seconds, bool pink, double rms, unsigned seed) {
     std::mt19937 rng(seed);
-    std::normal_distribution<float> gauss(0.0f, 1.0f);
+    auto gauss = [&](auto& gen) { return fizmo_test::random_normal_float(gen, 0.0f, 1.0f); };
     const std::size_t n = static_cast<std::size_t>(seconds * rate);
     AudioBuffer b(channels, rate, n);
     for (std::size_t c = 0; c < channels; ++c) {
@@ -293,7 +295,7 @@ void test_noise_reduction() {
     std::thread audio([&] {
         std::vector<float> block(256 * 2, 0.0f);
         std::mt19937 rng(3);
-        std::normal_distribution<float> gauss(0.0f, 0.1f);
+        auto gauss = [&](auto& gen) { return fizmo_test::random_normal_float(gen, 0.0f, 0.1f); };
         while (run.load()) {
             for (float& v : block) v = gauss(rng);
             live.process(block.data(), 256);
@@ -356,12 +358,71 @@ void test_hum_remover() {
     check(manual.active_frequency() == 60.0f && tone_level(mo, 0, rate, rate, 180.0) < 0.002, "a manual 60 Hz setting notches the 3rd harmonic");
 }
 
+AudioBuffer plucked_music(std::uint32_t rate, std::size_t channels, double seconds, unsigned seed, std::vector<std::size_t>* onsets) {
+    std::mt19937 rng(seed);
+    const std::size_t n = static_cast<std::size_t>(seconds * rate);
+    AudioBuffer b(channels, rate, n);
+    const double notes[] = { 110.0, 130.81, 146.83, 164.81, 196.0, 220.0, 261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.26, 783.99 };
+    std::size_t at = rate / 10;
+    while (at < n) {
+        if (onsets) onsets->push_back(at);
+        const double f = notes[fizmo_test::random_below(rng, 15)];
+        const double amp = fizmo_test::random_real(rng, 0.1, 0.3);
+        const double tau = fizmo_test::random_real(rng, 0.2, 0.8);
+        double phases[16];
+        for (double& ph : phases) ph = fizmo_test::random_real(rng, 0.0, 2.0 * k_pi);
+        const double pan = fizmo_test::random_real(rng, 0.3, 1.0);
+        const std::size_t len = static_cast<std::size_t>(4.0 * tau * rate);
+        for (std::size_t k = 0; at + k < n && k < len; ++k) {
+            const double t = static_cast<double>(k) / rate;
+            double v = 0.0;
+            for (int h = 1; h <= 16 && h * f < rate * 0.45; ++h) v += std::exp(-t * std::sqrt(static_cast<double>(h)) / tau) / h * std::sin(2.0 * k_pi * h * f * t + phases[h - 1]);
+            for (std::size_t c = 0; c < channels; ++c) b.at(at + k, c) += static_cast<float>(amp * v * (c ? pan : 1.0));
+        }
+        at += static_cast<std::size_t>(fizmo_test::random_real(rng, 0.08, 0.35) * rate);
+    }
+    for (std::size_t beat = rate / 8; beat < n; beat += rate / 4) {
+        if (onsets) onsets->push_back(beat);
+        const std::uint64_t kind = fizmo_test::random_below(rng, 3);
+        for (std::size_t k = 0; beat + k < n && k < rate / 3; ++k) {
+            const double t = static_cast<double>(k) / rate;
+            double v = 0.0;
+            if (kind == 0) v = 0.5 * std::exp(-t / 0.08) * std::sin(2.0 * k_pi * (50.0 * t + 4.4 * (1.0 - std::exp(-t / 0.04))));
+            else if (kind == 1) v = 0.125 * std::exp(-t / 0.015) * fizmo_test::random_normal(rng);
+            else v = 0.3 * std::exp(-t / 0.05) * (0.4 * fizmo_test::random_normal(rng) + std::sin(2.0 * k_pi * 190.0 * t));
+            for (std::size_t c = 0; c < channels; ++c) b.at(beat + k, c) += static_cast<float>(v);
+        }
+    }
+    return b;
+}
+
+double click_remover_gain(const AudioBuffer& clean, unsigned seed, int clicks, bool varied, bool close_pairs, std::uint64_t* repairs) {
+    AudioBuffer clicky = clean;
+    std::mt19937 rng(seed);
+    const std::size_t lo = clean.sample_rate() / 4;
+    const std::size_t hi = clean.frames() - 200;
+    std::size_t previous = lo;
+    for (int k = 0; k < clicks; ++k) {
+        std::size_t p = fizmo_test::random_int<std::size_t>(rng, lo, hi);
+        if (close_pairs && (k % 2)) p = previous + fizmo_test::random_int<std::size_t>(rng, 6, 60);
+        previous = p;
+        const std::size_t channel = close_pairs ? static_cast<std::size_t>(k / 2) % clean.channels() : static_cast<std::size_t>(k) % clean.channels();
+        const int width = 1 + k % 3;
+        const float amp = varied ? fizmo_test::random_float(rng, 0.05f, 0.8f) * (k % 2 ? 1.0f : -1.0f) : (k % 4 < 2 ? 0.6f : -0.5f);
+        for (int j = 0; j < width; ++j) clicky.at(p + static_cast<std::size_t>(j), channel) += amp * (1.0f - 0.2f * static_cast<float>(j));
+    }
+    ClickRemover remover;
+    const AudioBuffer fixed = applied(remover, clicky, false);
+    if (repairs) *repairs = remover.clicks_repaired();
+    return snr_db(fixed, clean) - snr_db(clicky, clean);
+}
+
 void test_click_remover() {
     const std::uint32_t rate = 48000;
     const AudioBuffer clean = speech_like(rate, 2, 6.0, 5);
     AudioBuffer clicky = clean;
     std::mt19937 rng(9);
-    std::uniform_int_distribution<std::size_t> where(rate / 4, clean.frames() - 100);
+    auto where = [&](auto& gen) { return fizmo_test::random_int<std::size_t>(gen, rate / 4, clean.frames() - 100); };
     for (int k = 0; k < 40; ++k) {
         const std::size_t p = where(rng);
         const int width = 1 + k % 3;
@@ -373,10 +434,52 @@ void test_click_remover() {
     const double after = snr_db(fixed, clean);
     std::printf("  click remover: SNR %s dB -> %s dB, %llu repairs\n", fmt(before).c_str(), fmt(after).c_str(), static_cast<unsigned long long>(remover.clicks_repaired()));
     check(after > before + 20.0, "click remover repairs impulsive clicks (" + fmt(before) + " -> " + fmt(after) + " dB)");
+    check(remover.clicks_repaired() >= 36 && remover.clicks_repaired() <= 46, "click remover counts each click once (" + std::to_string(remover.clicks_repaired()) + " repairs for 40 clicks)");
     check(remover.latency_frames() == 1023, "click remover reports its latency");
     ClickRemover gentle;
     const AudioBuffer untouched = applied(gentle, clean, false);
-    check(snr_db(untouched, clean) > 50.0, "click remover leaves a clean signal essentially unchanged (" + fmt(snr_db(untouched, clean)) + " dB)");
+    check(snr_db(untouched, clean) > 60.0 && gentle.clicks_repaired() == 0, "click remover leaves a clean signal essentially unchanged (" + fmt(snr_db(untouched, clean)) + " dB)");
+
+    double worst = 1e9;
+    double worst_varied = 1e9;
+    std::uint64_t most = 0;
+    for (unsigned seed = 1; seed <= 12; ++seed) {
+        std::uint64_t repairs = 0;
+        worst = std::min(worst, click_remover_gain(clean, seed, 40, false, false, &repairs));
+        most = std::max(most, repairs);
+        worst_varied = std::min(worst_varied, click_remover_gain(clean, 100 + seed, 40, true, false, nullptr));
+    }
+    std::printf("  click remover over 12 layouts: worst gain %s dB (varied amplitudes %s dB), at most %llu repairs\n", fmt(worst).c_str(), fmt(worst_varied).c_str(), static_cast<unsigned long long>(most));
+    check(worst > 20.0, "click remover gains more than 20 dB on every click layout (worst " + fmt(worst) + " dB)");
+    check(worst_varied > 18.0, "click remover handles clicks of varied amplitude (worst " + fmt(worst_varied) + " dB)");
+    check(most <= 46, "click remover does not over-detect (" + std::to_string(most) + " repairs for 40 clicks)");
+    std::uint64_t pair_repairs = 0;
+    const double pairs = click_remover_gain(clean, 77, 40, false, true, &pair_repairs);
+    check(pairs > 20.0, "click remover repairs clicks a few samples apart (" + fmt(pairs) + " dB, " + std::to_string(pair_repairs) + " repairs)");
+
+    const AudioBuffer mono = speech_like(44100, 1, 4.0, 6);
+    const double mono_gain = click_remover_gain(mono, 5, 30, false, false, nullptr);
+    check(mono_gain > 20.0, "click remover works on mono 44.1 kHz audio (" + fmt(mono_gain) + " dB)");
+
+    std::vector<std::size_t> onsets;
+    const AudioBuffer music = plucked_music(rate, 2, 6.0, 3, &onsets);
+    ClickRemover transient;
+    const AudioBuffer music_out = applied(transient, music, false);
+    const double music_snr = snr_db(music_out, music);
+    double onset_signal = 0.0;
+    double onset_error = 0.0;
+    for (std::size_t on : onsets) {
+        for (std::size_t i = on > 240 ? on - 240 : 0; i < std::min(music.frames(), on + 240); ++i) {
+            for (std::size_t c = 0; c < 2; ++c) {
+                const double d = static_cast<double>(music_out.at(i, c)) - music.at(i, c);
+                onset_signal += static_cast<double>(music.at(i, c)) * music.at(i, c);
+                onset_error += d * d;
+            }
+        }
+    }
+    const double onset_snr = onset_error > 0.0 ? 10.0 * std::log10(onset_signal / onset_error) : 300.0;
+    std::printf("  click remover on plucked/percussive music: SNR %s dB, around %zu onsets %s dB, %llu repairs\n", fmt(music_snr).c_str(), onsets.size(), fmt(onset_snr).c_str(), static_cast<unsigned long long>(transient.clicks_repaired()));
+    check(music_snr > 60.0 && onset_snr > 60.0, "click remover keeps sharp musical transients intact (" + fmt(music_snr) + " dB, onsets " + fmt(onset_snr) + " dB)");
 }
 
 Timeline basic_timeline() {
@@ -753,7 +856,7 @@ void test_player_matches_offline() {
     player.play();
     AudioBuffer live(2, 48000, offline.frames());
     std::mt19937 rng(5);
-    std::uniform_int_distribution<std::size_t> sizes(1, 1500);
+    auto sizes = [&](auto& gen) { return fizmo_test::random_int<std::size_t>(gen, 1, 1500); };
     std::size_t pos = 0;
     while (pos < live.frames()) {
         const std::size_t n = std::min(sizes(rng), live.frames() - pos);
@@ -869,7 +972,7 @@ void test_editing_while_playing() {
         }
     });
     std::mt19937 rng(77);
-    std::uniform_real_distribution<double> uni(0.0, 1.0);
+    auto uni = [&](auto& gen) { return fizmo_test::random_real(gen, 0.0, 1.0); };
     auto shared = std::make_shared<const AudioBuffer>(speech_like(48000, 2, 0.5, 8));
     for (int i = 0; i < 200; ++i) {
         Track& t = tl.tracks[static_cast<std::size_t>(i) % tl.tracks.size()];

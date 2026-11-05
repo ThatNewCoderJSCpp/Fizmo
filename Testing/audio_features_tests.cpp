@@ -2,6 +2,8 @@
 #include "../Source/Audio/presets.hpp"
 #include "../Source/Audio/stretch.hpp"
 
+#include "portable_random.hpp"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -99,7 +101,7 @@ AudioBuffer speech_like(std::uint32_t rate, double seconds, double f0 = 140.0, u
     const std::size_t frames = static_cast<std::size_t>(seconds * rate);
     AudioBuffer b(1, rate, frames);
     std::mt19937 rng(seed);
-    std::normal_distribution<float> noise(0.0f, 1.0f);
+    auto noise = [&](auto& gen) { return fizmo_test::random_normal_float(gen, 0.0f, 1.0f); };
     const double formants[3][3] = { { 730.0, 1090.0, 2440.0 }, { 270.0, 2290.0, 3010.0 }, { 300.0, 870.0, 2240.0 } };
     const double syllable = 0.33;
     const double voiced = 0.25;
@@ -168,7 +170,7 @@ AudioBuffer drums(std::uint32_t rate, double seconds, double bpm = 120.0) {
     const std::size_t frames = static_cast<std::size_t>(seconds * rate);
     AudioBuffer b(2, rate, frames);
     std::mt19937 rng(7);
-    std::uniform_real_distribution<float> uni(-1.0f, 1.0f);
+    auto uni = [&](auto& gen) { return fizmo_test::random_float(gen, -1.0f, 1.0f); };
     const double beat = 60.0 / bpm;
     float hp = 0.0f;
     float prev = 0.0f;
@@ -598,7 +600,7 @@ void test_noise_reduction() {
     clean.append(AudioBuffer(1, 48000, 72000));
     AudioBuffer noisy = clean;
     std::mt19937 rng(11);
-    std::normal_distribution<float> n(0.0f, 0.01f);
+    auto n = [&](auto& gen) { return fizmo_test::random_normal_float(gen, 0.0f, 0.01f); };
     for (float& v : noisy.samples()) v += n(rng);
     const AudioBuffer profile = noisy.slice(0, 40000);
     NoiseReduction nr;
@@ -826,7 +828,7 @@ void test_presets() {
         }
         std::mt19937 rng(static_cast<unsigned>(std::strlen(t)));
         for (Parameter* p : e->parameters()) {
-            std::uniform_real_distribution<float> u(p->minimum(), p->maximum());
+            auto u = [&](auto& gen) { return fizmo_test::random_float(gen, p->minimum(), p->maximum()); };
             p->set(u(rng));
         }
         e->set_enabled(false);
@@ -847,7 +849,7 @@ void test_presets() {
     check(voice_n >= 7 && effect_types("dynamics").size() == 5, "effects can be listed by category (" + std::to_string(voice_n) + " voice effects)");
 
     std::mt19937 rng(99);
-    std::uniform_int_distribution<std::uint32_t> bits;
+    auto bits = [&](auto& gen) { return fizmo_test::random_int<std::uint32_t>(gen, 0, std::numeric_limits<std::uint32_t>::max()); };
     bool floats_exact = true;
     for (int i = 0; i < 200000 && floats_exact; ++i) {
         std::uint32_t u = bits(rng);
@@ -861,7 +863,7 @@ void test_presets() {
         if (!floats_exact) info("float mismatch for " + num(f, 12));
     }
     bool doubles_exact = true;
-    std::uniform_real_distribution<double> ud(-1e6, 1e6);
+    auto ud = [&](auto& gen) { return fizmo_test::random_real(gen, -1e6, 1e6); };
     for (int i = 0; i < 20000 && doubles_exact; ++i) {
         const double d = ud(rng) * std::pow(10.0, static_cast<int>(bits(rng) % 40) - 20);
         JsonValue v;
@@ -883,14 +885,14 @@ void test_presets() {
     const AudioBuffer noise_sample = [] {
         AudioBuffer b(1, 48000, 24000);
         std::mt19937 r(3);
-        std::normal_distribution<float> n(0.0f, 0.02f);
+        auto n = [&](auto& gen) { return fizmo_test::random_normal_float(gen, 0.0f, 0.02f); };
         for (float& v : b.samples()) v = n(r);
         return b;
     }();
     AudioBuffer input = speech_like(48000, 3.0, 150.0, 21);
     {
         std::mt19937 r(4);
-        std::normal_distribution<float> n(0.0f, 0.02f);
+        auto n = [&](auto& gen) { return fizmo_test::random_normal_float(gen, 0.0f, 0.02f); };
         for (float& v : input.samples()) v += n(r);
     }
     auto build = [&]() {

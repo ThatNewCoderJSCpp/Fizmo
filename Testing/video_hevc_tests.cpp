@@ -4,6 +4,8 @@
 #include "../Source/Video/hevc_internal.hpp"
 #include "../Source/Video/player.hpp"
 
+#include "portable_random.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -84,6 +86,23 @@ inline std::vector<std::uint8_t> make_nal(int type, const std::vector<std::uint8
     }
     if (!rbsp.empty() && rbsp.back() == 0) out.push_back(3);
     return out;
+}
+
+inline std::vector<std::size_t> escaped_positions(const std::vector<std::uint8_t>& rbsp) {
+    std::vector<std::size_t> pos(rbsp.size() + 1, 0);
+    std::size_t raw = 0;
+    int zeros = 0;
+    for (std::size_t i = 0; i < rbsp.size(); ++i) {
+        const std::uint8_t c = rbsp[i];
+        if (zeros >= 2 && c <= 3) {
+            ++raw;
+            zeros = 0;
+        }
+        pos[i] = raw++;
+        zeros = c == 0 ? zeros + 1 : 0;
+    }
+    pos[rbsp.size()] = raw;
+    return pos;
 }
 
 class CabacWriter {
@@ -321,7 +340,7 @@ public:
         return v;
     }
 
-    bool coin(double p) { return std::uniform_real_distribution<double>(0.0, 1.0)(m_rng) < p; }
+    bool coin(double p) { return fizmo_test::random_real(m_rng, 0.0, 1.0) < p; }
     std::mt19937& rng() { return m_rng; }
 
 private:
@@ -450,8 +469,25 @@ public:
             }
             for (std::size_t i = 0; i < pp.segs.size(); ++i) {
                 const std::vector<std::vector<std::uint8_t>>& subs = oracle.segments[i];
-                std::vector<std::uint8_t> h = write_slice(pp, pp.segs[i], &subs);
-                for (const auto& sb : subs) h.insert(h.end(), sb.begin(), sb.end());
+                std::vector<std::size_t> sizes;
+                for (const auto& sb : subs) sizes.push_back(sb.size());
+                std::vector<std::uint8_t> h;
+                for (int pass_index = 0; pass_index < 8; ++pass_index) {
+                    h = write_slice(pp, pp.segs[i], &subs, &sizes);
+                    const std::size_t header = h.size();
+                    for (const auto& sb : subs) h.insert(h.end(), sb.begin(), sb.end());
+                    const std::vector<std::size_t> pos = escaped_positions(h);
+                    bool stable = true;
+                    std::size_t at = header;
+                    for (std::size_t k = 0; k < subs.size(); ++k) {
+                        const std::size_t next = at + subs[k].size();
+                        const std::size_t escaped = pos[next] - pos[at];
+                        if (escaped != sizes[k]) stable = false;
+                        sizes[k] = escaped;
+                        at = next;
+                    }
+                    if (stable) break;
+                }
                 std::vector<std::uint8_t> n = make_nal(pp.nal, h);
                 out.insert(out.end(), n.begin(), n.end());
             }
@@ -470,8 +506,8 @@ public:
     }
 
 private:
-    int rnd(int lo, int hi) { return std::uniform_int_distribution<int>(lo, hi)(m_rng); }
-    bool coin(double p) { return std::uniform_real_distribution<double>(0.0, 1.0)(m_rng) < p; }
+    int rnd(int lo, int hi) { return fizmo_test::random_int<int>(m_rng, lo, hi); }
+    bool coin(double p) { return fizmo_test::random_real(m_rng, 0.0, 1.0) < p; }
 
     void ptl(BitWriter& w) {
         const int prof = (m_cfg.chroma == 1 && m_cfg.bit_depth == 8 && !rext()) ? 1 : ((m_cfg.chroma == 1 && m_cfg.bit_depth <= 10 && !rext()) ? 2 : 4);
@@ -823,10 +859,10 @@ private:
         return p;
     }
 
-    std::vector<std::uint8_t> write_slice(const PicPlan& p, const Segment& s, const std::vector<std::vector<std::uint8_t>>* subs) {
+    std::vector<std::uint8_t> write_slice(const PicPlan& p, const Segment& s, const std::vector<std::vector<std::uint8_t>>* subs, const std::vector<std::size_t>* sizes = nullptr) {
         std::mt19937 local(static_cast<unsigned>(p.poc * 1000 + s.ts * 7 + 1));
-        auto lr = [&](int lo, int hi) { return std::uniform_int_distribution<int>(lo, hi)(local); };
-        auto lc = [&](double pr) { return std::uniform_real_distribution<double>(0.0, 1.0)(local) < pr; };
+        auto lr = [&](int lo, int hi) { return fizmo_test::random_int<int>(local, lo, hi); };
+        auto lc = [&](double pr) { return fizmo_test::random_real(local, 0.0, 1.0) < pr; };
         BitWriter w;
         const bool first = s.ts == 0;
         w.flag(first);
@@ -983,10 +1019,11 @@ private:
             } else {
                 w.ue(static_cast<std::uint32_t>(subs->size() - 1));
                 std::uint32_t maxv = 1;
-                for (std::size_t i = 0; i + 1 < subs->size(); ++i) maxv = std::max<std::uint32_t>(maxv, static_cast<std::uint32_t>((*subs)[i].size()));
+                auto length = [&](std::size_t i) { return static_cast<std::uint32_t>(sizes ? (*sizes)[i] : (*subs)[i].size()); };
+                for (std::size_t i = 0; i + 1 < subs->size(); ++i) maxv = std::max<std::uint32_t>(maxv, length(i));
                 const int bits = std::max(1, ceil_log2(maxv + 1));
                 w.ue(static_cast<std::uint32_t>(bits - 1));
-                for (std::size_t i = 0; i + 1 < subs->size(); ++i) w.u(bits, static_cast<std::uint32_t>((*subs)[i].size() - 1));
+                for (std::size_t i = 0; i + 1 < subs->size(); ++i) w.u(bits, length(i) - 1);
             }
         }
         if (m_cfg.header_ext) {

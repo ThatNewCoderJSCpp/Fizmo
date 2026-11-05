@@ -127,6 +127,8 @@ void TimeStretcher::configure(std::size_t channels, std::uint32_t sample_rate, S
     m_in_cap = 2 * span + 8192;
     m_in.assign(m_in_cap * c, 0.0f);
     m_ola.assign(m_window * c, 0.0f);
+    m_deficit.assign(m_window, 0.0f);
+    m_energy.assign(m_mode == StretchMode::phase_vocoder ? m_window + m_window / 8 + 2 : 0, 0.0);
     m_zero_crossings = quality == StretchQuality::fast ? 8 : (quality == StretchQuality::normal ? 12 : 16);
     m_table_res = 256;
     const std::size_t table_size = m_zero_crossings * m_table_res + 2;
@@ -189,6 +191,9 @@ void TimeStretcher::reset() noexcept {
     m_end_known = false;
     m_synth_done = false;
     std::fill(m_ola.begin(), m_ola.end(), 0.0f);
+    std::fill(m_deficit.begin(), m_deficit.end(), 0.0f);
+    m_onset_pending = false;
+    m_pending_onset = 0;
     std::fill(m_psi.begin(), m_psi.end(), 0.0f);
     m_st_base = 0;
     m_st_count = 0;
@@ -441,6 +446,12 @@ void TimeStretcher::commit_hop() noexcept {
     const long long half = static_cast<long long>(m_window / 2);
     const long long start = m_s - half;
     for (std::size_t i = 0; i < m_hop; ++i) {
+        const float missing = m_deficit[i];
+        if (missing <= 0.0f) continue;
+        const float gain = m_norm / std::max(m_norm - missing, 0.125f * m_norm);
+        for (std::size_t ch = 0; ch < c; ++ch) m_ola[i * c + ch] *= gain;
+    }
+    for (std::size_t i = 0; i < m_hop; ++i) {
         const long long idx = start + static_cast<long long>(i);
         if (idx < 0) continue;
         if (idx != m_st_base + static_cast<long long>(m_st_count)) continue;
@@ -451,6 +462,8 @@ void TimeStretcher::commit_hop() noexcept {
     const std::size_t keep = (m_window - m_hop) * c;
     std::memmove(m_ola.data(), m_ola.data() + m_hop * c, keep * sizeof(float));
     std::fill(m_ola.begin() + static_cast<std::ptrdiff_t>(keep), m_ola.end(), 0.0f);
+    std::memmove(m_deficit.data(), m_deficit.data() + m_hop, (m_window - m_hop) * sizeof(float));
+    std::fill(m_deficit.begin() + static_cast<std::ptrdiff_t>(m_window - m_hop), m_deficit.end(), 0.0f);
     m_s += static_cast<long long>(m_hop);
 }
 
@@ -460,18 +473,66 @@ void TimeStretcher::synth_pv(long long center) noexcept {
     const std::size_t c = m_channels;
     const long long half = static_cast<long long>(n / 2);
     const long long first = center - half;
+    const long long span = static_cast<long long>(n / 32);
+    long long gate = first + static_cast<long long>(n);
+    const double advance = m_tempo.load(std::memory_order_relaxed) / m_pitch.load(std::memory_order_relaxed);
+    if (!m_first && advance < 1.0) {
+        const long long origin = first - 4 * span;
+        double running = 0.0;
+        m_energy[0] = 0.0;
+        for (long long i = 0; i < static_cast<long long>(n) + 4 * span; ++i) {
+            const double v = mid_in_at(origin + i);
+            running += v * v;
+            m_energy[static_cast<std::size_t>(i + 1)] = running;
+        }
+        for (long long t = center + 1; t + span <= first + static_cast<long long>(n); ++t) {
+            const std::size_t at = static_cast<std::size_t>(t - origin);
+            const double after = m_energy[at + static_cast<std::size_t>(span)] - m_energy[at];
+            double before = 0.0;
+            for (std::size_t j = 0; j < 4; ++j) {
+                const std::size_t hi = at - j * static_cast<std::size_t>(span);
+                before = std::max(before, m_energy[hi] - m_energy[hi - static_cast<std::size_t>(span)]);
+            }
+            if (after > 10.0 * before + 1e-7 * static_cast<double>(span)) {
+                gate = t;
+                break;
+            }
+        }
+    }
+    const long long fade_start = gate - span;
+    const bool gating = gate < first + static_cast<long long>(n);
+    auto gated = [&](long long idx) -> float {
+        if (!gating || idx < fade_start) return 1.0f;
+        if (idx >= gate) return 0.0f;
+        return static_cast<float>(0.5 + 0.5 * std::cos(k_pi * static_cast<double>(idx - fade_start) / static_cast<double>(span)));
+    };
+    if (gating) {
+        for (long long i = std::max<long long>(0, fade_start - first); i < static_cast<long long>(n); ++i) {
+            const std::size_t k = static_cast<std::size_t>(i);
+            m_deficit[k] += m_win[k] * m_win[k] * (1.0f - gated(first + i));
+        }
+    }
     for (std::size_t ch = 0; ch < c; ++ch) {
-        for (std::size_t i = 0; i < n; ++i) m_frame[i] = in_at(ch, first + static_cast<long long>(i)) * m_win[i];
+        for (std::size_t i = 0; i < n; ++i) {
+            const long long idx = first + static_cast<long long>(i);
+            m_frame[i] = in_at(ch, idx) * m_win[i] * gated(idx);
+        }
         m_fft.forward_real(m_frame.data(), m_spec.data() + ch * bins);
     }
     if (c == 1) {
         std::copy(m_spec.begin(), m_spec.begin() + static_cast<std::ptrdiff_t>(bins), m_mid.begin());
     } else {
-        for (std::size_t i = 0; i < n; ++i) m_frame_mid[i] = mid_in_at(first + static_cast<long long>(i)) * m_win[i];
+        for (std::size_t i = 0; i < n; ++i) {
+            const long long idx = first + static_cast<long long>(i);
+            m_frame_mid[i] = mid_in_at(idx) * m_win[i] * gated(idx);
+        }
         m_fft.forward_real(m_frame_mid.data(), m_mid.data());
     }
     const long long prev_first = first - static_cast<long long>(m_diff);
-    for (std::size_t i = 0; i < n; ++i) m_frame_mid[i] = mid_in_at(prev_first + static_cast<long long>(i)) * m_win[i];
+    for (std::size_t i = 0; i < n; ++i) {
+        const long long idx = prev_first + static_cast<long long>(i);
+        m_frame_mid[i] = mid_in_at(idx) * m_win[i] * gated(idx);
+    }
     m_fft.forward_real(m_frame_mid.data(), m_mid_prev.data());
 
     const long long block = static_cast<long long>(n / 16);
@@ -485,7 +546,15 @@ void TimeStretcher::synth_pv(long long center) noexcept {
         const double v = mid_in_at(center + i);
         e_before += v * v;
     }
-    const bool onset = e_center > 10.0 * e_before + 1e-7 * static_cast<double>(block) && center - m_last_reset >= static_cast<long long>(n / 4);
+    bool onset = e_center > 10.0 * e_before + 1e-7 * static_cast<double>(block) && center - m_last_reset >= static_cast<long long>(n / 4);
+    if (m_onset_pending && center >= m_pending_onset) {
+        onset = true;
+        m_onset_pending = false;
+    }
+    if (gate < first + static_cast<long long>(n) && (!m_onset_pending || gate < m_pending_onset)) {
+        m_pending_onset = gate;
+        m_onset_pending = true;
+    }
 
     float max_mag = 0.0f;
     for (std::size_t b = 0; b < bins; ++b) {

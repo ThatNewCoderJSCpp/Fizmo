@@ -1,5 +1,7 @@
 #include "../Source/Audio/mp3_encoder.hpp"
 
+#include "portable_random.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -52,7 +54,7 @@ std::vector<std::uint8_t> read_file(const std::string& path) {
 AudioBuffer test_signal(std::size_t channels, std::uint32_t rate, std::size_t frames, unsigned seed = 1) {
     AudioBuffer b(channels, rate, frames);
     std::mt19937 rng(seed);
-    std::normal_distribution<float> noise(0.0f, 1.0f);
+    auto noise = [&](auto& gen) { return fizmo_test::random_normal_float(gen, 0.0f, 1.0f); };
     const double r = static_cast<double>(rate);
     for (std::size_t i = 0; i < frames; ++i) {
         const double t = static_cast<double>(i) / r;
@@ -505,7 +507,7 @@ void test_bad_samples() {
     check(a == b, "NaN, infinities and out-of-range samples are sanitized");
     AudioBuffer garbage(2, 22050, 30000);
     std::mt19937 rng(11);
-    std::uniform_int_distribution<std::uint32_t> bits;
+    auto bits = [&](auto& gen) { return fizmo_test::random_int<std::uint32_t>(gen, 0, std::numeric_limits<std::uint32_t>::max()); };
     for (float& v : garbage.samples()) {
         std::uint32_t u = bits(rng);
         std::memcpy(&v, &u, sizeof(v));
@@ -528,7 +530,7 @@ void test_streaming_and_files() {
     check(w.output_sample_rate() == 44100 && w.output_channels() == 2, "Mp3Writer output format");
     check(w.encoder_delay() == 528, "Mp3Writer encoder delay");
     std::mt19937 rng(3);
-    std::uniform_int_distribution<std::size_t> chunk(1, 5000);
+    auto chunk = [&](auto& gen) { return fizmo_test::random_int<std::size_t>(gen, 1, 5000); };
     std::size_t done = 0;
     bool ok = true;
     while (done < input.frames()) {

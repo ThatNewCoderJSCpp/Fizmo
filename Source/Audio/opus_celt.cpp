@@ -379,7 +379,7 @@ struct BandCoder {
         return *seed;
     }
 
-    Angle angle(int n, int b, int Bk, int B0, int lambda, bool stereo, unsigned& fill) {
+    Angle angle(int n, int b, int Bk, int base_blocks, int lambda, bool stereo, unsigned& fill) {
         Angle r;
         const int pcap = k_celt_lw[band] + 8 * lambda;
         const int off = (pcap >> 1) - ((stereo && n == 2) ? 16 : 4);
@@ -419,7 +419,7 @@ struct BandCoder {
                     fh = (xv - h) + 3 * (h + 1);
                 }
                 rd->update(static_cast<std::uint32_t>(fl), static_cast<std::uint32_t>(fh), static_cast<std::uint32_t>(ft));
-            } else if (B0 > 1 || stereo) {
+            } else if (base_blocks > 1 || stereo) {
                 xv = static_cast<int>(rd->uint(static_cast<std::uint32_t>(qn + 1)));
             } else {
                 const int h = qn / 2;
@@ -587,16 +587,16 @@ struct BandCoder {
         const CeltCache& cache = celt_cache();
         const int row = cache.row_for(n);
         const int maxcost = cache.cost[static_cast<std::size_t>(row)][static_cast<std::size_t>(cache.kmax[static_cast<std::size_t>(row)])];
-        const int B0 = Bk;
+        const int base_blocks = Bk;
         if (lambda >= 0 && b > maxcost + 12 && n > 2) {
             n /= 2;
             --lambda;
             if (Bk == 1) fill = (fill & 1u) | (fill << 1);
             Bk = (Bk + 1) / 2;
-            Angle a = angle(n, b, Bk, B0, lambda, false, fill);
+            Angle a = angle(n, b, Bk, base_blocks, lambda, false, fill);
             b -= a.qa;
             int delta = a.delta;
-            if (B0 > 1 && a.itheta != 0 && a.itheta != 16384) {
+            if (base_blocks > 1 && a.itheta != 0 && a.itheta != 16384) {
                 if (a.itheta > 8192) {
                     delta -= delta >> (4 - lambda);
                 } else {
@@ -625,7 +625,7 @@ struct BandCoder {
                 if (rb > 24 && a.itheta != 16384) mbits += rb - 24;
                 cm1 = partition(X, n, mbits, Bk, F1, lambda, g1, fill);
             }
-            return cm1 | (cm2 << (B0 / 2));
+            return cm1 | (cm2 << (base_blocks / 2));
         }
         return leaf(X, n, b, Bk, F, gamma, fill);
     }
@@ -717,12 +717,12 @@ struct BandCoder {
             ++tau;
             ++td;
         }
-        const int B0 = Bk;
-        const int G = B0 << recombine;
+        const int base_blocks = Bk;
+        const int G = base_blocks << recombine;
         const bool sequency = !transient;
-        if (B0 > 1 && Fp) reorder(F, N, G, sequency, true);
-        unsigned cm = partition(X, N, b, B0, Fp, LM, gamma, fill);
-        if (B0 > 1) reorder(X, N, G, sequency, false);
+        if (base_blocks > 1 && Fp) reorder(F, N, G, sequency, true);
+        unsigned cm = partition(X, N, b, base_blocks, Fp, LM, gamma, fill);
+        if (base_blocks > 1) reorder(X, N, G, sequency, false);
         for (int k = 0; k < td; ++k) {
             Bk >>= 1;
             nb <<= 1;
