@@ -24,6 +24,33 @@ if (!rec.open_capture(cfg, [](const float* in, std::size_t frames) { }, &err) ||
 
 `available_backends()` lists what this build has, `backend_name()` says which one is in use, and `set_backend(name, &error)` switches. The environment variable `FIZMO_AUDIO_BACKEND` (such as `null` for tests and servers with no sound card) picks one before the first device call. `devices(kind)` and `default_device(kind)` list what the backend sees; loopback devices are only listed where system audio can be recorded.
 
+## Keeping a stream on its device
+
+By default a stream opened on a named device can end up somewhere else when that device goes away: PulseAudio and PipeWire move it to the default device, and streams with no `device` follow the default on every backend. For audio that must not leak to the speakers, such as a processed voice sent into a virtual sink, set `pin_device`:
+
+```cpp
+StreamConfig cfg;
+cfg.device = "rustle_voice";
+cfg.pin_device = true;
+Stream out;
+std::string err;
+if (!out.open_playback(cfg, render, &err) || !out.start(&err)) std::cerr << err << '\n';
+if (out.failed()) std::cerr << out.error() << '\n';
+```
+
+| `StreamConfig` field | Default | Does |
+|---|---|---|
+| `pin_device` | `false` | With a `device` set, the stream stays on that device and is never moved. When the device is removed or disabled the stream fails: `failed()` turns `true` (within a few milliseconds on PulseAudio), `error()` says which device went, such as "the device 'rustle_voice' was removed", and no more callbacks run. Open the stream again once the device is back. With `device` empty the field does nothing and the stream follows the default as usual. `false` keeps the behaviour described above |
+
+| Backend | Pinned stream |
+|---|---|
+| `pulse` | Opened with `PA_STREAM_DONT_MOVE` through the asynchronous API (its own threaded main loop), so the server can't move it; unloading the sink's or source's module, or anything else that kills or moves the stream, fails it. Works for playback, microphones and `.monitor` sources, also while the stream is stopped. Latency, block sizes and data match an unpinned stream; the callbacks run on the PulseAudio main loop thread instead of a fizmo thread |
+| `alsa` | Hardware devices (`hw:`, `plughw:` and the like) already fail when unplugged; a pinned one says the device was removed. `pulse` and `pipewire` can't be pinned (the sound server routes them) and opening fails with a message saying to use the `pulse` backend; `default` plays wherever ALSA's configuration sends it |
+| `wasapi` | A stream opened by id never follows the default. Pinned, it also watches the endpoint and fails as soon as Windows reports it removed or disabled, instead of waiting for the next buffer error |
+| `coreaudio` | A stream opened by UID never follows the default; pinned, it fails when the device dies, including during a format change. A loopback stream on `"system"` follows the default output and isn't pinned |
+| `aaudio` | Pinned, opening fails if Android opens a different device than the id asked for, and a disconnect fails the stream (it never reopens on the default) |
+| `null` | Nothing to pin |
+
 ## macOS
 
 Core Audio asks the user before an app records, and shows the text from the app bundle's `Info.plist`. Without the key, fizmo refuses to open the stream and the error says which key is missing (macOS would otherwise end the app).

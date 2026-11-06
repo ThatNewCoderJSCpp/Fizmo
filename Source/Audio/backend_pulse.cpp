@@ -9,10 +9,11 @@
 #include <utility>
 
 #if defined(__has_include)
-#if __has_include(<pulse/introspect.h>) && __has_include(<pulse/simple.h>)
+#if __has_include(<pulse/introspect.h>) && __has_include(<pulse/simple.h>) && __has_include(<pulse/stream.h>)
 #define FIZMO_AUDIO_HAVE_PULSE_HEADERS 1
 #include <pulse/introspect.h>
 #include <pulse/simple.h>
+#include <pulse/stream.h>
 #endif
 #endif
 
@@ -29,6 +30,7 @@ struct mainloop_api;
 struct context;
 struct operation;
 struct simple;
+struct stream;
 
 struct sample_spec {
     int format;
@@ -92,8 +94,21 @@ constexpr int context_terminated = 6;
 constexpr int operation_running = 0;
 constexpr int context_noautospawn = 1;
 constexpr std::uint32_t invalid_index = 0xFFFFFFFFu;
+constexpr int stream_ready = 2;
+constexpr int stream_failed = 3;
+constexpr int stream_terminated = 4;
+constexpr int stream_start_corked = 0x0001;
+constexpr int stream_dont_move = 0x0200;
+constexpr int stream_adjust_latency = 0x2000;
+constexpr int seek_relative = 0;
+constexpr int error_noentity = 5;
+constexpr int error_killed = 12;
 
 using context_notify_cb = void (*)(context*, void*);
+using stream_notify_cb = void (*)(stream*, void*);
+using stream_request_cb = void (*)(stream*, std::size_t, void*);
+using stream_success_cb = void (*)(stream*, int, void*);
+using free_cb = void (*)(void*);
 using server_info_cb = void (*)(context*, const server_info*, void*);
 using sink_info_cb = void (*)(context*, const sink_info*, int, void*);
 using source_info_cb = void (*)(context*, const source_info*, int, void*);
@@ -116,6 +131,10 @@ static_assert(PA_STREAM_PLAYBACK == pa::stream_playback && PA_STREAM_RECORD == p
 static_assert(PA_CONTEXT_READY == pa::context_ready && PA_CONTEXT_FAILED == pa::context_failed && PA_CONTEXT_TERMINATED == pa::context_terminated, "context state values");
 static_assert(PA_OPERATION_RUNNING == pa::operation_running, "operation state value");
 static_assert(PA_CONTEXT_NOAUTOSPAWN == pa::context_noautospawn, "context flag value");
+static_assert(PA_STREAM_READY == pa::stream_ready && PA_STREAM_FAILED == pa::stream_failed && PA_STREAM_TERMINATED == pa::stream_terminated, "stream state values");
+static_assert(PA_STREAM_START_CORKED == pa::stream_start_corked && PA_STREAM_DONT_MOVE == pa::stream_dont_move && PA_STREAM_ADJUST_LATENCY == pa::stream_adjust_latency, "stream flag values");
+static_assert(PA_SEEK_RELATIVE == pa::seek_relative, "seek mode value");
+static_assert(PA_ERR_NOENTITY == pa::error_noentity && PA_ERR_KILLED == pa::error_killed, "error code values");
 #endif
 
 struct PulseApi {
@@ -144,6 +163,23 @@ struct PulseApi {
     int (*operation_get_state)(const pa::operation*) = nullptr;
     void (*operation_unref)(pa::operation*) = nullptr;
     const char* (*strerror)(int) = nullptr;
+    pa::stream* (*stream_new)(pa::context*, const char*, const pa::sample_spec*, const pa::channel_map*) = nullptr;
+    void (*stream_unref)(pa::stream*) = nullptr;
+    int (*stream_connect_playback)(pa::stream*, const char*, const pa::buffer_attr*, int, const void*, pa::stream*) = nullptr;
+    int (*stream_connect_record)(pa::stream*, const char*, const pa::buffer_attr*, int) = nullptr;
+    int (*stream_disconnect)(pa::stream*) = nullptr;
+    int (*stream_get_state)(const pa::stream*) = nullptr;
+    void (*stream_set_state_callback)(pa::stream*, pa::stream_notify_cb, void*) = nullptr;
+    void (*stream_set_write_callback)(pa::stream*, pa::stream_request_cb, void*) = nullptr;
+    void (*stream_set_read_callback)(pa::stream*, pa::stream_request_cb, void*) = nullptr;
+    void (*stream_set_moved_callback)(pa::stream*, pa::stream_notify_cb, void*) = nullptr;
+    int (*stream_write)(pa::stream*, const void*, std::size_t, pa::free_cb, std::int64_t, int) = nullptr;
+    int (*stream_peek)(pa::stream*, const void**, std::size_t*) = nullptr;
+    int (*stream_drop)(pa::stream*) = nullptr;
+    std::size_t (*stream_writable_size)(const pa::stream*) = nullptr;
+    pa::operation* (*stream_cork)(pa::stream*, int, pa::stream_success_cb, void*) = nullptr;
+    pa::operation* (*stream_flush)(pa::stream*, pa::stream_success_cb, void*) = nullptr;
+    const char* (*stream_get_device_name)(const pa::stream*) = nullptr;
 
     pa::simple* (*simple_new)(const char*, const char*, int, const char*, const char*, const pa::sample_spec*, const pa::channel_map*, const pa::buffer_attr*, int*) = nullptr;
     int (*simple_write)(pa::simple*, const void*, std::size_t, int*) = nullptr;
@@ -184,6 +220,23 @@ struct PulseApi {
         ok &= lib.load(operation_get_state, "pa_operation_get_state");
         ok &= lib.load(operation_unref, "pa_operation_unref");
         ok &= lib.load(strerror, "pa_strerror");
+        ok &= lib.load(stream_new, "pa_stream_new");
+        ok &= lib.load(stream_unref, "pa_stream_unref");
+        ok &= lib.load(stream_connect_playback, "pa_stream_connect_playback");
+        ok &= lib.load(stream_connect_record, "pa_stream_connect_record");
+        ok &= lib.load(stream_disconnect, "pa_stream_disconnect");
+        ok &= lib.load(stream_get_state, "pa_stream_get_state");
+        ok &= lib.load(stream_set_state_callback, "pa_stream_set_state_callback");
+        ok &= lib.load(stream_set_write_callback, "pa_stream_set_write_callback");
+        ok &= lib.load(stream_set_read_callback, "pa_stream_set_read_callback");
+        ok &= lib.load(stream_set_moved_callback, "pa_stream_set_moved_callback");
+        ok &= lib.load(stream_write, "pa_stream_write");
+        ok &= lib.load(stream_peek, "pa_stream_peek");
+        ok &= lib.load(stream_drop, "pa_stream_drop");
+        ok &= lib.load(stream_writable_size, "pa_stream_writable_size");
+        ok &= lib.load(stream_cork, "pa_stream_cork");
+        ok &= lib.load(stream_flush, "pa_stream_flush");
+        ok &= lib.load(stream_get_device_name, "pa_stream_get_device_name");
         ok &= simple_lib.load(simple_new, "pa_simple_new");
         ok &= simple_lib.load(simple_write, "pa_simple_write");
         ok &= simple_lib.load(simple_read, "pa_simple_read");
@@ -397,6 +450,283 @@ private:
     std::thread m_thread;
 };
 
+class PinnedPulseStream : public BackendStream {
+public:
+    PinnedPulseStream(std::shared_ptr<const PulseApi> api, std::shared_ptr<StreamShared> shared, std::uint32_t period, std::uint32_t latency, std::string device, std::string shown)
+        : m_api(std::move(api)), m_shared(std::move(shared)), m_period(period), m_latency(latency), m_device(std::move(device)), m_shown(std::move(shown)) {
+        m_output = m_shared->kind == DeviceKind::output;
+        m_frame_bytes = static_cast<std::size_t>(m_shared->channels) * sizeof(float);
+        m_stage.assign(static_cast<std::size_t>(m_period) * m_shared->channels, 0.0f);
+        m_stage_pos = m_output ? m_period : 0;
+    }
+
+    ~PinnedPulseStream() override {
+        stop();
+        if (!m_loop) return;
+        m_api->threaded_mainloop_lock(m_loop);
+        m_closing = true;
+        if (m_stream) {
+            m_api->stream_set_state_callback(m_stream, nullptr, nullptr);
+            m_api->stream_set_write_callback(m_stream, nullptr, nullptr);
+            m_api->stream_set_read_callback(m_stream, nullptr, nullptr);
+            m_api->stream_set_moved_callback(m_stream, nullptr, nullptr);
+            m_api->stream_disconnect(m_stream);
+            m_api->stream_unref(m_stream);
+            m_stream = nullptr;
+        }
+        if (m_context) {
+            m_api->context_set_state_callback(m_context, nullptr, nullptr);
+            m_api->context_disconnect(m_context);
+        }
+        m_api->threaded_mainloop_unlock(m_loop);
+        if (m_loop_started) m_api->threaded_mainloop_stop(m_loop);
+        if (m_context) m_api->context_unref(m_context);
+        m_api->threaded_mainloop_free(m_loop);
+    }
+
+    bool connect(const std::string& app_name, const pa::sample_spec& spec, const pa::buffer_attr& attr, std::string& error) {
+        m_loop = m_api->threaded_mainloop_new();
+        if (!m_loop) {
+            error = "can't create a PulseAudio main loop";
+            return false;
+        }
+        m_context = m_api->context_new(m_api->threaded_mainloop_get_api(m_loop), app_name.c_str());
+        if (!m_context) {
+            error = "can't create a PulseAudio context";
+            return false;
+        }
+        m_api->context_set_state_callback(m_context, on_context_state, this);
+        if (m_api->context_connect(m_context, nullptr, pa::context_noautospawn, nullptr) < 0) {
+            error = "can't connect to the sound server: " + m_api->error_text(m_api->context_errno(m_context));
+            return false;
+        }
+        Locked guard(*this);
+        if (m_api->threaded_mainloop_start(m_loop) < 0) {
+            error = "can't start the PulseAudio main loop";
+            return false;
+        }
+        m_loop_started = true;
+        int state = m_api->context_get_state(m_context);
+        while (state != pa::context_ready && state != pa::context_failed && state != pa::context_terminated) {
+            m_api->threaded_mainloop_wait(m_loop);
+            state = m_api->context_get_state(m_context);
+        }
+        if (state != pa::context_ready) {
+            error = "can't connect to the sound server: " + m_api->error_text(m_api->context_errno(m_context));
+            return false;
+        }
+        m_stream = m_api->stream_new(m_context, app_name.c_str(), &spec, nullptr);
+        if (!m_stream) {
+            error = "can't create a PulseAudio stream: " + m_api->error_text(m_api->context_errno(m_context));
+            return false;
+        }
+        m_api->stream_set_state_callback(m_stream, on_stream_state, this);
+        m_api->stream_set_moved_callback(m_stream, on_moved, this);
+        if (m_output) m_api->stream_set_write_callback(m_stream, on_write, this);
+        else m_api->stream_set_read_callback(m_stream, on_read, this);
+        const int flags = pa::stream_start_corked | pa::stream_dont_move | pa::stream_adjust_latency;
+        const int r = m_output ? m_api->stream_connect_playback(m_stream, m_device.c_str(), &attr, flags, nullptr, nullptr) : m_api->stream_connect_record(m_stream, m_device.c_str(), &attr, flags);
+        if (r < 0) {
+            error = "can't open '" + m_device + "': " + m_api->error_text(m_api->context_errno(m_context));
+            return false;
+        }
+        state = m_api->stream_get_state(m_stream);
+        while (state != pa::stream_ready && state != pa::stream_failed && state != pa::stream_terminated) {
+            m_api->threaded_mainloop_wait(m_loop);
+            state = m_api->stream_get_state(m_stream);
+        }
+        if (state != pa::stream_ready) {
+            error = "can't open '" + m_device + "': " + m_api->error_text(m_api->context_errno(m_context));
+            return false;
+        }
+        m_ready = true;
+        return true;
+    }
+
+    bool start(std::string& error) override {
+        Locked guard(*this);
+        if (m_shared->failed.load()) {
+            error = m_shared->last_error();
+            return false;
+        }
+        if (m_active) return true;
+        if (m_output) {
+            m_stage_pos = m_period;
+            m_active = true;
+            const std::size_t room = m_api->stream_writable_size(m_stream);
+            if (room != static_cast<std::size_t>(-1)) write_some(room);
+        } else {
+            wait_op(m_api->stream_flush(m_stream, on_success, this));
+            m_stage_pos = 0;
+            m_active = true;
+        }
+        wait_op(m_api->stream_cork(m_stream, 0, on_success, this));
+        if (m_shared->failed.load()) {
+            m_active = false;
+            error = m_shared->last_error();
+            return false;
+        }
+        return true;
+    }
+
+    void stop() override {
+        if (!m_loop || !m_stream) return;
+        Locked guard(*this);
+        if (!m_active) return;
+        m_active = false;
+        if (!stream_alive()) return;
+        wait_op(m_api->stream_cork(m_stream, 1, on_success, this));
+        if (m_output) wait_op(m_api->stream_flush(m_stream, on_success, this));
+    }
+
+    std::uint32_t latency_frames() const override { return m_latency; }
+    std::string device_name() const override { return m_shown; }
+
+private:
+    class Locked {
+    public:
+        explicit Locked(PinnedPulseStream& s) : m_s(s) { m_s.m_api->threaded_mainloop_lock(m_s.m_loop); }
+        ~Locked() { m_s.m_api->threaded_mainloop_unlock(m_s.m_loop); }
+        Locked(const Locked&) = delete;
+        Locked& operator=(const Locked&) = delete;
+
+    private:
+        PinnedPulseStream& m_s;
+    };
+
+    bool stream_alive() const {
+        return m_stream && m_api->stream_get_state(m_stream) == pa::stream_ready && m_api->context_get_state(m_context) == pa::context_ready;
+    }
+
+    void wait_op(pa::operation* op) {
+        if (!op) return;
+        while (m_api->operation_get_state(op) == pa::operation_running && stream_alive()) m_api->threaded_mainloop_wait(m_loop);
+        m_api->operation_unref(op);
+    }
+
+    void lost(const std::string& message) {
+        m_active = false;
+        if (!m_closing) m_shared->fail(message);
+        m_api->threaded_mainloop_signal(m_loop, 0);
+    }
+
+    void write_some(std::size_t bytes) {
+        std::size_t wanted = bytes / m_frame_bytes;
+        const std::size_t channels = m_shared->channels;
+        while (wanted > 0 && m_active) {
+            if (m_stage_pos >= m_period) {
+                m_shared->render(m_stage.data(), m_period);
+                m_stage_pos = 0;
+            }
+            const std::size_t n = std::min<std::size_t>(wanted, m_period - m_stage_pos);
+            if (m_api->stream_write(m_stream, m_stage.data() + m_stage_pos * channels, n * m_frame_bytes, nullptr, 0, pa::seek_relative) < 0) {
+                lost("the sound server stopped the stream: " + m_api->error_text(m_api->context_errno(m_context)));
+                return;
+            }
+            m_stage_pos += static_cast<std::uint32_t>(n);
+            wanted -= n;
+        }
+    }
+
+    void read_all() {
+        const std::size_t channels = m_shared->channels;
+        for (;;) {
+            const void* data = nullptr;
+            std::size_t bytes = 0;
+            if (m_api->stream_peek(m_stream, &data, &bytes) < 0) {
+                lost("the sound server stopped the stream: " + m_api->error_text(m_api->context_errno(m_context)));
+                return;
+            }
+            if (bytes == 0) return;
+            if (m_active) {
+                const float* in = static_cast<const float*>(data);
+                std::size_t frames = bytes / m_frame_bytes;
+                while (frames > 0) {
+                    const std::size_t n = std::min<std::size_t>(frames, m_period - m_stage_pos);
+                    float* dst = m_stage.data() + static_cast<std::size_t>(m_stage_pos) * channels;
+                    if (in) {
+                        std::memcpy(dst, in, n * m_frame_bytes);
+                        in += n * channels;
+                    } else {
+                        std::memset(dst, 0, n * m_frame_bytes);
+                    }
+                    m_stage_pos += static_cast<std::uint32_t>(n);
+                    frames -= n;
+                    if (m_stage_pos == m_period) {
+                        m_shared->deliver(m_stage.data(), m_period);
+                        m_stage_pos = 0;
+                    }
+                }
+            }
+            m_api->stream_drop(m_stream);
+        }
+    }
+
+    static void on_context_state(pa::context* ctx, void* user) {
+        PinnedPulseStream* self = static_cast<PinnedPulseStream*>(user);
+        const int state = self->m_api->context_get_state(ctx);
+        if (self->m_ready && (state == pa::context_failed || state == pa::context_terminated)) {
+            self->lost("lost the connection to the sound server: " + self->m_api->error_text(self->m_api->context_errno(ctx)));
+            return;
+        }
+        self->m_api->threaded_mainloop_signal(self->m_loop, 0);
+    }
+
+    static void on_stream_state(pa::stream* s, void* user) {
+        PinnedPulseStream* self = static_cast<PinnedPulseStream*>(user);
+        const int state = self->m_api->stream_get_state(s);
+        if (self->m_ready && (state == pa::stream_failed || state == pa::stream_terminated)) {
+            const int code = self->m_api->context_errno(self->m_context);
+            if (self->m_api->context_get_state(self->m_context) != pa::context_ready) self->lost("lost the connection to the sound server: " + self->m_api->error_text(code));
+            else if (code == pa::error_killed || code == pa::error_noentity) self->lost("the device '" + self->m_device + "' was removed");
+            else self->lost("the sound server stopped the stream on '" + self->m_device + "': " + self->m_api->error_text(code));
+            return;
+        }
+        self->m_api->threaded_mainloop_signal(self->m_loop, 0);
+    }
+
+    static void on_moved(pa::stream* s, void* user) {
+        PinnedPulseStream* self = static_cast<PinnedPulseStream*>(user);
+        const char* now = self->m_api->stream_get_device_name(s);
+        if (now && self->m_device == now) return;
+        self->lost("the sound server moved the stream off '" + self->m_device + "' to '" + std::string(now ? now : "another device") + "'");
+        pa::operation* op = self->m_stream ? self->m_api->stream_cork(self->m_stream, 1, nullptr, nullptr) : nullptr;
+        if (op) self->m_api->operation_unref(op);
+    }
+
+    static void on_write(pa::stream*, std::size_t bytes, void* user) {
+        PinnedPulseStream* self = static_cast<PinnedPulseStream*>(user);
+        if (self->m_active) self->write_some(bytes);
+    }
+
+    static void on_read(pa::stream*, std::size_t, void* user) {
+        static_cast<PinnedPulseStream*>(user)->read_all();
+    }
+
+    static void on_success(pa::stream*, int, void* user) {
+        PinnedPulseStream* self = static_cast<PinnedPulseStream*>(user);
+        self->m_api->threaded_mainloop_signal(self->m_loop, 0);
+    }
+
+    std::shared_ptr<const PulseApi> m_api;
+    std::shared_ptr<StreamShared> m_shared;
+    std::uint32_t m_period = 0;
+    std::uint32_t m_latency = 0;
+    std::string m_device;
+    std::string m_shown;
+    bool m_output = true;
+    std::size_t m_frame_bytes = 0;
+    std::vector<float> m_stage;
+    std::uint32_t m_stage_pos = 0;
+    pa::mainloop* m_loop = nullptr;
+    pa::context* m_context = nullptr;
+    pa::stream* m_stream = nullptr;
+    bool m_loop_started = false;
+    bool m_ready = false;
+    bool m_active = false;
+    bool m_closing = false;
+};
+
 class PulseBackend : public Backend {
 public:
     bool init(std::string& why) {
@@ -473,6 +803,17 @@ public:
             dev = dev_name.c_str();
         } else if (request.kind == DeviceKind::loopback) {
             dev = "@DEFAULT_MONITOR@";
+        }
+        if (request.pin_device && !device.empty()) {
+            shared->sample_rate = rate;
+            shared->channels = channels;
+            auto pinned = std::make_unique<PinnedPulseStream>(m_api, shared, period, latency, device, shown);
+            if (!pinned->connect(request.name, spec, attr, error)) {
+                shared->sample_rate = 0;
+                shared->channels = 0;
+                return nullptr;
+            }
+            return pinned;
         }
         int err = 0;
         const int direction = request.kind == DeviceKind::output ? pa::stream_playback : pa::stream_record;

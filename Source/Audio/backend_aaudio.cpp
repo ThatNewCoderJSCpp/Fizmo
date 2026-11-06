@@ -723,6 +723,10 @@ private:
             return false;
         }
         m_stream = s;
+        if (m_request.pin_device && !follows_default() && m_api->get_device_id(s) != m_device_id) {
+            error = "device '" + m_request.device + "' isn't available (Android opened another device instead)";
+            return false;
+        }
         const std::int32_t format = m_api->get_format(s);
         if (!sample_format_of(format, m_device_format)) {
             error = "the audio device uses a sample format fizmo doesn't know";
@@ -874,7 +878,7 @@ private:
         }
         if (!follows_default()) {
             teardown();
-            m_shared->fail("the audio device was removed or disabled");
+            m_shared->fail(m_request.pin_device ? "the device '" + m_shown + "' was removed or disabled" : std::string("the audio device was removed or disabled"));
             return;
         }
         std::string why;

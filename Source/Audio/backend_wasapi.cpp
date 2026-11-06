@@ -214,6 +214,7 @@ WAVEFORMATEXTENSIBLE float_format(std::uint32_t rate, std::uint32_t channels) {
 class NotificationClient : public IMMNotificationClient {
 public:
     NotificationClient(EDataFlow flow, HANDLE wake) : m_flow(flow), m_wake(wake) {}
+    NotificationClient(EDataFlow flow, HANDLE wake, std::wstring watched) : m_flow(flow), m_wake(wake), m_watched(std::move(watched)) {}
 
     ULONG STDMETHODCALLTYPE AddRef() override { return static_cast<ULONG>(InterlockedIncrement(&m_refs)); }
     ULONG STDMETHODCALLTYPE Release() override {
@@ -231,9 +232,15 @@ public:
         *out = nullptr;
         return E_NOINTERFACE;
     }
-    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR, DWORD) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR id, DWORD state) override {
+        if (state != DEVICE_STATE_ACTIVE && watches(id)) mark_lost();
+        return S_OK;
+    }
     HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR) override { return S_OK; }
-    HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR id) override {
+        if (watches(id)) mark_lost();
+        return S_OK;
+    }
     HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR) override {
         if (flow == m_flow && role == eConsole) {
             changed.store(true);
@@ -244,12 +251,24 @@ public:
     HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(LPCWSTR, const PROPERTYKEY) override { return S_OK; }
 
     std::atomic<bool> changed{ false };
+    std::atomic<bool> lost{ false };
 
 private:
     virtual ~NotificationClient() = default;
+
+    bool watches(LPCWSTR id) const {
+        return id && !m_watched.empty() && lstrcmpiW(id, m_watched.c_str()) == 0;
+    }
+
+    void mark_lost() {
+        lost.store(true);
+        SetEvent(m_wake);
+    }
+
     LONG m_refs = 1;
     EDataFlow m_flow;
     HANDLE m_wake;
+    std::wstring m_watched;
 };
 
 struct Avrt {
@@ -279,6 +298,7 @@ public:
         m_flow = request.kind == DeviceKind::input ? eCapture : eRender;
         m_loopback = request.kind == DeviceKind::loopback;
         m_follow_default = request.device.empty();
+        m_pinned = request.pin_device && !request.device.empty();
     }
 
     ~WasapiStream() override {
@@ -344,8 +364,8 @@ private:
                 error = "can't reach the Windows audio service: " + hresult_text(hr);
                 return false;
             }
-            if (m_follow_default) {
-                m_notify = new NotificationClient(m_flow, m_wake_event);
+            if (m_follow_default || m_pinned) {
+                m_notify = m_pinned ? new NotificationClient(m_flow, m_wake_event, widen(m_request.device)) : new NotificationClient(m_flow, m_wake_event);
                 if (FAILED(m_enumerator->RegisterEndpointNotificationCallback(m_notify))) {
                     m_notify->Release();
                     m_notify = nullptr;
@@ -537,6 +557,15 @@ private:
         return m_command == Command::stop || m_command == Command::quit;
     }
 
+    std::string pinned_lost_message() const {
+        std::string shown;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            shown = m_device_name;
+        }
+        return "the device '" + (shown.empty() ? m_request.device : shown) + "' was removed or disabled";
+    }
+
     bool reroute() {
         std::string why;
         teardown();
@@ -563,7 +592,11 @@ private:
                 }
             }
             if (should_stop()) return;
-            if (m_notify && m_notify->changed.exchange(false)) {
+            if (m_pinned && m_notify && m_notify->lost.load()) {
+                m_shared->fail(pinned_lost_message());
+                return;
+            }
+            if (m_follow_default && m_notify && m_notify->changed.exchange(false)) {
                 if (!reroute()) return;
                 continue;
             }
@@ -592,7 +625,7 @@ private:
                     if (!reroute()) return;
                     continue;
                 }
-                m_shared->fail("the audio device was removed or disabled");
+                m_shared->fail(m_pinned ? pinned_lost_message() : std::string("the audio device was removed or disabled"));
                 return;
             }
             if (FAILED(hr)) {
@@ -672,6 +705,7 @@ private:
     EDataFlow m_flow = eRender;
     bool m_loopback = false;
     bool m_follow_default = true;
+    bool m_pinned = false;
     HANDLE m_audio_event = nullptr;
     HANDLE m_wake_event = nullptr;
     Com<IMMDeviceEnumerator> m_enumerator;

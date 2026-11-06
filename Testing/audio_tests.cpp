@@ -17,6 +17,10 @@
 #include <thread>
 #include <vector>
 
+#if defined(__linux__) && !defined(__ANDROID__)
+#include <unistd.h>
+#endif
+
 using namespace fizmo::audio;
 
 namespace {
@@ -734,6 +738,361 @@ void test_real_devices() {
     check(!missing.open_playback(mc, [](float*, std::size_t) {}, &err) && !err.empty(), "opening a missing device fails with a message: " + err);
 }
 
+#if defined(__linux__) && !defined(__ANDROID__)
+std::string run_command(const std::string& command) {
+    std::string out;
+    FILE* f = popen((command + " 2>/dev/null").c_str(), "r");
+    if (!f) return out;
+    char line[256];
+    while (std::fgets(line, sizeof(line), f)) out += line;
+    pclose(f);
+    while (!out.empty() && (out.back() == '\n' || out.back() == '\r' || out.back() == ' ')) out.pop_back();
+    return out;
+}
+
+std::string load_null_sink(const std::string& sink) {
+    return run_command("pactl load-module module-null-sink sink_name=" + sink + " rate=48000 channels=2");
+}
+
+void unload_module(const std::string& module) {
+    if (!module.empty()) run_command("pactl unload-module " + module);
+}
+
+struct Recording {
+    std::mutex mutex;
+    std::vector<float> samples;
+    std::size_t largest_call = 0;
+    std::size_t smallest_call = static_cast<std::size_t>(-1);
+
+    CaptureCallback callback(std::size_t channels) {
+        return [this, channels](const float* in, std::size_t frames) {
+            std::lock_guard<std::mutex> lock(mutex);
+            samples.insert(samples.end(), in, in + frames * channels);
+            largest_call = std::max(largest_call, frames);
+            smallest_call = std::min(smallest_call, frames);
+        };
+    }
+
+    std::size_t size() {
+        std::lock_guard<std::mutex> lock(mutex);
+        return samples.size();
+    }
+
+    std::vector<float> channel_since(std::size_t start, std::size_t channels, std::size_t which) {
+        std::lock_guard<std::mutex> lock(mutex);
+        std::vector<float> out;
+        for (std::size_t i = start + which; i < samples.size(); i += channels) out.push_back(samples[i]);
+        return out;
+    }
+
+    std::vector<float> channel_between(std::size_t start, std::size_t end, std::size_t channels, std::size_t which) {
+        std::lock_guard<std::mutex> lock(mutex);
+        std::vector<float> out;
+        for (std::size_t i = start + which; i < std::min(end, samples.size()); i += channels) out.push_back(samples[i]);
+        return out;
+    }
+};
+
+bool warm_up(Stream& s, double seconds) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(seconds);
+    while (std::chrono::steady_clock::now() < deadline && !s.failed()) {
+        const std::uint64_t before = s.frames_processed();
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        const double rate = static_cast<double>(s.frames_processed() - before) / 0.25;
+        if (std::fabs(rate - s.sample_rate()) < 0.1 * s.sample_rate()) return true;
+    }
+    return false;
+}
+
+struct Tone {
+    std::atomic<std::uint64_t> phase{ 0 };
+    std::atomic<std::size_t> largest_call{ 0 };
+    double freq = 440.0;
+    double rate = 48000.0;
+
+    PlaybackCallback callback() {
+        return [this](float* out, std::size_t frames) {
+            std::uint64_t p = phase.load();
+            for (std::size_t i = 0; i < frames; ++i, ++p) {
+                const float v = 0.4f * static_cast<float>(std::sin(2.0 * k_pi * freq * static_cast<double>(p) / rate));
+                out[2 * i] = v;
+                out[2 * i + 1] = 0.5f * v;
+            }
+            phase.store(p);
+            if (frames > largest_call.load()) largest_call.store(frames);
+        };
+    }
+};
+
+float peak_of(const std::vector<float>& v) {
+    float p = 0.0f;
+    for (float x : v) p = std::max(p, std::fabs(x));
+    return p;
+}
+
+bool wait_until_failed(Stream& s, double seconds) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(seconds);
+    while (!s.failed() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    return s.failed();
+}
+
+void wait_for_frames(Recording& r, std::size_t samples, double seconds) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(seconds);
+    while (r.size() < samples && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+}
+
+void test_pinned_devices() {
+    const char* want = std::getenv("FIZMO_AUDIO_DEVICE_TESTS");
+    if (!want || std::string(want) != "1") return;
+    std::string err;
+    const std::string name = backend_name();
+    if (name == "alsa") {
+        Stream s;
+        StreamConfig c;
+        c.device = "pulse";
+        c.pin_device = true;
+        check(!s.open_playback(c, [](float* out, std::size_t frames) { std::memset(out, 0, frames * 2 * sizeof(float)); }, &err) && err.find("pin") != std::string::npos, "ALSA refuses to pin a device the sound server routes: " + err);
+        c.device = "default";
+        Tone tone;
+        tone.rate = 48000.0;
+        c.sample_rate = 48000;
+        c.channels = 2;
+        check(s.open_playback(c, tone.callback(), &err) && s.start(&err), "a pinned ALSA stream on 'default' plays " + err);
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        check(!s.failed() && s.frames_processed() > 12000, "the pinned ALSA stream runs (" + std::to_string(s.frames_processed()) + " frames)");
+        s.close();
+        return;
+    }
+    if (name != "pulse") return;
+    if (run_command("command -v pactl").empty()) {
+        std::printf("skipping pinned-device tests (pactl isn't installed)\n");
+        return;
+    }
+    const std::string tag = std::to_string(static_cast<long>(getpid()));
+
+    Recording speakers;
+    Stream def_rec;
+    StreamConfig dr;
+    dr.kind = DeviceKind::loopback;
+    dr.sample_rate = 48000;
+    dr.channels = 2;
+    check(def_rec.open_capture(dr, speakers.callback(2), &err) && def_rec.start(&err), "record the default output's monitor " + err);
+    wait_for_frames(speakers, 48000, 3.0);
+
+    const std::string sink = "fizmo_pin_" + tag;
+    const std::string module = load_null_sink(sink);
+    check(!module.empty(), "load a null sink for the pinned test");
+    Tone tone;
+    Stream play;
+    StreamConfig pc;
+    pc.device = sink;
+    pc.sample_rate = 48000;
+    pc.channels = 2;
+    pc.pin_device = true;
+    check(play.open_playback(pc, tone.callback(), &err), "open pinned playback on a null sink " + err);
+    Recording monitor;
+    Stream mon;
+    StreamConfig mc;
+    mc.kind = DeviceKind::loopback;
+    mc.device = sink;
+    mc.sample_rate = 48000;
+    mc.channels = 2;
+    mc.pin_device = true;
+    check(mon.open_capture(mc, monitor.callback(2), &err), "open pinned capture of the null sink's monitor " + err);
+    check(play.start(&err) && mon.start(&err), "start the pinned streams " + err);
+    check(warm_up(play, 8.0) && warm_up(mon, 4.0), "the new null sink gets going");
+    const std::size_t mon_start = monitor.size();
+    const std::uint64_t play_start = play.frames_processed();
+    const auto t0 = std::chrono::steady_clock::now();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const double played = static_cast<double>(play.frames_processed() - play_start) / 48000.0;
+    const std::vector<float> heard = monitor.channel_since(mon_start, 2, 0);
+    const double heard_secs = static_cast<double>(heard.size()) / 48000.0;
+    check(std::fabs(played - elapsed) < 0.25 * elapsed && std::fabs(heard_secs - elapsed) < 0.25 * elapsed, "pinned playback and capture run in real time (" + std::to_string(played) + " s and " + std::to_string(heard_secs) + " s in " + std::to_string(elapsed) + " s)");
+    check(heard.size() > 24000 && std::fabs(dominant_frequency(heard, 48000.0, 100.0, 2000.0) - 440.0) <= 5.0 && peak_of(heard) > 0.35f && peak_of(heard) < 0.45f, "the pinned capture hears the pinned tone (peak " + std::to_string(peak_of(heard)) + ")");
+    check(!play.failed() && !mon.failed(), "the pinned streams are healthy before the device goes");
+
+    const std::size_t speakers_before = speakers.size();
+    const auto gone = std::chrono::steady_clock::now();
+    unload_module(module);
+    const bool play_failed = wait_until_failed(play, 2.0);
+    const bool mon_failed = wait_until_failed(mon, 2.0);
+    const double took = std::chrono::duration<double>(std::chrono::steady_clock::now() - gone).count();
+    std::printf("pinned streams failed %.3f s after the sink went: '%s' / '%s'\n", took, play.error().c_str(), mon.error().c_str());
+    check(play_failed && play.error().find("removed") != std::string::npos && play.error().find(sink) != std::string::npos, "pinned playback fails when its sink is removed: " + play.error());
+    check(mon_failed && mon.error().find("removed") != std::string::npos, "pinned capture fails when its source is removed: " + mon.error());
+    check(!play.running() && !mon.running(), "failed pinned streams don't report running");
+    const std::uint64_t frames_at_fail = play.frames_processed();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    check(play.frames_processed() == frames_at_fail, "a failed pinned playback stops asking for audio");
+    const std::vector<float> after = speakers.channel_since(speakers_before, 2, 0);
+    check(after.size() > 24000 && peak_of(after) < 1e-3f, "nothing from the pinned stream reaches the default output (peak " + std::to_string(peak_of(after)) + " over " + std::to_string(after.size()) + " frames)");
+    std::string serr;
+    play.close();
+    mon.close();
+
+    const std::string idle_sink = "fizmo_pin_idle_" + tag;
+    const std::string idle_module = load_null_sink(idle_sink);
+    Stream idle;
+    pc.device = idle_sink;
+    Tone idle_tone;
+    check(idle.open_playback(pc, idle_tone.callback(), &err), "open a pinned stream and leave it stopped " + err);
+    unload_module(idle_module);
+    check(wait_until_failed(idle, 2.0) && idle.error().find("removed") != std::string::npos, "a stopped pinned stream fails too when its device goes: " + idle.error());
+    check(!idle.start(&serr) && !serr.empty(), "starting a pinned stream whose device is gone fails: " + serr);
+    idle.close();
+
+    const std::string free_sink = "fizmo_free_" + tag;
+    const std::string free_module = load_null_sink(free_sink);
+    Tone free_tone;
+    free_tone.freq = 660.0;
+    Stream loose;
+    StreamConfig lc;
+    lc.device = free_sink;
+    lc.sample_rate = 48000;
+    lc.channels = 2;
+    check(loose.open_playback(lc, free_tone.callback(), &err) && loose.start(&err), "open unpinned playback on a null sink " + err);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    const std::size_t loose_before = speakers.size();
+    unload_module(free_module);
+    bool moved_heard = false;
+    const auto move_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!moved_heard && std::chrono::steady_clock::now() < move_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        const std::vector<float> moved = speakers.channel_since(loose_before, 2, 0);
+        if (moved.size() < 12000) continue;
+        const std::vector<float> moved_tail(moved.end() - 12000, moved.end());
+        moved_heard = std::fabs(dominant_frequency(moved_tail, 48000.0, 100.0, 2000.0) - 660.0) <= 5.0 && peak_of(moved_tail) > 0.3f;
+    }
+    check(!loose.failed(), "an unpinned stream still doesn't fail when its sink goes (unchanged behaviour)");
+    check(moved_heard, "an unpinned stream still moves to the default output (unchanged behaviour)");
+    loose.close();
+    def_rec.close();
+
+    const std::string same_sink = "fizmo_same_" + tag;
+    const std::string same_module = load_null_sink(same_sink);
+    Stream a;
+    Stream b;
+    StreamConfig ac;
+    ac.device = same_sink;
+    ac.sample_rate = 48000;
+    ac.channels = 2;
+    ac.latency_ms = 30;
+    StreamConfig bc = ac;
+    bc.pin_device = true;
+    Tone ta;
+    Tone tb;
+    check(a.open_playback(ac, ta.callback(), &err) && b.open_playback(bc, tb.callback(), &err), "open the same playback pinned and unpinned " + err);
+    check(a.latency_frames() == b.latency_frames() && a.sample_rate() == b.sample_rate() && a.channels() == b.channels() && a.device_name() == b.device_name(), "pinned playback reports the same latency, format and name (" + std::to_string(a.latency_frames()) + " vs " + std::to_string(b.latency_frames()) + ", '" + a.device_name() + "' vs '" + b.device_name() + "')");
+    Recording ra;
+    Recording rb;
+    Stream ca;
+    Stream cb;
+    StreamConfig cc;
+    cc.kind = DeviceKind::loopback;
+    cc.device = same_sink;
+    cc.sample_rate = 48000;
+    cc.channels = 2;
+    cc.latency_ms = 30;
+    StreamConfig cpc = cc;
+    cpc.pin_device = true;
+    check(ca.open_capture(cc, ra.callback(2), &err) && cb.open_capture(cpc, rb.callback(2), &err), "open the same capture pinned and unpinned " + err);
+    check(ca.latency_frames() == cb.latency_frames() && ca.sample_rate() == cb.sample_rate() && ca.channels() == cb.channels() && ca.device_name() == cb.device_name(), "pinned capture reports the same latency, format and name");
+    check(a.start(&err) && ca.start(&err) && cb.start(&err), "play unpinned and record it both ways " + err);
+    warm_up(a, 8.0);
+    warm_up(cb, 4.0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    const std::size_t ra0 = ra.size();
+    const std::size_t rb0 = rb.size();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    const std::size_t ra1 = ra.size();
+    const std::size_t rb1 = rb.size();
+    a.stop();
+    check(b.start(&err), "then play pinned " + err);
+    warm_up(b, 8.0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    const std::size_t ra2 = ra.size();
+    const std::size_t rb2 = rb.size();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    b.stop();
+    ca.stop();
+    cb.stop();
+    const std::vector<float> first_a = ra.channel_between(ra0, ra1, 2, 0);
+    const std::vector<float> first_b = rb.channel_between(rb0, rb1, 2, 0);
+    const std::vector<float> second_a = ra.channel_since(ra2, 2, 0);
+    const std::vector<float> second_b = rb.channel_since(rb2, 2, 0);
+    const std::vector<float> second_ar = ra.channel_since(ra2, 2, 1);
+    auto tone_ok = [](const std::vector<float>& v, float lo, float hi) {
+        return v.size() > 12000 && std::fabs(dominant_frequency(v, 48000.0, 100.0, 2000.0) - 440.0) <= 5.0 && peak_of(v) > lo && peak_of(v) < hi;
+    };
+    check(tone_ok(first_a, 0.35f, 0.45f) && tone_ok(first_b, 0.35f, 0.45f), "pinned and unpinned capture hear the unpinned tone alike (" + std::to_string(peak_of(first_a)) + ", " + std::to_string(peak_of(first_b)) + ")");
+    check(tone_ok(second_a, 0.35f, 0.45f) && tone_ok(second_b, 0.35f, 0.45f) && tone_ok(second_ar, 0.15f, 0.25f), "pinned playback sounds the same as unpinned (" + std::to_string(peak_of(second_a)) + ", right " + std::to_string(peak_of(second_ar)) + ")");
+    check(ta.largest_call.load() == tb.largest_call.load() && ta.largest_call.load() > 0, "pinned playback asks for the same block size (" + std::to_string(ta.largest_call.load()) + " vs " + std::to_string(tb.largest_call.load()) + ")");
+    check(ra.largest_call == rb.largest_call && rb.smallest_call == rb.largest_call, "pinned capture delivers the same fixed block size (" + std::to_string(ra.largest_call) + " vs " + std::to_string(rb.smallest_call) + "-" + std::to_string(rb.largest_call) + ")");
+    check(!a.failed() && !b.failed() && !ca.failed() && !cb.failed(), "nothing failed while the device stayed");
+    a.close();
+    b.close();
+    ca.close();
+    cb.close();
+    unload_module(same_module);
+
+    const auto mic = default_device(DeviceKind::input);
+    if (mic) {
+        Recording rm;
+        Stream pm;
+        StreamConfig ic;
+        ic.kind = DeviceKind::input;
+        ic.device = mic->id;
+        ic.pin_device = true;
+        check(pm.open_capture(ic, rm.callback(mic->channels ? mic->channels : 1), &err) && pm.start(&err), "record a pinned microphone " + err);
+        std::this_thread::sleep_for(std::chrono::milliseconds(4500));
+        pm.stop();
+        const double secs = static_cast<double>(rm.size() / std::max<std::uint32_t>(1, pm.channels())) / std::max<std::uint32_t>(1, pm.sample_rate());
+        check(secs > 2.5 && secs < 6.5 && !pm.failed() && rm.smallest_call == rm.largest_call, "the pinned microphone delivers audio at about the real rate, in fixed blocks (" + std::to_string(secs) + " s in 4.5 s)");
+        const char* tone_env = std::getenv("FIZMO_AUDIO_MIC_TONE");
+        if (tone_env) {
+            const std::vector<float> m = rm.channel_since(0, pm.channels(), 0);
+            check(std::fabs(dominant_frequency(m, pm.sample_rate(), 100.0, 4000.0) - std::atof(tone_env)) <= 10.0, "the pinned microphone hears its test tone");
+        }
+        pm.close();
+    }
+
+    Stream missing;
+    StreamConfig xc;
+    xc.device = "no-such-sink-" + tag;
+    xc.pin_device = true;
+    check(!missing.open_playback(xc, [](float*, std::size_t) {}, &err) && !err.empty(), "pinning a missing device fails with a message: " + err);
+    Stream plain;
+    StreamConfig pl;
+    pl.pin_device = true;
+    check(plain.open_playback(pl, [&plain](float* out, std::size_t frames) { std::memset(out, 0, frames * plain.channels() * sizeof(float)); }, &err) && plain.start(&err), "pin_device without a device just opens the default " + err);
+    plain.close();
+}
+#else
+void test_pinned_devices() {
+    const char* want = std::getenv("FIZMO_AUDIO_DEVICE_TESTS");
+    if (!want || std::string(want) != "1") return;
+    std::string err;
+    Stream missing;
+    StreamConfig xc;
+    xc.device = "no-such-device-anywhere";
+    xc.pin_device = true;
+    check(!missing.open_playback(xc, [](float*, std::size_t) {}, &err) && !err.empty(), "pinning a missing device fails with a message: " + err);
+    const auto out = default_device(DeviceKind::output);
+    if (out) {
+        Stream s;
+        StreamConfig c;
+        c.device = out->id;
+        c.pin_device = true;
+        check(s.open_playback(c, [&s](float* o, std::size_t frames) { std::memset(o, 0, frames * sizeof(float) * s.channels()); }, &err) && s.start(&err), "pin the default output by its id " + err);
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        check(!s.failed() && s.frames_processed() > 0, "a pinned stream plays");
+        s.close();
+    }
+}
+#endif
+
 } // namespace
 
 int main() {
@@ -746,6 +1105,7 @@ int main() {
     test_codecs();
     test_null_device();
     test_real_devices();
+    test_pinned_devices();
     std::printf("%d passed, %d failed\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;
 }

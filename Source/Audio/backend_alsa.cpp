@@ -125,6 +125,11 @@ public:
     AlsaStream(std::shared_ptr<const AlsaApi> api, std::shared_ptr<StreamShared> shared, alsa::pcm* handle, bool float_samples, std::uint32_t period, std::uint32_t buffer, std::string device)
         : m_api(std::move(api)), m_shared(std::move(shared)), m_handle(handle), m_float(float_samples), m_period(period), m_buffer(buffer), m_device(std::move(device)) {}
 
+    AlsaStream(std::shared_ptr<const AlsaApi> api, std::shared_ptr<StreamShared> shared, alsa::pcm* handle, bool float_samples, std::uint32_t period, std::uint32_t buffer, std::string device, bool pinned)
+        : AlsaStream(std::move(api), std::move(shared), handle, float_samples, period, buffer, std::move(device)) {
+        m_pinned = pinned;
+    }
+
     ~AlsaStream() override {
         stop();
         if (m_handle) m_api->pcm_close(m_handle);
@@ -152,6 +157,18 @@ public:
     std::string device_name() const override { return m_device; }
 
 private:
+    bool recover(int code) {
+        if (m_pinned && (code == -ENODEV || code == -EBADFD || code == -ENXIO)) {
+            m_shared->fail("the device '" + m_device + "' was removed (" + m_api->error_text(code) + ")");
+            return false;
+        }
+        if (m_api->pcm_recover(m_handle, code, 1) < 0) {
+            m_shared->fail("the ALSA device stopped: " + m_api->error_text(code));
+            return false;
+        }
+        return true;
+    }
+
     void loop() {
         const std::size_t channels = m_shared->channels;
         std::vector<float> buf(static_cast<std::size_t>(m_period) * channels, 0.0f);
@@ -173,10 +190,7 @@ private:
                         continue;
                     }
                     if (r == -EAGAIN) continue;
-                    if (m_api->pcm_recover(m_handle, static_cast<int>(r), 1) < 0) {
-                        m_shared->fail("the ALSA device stopped: " + m_api->error_text(static_cast<int>(r)));
-                        return;
-                    }
+                    if (!recover(static_cast<int>(r))) return;
                 }
             } else {
                 void* data = m_float ? static_cast<void*>(buf.data()) : static_cast<void*>(shorts.data());
@@ -189,10 +203,7 @@ private:
                         continue;
                     }
                     if (r == -EAGAIN) continue;
-                    if (m_api->pcm_recover(m_handle, static_cast<int>(r), 1) < 0) {
-                        m_shared->fail("the ALSA device stopped: " + m_api->error_text(static_cast<int>(r)));
-                        return;
-                    }
+                    if (!recover(static_cast<int>(r))) return;
                 }
                 if (done == 0) continue;
                 if (!m_float) to_float(shorts.data(), SampleFormat::s16, buf.data(), done * channels);
@@ -208,6 +219,7 @@ private:
     std::uint32_t m_period = 0;
     std::uint32_t m_buffer = 0;
     std::string m_device;
+    bool m_pinned = false;
     std::atomic<bool> m_run{ false };
     std::thread m_thread;
 };
@@ -255,6 +267,11 @@ public:
             return nullptr;
         }
         const std::string device = request.device.empty() ? std::string("default") : request.device;
+        const bool pinned = request.pin_device && !request.device.empty();
+        if (pinned && (device == "pulse" || device == "pipewire" || starts_with(device, "pulse:") || starts_with(device, "pipewire:"))) {
+            error = "can't pin ALSA device '" + device + "': the sound server decides where it plays, so it could move; use the pulse backend and a sink or source name instead";
+            return nullptr;
+        }
         const std::uint32_t rate = request.sample_rate ? request.sample_rate : 48000;
         const std::uint32_t channels = request.channels ? request.channels : 2;
         const int dir = request.kind == DeviceKind::output ? alsa::stream_playback : alsa::stream_capture;
@@ -284,7 +301,7 @@ public:
         }
         shared->sample_rate = rate;
         shared->channels = channels;
-        return std::make_unique<AlsaStream>(m_api, std::move(shared), handle, use_float, static_cast<std::uint32_t>(period), static_cast<std::uint32_t>(buffer), device);
+        return std::make_unique<AlsaStream>(m_api, std::move(shared), handle, use_float, static_cast<std::uint32_t>(period), static_cast<std::uint32_t>(buffer), device, pinned);
     }
 
 private:

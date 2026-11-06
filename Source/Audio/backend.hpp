@@ -39,6 +39,7 @@ struct StreamRequest {
     std::uint32_t channels = 0;
     std::uint32_t latency_ms = 20;
     std::string name;
+    bool pin_device = false;
 };
 
 class BackendStream {

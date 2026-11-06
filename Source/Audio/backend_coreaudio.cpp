@@ -308,6 +308,7 @@ public:
         m_input = request.kind == DeviceKind::input;
         m_loopback = request.kind == DeviceKind::loopback;
         m_follow_default = request.device.empty() || (m_loopback && request.device == "system");
+        m_pinned = request.pin_device && !m_follow_default;
         m_force_convert = std::getenv("FIZMO_AUDIO_COREAUDIO_CONVERT") != nullptr;
     }
 
@@ -455,6 +456,20 @@ private:
             return false;
         }
         return true;
+    }
+
+    std::string pinned_lost_message() const {
+        std::string shown;
+        {
+            std::lock_guard<std::mutex> lock(m_name_mutex);
+            shown = m_device_name;
+        }
+        return "the device '" + (shown.empty() ? m_request.device : shown) + "' was removed or disabled";
+    }
+
+    bool device_present() const {
+        const AudioObjectID id = find_device(m_request.device, m_input && !m_loopback);
+        return id != kAudioObjectUnknown && device_alive(id);
     }
 
     void set_name(const std::string& name) {
@@ -941,7 +956,7 @@ private:
         if (events & k_event_dead) {
             if (!m_follow_default) {
                 if (m_running) end();
-                m_shared->fail("the audio device was removed or disabled");
+                m_shared->fail(m_pinned ? pinned_lost_message() : std::string("the audio device was removed or disabled"));
                 return;
             }
             rebuild = true;
@@ -957,6 +972,10 @@ private:
         if (m_running) end();
         teardown();
         std::string why;
+        if (m_pinned && !device_present()) {
+            m_shared->fail(pinned_lost_message());
+            return;
+        }
         if (!setup(why) || (m_running && !begin(why))) {
             m_shared->fail(std::string(moved ? "lost the audio device and couldn't switch to the new default: " : "the audio device changed and couldn't be reopened: ") + why);
         }
@@ -969,6 +988,7 @@ private:
     bool m_input = false;
     bool m_loopback = false;
     bool m_follow_default = true;
+    bool m_pinned = false;
     bool m_force_convert = false;
     bool m_running = false;
     bool m_default_listening = false;

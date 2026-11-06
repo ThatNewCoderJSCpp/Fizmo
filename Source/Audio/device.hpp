@@ -61,6 +61,7 @@ struct StreamConfig {
     std::uint32_t channels = 0;
     std::uint32_t latency_ms = 20;
     std::string name = "fizmo";
+    bool pin_device = false;
 };
 
 using PlaybackCallback = std::function<void(float* output, std::size_t frames)>;

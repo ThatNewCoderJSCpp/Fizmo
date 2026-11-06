@@ -394,6 +394,7 @@ bool Stream::open(const StreamConfig& config, PlaybackCallback playback, Capture
     req.channels = config.channels;
     req.latency_ms = std::max<std::uint32_t>(2, std::min<std::uint32_t>(config.latency_ms ? config.latency_ms : 20, 2000));
     req.name = config.name.empty() ? std::string("fizmo") : config.name;
+    req.pin_device = config.pin_device;
     std::unique_ptr<detail::BackendStream> impl = backend->open(req, shared, why);
     if (!impl) {
         if (error) *error = why.empty() ? std::string("can't open the audio device") : why;
