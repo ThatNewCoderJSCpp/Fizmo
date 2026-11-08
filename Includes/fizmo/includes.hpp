@@ -27,6 +27,9 @@
         #ifndef FIZMO_PHYSICS
             #define FIZMO_PHYSICS
         #endif
+        #ifndef FIZMO_LIGHTING
+            #define FIZMO_LIGHTING
+        #endif
         #ifndef FIZMO_MATH
             #define FIZMO_MATH
         #endif
@@ -94,6 +97,10 @@
 
         #ifdef FIZMO_PHYSICS
             #include "../physics.hpp"
+        #endif 
+
+        #ifdef FIZMO_LIGHTING
+            #include "../lighting.hpp"
         #endif 
 
         #ifdef FIZMO_MATH

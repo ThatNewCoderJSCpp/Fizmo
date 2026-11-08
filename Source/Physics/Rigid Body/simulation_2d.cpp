@@ -5,32 +5,32 @@ namespace fizmo {
 namespace physics {
 namespace narrowphase {
 
-void project_polygon(const PolygonShape& poly, const Transform2D& xf, const linalg::vector2d& axis, double& lo, double& hi) {
-    linalg::vector2d v = xf.apply(poly.vertices[0]);
+void project_polygon(const PolygonShape& poly, const Transform2D& xf, const RVec2& axis, Real& lo, Real& hi) {
+    RVec2 v = xf.apply(poly.vertices[0]);
     lo = hi = fast::dot(axis, v);
 
     for (std::size_t i = 1; i < poly.count; ++i) {
         v = xf.apply(poly.vertices[i]);
-        double d = fast::dot(axis, v);
+        Real d = fast::dot(axis, v);
         if (d < lo) lo = d;
         if (d > hi) hi = d;
     }
 }
 
-void project_capsule(const CapsuleShape& cap, const Transform2D& xf, const linalg::vector2d& axis, double& lo, double& hi) {
-    linalg::vector2d p1 = xf.apply(cap.point1);
-    linalg::vector2d p2 = xf.apply(cap.point2);
-    double d1 = fast::dot(axis, p1);
-    double d2 = fast::dot(axis, p2);
+void project_capsule(const CapsuleShape& cap, const Transform2D& xf, const RVec2& axis, Real& lo, Real& hi) {
+    RVec2 p1 = xf.apply(cap.point1);
+    RVec2 p2 = xf.apply(cap.point2);
+    Real d1 = fast::dot(axis, p1);
+    Real d2 = fast::dot(axis, p2);
     lo = std::min(d1, d2) - cap.radius;
     hi = std::max(d1, d2) + cap.radius;
 }
 
-linalg::vector2d closest_point_on_segment(const linalg::vector2d& p, const linalg::vector2d& a, const linalg::vector2d& b) {
-    linalg::vector2d ab = b - a;
-    double t = fast::length_squared(ab);
+RVec2 closest_point_on_segment(const RVec2& p, const RVec2& a, const RVec2& b) {
+    RVec2 ab = b - a;
+    Real t = fast::length_squared(ab);
     if (t <= constants::middle_epsilon()) return a;
-    t = std::clamp(fast::dot(p - a, ab) / t, 0.0, 1.0);
+    t = std::clamp(fast::dot(p - a, ab) / t, 0.0_r, 1.0_r);
     return a + ab * t;
 }
 
@@ -39,17 +39,17 @@ bool collide_circle_circle(
     const CircleShape& cb, const Transform2D& xb,
     ContactManifold& m
 ) {
-    linalg::vector2d cA = xa.apply(ca.center);
-    linalg::vector2d cB = xb.apply(cb.center);
-    linalg::vector2d d = cB - cA;
-    double dist_sq = fast::length_squared(d);
-    double r_sum = ca.radius + cb.radius;
+    RVec2 cA = xa.apply(ca.center);
+    RVec2 cB = xb.apply(cb.center);
+    RVec2 d = cB - cA;
+    Real dist_sq = fast::length_squared(d);
+    Real r_sum = ca.radius + cb.radius;
     if (dist_sq >= r_sum * r_sum) return false;
-    double dist = std::sqrt(dist_sq);
-    m.normal = (dist >= constants::middle_epsilon()) ? d * (1.0 / dist) : linalg::vector2d{0.0, 1.0};
-    double pen = r_sum - dist;
+    Real dist = std::sqrt(dist_sq);
+    m.normal = (dist >= constants::middle_epsilon()) ? d * (1.0_r / dist) : RVec2{0.0_r, 1.0_r};
+    Real pen = r_sum - dist;
     m.point_count = 1;
-    m.points[0].position = cA + m.normal * (ca.radius - pen * 0.5);
+    m.points[0].position = cA + m.normal * (ca.radius - pen * 0.5_r);
     m.points[0].separation = -pen;
     return true;
 }
@@ -59,52 +59,52 @@ bool collide_circle_polygon(
     const PolygonShape& poly, const Transform2D& xp,
     ContactManifold& m, bool flip
 ) {
-    linalg::vector2d c_world = xc.apply(circ.center);
-    linalg::vector2d c_local = xp.apply_inverse(c_world);
-    double best_sep = -std::numeric_limits<double>::max();
+    RVec2 c_world = xc.apply(circ.center);
+    RVec2 c_local = xp.apply_inverse(c_world);
+    Real best_sep = -std::numeric_limits<Real>::max();
     std::size_t best_i = 0;
 
     for (std::size_t i = 0; i < poly.count; ++i) {
-        double sep = fast::dot(poly.normals[i], c_local - poly.vertices[i]);
+        Real sep = fast::dot(poly.normals[i], c_local - poly.vertices[i]);
         if (sep > circ.radius) return false;
         if (sep > best_sep) { best_sep = sep; best_i = i; }
     }
 
     std::size_t i1 = best_i;
     std::size_t i2 = (i1 + 1) % poly.count;
-    const linalg::vector2d& v1 = poly.vertices[i1];
-    const linalg::vector2d& v2 = poly.vertices[i2];
-    linalg::vector2d closest;
-    double u1 = fast::dot(c_local - v1, v2 - v1);
-    double u2 = fast::dot(c_local - v2, v1 - v2);
+    const RVec2& v1 = poly.vertices[i1];
+    const RVec2& v2 = poly.vertices[i2];
+    RVec2 closest;
+    Real u1 = fast::dot(c_local - v1, v2 - v1);
+    Real u2 = fast::dot(c_local - v2, v1 - v2);
 
-    if (u1 <= 0.0) {
+    if (u1 <= 0.0_r) {
         closest = v1;
-    } else if (u2 <= 0.0) {
+    } else if (u2 <= 0.0_r) {
         closest = v2;
     } else {
         closest = v1 + (v2 - v1) * (u1 / (u1 + u2));
     }
 
-    linalg::vector2d delta = c_local - closest;
-    double dist_sq = fast::length_squared(delta);
-    if (dist_sq > circ.radius * circ.radius && best_sep > 0.0) return false;
-    linalg::vector2d n_local; 
-    double dist;      
+    RVec2 delta = c_local - closest;
+    Real dist_sq = fast::length_squared(delta);
+    if (dist_sq > circ.radius * circ.radius && best_sep > 0.0_r) return false;
+    RVec2 n_local; 
+    Real dist;      
 
     if (best_sep <= constants::middle_epsilon()) {
         n_local = poly.normals[best_i];
         dist = best_sep;
     } else {
         dist = std::sqrt(dist_sq);
-        n_local = delta * (1.0 / dist);
+        n_local = delta * (1.0_r / dist);
     }
 
-    linalg::vector2d n_out = xp.rotate(n_local);
-    linalg::vector2d n = n_out * -1.0; 
-    m.normal = flip ? n * -1.0 : n;
+    RVec2 n_out = xp.rotate(n_local);
+    RVec2 n = n_out * -1.0_r; 
+    m.normal = flip ? n * -1.0_r : n;
     m.point_count = 1;
-    m.points[0].position = c_world - n_out * ((circ.radius + dist) * 0.5);
+    m.points[0].position = c_world - n_out * ((circ.radius + dist) * 0.5_r);
     m.points[0].separation = dist - circ.radius;
     return true;
 }
@@ -130,30 +130,30 @@ RoundPolygon make_round_polygon(const PolygonShape& p, const Transform2D& xf) {
     return r;
 }
 
-RoundPolygon make_round_segment(const linalg::vector2d& a, const linalg::vector2d& b, double radius) {
+RoundPolygon make_round_segment(const RVec2& a, const RVec2& b, Real radius) {
     RoundPolygon r;
     r.count = 2;
     r.radius = radius;
     r.vertices[0] = a;
     r.vertices[1] = b;
-    linalg::vector2d e = b - a;
-    double len = fast::length(e);
-    linalg::vector2d n = (len > constants::middle_epsilon()) ? linalg::vector2d(e.y / len, -e.x / len) : linalg::vector2d(0.0, 1.0);
+    RVec2 e = b - a;
+    Real len = fast::length(e);
+    RVec2 n = (len > constants::middle_epsilon()) ? RVec2(e.y / len, -e.x / len) : RVec2(0.0_r, 1.0_r);
     r.normals[0] = n;
-    r.normals[1] = n * -1.0;
+    r.normals[1] = n * -1.0_r;
     return r;
 }
 
 AxisResult find_max_separation(const RoundPolygon& a, const RoundPolygon& b) {
-    AxisResult best{-std::numeric_limits<double>::max(), 0};
+    AxisResult best{-std::numeric_limits<Real>::max(), 0};
 
     for (std::size_t i = 0; i < a.count; ++i) {
-        const linalg::vector2d& n = a.normals[i];
-        const linalg::vector2d& v = a.vertices[i];
-        double si = std::numeric_limits<double>::max();
+        const RVec2& n = a.normals[i];
+        const RVec2& v = a.vertices[i];
+        Real si = std::numeric_limits<Real>::max();
 
         for (std::size_t j = 0; j < b.count; ++j) {
-            double d = fast::dot(n, b.vertices[j] - v);
+            Real d = fast::dot(n, b.vertices[j] - v);
             if (d < si) si = d;
         }
 
@@ -163,28 +163,28 @@ AxisResult find_max_separation(const RoundPolygon& a, const RoundPolygon& b) {
     return best;
 }
 
-SegmentDistance segment_distance(const linalg::vector2d& p1, const linalg::vector2d& q1, const linalg::vector2d& p2, const linalg::vector2d& q2) {
-    linalg::vector2d d1 = q1 - p1, d2 = q2 - p2, r = p1 - p2;
-    double a = fast::dot(d1, d1), e = fast::dot(d2, d2), f = fast::dot(d2, r);
-    double s, t;
-    const double eps = constants::middle_epsilon();
+SegmentDistance segment_distance(const RVec2& p1, const RVec2& q1, const RVec2& p2, const RVec2& q2) {
+    RVec2 d1 = q1 - p1, d2 = q2 - p2, r = p1 - p2;
+    Real a = fast::dot(d1, d1), e = fast::dot(d2, d2), f = fast::dot(d2, r);
+    Real s, t;
+    const Real eps = constants::middle_epsilon();
 
     if (a <= eps && e <= eps) {
-        s = t = 0.0;
+        s = t = 0.0_r;
     } else if (a <= eps) {
-        s = 0.0; t = std::clamp(f / e, 0.0, 1.0);
+        s = 0.0_r; t = std::clamp(f / e, 0.0_r, 1.0_r);
     } else {
-        double c = fast::dot(d1, r);
+        Real c = fast::dot(d1, r);
 
         if (e <= eps) {
-            t = 0.0; s = std::clamp(-c / a, 0.0, 1.0);
+            t = 0.0_r; s = std::clamp(-c / a, 0.0_r, 1.0_r);
         } else {
-            double b = fast::dot(d1, d2);
-            double denom = a * e - b * b;
-            s = (denom > eps) ? std::clamp((b * f - c * e) / denom, 0.0, 1.0) : 0.0;
+            Real b = fast::dot(d1, d2);
+            Real denom = a * e - b * b;
+            s = (denom > eps) ? std::clamp((b * f - c * e) / denom, 0.0_r, 1.0_r) : 0.0_r;
             t = (b * s + f) / e;
-            if (t < 0.0) { t = 0.0; s = std::clamp(-c / a, 0.0, 1.0); }
-            else if (t > 1.0) { t = 1.0; s = std::clamp((b - c) / a, 0.0, 1.0); }
+            if (t < 0.0_r) { t = 0.0_r; s = std::clamp(-c / a, 0.0_r, 1.0_r); }
+            else if (t > 1.0_r) { t = 1.0_r; s = std::clamp((b - c) / a, 0.0_r, 1.0_r); }
         }
     }
 
@@ -198,8 +198,8 @@ SegmentDistance segment_distance(const linalg::vector2d& p1, const linalg::vecto
 }
 
 bool collide_round_polygons(const RoundPolygon& a, const RoundPolygon& b, ContactManifold& m) {
-    constexpr double feature_tolerance = 0.1 * 0.005; // a tenth of the default linear slop
-    const double radius = a.radius + b.radius;
+    constexpr Real feature_tolerance = 0.1_r * 0.005_r; // a tenth of the default linear slop
+    const Real radius = a.radius + b.radius;
     AxisResult sep_a = find_max_separation(a, b);
     if (sep_a.separation > radius) return false;
     AxisResult sep_b = find_max_separation(b, a);
@@ -209,68 +209,68 @@ bool collide_round_polygons(const RoundPolygon& a, const RoundPolygon& b, Contac
     const RoundPolygon& inc = flip ? a : b;
     const std::size_t i11 = flip ? sep_b.edge_index : sep_a.edge_index;
     const std::size_t i12 = (i11 + 1) % ref.count;
-    const linalg::vector2d normal = ref.normals[i11];
+    const RVec2 normal = ref.normals[i11];
     std::size_t i21 = 0;
-    double min_dot = std::numeric_limits<double>::max();
+    Real min_dot = std::numeric_limits<Real>::max();
 
     for (std::size_t i = 0; i < inc.count; ++i) {
-        double d = fast::dot(normal, inc.normals[i]);
+        Real d = fast::dot(normal, inc.normals[i]);
         if (d < min_dot) { min_dot = d; i21 = i; }
     }
 
     const std::size_t i22 = (i21 + 1) % inc.count;
-    const linalg::vector2d v11 = ref.vertices[i11], v12 = ref.vertices[i12];
-    const linalg::vector2d v21 = inc.vertices[i21], v22 = inc.vertices[i22];
-    const double r1 = ref.radius, r2 = inc.radius;
+    const RVec2 v11 = ref.vertices[i11], v12 = ref.vertices[i12];
+    const RVec2 v21 = inc.vertices[i21], v22 = inc.vertices[i22];
+    const Real r1 = ref.radius, r2 = inc.radius;
     m.point_count = 0;
 
     if (std::max(sep_a.separation, sep_b.separation) > feature_tolerance) {
         SegmentDistance sd = segment_distance(v11, v12, v21, v22);
-        bool end1 = sd.fraction1 == 0.0 || sd.fraction1 == 1.0;
-        bool end2 = sd.fraction2 == 0.0 || sd.fraction2 == 1.0;
+        bool end1 = sd.fraction1 == 0.0_r || sd.fraction1 == 1.0_r;
+        bool end2 = sd.fraction2 == 0.0_r || sd.fraction2 == 1.0_r;
 
         if (end1 && end2) { 
             if (sd.distance_squared > radius * radius) return false;
-            double dist = std::sqrt(sd.distance_squared);
+            Real dist = std::sqrt(sd.distance_squared);
             if (dist <= constants::middle_epsilon()) return false;
-            linalg::vector2d n = (sd.closest2 - sd.closest1) * (1.0 / dist); 
-            linalg::vector2d p_ref = sd.closest1 + n * r1;
-            linalg::vector2d p_inc = sd.closest2 - n * r2;
-            m.normal = flip ? n * -1.0 : n;
+            RVec2 n = (sd.closest2 - sd.closest1) * (1.0_r / dist); 
+            RVec2 p_ref = sd.closest1 + n * r1;
+            RVec2 p_inc = sd.closest2 - n * r2;
+            m.normal = flip ? n * -1.0_r : n;
             m.point_count = 1;
-            m.points[0].position = (p_ref + p_inc) * 0.5;
+            m.points[0].position = (p_ref + p_inc) * 0.5_r;
             m.points[0].separation = dist - radius;
             return true;
         }
     }
 
-    const linalg::vector2d tangent(-normal.y, normal.x); 
-    const double lower1 = 0.0;
-    const double upper1 = fast::dot(v12 - v11, tangent);
-    const double upper2 = fast::dot(v21 - v11, tangent);
-    const double lower2 = fast::dot(v22 - v11, tangent);
-    const double span = upper2 - lower2;
-    linalg::vector2d v_lower = v22, v_upper = v21;
+    const RVec2 tangent(-normal.y, normal.x); 
+    const Real lower1 = 0.0_r;
+    const Real upper1 = fast::dot(v12 - v11, tangent);
+    const Real upper2 = fast::dot(v21 - v11, tangent);
+    const Real lower2 = fast::dot(v22 - v11, tangent);
+    const Real span = upper2 - lower2;
+    RVec2 v_lower = v22, v_upper = v21;
     if (lower2 < lower1 && span > constants::middle_epsilon()) v_lower = v22 + (v21 - v22) * ((lower1 - lower2) / span);
     if (upper2 > upper1 && span > constants::middle_epsilon()) v_upper = v22 + (v21 - v22) * ((upper1 - lower2) / span);
-    const double sep_lower = fast::dot(v_lower - v11, normal);
-    const double sep_upper = fast::dot(v_upper - v11, normal);
-    v_lower = v_lower + normal * (0.5 * (r1 - r2 - sep_lower));
-    v_upper = v_upper + normal * (0.5 * (r1 - r2 - sep_upper));
+    const Real sep_lower = fast::dot(v_lower - v11, normal);
+    const Real sep_upper = fast::dot(v_upper - v11, normal);
+    v_lower = v_lower + normal * (0.5_r * (r1 - r2 - sep_lower));
+    v_upper = v_upper + normal * (0.5_r * (r1 - r2 - sep_upper));
 
-    if (sep_lower - radius <= 0.0) {
+    if (sep_lower - radius <= 0.0_r) {
         m.points[m.point_count].position = v_lower;
         m.points[m.point_count].separation = sep_lower - radius;
         ++m.point_count;
     }
 
-    if (sep_upper - radius <= 0.0) {
+    if (sep_upper - radius <= 0.0_r) {
         m.points[m.point_count].position = v_upper;
         m.points[m.point_count].separation = sep_upper - radius;
         ++m.point_count;
     }
 
-    m.normal = flip ? normal * -1.0 : normal;
+    m.normal = flip ? normal * -1.0_r : normal;
     return m.point_count > 0;
 }
 
@@ -296,18 +296,18 @@ bool collide_circle_capsule(
     const CapsuleShape& cap, const Transform2D& xk,
     ContactManifold& m, bool flip
 ) {
-    linalg::vector2d cc = xc.apply(circ.center);
-    linalg::vector2d p1 = xk.apply(cap.point1);
-    linalg::vector2d p2 = xk.apply(cap.point2);
-    linalg::vector2d closest = closest_point_on_segment(cc, p1, p2);
+    RVec2 cc = xc.apply(circ.center);
+    RVec2 p1 = xk.apply(cap.point1);
+    RVec2 p2 = xk.apply(cap.point2);
+    RVec2 closest = closest_point_on_segment(cc, p1, p2);
     CircleShape phantom;
     phantom.center = {};
     phantom.radius = cap.radius;
     Transform2D phantom_xf;
     phantom_xf.position = closest;
-    phantom_xf.cos_a = 1.0; phantom_xf.sin_a = 0.0;
+    phantom_xf.cos_a = 1.0_r; phantom_xf.sin_a = 0.0_r;
     bool hit = collide_circle_circle(circ, xc, phantom, phantom_xf, m);
-    if (hit && flip) m.normal = m.normal * -1.0;
+    if (hit && flip) m.normal = m.normal * -1.0_r;
     return hit;
 }
 
@@ -322,7 +322,7 @@ bool collide_polygon_capsule(
         m
     );
 
-    if (hit && flip) m.normal = m.normal * -1.0;
+    if (hit && flip) m.normal = m.normal * -1.0_r;
     return hit;
 }
 
@@ -343,19 +343,19 @@ bool collide_edge_circle(
     const CircleShape& circ, const Transform2D& xc,
     ContactManifold& m, bool flip
 ) {
-    linalg::vector2d c = xc.apply(circ.center);
-    linalg::vector2d v1 = xe.apply(edge.v1);
-    linalg::vector2d v2 = xe.apply(edge.v2);
-    linalg::vector2d closest = closest_point_on_segment(c, v1, v2);
-    linalg::vector2d d = c - closest;
-    double dist_sq = fast::length_squared(d);
-    double r = circ.radius;
+    RVec2 c = xc.apply(circ.center);
+    RVec2 v1 = xe.apply(edge.v1);
+    RVec2 v2 = xe.apply(edge.v2);
+    RVec2 closest = closest_point_on_segment(c, v1, v2);
+    RVec2 d = c - closest;
+    Real dist_sq = fast::length_squared(d);
+    Real r = circ.radius;
     if (dist_sq > r * r) return false;
-    double dist = std::sqrt(dist_sq);
-    linalg::vector2d n = (dist >= constants::middle_epsilon()) ? d * (1.0 / dist) : xe.rotate(edge.normal());
-    m.normal = flip ? n * -1.0 : n;
+    Real dist = std::sqrt(dist_sq);
+    RVec2 n = (dist >= constants::middle_epsilon()) ? d * (1.0_r / dist) : xe.rotate(edge.normal());
+    m.normal = flip ? n * -1.0_r : n;
     m.point_count = 1;
-    m.points[0].position = (closest + (c - n * r)) * 0.5;
+    m.points[0].position = (closest + (c - n * r)) * 0.5_r;
     m.points[0].separation = dist - r;
     return true;
 }
@@ -366,12 +366,12 @@ bool collide_edge_polygon(
     ContactManifold& m, bool flip
 ) {
     bool hit = detail_sat::collide_round_polygons(
-        detail_sat::make_round_segment(xe.apply(edge.v1), xe.apply(edge.v2), 0.0),
+        detail_sat::make_round_segment(xe.apply(edge.v1), xe.apply(edge.v2), 0.0_r),
         detail_sat::make_round_polygon(poly, xp),
         m
     );
 
-    if (hit && flip) m.normal = m.normal * -1.0;
+    if (hit && flip) m.normal = m.normal * -1.0_r;
     return hit;
 }
 
@@ -381,12 +381,12 @@ bool collide_edge_capsule(
     ContactManifold& m, bool flip
 ) {
     bool hit = detail_sat::collide_round_polygons(
-        detail_sat::make_round_segment(xe.apply(edge.v1), xe.apply(edge.v2), 0.0),
+        detail_sat::make_round_segment(xe.apply(edge.v1), xe.apply(edge.v2), 0.0_r),
         detail_sat::make_round_segment(xk.apply(cap.point1), xk.apply(cap.point2), cap.radius),
         m
     );
 
-    if (hit && flip) m.normal = m.normal * -1.0;
+    if (hit && flip) m.normal = m.normal * -1.0_r;
     return hit;
 }
 
@@ -452,7 +452,7 @@ bool collide_shapes(
             return false;
     }
 
-    if (hit && flip) manifold.normal = manifold.normal * -1.0;
+    if (hit && flip) manifold.normal = manifold.normal * -1.0_r;
     return hit;
 }
 
@@ -469,9 +469,18 @@ void Simulation2D::remove_body(RigidBody2D& body) {
     flush_pending_removals();
 }
 
-void Simulation2D::step(double dt) {
-    if (dt <= 0.0) return;
+void Simulation2D::step(Real dt) {
+    if (dt <= 0.0_r) return;
+    const int n = std::max(1, m_cfg.substeps);
+    const Real h = dt / static_cast<Real>(n);
+    for (int i = 0; i < n; ++i) step_substep(h);
+}
+
+void Simulation2D::step_substep(Real dt) {
     m_locked = true;
+    m_last_begin.clear();
+    m_last_end.clear();
+    m_stats = Simulation2DStats{};
 
     for (auto& bp : m_bodies) {
         RigidBody2D& b = *bp;
@@ -481,7 +490,8 @@ void Simulation2D::step(double dt) {
         b.integrate_forces(dt, m_cfg.gravity);
     }
 
-    broadphase();
+    if (m_cfg.dynamic_tree) tree_broadphase();
+    else broadphase();
     narrowphase();
     build_islands_and_wake();
     build_velocity_constraints();
@@ -495,6 +505,8 @@ void Simulation2D::step(double dt) {
         if (!b.is_awake()) continue;
         b.integrate_velocities(dt);
     }
+
+    if (m_cfg.continuous) solve_continuous();
 
     for (int i = 0; i < m_cfg.position_iters; ++i) { if (solve_position_constraints()) break; }
 
@@ -513,6 +525,12 @@ void Simulation2D::step(double dt) {
             if (mf.body_a && mf.body_b) m_post_solve(*mf.body_a, *mf.body_b, mf);
         }
     }
+
+    m_stats.bodies = m_bodies.size();
+    m_stats.proxies = m_dtree.size();
+    m_stats.pairs = m_pairs.size();
+    m_stats.manifolds = m_manifolds.size();
+    m_stats.tree_height = m_dtree.height();
 
     m_locked = false;
     dispatch_events();
@@ -538,8 +556,8 @@ auto Simulation2D::query_aabb(const AABB& region) -> std::vector<RigidBody2D*> {
     return m_tree.query(region);
 }
 
-auto Simulation2D::point_query(const linalg::vector2d& point) -> RigidBody2D* {
-    AABB tiny = {{point.x - 0.001, point.y - 0.001}, {point.x + 0.001, point.y + 0.001}};
+auto Simulation2D::point_query(const RVec2& point) -> RigidBody2D* {
+    AABB tiny = {{point.x - 0.001_r, point.y - 0.001_r}, {point.x + 0.001_r, point.y + 0.001_r}};
     auto results = query_aabb(tiny);
 
     for (auto* b : results) {
@@ -552,9 +570,9 @@ auto Simulation2D::point_query(const linalg::vector2d& point) -> RigidBody2D* {
 
 bool Simulation2D::is_active(const RigidBody2D& b) noexcept {
     if (!b.is_awake()) return false;
-    if (b.inv_mass() > 0.0) return true;
-    linalg::vector2d v = b.linear_velocity();
-    return v.x != 0.0 || v.y != 0.0 || b.angular_velocity() != 0.0;
+    if (b.inv_mass() > 0.0_r) return true;
+    RVec2 v = b.linear_velocity();
+    return v.x != 0.0_r || v.y != 0.0_r || b.angular_velocity() != 0.0_r;
 }
 
 bool Simulation2D::responds(const RigidBody2D& a, const RigidBody2D& b) noexcept {
@@ -579,6 +597,7 @@ void Simulation2D::broadphase() {
         RigidBody2D& b = *bp;
         if (!is_enabled(b)) continue;
         if (!has_flag(b.flags(), PhysicsFlags::BroadphaseActive) && !has_flag(b.flags(), PhysicsFlags::CollisionResponse)) continue;
+        if (b.collision_layer() == 0) continue;
         b.ensure_mass_uptodate();
         m_body_ptrs.push_back(&b);
         m_body_aabbs.push_back(b.compute_body_aabb().fatten(m_cfg.broadphase_margin));
@@ -599,6 +618,10 @@ void Simulation2D::broadphase() {
     );
 
     m_tree.find_pairs([this](RigidBody2D* a, RigidBody2D* b) {
+        if (!layers_can_collide(a->collision_layer(), a->collision_mask(), b->collision_layer(), b->collision_mask())) {
+            ++m_stats.layer_rejects;
+            return;
+        }
         if (!a->can_collide_with(*b)) return;
         if (!is_active(*a) && !is_active(*b)) return;   
         if (!is_dynamic(*a) && !is_dynamic(*b)) return; 
@@ -642,7 +665,7 @@ void Simulation2D::generate_contacts(RigidBody2D* a, RigidBody2D* b) {
 
             for (int p = 0; p < mf.point_count; ++p) {
                 ContactPoint& cp = mf.points[p];
-                linalg::vector2d half = mf.normal * (cp.separation * 0.5);
+                RVec2 half = mf.normal * (cp.separation * 0.5_r);
                 cp.local_anchor_a = a->transform().apply_inverse(cp.position - half);
                 cp.local_anchor_b = b->transform().apply_inverse(cp.position + half);
             }
@@ -665,15 +688,14 @@ void Simulation2D::generate_contacts(RigidBody2D* a, RigidBody2D* b) {
 void Simulation2D::build_islands_and_wake() {
     const std::size_t n = m_bodies.size();
     m_islands.reset(n);
-    m_body_index.clear();
     m_carried.clear();
-    for (std::size_t i = 0; i < n; ++i) m_body_index[m_bodies[i].get()] = i;
+    for (std::size_t i = 0; i < n; ++i) m_bodies[i]->m_sim_index = i;
 
     auto link = [this](RigidBody2D* a, RigidBody2D* b) {
         const bool da = is_dynamic(*a), db = is_dynamic(*b);
 
         if (da && db) {
-            m_islands.unite(m_body_index[a], m_body_index[b]);
+            m_islands.unite(a->m_sim_index, b->m_sim_index);
         } else if (da && is_active(*b)) {
             a->wake(); 
         } else if (db && is_active(*a)) {
@@ -703,9 +725,9 @@ void Simulation2D::build_islands_and_wake() {
     }
 }
 
-void Simulation2D::sleep_islands(double dt) {
+void Simulation2D::sleep_islands(Real dt) {
     const std::size_t n = std::min(m_islands.size(), m_bodies.size());
-    std::vector<double> min_timer(n, std::numeric_limits<double>::max());
+    std::vector<Real> min_timer(n, std::numeric_limits<Real>::max());
 
     for (std::size_t i = 0; i < n; ++i) {
         RigidBody2D& b = *m_bodies[i];
@@ -716,7 +738,7 @@ void Simulation2D::sleep_islands(double dt) {
             continue;
         }
 
-        double t = b.advance_sleep_timer(dt);
+        Real t = b.advance_sleep_timer(dt);
         std::size_t r = m_islands.find(i);
         if (t < min_timer[r]) min_timer[r] = t;
     }
@@ -731,7 +753,7 @@ void Simulation2D::sleep_islands(double dt) {
 void Simulation2D::build_velocity_constraints() {
     m_constraints.clear();
     m_constraints.reserve(m_manifolds.size());
-    const double match_sq = m_cfg.warm_start_match_distance * m_cfg.warm_start_match_distance;
+    const Real match_sq = m_cfg.warm_start_match_distance * m_cfg.warm_start_match_distance;
 
     for (std::size_t mi = 0; mi < m_manifolds.size(); ++mi) {
         const auto& mf = m_manifolds[mi];
@@ -748,13 +770,13 @@ void Simulation2D::build_velocity_constraints() {
         vc.restitution_threshold = mf.restitution_threshold;
         vc.point_count = mf.point_count;
         vc.manifold_index = mi;
-        double inv_mA = a->inv_mass();
-        double inv_mB = b->inv_mass();
-        double inv_IA = a->inv_inertia();
-        double inv_IB = b->inv_inertia();
-        linalg::vector2d cA = a->world_center();
-        linalg::vector2d cB = b->world_center();
-        linalg::vector2d tangent = {-mf.normal.y, mf.normal.x};
+        Real inv_mA = a->inv_mass();
+        Real inv_mB = b->inv_mass();
+        Real inv_IA = a->inv_inertia();
+        Real inv_IB = b->inv_inertia();
+        RVec2 cA = a->world_center();
+        RVec2 cB = b->world_center();
+        RVec2 tangent = {-mf.normal.y, mf.normal.x};
         const CachedContact* old = nullptr;
 
         if (m_cfg.warm_starting) {
@@ -766,25 +788,25 @@ void Simulation2D::build_velocity_constraints() {
             auto& vcp = vc.points[p];
             vcp.rA = mf.points[p].position - cA;
             vcp.rB = mf.points[p].position - cB;
-            double rnA = fast::perp_dot(vcp.rA, mf.normal);
-            double rnB = fast::perp_dot(vcp.rB, mf.normal);
-            double k_normal = inv_mA + inv_mB + inv_IA * rnA * rnA + inv_IB * rnB * rnB;
-            vcp.normal_mass = (k_normal > 0.0) ? 1.0 / k_normal : 0.0;
-            double rtA = fast::perp_dot(vcp.rA, tangent);
-            double rtB = fast::perp_dot(vcp.rB, tangent);
-            double k_tangent = inv_mA + inv_mB + inv_IA * rtA * rtA + inv_IB * rtB * rtB;
-            vcp.tangent_mass = (k_tangent > 0.0) ? 1.0 / k_tangent : 0.0;
-            linalg::vector2d vA = a->linear_velocity() + linalg::vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
-            linalg::vector2d vB = b->linear_velocity() + linalg::vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
-            double vn_rel = fast::dot(vB - vA, mf.normal);
-            vcp.velocity_bias = 0.0;
+            Real rnA = fast::perp_dot(vcp.rA, mf.normal);
+            Real rnB = fast::perp_dot(vcp.rB, mf.normal);
+            Real k_normal = inv_mA + inv_mB + inv_IA * rnA * rnA + inv_IB * rnB * rnB;
+            vcp.normal_mass = (k_normal > 0.0_r) ? 1.0_r / k_normal : 0.0_r;
+            Real rtA = fast::perp_dot(vcp.rA, tangent);
+            Real rtB = fast::perp_dot(vcp.rB, tangent);
+            Real k_tangent = inv_mA + inv_mB + inv_IA * rtA * rtA + inv_IB * rtB * rtB;
+            vcp.tangent_mass = (k_tangent > 0.0_r) ? 1.0_r / k_tangent : 0.0_r;
+            RVec2 vA = a->linear_velocity() + RVec2(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
+            RVec2 vB = b->linear_velocity() + RVec2(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
+            Real vn_rel = fast::dot(vB - vA, mf.normal);
+            vcp.velocity_bias = 0.0_r;
             if (vn_rel < -vc.restitution_threshold) { vcp.velocity_bias = -vc.restitution * vn_rel; }
 
             if (old) {
-                double best = match_sq;
+                Real best = match_sq;
 
                 for (int q = 0; q < old->point_count; ++q) {
-                    double d = fast::length_squared(old->local_anchor_a[q] - mf.points[p].local_anchor_a);
+                    Real d = fast::length_squared(old->local_anchor_a[q] - mf.points[p].local_anchor_a);
 
                     if (d <= best) {
                         best = d;
@@ -803,15 +825,15 @@ void Simulation2D::warm_start() {
     for (auto& vc : m_constraints) {
         RigidBody2D* a = vc.body_a;
         RigidBody2D* b = vc.body_b;
-        double inv_mA = a->inv_mass();
-        double inv_mB = b->inv_mass();
-        double inv_IA = a->inv_inertia();
-        double inv_IB = b->inv_inertia();
+        Real inv_mA = a->inv_mass();
+        Real inv_mB = b->inv_mass();
+        Real inv_IA = a->inv_inertia();
+        Real inv_IB = b->inv_inertia();
 
         for (int p = 0; p < vc.point_count; ++p) {
             auto& vcp = vc.points[p];
-            linalg::vector2d tangent = {-vc.normal.y, vc.normal.x};
-            linalg::vector2d P = vc.normal * vcp.normal_impulse + tangent * vcp.tangent_impulse;
+            RVec2 tangent = {-vc.normal.y, vc.normal.x};
+            RVec2 P = vc.normal * vcp.normal_impulse + tangent * vcp.tangent_impulse;
             a->set_linear_velocity(a->linear_velocity() - P * inv_mA);
             a->set_angular_velocity(a->angular_velocity() - inv_IA * fast::perp_dot(vcp.rA, P));
             b->set_linear_velocity(b->linear_velocity() + P * inv_mB);
@@ -824,29 +846,29 @@ void Simulation2D::solve_velocity_constraints() {
     for (auto& vc : m_constraints) {
         RigidBody2D* a = vc.body_a;
         RigidBody2D* b = vc.body_b;
-        double inv_mA = a->inv_mass();
-        double inv_mB = b->inv_mass();
-        double inv_IA = a->inv_inertia();
-        double inv_IB = b->inv_inertia();
+        Real inv_mA = a->inv_mass();
+        Real inv_mB = b->inv_mass();
+        Real inv_IA = a->inv_inertia();
+        Real inv_IB = b->inv_inertia();
 
         for (int p = 0; p < vc.point_count; ++p) {
             auto& vcp = vc.points[p];
-            linalg::vector2d vA = a->linear_velocity() + linalg::vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
-            linalg::vector2d vB = b->linear_velocity() + linalg::vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
-            linalg::vector2d dv = vB - vA;
-            linalg::vector2d tangent = {-vc.normal.y, vc.normal.x};
-            double vt = fast::dot(dv, tangent);
-            double lambda_t = -vt * vcp.tangent_mass;
-            double max_friction = vc.friction * vcp.normal_impulse;
+            RVec2 vA = a->linear_velocity() + RVec2(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
+            RVec2 vB = b->linear_velocity() + RVec2(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
+            RVec2 dv = vB - vA;
+            RVec2 tangent = {-vc.normal.y, vc.normal.x};
+            Real vt = fast::dot(dv, tangent);
+            Real lambda_t = -vt * vcp.tangent_mass;
+            Real max_friction = vc.friction * vcp.normal_impulse;
 
-            double new_impulse_t = std::clamp(
+            Real new_impulse_t = std::clamp(
                 vcp.tangent_impulse + lambda_t,
                 -max_friction, max_friction
             );
 
             lambda_t = new_impulse_t - vcp.tangent_impulse;
             vcp.tangent_impulse = new_impulse_t;
-            linalg::vector2d Pt = tangent * lambda_t;
+            RVec2 Pt = tangent * lambda_t;
             a->set_linear_velocity(a->linear_velocity() - Pt * inv_mA);
             a->set_angular_velocity(a->angular_velocity() - inv_IA * fast::perp_dot(vcp.rA, Pt));
             b->set_linear_velocity(b->linear_velocity() + Pt * inv_mB);
@@ -857,15 +879,15 @@ void Simulation2D::solve_velocity_constraints() {
 
         for (int p = 0; p < vc.point_count; ++p) {
             auto& vcp = vc.points[p];
-            linalg::vector2d vA = a->linear_velocity() + linalg::vector2d(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
-            linalg::vector2d vB = b->linear_velocity() + linalg::vector2d(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
-            linalg::vector2d dv = vB - vA;
-            double vn = fast::dot(dv, vc.normal);
-            double lambda_n = -(vn - vcp.velocity_bias) * vcp.normal_mass;
-            double new_impulse_n = std::max(vcp.normal_impulse + lambda_n, 0.0);
+            RVec2 vA = a->linear_velocity() + RVec2(-a->angular_velocity() * vcp.rA.y, a->angular_velocity() * vcp.rA.x);
+            RVec2 vB = b->linear_velocity() + RVec2(-b->angular_velocity() * vcp.rB.y, b->angular_velocity() * vcp.rB.x);
+            RVec2 dv = vB - vA;
+            Real vn = fast::dot(dv, vc.normal);
+            Real lambda_n = -(vn - vcp.velocity_bias) * vcp.normal_mass;
+            Real new_impulse_n = std::max(vcp.normal_impulse + lambda_n, 0.0_r);
             lambda_n = new_impulse_n - vcp.normal_impulse;
             vcp.normal_impulse = new_impulse_n;
-            linalg::vector2d Pn = vc.normal * lambda_n;
+            RVec2 Pn = vc.normal * lambda_n;
             a->set_linear_velocity(a->linear_velocity() - Pn * inv_mA);
             a->set_angular_velocity(a->angular_velocity() - inv_IA * fast::perp_dot(vcp.rA, Pn));
             b->set_linear_velocity(b->linear_velocity() + Pn * inv_mB);
@@ -877,47 +899,47 @@ void Simulation2D::solve_velocity_constraints() {
 bool Simulation2D::solve_block(VelocityConstraint& vc) {
     RigidBody2D* a = vc.body_a;
     RigidBody2D* b = vc.body_b;
-    const double inv_mA = a->inv_mass(), inv_mB = b->inv_mass();
-    const double inv_IA = a->inv_inertia(), inv_IB = b->inv_inertia();
+    const Real inv_mA = a->inv_mass(), inv_mB = b->inv_mass();
+    const Real inv_IA = a->inv_inertia(), inv_IB = b->inv_inertia();
     VelocityConstraintPoint& c1 = vc.points[0];
     VelocityConstraintPoint& c2 = vc.points[1];
-    const linalg::vector2d& n = vc.normal;
-    const double rn1A = fast::perp_dot(c1.rA, n), rn1B = fast::perp_dot(c1.rB, n);
-    const double rn2A = fast::perp_dot(c2.rA, n), rn2B = fast::perp_dot(c2.rB, n);
-    const double k11 = inv_mA + inv_mB + inv_IA * rn1A * rn1A + inv_IB * rn1B * rn1B;
-    const double k22 = inv_mA + inv_mB + inv_IA * rn2A * rn2A + inv_IB * rn2B * rn2B;
-    const double k12 = inv_mA + inv_mB + inv_IA * rn1A * rn2A + inv_IB * rn1B * rn2B;
-    const double det = k11 * k22 - k12 * k12;
-    constexpr double max_condition = 1000.0;
+    const RVec2& n = vc.normal;
+    const Real rn1A = fast::perp_dot(c1.rA, n), rn1B = fast::perp_dot(c1.rB, n);
+    const Real rn2A = fast::perp_dot(c2.rA, n), rn2B = fast::perp_dot(c2.rB, n);
+    const Real k11 = inv_mA + inv_mB + inv_IA * rn1A * rn1A + inv_IB * rn1B * rn1B;
+    const Real k22 = inv_mA + inv_mB + inv_IA * rn2A * rn2A + inv_IB * rn2B * rn2B;
+    const Real k12 = inv_mA + inv_mB + inv_IA * rn1A * rn2A + inv_IB * rn1B * rn2B;
+    const Real det = k11 * k22 - k12 * k12;
+    constexpr Real max_condition = 1000.0_r;
     if (!(k11 * k11 < max_condition * det)) return false;
 
     auto normal_velocity = [&](const VelocityConstraintPoint& c) {
-        linalg::vector2d vA = a->linear_velocity() + linalg::vector2d(-a->angular_velocity() * c.rA.y, a->angular_velocity() * c.rA.x);
-        linalg::vector2d vB = b->linear_velocity() + linalg::vector2d(-b->angular_velocity() * c.rB.y, b->angular_velocity() * c.rB.x);
+        RVec2 vA = a->linear_velocity() + RVec2(-a->angular_velocity() * c.rA.y, a->angular_velocity() * c.rA.x);
+        RVec2 vB = b->linear_velocity() + RVec2(-b->angular_velocity() * c.rB.y, b->angular_velocity() * c.rB.x);
         return fast::dot(vB - vA, n);
     };
 
-    const double a1 = c1.normal_impulse, a2 = c2.normal_impulse;
-    const double b1 = normal_velocity(c1) - c1.velocity_bias - (k11 * a1 + k12 * a2);
-    const double b2 = normal_velocity(c2) - c2.velocity_bias - (k12 * a1 + k22 * a2);
-    double x1, x2;
+    const Real a1 = c1.normal_impulse, a2 = c2.normal_impulse;
+    const Real b1 = normal_velocity(c1) - c1.velocity_bias - (k11 * a1 + k12 * a2);
+    const Real b2 = normal_velocity(c2) - c2.velocity_bias - (k12 * a1 + k22 * a2);
+    Real x1, x2;
 
     for (;;) {
         x1 = -( k22 * b1 - k12 * b2) / det;
         x2 = -(-k12 * b1 + k11 * b2) / det;
-        if (x1 >= 0.0 && x2 >= 0.0) break;
-        x1 = -b1 / k11; x2 = 0.0;
-        if (x1 >= 0.0 && k12 * x1 + b2 >= 0.0) break;
-        x1 = 0.0; x2 = -b2 / k22;
-        if (x2 >= 0.0 && k12 * x2 + b1 >= 0.0) break;
-        x1 = 0.0; x2 = 0.0;
-        if (b1 >= 0.0 && b2 >= 0.0) break;
+        if (x1 >= 0.0_r && x2 >= 0.0_r) break;
+        x1 = -b1 / k11; x2 = 0.0_r;
+        if (x1 >= 0.0_r && k12 * x1 + b2 >= 0.0_r) break;
+        x1 = 0.0_r; x2 = -b2 / k22;
+        if (x2 >= 0.0_r && k12 * x2 + b1 >= 0.0_r) break;
+        x1 = 0.0_r; x2 = 0.0_r;
+        if (b1 >= 0.0_r && b2 >= 0.0_r) break;
         return false; 
     }
 
-    const linalg::vector2d P1 = n * (x1 - a1);
-    const linalg::vector2d P2 = n * (x2 - a2);
-    const linalg::vector2d P = P1 + P2;
+    const RVec2 P1 = n * (x1 - a1);
+    const RVec2 P2 = n * (x2 - a2);
+    const RVec2 P = P1 + P2;
     a->set_linear_velocity(a->linear_velocity() - P * inv_mA);
     a->set_angular_velocity(a->angular_velocity() - inv_IA * (fast::perp_dot(c1.rA, P1) + fast::perp_dot(c2.rA, P2)));
     b->set_linear_velocity(b->linear_velocity() + P * inv_mB);
@@ -939,41 +961,41 @@ void Simulation2D::store_impulses() {
 }
 
 bool Simulation2D::solve_position_constraints() {
-    double min_separation = 0.0;
+    Real min_separation = 0.0_r;
 
     for (auto& mf : m_manifolds) {
         RigidBody2D* a = mf.body_a;
         RigidBody2D* b = mf.body_b;
-        double inv_mA = a->inv_mass();
-        double inv_mB = b->inv_mass();
-        double inv_IA = a->inv_inertia();
-        double inv_IB = b->inv_inertia();
+        Real inv_mA = a->inv_mass();
+        Real inv_mB = b->inv_mass();
+        Real inv_IA = a->inv_inertia();
+        Real inv_IB = b->inv_inertia();
 
         for (int p = 0; p < mf.point_count; ++p) {
-            linalg::vector2d pA = a->transform().apply(mf.points[p].local_anchor_a);
-            linalg::vector2d pB = b->transform().apply(mf.points[p].local_anchor_b);
-            double separation = fast::dot(pB - pA, mf.normal);
+            RVec2 pA = a->transform().apply(mf.points[p].local_anchor_a);
+            RVec2 pB = b->transform().apply(mf.points[p].local_anchor_b);
+            Real separation = fast::dot(pB - pA, mf.normal);
             min_separation = std::min(min_separation, separation);
 
-            double C = std::clamp(
+            Real C = std::clamp(
                 m_cfg.baumgarte_factor * (separation + m_cfg.slop),
-                -m_cfg.max_correction, 0.0
+                -m_cfg.max_correction, 0.0_r
             );
 
-            linalg::vector2d point = (pA + pB) * 0.5;
-            linalg::vector2d rA = point - a->world_center();
-            linalg::vector2d rB = point - b->world_center();
-            double rnA = fast::perp_dot(rA, mf.normal);
-            double rnB = fast::perp_dot(rB, mf.normal);
-            double K = inv_mA + inv_mB + inv_IA * rnA * rnA + inv_IB * rnB * rnB;
-            double impulse = (K > 0.0) ? -C / K : 0.0;
-            linalg::vector2d P = mf.normal * impulse;
+            RVec2 point = (pA + pB) * 0.5_r;
+            RVec2 rA = point - a->world_center();
+            RVec2 rB = point - b->world_center();
+            Real rnA = fast::perp_dot(rA, mf.normal);
+            Real rnB = fast::perp_dot(rB, mf.normal);
+            Real K = inv_mA + inv_mB + inv_IA * rnA * rnA + inv_IB * rnB * rnB;
+            Real impulse = (K > 0.0_r) ? -C / K : 0.0_r;
+            RVec2 P = mf.normal * impulse;
             a->apply_position_correction(P * -inv_mA, -inv_IA * fast::perp_dot(rA, P));
             b->apply_position_correction(P *  inv_mB,  inv_IB * fast::perp_dot(rB, P));
         }
     }
 
-    return min_separation >= -3.0 * m_cfg.slop;
+    return min_separation >= -3.0_r * m_cfg.slop;
 }
 
 void Simulation2D::update_contact_cache() {
@@ -997,14 +1019,14 @@ void Simulation2D::update_contact_cache() {
 
     for (auto& [key, c] : m_touching) {
         if (!c.events || m_contact_cache.count(key)) continue;
-        double impulse = 0.0;
+        Real impulse = 0.0_r;
         for (int p = 0; p < c.point_count; ++p) impulse += c.normal_impulse[p];
         m_begin_events.push_back({ c.body_a, c.body_b, c.normal, c.point, impulse, c.sensor });
     }
 
     for (auto& [key, c] : m_contact_cache) {
         if (!c.events || m_touching.count(key)) continue;
-        m_end_events.push_back({ c.body_a, c.body_b, c.normal, c.point, 0.0, c.sensor });
+        m_end_events.push_back({ c.body_a, c.body_b, c.normal, c.point, 0.0_r, c.sensor });
     }
 
     m_contact_cache.swap(m_touching);
@@ -1017,6 +1039,9 @@ void Simulation2D::dispatch_events() {
     std::vector<ContactEvent> begins, ends;
     begins.swap(m_begin_events);
     ends.swap(m_end_events);
+    m_last_begin.insert(m_last_begin.end(), begins.begin(), begins.end());
+    m_last_end.insert(m_last_end.end(), ends.begin(), ends.end());
+    if (!m_cfg.event_callbacks) return;
     m_locked = true;
     if (m_on_begin) for (const auto& e : begins) m_on_begin(e);
     if (m_on_end)   for (const auto& e : ends)   m_on_end(e);
@@ -1030,7 +1055,7 @@ void Simulation2D::remove_body_now(RigidBody2D* body) {
     for (auto it = m_contact_cache.begin(); it != m_contact_cache.end(); ) {
         if (it->first.body_a == body || it->first.body_b == body) {
             const CachedContact& c = it->second;
-            if (c.events) m_end_events.push_back({ c.body_a, c.body_b, c.normal, c.point, 0.0, c.sensor });
+            if (c.events) m_end_events.push_back({ c.body_a, c.body_b, c.normal, c.point, 0.0_r, c.sensor });
             it = m_contact_cache.erase(it);
         } else {
             ++it;
@@ -1043,9 +1068,17 @@ void Simulation2D::remove_body_now(RigidBody2D* body) {
     m_pairs.clear();
     m_body_ptrs.clear();
     m_body_aabbs.clear();
+    drop_proxy(body);
+    auto stale = [body](const ContactEvent& e) { return e.body_a == body || e.body_b == body; };
+    m_last_begin.erase(std::remove_if(m_last_begin.begin(), m_last_begin.end(), stale), m_last_begin.end());
+    m_last_end.erase(std::remove_if(m_last_end.begin(), m_last_end.end(), stale), m_last_end.end());
     dispatch_events();
+    m_last_end.erase(std::remove_if(m_last_end.begin(), m_last_end.end(), stale), m_last_end.end());
     owner = std::find_if(m_bodies.begin(), m_bodies.end(), [body](const std::unique_ptr<RigidBody2D>& p) { return p.get() == body; });
-    if (owner != m_bodies.end()) m_bodies.erase(owner);
+    if (owner != m_bodies.end()) {
+        m_handles.remove(body->m_handle);
+        m_bodies.erase(owner);
+    }
 }
 
 void Simulation2D::flush_pending_removals() {
@@ -1081,16 +1114,337 @@ void Simulation2D::cleanup_bodies() {
     flush_pending_removals();
 }
 
-double Simulation2D::combined_friction(const Collider2D& a, const Collider2D& b) const {
+Real Simulation2D::combined_friction(const Collider2D& a, const Collider2D& b) const {
     const CombineMode m = resolve_combine(a.material.friction_combine, b.material.friction_combine, m_cfg.friction_combine);
     if (m == CombineMode::Custom && m_friction_combiner) return m_friction_combiner(a, b);
     return combine_values(m, a.material.friction, b.material.friction);
 }
 
-double Simulation2D::combined_restitution(const Collider2D& a, const Collider2D& b) const {
+Real Simulation2D::combined_restitution(const Collider2D& a, const Collider2D& b) const {
     const CombineMode m = resolve_combine(a.material.restitution_combine, b.material.restitution_combine, m_cfg.restitution_combine);
     if (m == CombineMode::Custom && m_restitution_combiner) return m_restitution_combiner(a, b);
     return combine_values(m, a.material.restitution, b.material.restitution);
+}
+
+namespace {
+
+std::uint64_t tree_pair_key(std::int32_t a, std::int32_t b) noexcept {
+    const std::uint32_t lo = static_cast<std::uint32_t>(std::min(a, b));
+    const std::uint32_t hi = static_cast<std::uint32_t>(std::max(a, b));
+    return (static_cast<std::uint64_t>(hi) << 32) | lo;
+}
+
+}
+
+bool Simulation2D::can_collide(const RigidBody2D& a, const RigidBody2D& b) const noexcept {
+    if (!layers_can_collide(a.collision_layer(), a.collision_mask(), b.collision_layer(), b.collision_mask())) return false;
+    return a.can_collide_with(b);
+}
+
+bool Simulation2D::sweeps(const RigidBody2D& b) const noexcept {
+    if (!m_cfg.continuous || !is_dynamic(b)) return false;
+    return m_cfg.continuous_all || has_flag(b.flags(), PhysicsFlags::Bullet);
+}
+
+void Simulation2D::drop_proxy(RigidBody2D* body) {
+    auto it = m_proxies.find(body);
+    if (it == m_proxies.end()) return;
+    const std::int32_t proxy = it->second;
+    for (std::size_t i = 0; i < m_tree_pairs.size();) {
+        if (m_tree_pairs[i].first == proxy || m_tree_pairs[i].second == proxy) {
+            m_tree_pair_index.erase(tree_pair_key(m_tree_pairs[i].first, m_tree_pairs[i].second));
+            if (i + 1 != m_tree_pairs.size()) {
+                m_tree_pairs[i] = m_tree_pairs.back();
+                m_tree_pair_index[tree_pair_key(m_tree_pairs[i].first, m_tree_pairs[i].second)] = i;
+            }
+            m_tree_pairs.pop_back();
+        } else {
+            ++i;
+        }
+    }
+    m_dtree.remove(proxy);
+    m_proxies.erase(it);
+}
+
+void Simulation2D::sync_tree(bool for_query) {
+    for (auto& bp : m_bodies) {
+        RigidBody2D& b = *bp;
+        const bool want = is_enabled(b) && !b.colliders().empty() &&
+            (has_flag(b.flags(), PhysicsFlags::BroadphaseActive) || has_flag(b.flags(), PhysicsFlags::CollisionResponse)) &&
+            b.collision_layer() != 0;
+        auto it = m_proxies.find(&b);
+        if (!want) {
+            if (it != m_proxies.end()) drop_proxy(&b);
+            continue;
+        }
+        b.ensure_mass_uptodate();
+        if (for_query) b.synchronize_colliders();
+        const AABB tight = b.compute_body_aabb();
+        if (it == m_proxies.end()) {
+            m_proxies.emplace(&b, m_dtree.insert(tight.fatten(m_cfg.broadphase_margin), &b));
+            continue;
+        }
+        if (!for_query && !b.is_awake() && is_dynamic(b)) continue;
+        AABB displaced = tight;
+        if (!for_query && sweeps(b)) {
+            const RVec2 d = b.linear_velocity() * m_cfg.fixed_dt;
+            const Real reach = std::max(0.0_r, m_cfg.max_continuous_distance);
+            const RVec2 move{ std::clamp(d.x, -reach, reach), std::clamp(d.y, -reach, reach) };
+            displaced = AABB(tight.min + move, tight.max + move);
+        }
+        m_dtree.move(it->second, tight, m_cfg.broadphase_margin, displaced);
+    }
+}
+
+void Simulation2D::tree_broadphase() {
+    m_pairs.clear();
+    synchronize_all_colliders();
+    sync_tree(false);
+    m_dtree.for_each_leaf([&](std::int32_t proxy, RigidBody2D* body) {
+        if (!m_dtree.moved(proxy)) return;
+        m_dtree.query(m_dtree.box(proxy), [&](std::int32_t other, RigidBody2D* ob) {
+            if (other == proxy) return true;
+            if (!is_dynamic(*body) && !is_dynamic(*ob)) return true;
+            const std::uint64_t key = tree_pair_key(proxy, other);
+            if (m_tree_pair_index.count(key)) return true;
+            m_tree_pair_index.emplace(key, m_tree_pairs.size());
+            m_tree_pairs.push_back({ std::min(proxy, other), std::max(proxy, other) });
+            return true;
+        });
+    });
+    for (std::size_t i = 0; i < m_tree_pairs.size();) {
+        const auto pr = m_tree_pairs[i];
+        const bool keep = m_dtree.valid(pr.first) && m_dtree.valid(pr.second) && m_dtree.box(pr.first).overlaps(m_dtree.box(pr.second));
+        if (!keep) {
+            m_tree_pair_index.erase(tree_pair_key(pr.first, pr.second));
+            if (i + 1 != m_tree_pairs.size()) {
+                m_tree_pairs[i] = m_tree_pairs.back();
+                m_tree_pair_index[tree_pair_key(m_tree_pairs[i].first, m_tree_pairs[i].second)] = i;
+            }
+            m_tree_pairs.pop_back();
+            continue;
+        }
+        ++i;
+        RigidBody2D* a = m_dtree.item(pr.first);
+        RigidBody2D* b = m_dtree.item(pr.second);
+        if (!layers_can_collide(a->collision_layer(), a->collision_mask(), b->collision_layer(), b->collision_mask())) {
+            ++m_stats.layer_rejects;
+            continue;
+        }
+        if (!a->can_collide_with(*b)) continue;
+        if (!is_active(*a) && !is_active(*b)) continue;
+        if (!is_dynamic(*a) && !is_dynamic(*b)) continue;
+        if (std::less<const RigidBody2D*>()(b, a)) std::swap(a, b);
+        m_pairs.push_back({ a, b });
+    }
+    m_dtree.for_each_leaf([&](std::int32_t proxy, RigidBody2D*) { m_dtree.clear_moved(proxy); });
+}
+
+void Simulation2D::solve_continuous() {
+    const Real target = std::max(m_cfg.slop, 1e-4_r);
+    for (auto& bp : m_bodies) {
+        RigidBody2D& b = *bp;
+        if (!is_enabled(b) || !b.is_awake() || !sweeps(b)) continue;
+        const Sweep2D sweep = b.sweep();
+        const Real travel = std::sqrt(fast::length_squared(sweep.position1 - sweep.position0));
+        Real extent = std::numeric_limits<Real>::max();
+        for (const Collider2D& c : b.colliders()) {
+            const AABB box = c.shape.local_aabb;
+            extent = std::min(extent, std::min(box.max.x - box.min.x, box.max.y - box.min.y) * 0.5_r);
+        }
+        const Real spin = std::abs(sweep.angle1 - sweep.angle0) * b.compute_body_aabb().perimeter() * 0.25_r;
+        if (travel + spin < 0.5_r * extent) continue;
+        const Transform2D x0 = sweep.get_transform(0.0_r);
+        const Transform2D x1 = sweep.get_transform(1.0_r);
+        AABB swept;
+        bool first = true;
+        for (const Collider2D& c : b.colliders()) {
+            const AABB a0 = c.shape.compute_aabb(x0.compose(c.local_offset));
+            const AABB a1 = c.shape.compute_aabb(x1.compose(c.local_offset));
+            const AABB m = AABB::merge(a0, a1);
+            swept = first ? m : AABB::merge(swept, m);
+            first = false;
+        }
+        if (first) continue;
+        Real best = 1.0_r;
+        RVec2 best_normal{};
+        Real best_restitution = 0.0_r;
+        auto test = [&](RigidBody2D* other) {
+            if (other == &b || !is_enabled(*other)) return;
+            if (sweeps(*other) && is_dynamic(*other)) return;
+            if (!can_collide(b, *other) || !responds(b, *other)) return;
+            Sweep2D still;
+            still.center_local = other->sweep().center_local;
+            still.position0 = still.position1 = other->transform().apply(still.center_local);
+            still.angle0 = still.angle1 = other->transform().angle;
+            for (const Collider2D& ca : b.colliders()) {
+                if (ca.is_sensor) continue;
+                for (const Collider2D& cb : other->colliders()) {
+                    if (cb.is_sensor || !ca.filter.should_collide(cb.filter)) continue;
+                    if (!cb.world_aabb.overlaps(swept)) continue;
+                    RVec2 n{};
+                    const Real t = time_of_impact(ca.shape, sweep, cb.shape, still, ca.local_offset, cb.local_offset, target, n);
+                    if (t < best) {
+                        best = t;
+                        best_normal = n;
+                        best_restitution = combined_restitution(ca, cb);
+                    }
+                }
+            }
+        };
+        if (m_cfg.dynamic_tree) {
+            m_dtree.query(swept, [&](std::int32_t, RigidBody2D* other) {
+                test(other);
+                return true;
+            });
+        } else {
+            for (auto& op : m_bodies) {
+                if (op->compute_body_aabb().overlaps(swept)) test(op.get());
+            }
+        }
+        if (best >= 1.0_r) continue;
+        const Real vn = fast::dot(b.linear_velocity(), best_normal);
+        if (vn > 0.0_r) b.set_linear_velocity(b.linear_velocity() - best_normal * (vn * (1.0_r + best_restitution)));
+        b.transform() = sweep.get_transform(best);
+        b.sweep().position1 = sweep.position0 * (1.0_r - best) + sweep.position1 * best;
+        b.sweep().angle1 = sweep.angle0 * (1.0_r - best) + sweep.angle1 * best;
+        b.synchronize_colliders();
+        ++m_stats.continuous_hits;
+    }
+}
+
+bool Simulation2D::accepts(const RigidBody2D& b, const Collider2D& c, const QueryFilter2D& f) const {
+    if (!is_enabled(b)) return false;
+    if (&b == f.ignore) return false;
+    if ((b.collision_layer() & f.layers) == 0) return false;
+    if (c.is_sensor && !f.include_sensors) return false;
+    const bool dyn = is_dynamic(b);
+    const bool kin = !dyn && (has_flag(b.flags(), PhysicsFlags::LinearVelocity) || has_flag(b.flags(), PhysicsFlags::AngularVelocity));
+    if (dyn && !f.include_dynamic) return false;
+    if (kin && !f.include_kinematic) return false;
+    if (!dyn && !kin && !f.include_static) return false;
+    if (f.predicate && !f.predicate(b, c)) return false;
+    return true;
+}
+
+auto Simulation2D::query_aabb(const AABB& region, const QueryFilter2D& filter) -> std::vector<RigidBody2D*> {
+    sync_tree(true);
+    std::vector<RigidBody2D*> out;
+    m_dtree.query(region, [&](std::int32_t, RigidBody2D* b) {
+        for (const Collider2D& c : b->colliders()) {
+            if (accepts(*b, c, filter) && c.world_aabb.overlaps(region)) {
+                out.push_back(b);
+                break;
+            }
+        }
+        return true;
+    });
+    return out;
+}
+
+std::optional<RayHit2D> Simulation2D::raycast(const RVec2& origin, const RVec2& direction, Real max_distance, const QueryFilter2D& filter) {
+    const Real len = std::sqrt(fast::length_squared(direction));
+    if (len <= 1e-30_r || max_distance <= 0.0_r) return std::nullopt;
+    const RVec2 dir = direction * (1.0_r / len);
+    sync_tree(true);
+    Real best = max_distance;
+    std::optional<RayHit2D> result;
+    const RVec2 end = origin + dir * max_distance;
+    const AABB sweep(RVec2{ std::min(origin.x, end.x), std::min(origin.y, end.y) }, RVec2{ std::max(origin.x, end.x), std::max(origin.y, end.y) });
+    m_dtree.query(sweep, [&](std::int32_t, RigidBody2D* b) {
+        const auto& cols = b->colliders();
+        for (std::size_t i = 0; i < cols.size(); ++i) {
+            if (!accepts(*b, cols[i], filter)) continue;
+            ShapeRayHit2D hit;
+            if (raycast_shape(cols[i].shape, b->transform().compose(cols[i].local_offset), origin, dir, best, hit) && hit.t <= best) {
+                best = hit.t;
+                result = RayHit2D{ b, i, hit.t, hit.t / max_distance, hit.point, hit.normal };
+            }
+        }
+        return true;
+    });
+    return result;
+}
+
+std::vector<RayHit2D> Simulation2D::raycast_all(const RVec2& origin, const RVec2& direction, Real max_distance, const QueryFilter2D& filter) {
+    std::vector<RayHit2D> out;
+    const Real len = std::sqrt(fast::length_squared(direction));
+    if (len <= 1e-30_r || max_distance <= 0.0_r) return out;
+    const RVec2 dir = direction * (1.0_r / len);
+    sync_tree(true);
+    const RVec2 end = origin + dir * max_distance;
+    const AABB sweep(RVec2{ std::min(origin.x, end.x), std::min(origin.y, end.y) }, RVec2{ std::max(origin.x, end.x), std::max(origin.y, end.y) });
+    m_dtree.query(sweep, [&](std::int32_t, RigidBody2D* b) {
+        const auto& cols = b->colliders();
+        for (std::size_t i = 0; i < cols.size(); ++i) {
+            if (!accepts(*b, cols[i], filter)) continue;
+            ShapeRayHit2D hit;
+            if (raycast_shape(cols[i].shape, b->transform().compose(cols[i].local_offset), origin, dir, max_distance, hit)) out.push_back(RayHit2D{ b, i, hit.t, hit.t / max_distance, hit.point, hit.normal });
+        }
+        return true;
+    });
+    std::sort(out.begin(), out.end(), [](const RayHit2D& x, const RayHit2D& y) { return x.distance < y.distance; });
+    return out;
+}
+
+std::optional<ShapeHit2D> Simulation2D::shape_cast(const Shape2D& shape, const Transform2D& start, const RVec2& translation, const QueryFilter2D& filter) {
+    sync_tree(true);
+    const AABB a0 = shape.compute_aabb(start);
+    const AABB sweep = AABB::merge(a0, AABB(a0.min + translation, a0.max + translation));
+    std::optional<ShapeHit2D> result;
+    Real best = 1.0_r;
+    m_dtree.query(sweep, [&](std::int32_t, RigidBody2D* b) {
+        const auto& cols = b->colliders();
+        for (std::size_t i = 0; i < cols.size(); ++i) {
+            if (!accepts(*b, cols[i], filter)) continue;
+            Real f = 0.0_r;
+            RVec2 n, p;
+            if (cast_shape(shape, start, translation, cols[i].shape, b->transform().compose(cols[i].local_offset), f, n, p) && f <= best) {
+                best = f;
+                result = ShapeHit2D{ b, i, f, p, n };
+            }
+        }
+        return true;
+    });
+    return result;
+}
+
+std::vector<RigidBody2D*> Simulation2D::overlap(const Shape2D& shape, const Transform2D& xf, const QueryFilter2D& filter) {
+    sync_tree(true);
+    std::vector<RigidBody2D*> out;
+    const AABB box = shape.compute_aabb(xf);
+    m_dtree.query(box, [&](std::int32_t, RigidBody2D* b) {
+        for (const Collider2D& c : b->colliders()) {
+            if (!accepts(*b, c, filter) || !c.world_aabb.overlaps(box)) continue;
+            if (overlap_shapes(shape, xf, c.shape, b->transform().compose(c.local_offset))) {
+                out.push_back(b);
+                break;
+            }
+        }
+        return true;
+    });
+    return out;
+}
+
+std::vector<RigidBody2D*> Simulation2D::overlap_circle(const RVec2& center, Real radius, const QueryFilter2D& filter) {
+    return overlap(Shape2D::make_circle({ 0.0_r, 0.0_r }, radius), Transform2D(center, 0.0_r), filter);
+}
+
+void Simulation2D::shift_origin(const RVec2& offset) {
+    for (auto& bp : m_bodies) {
+        RigidBody2D& b = *bp;
+        b.transform().position = b.transform().position - offset;
+        b.sweep().position0 = b.sweep().position0 - offset;
+        b.sweep().position1 = b.sweep().position1 - offset;
+        b.synchronize_colliders();
+    }
+    m_dtree.shift(offset * -1.0_r);
+    for (auto& [key, c] : m_contact_cache) c.point = c.point - offset;
+    for (auto& mf : m_manifolds) {
+        for (int p = 0; p < mf.point_count; ++p) mf.points[p].position = mf.points[p].position - offset;
+    }
+    for (auto& e : m_last_begin) e.point = e.point - offset;
+    for (auto& e : m_last_end) e.point = e.point - offset;
 }
 
 } // namespace physics

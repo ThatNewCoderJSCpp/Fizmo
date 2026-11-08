@@ -11,6 +11,40 @@ auto PointLight3D::spot(const linalg::vector3d& at, const linalg::vector3d& faci
     return l;
 }
 
+auto PointLight3D::sphere(const linalg::vector3d& at, float source_radius, const Color& c, float strength, float reach, bool shadows) noexcept -> PointLight3D {
+    PointLight3D l(at, c, strength, reach, shadows);
+    l.shape  = LightShape3D::Sphere;
+    l.size_x = source_radius;
+    return l;
+}
+
+auto PointLight3D::tube(const linalg::vector3d& center, const linalg::vector3d& along, float length, float source_radius, const Color& c, float strength, float reach, bool shadows) noexcept -> PointLight3D {
+    PointLight3D l(center, c, strength, reach, shadows);
+    l.shape  = LightShape3D::Tube;
+    l.axis   = along;
+    l.size_x = source_radius;
+    l.size_y = length * 0.5f;
+    return l;
+}
+
+auto PointLight3D::rectangle(const linalg::vector3d& center, const linalg::vector3d& facing, const linalg::vector3d& width_axis, float width, float height, const Color& c, float strength, float reach, bool shadows) noexcept -> PointLight3D {
+    PointLight3D l(center, c, strength, reach, shadows);
+    l.shape     = LightShape3D::Rectangle;
+    l.direction = facing;
+    l.axis      = width_axis;
+    l.size_x    = width * 0.5f;
+    l.size_y    = height * 0.5f;
+    return l;
+}
+
+auto PointLight3D::disk(const linalg::vector3d& center, const linalg::vector3d& facing, float disk_radius, const Color& c, float strength, float reach, bool shadows) noexcept -> PointLight3D {
+    PointLight3D l(center, c, strength, reach, shadows);
+    l.shape     = LightShape3D::Disk;
+    l.direction = facing;
+    l.size_x    = disk_radius;
+    return l;
+}
+
 auto SunShadow3D::low() noexcept -> SunShadow3D {
     SunShadow3D s;
     s.enabled = true; s.resolution = 1024; s.distance = 40.0; s.filter_taps = 2; s.crossfade = false;

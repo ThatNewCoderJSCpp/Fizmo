@@ -2,6 +2,7 @@
 #define FIZMO_PHYSICS_COMMON_HPP
 
 #include <cstddef>
+#include <mutex>
 #include <cstdint>
 #include <functional>
 #include <iterator>
@@ -29,6 +30,27 @@
 
 namespace fizmo {
 namespace physics {
+
+#ifdef FIZMO_PHYSICS_DOUBLE
+using Real = double;
+#else
+using Real = float;
+#endif
+
+using RVec2 = linalg::Vector2D<Real>;
+using RVec3 = linalg::Vector3D<Real>;
+using RMat3 = linalg::Matrix3x3<Real>;
+using RQuat = linalg::Quaternion<Real>;
+
+constexpr Real operator""_r(long double v) noexcept { return static_cast<Real>(v); }
+
+inline RVec2 to_real(const linalg::vector2d& v) noexcept { return RVec2(static_cast<Real>(v.x), static_cast<Real>(v.y)); }
+inline RVec3 to_real(const linalg::vector3d& v) noexcept { return RVec3(static_cast<Real>(v.x), static_cast<Real>(v.y), static_cast<Real>(v.z)); }
+inline RQuat to_real(const linalg::QuatD& q) noexcept { return RQuat(static_cast<Real>(q.w()), static_cast<Real>(q.x()), static_cast<Real>(q.y()), static_cast<Real>(q.z())); }
+inline linalg::vector2d to_double(const RVec2& v) noexcept { return linalg::vector2d(v.x, v.y); }
+inline linalg::vector3d to_double(const RVec3& v) noexcept { return linalg::vector3d(v.x, v.y, v.z); }
+inline linalg::QuatD to_double(const RQuat& q) noexcept { return linalg::QuatD(q.w(), q.x(), q.y(), q.z()); }
+
 
 enum class MassMode : std::uint8_t {
     Density = 0, // mass from density
@@ -211,45 +233,45 @@ constexpr bool has_any(PhysicsFlags set, PhysicsFlags mask) noexcept {
 namespace detail {
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
-convert_velocity_scalar(double val, FromU from, ToU to) {
-    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, Real>::type
+convert_velocity_scalar(Real val, FromU from, ToU to) {
+    return static_cast<Real>(units::convert(static_cast<long double>(val), from, to));
 }
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
-convert_angular_velocity_scalar(double val, FromU from, ToU to) {
-    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, Real>::type
+convert_angular_velocity_scalar(Real val, FromU from, ToU to) {
+    return static_cast<Real>(units::convert(static_cast<long double>(val), from, to));
 }
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
-convert_force_scalar(double val, FromU from, ToU to) {
-    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, Real>::type
+convert_force_scalar(Real val, FromU from, ToU to) {
+    return static_cast<Real>(units::convert(static_cast<long double>(val), from, to));
 }
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
-convert_torque_scalar(double val, FromU from, ToU to) {
-    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, Real>::type
+convert_torque_scalar(Real val, FromU from, ToU to) {
+    return static_cast<Real>(units::convert(static_cast<long double>(val), from, to));
 }
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
-convert_weight_scalar(double val, FromU from, ToU to) {
-    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, Real>::type
+convert_weight_scalar(Real val, FromU from, ToU to) {
+    return static_cast<Real>(units::convert(static_cast<long double>(val), from, to));
 }
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
-convert_distance_scalar(double val, FromU from, ToU to) {
-    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, Real>::type
+convert_distance_scalar(Real val, FromU from, ToU to) {
+    return static_cast<Real>(units::convert(static_cast<long double>(val), from, to));
 }
 
 template <class FromU, class ToU>
-inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, double>::type
-convert_impulse_scalar(double val, FromU from, ToU to) {
-    return static_cast<double>(units::convert(static_cast<long double>(val), from, to));
+inline typename std::enable_if<is_fizmo_unit_v<FromU> && is_fizmo_unit_v<ToU>, Real>::type
+convert_impulse_scalar(Real val, FromU from, ToU to) {
+    return static_cast<Real>(units::convert(static_cast<long double>(val), from, to));
 }
 
 } // namespace detail
@@ -262,9 +284,10 @@ struct ContactKey {
     const Body* body_b = nullptr;
     std::size_t collider_a = 0;
     std::size_t collider_b = 0;
+    std::uint32_t feature = 0;
 
     bool operator==(const ContactKey& o) const noexcept {
-        return body_a == o.body_a && body_b == o.body_b && collider_a == o.collider_a && collider_b == o.collider_b;
+        return body_a == o.body_a && body_b == o.body_b && collider_a == o.collider_a && collider_b == o.collider_b && feature == o.feature;
     }
 };
 
@@ -276,6 +299,7 @@ struct ContactKeyHash {
         mix(std::hash<const void*>()(k.body_b));
         mix(k.collider_a);
         mix(k.collider_b);
+        mix(k.feature);
         return h;
     }
 };
@@ -362,6 +386,55 @@ private:
     StorageP m_storage;
 };
 
+enum class BodyQuality : std::uint8_t {
+    Default = 0,
+    Arcade,
+    Normal,
+    High,
+    Ultra
+};
+
+enum class ContinuousMode : std::uint8_t {
+    Default = 0,
+    On,
+    Off
+};
+
+inline const char* to_string(BodyQuality q) noexcept {
+    switch (q) {
+    case BodyQuality::Default: return "default";
+    case BodyQuality::Arcade: return "arcade";
+    case BodyQuality::Normal: return "normal";
+    case BodyQuality::High: return "high";
+    case BodyQuality::Ultra: return "ultra";
+    }
+    return "default";
+}
+
+inline std::optional<BodyQuality> parse_body_quality(std::string_view text) noexcept {
+    if (text == "default") return BodyQuality::Default;
+    if (text == "arcade" || text == "low") return BodyQuality::Arcade;
+    if (text == "normal" || text == "medium") return BodyQuality::Normal;
+    if (text == "high") return BodyQuality::High;
+    if (text == "ultra" || text == "max") return BodyQuality::Ultra;
+    return std::nullopt;
+}
+
+inline int quality_iterations(BodyQuality q, int fallback) noexcept {
+    switch (q) {
+    case BodyQuality::Default: return fallback;
+    case BodyQuality::Arcade: return std::max(2, fallback / 2);
+    case BodyQuality::Normal: return fallback;
+    case BodyQuality::High: return fallback * 2;
+    case BodyQuality::Ultra: return fallback * 4;
+    }
+    return fallback;
+}
+
+inline constexpr bool layers_can_collide(std::uint64_t layer_a, std::uint64_t mask_a, std::uint64_t layer_b, std::uint64_t mask_b) noexcept {
+    return (layer_a & mask_b) != 0 && (layer_b & mask_a) != 0;
+}
+
 enum class CombineMode : std::uint8_t {
     Default = 0,
     Average,
@@ -398,11 +471,11 @@ inline constexpr CombineMode resolve_combine(CombineMode a, CombineMode b, Combi
     return combine_priority(a) >= combine_priority(b) ? a : b;
 }
 
-inline double combine_values(CombineMode m, double a, double b) noexcept {
+inline Real combine_values(CombineMode m, Real a, Real b) noexcept {
     switch (m) {
-    case CombineMode::GeometricMean: return a * b > 0.0 ? std::sqrt(a * b) : 0.0;
-    case CombineMode::HarmonicMean: return a + b > 0.0 ? 2.0 * a * b / (a + b) : 0.0;
-    case CombineMode::QuadraticMean: return std::sqrt(0.5 * (a * a + b * b));
+    case CombineMode::GeometricMean: return a * b > 0.0_r ? std::sqrt(a * b) : 0.0_r;
+    case CombineMode::HarmonicMean: return a + b > 0.0_r ? 2.0_r * a * b / (a + b) : 0.0_r;
+    case CombineMode::QuadraticMean: return std::sqrt(0.5_r * (a * a + b * b));
     case CombineMode::Minimum: return std::min(a, b);
     case CombineMode::Multiply: return a * b;
     case CombineMode::Maximum: return std::max(a, b);
@@ -411,7 +484,7 @@ inline double combine_values(CombineMode m, double a, double b) noexcept {
     case CombineMode::Default:
     case CombineMode::Custom: break;
     }
-    return 0.5 * (a + b);
+    return 0.5_r * (a + b);
 }
 
 inline const char* to_string(CombineMode m) noexcept {
@@ -443,6 +516,126 @@ inline std::optional<CombineMode> parse_combine_mode(std::string_view text) noex
     if (text == "custom") return CombineMode::Custom;
     return std::nullopt;
 }
+
+struct BodyHandle {
+    std::uint32_t index = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t generation = 0;
+
+    bool valid() const noexcept { return index != std::numeric_limits<std::uint32_t>::max(); }
+    bool operator==(const BodyHandle& o) const noexcept { return index == o.index && generation == o.generation; }
+    bool operator!=(const BodyHandle& o) const noexcept { return !(*this == o); }
+    std::uint64_t packed() const noexcept { return (static_cast<std::uint64_t>(generation) << 32) | index; }
+    static BodyHandle unpack(std::uint64_t v) noexcept { return { static_cast<std::uint32_t>(v), static_cast<std::uint32_t>(v >> 32) }; }
+};
+
+namespace detail {
+
+template <std::size_t Size, std::size_t Align>
+class ObjectPool {
+public:
+    static constexpr std::size_t CHUNK = 64;
+
+    static ObjectPool& instance() {
+        static ObjectPool* pool = new ObjectPool();
+        return *pool;
+    }
+
+    void* allocate() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_free) grow();
+        Node* n = m_free;
+        m_free = n->next;
+        ++m_live;
+        return n->bytes;
+    }
+
+    void release(void* p) noexcept {
+        if (!p) return;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        Node* n = reinterpret_cast<Node*>(p);
+        n->next = m_free;
+        m_free = n;
+        --m_live;
+    }
+
+    std::size_t live() const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_live;
+    }
+
+    std::size_t capacity() const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        return m_chunks.size() * CHUNK;
+    }
+
+private:
+    union Node {
+        Node* next;
+        alignas(Align) unsigned char bytes[Size];
+    };
+
+    void grow() {
+        m_chunks.emplace_back(new Node[CHUNK]);
+        Node* chunk = m_chunks.back().get();
+        for (std::size_t i = CHUNK; i-- > 0;) {
+            chunk[i].next = m_free;
+            m_free = &chunk[i];
+        }
+    }
+
+    mutable std::mutex m_mutex;
+    std::vector<std::unique_ptr<Node[]>> m_chunks;
+    Node* m_free = nullptr;
+    std::size_t m_live = 0;
+};
+
+template <class T>
+class HandleTable {
+public:
+    BodyHandle add(T* item) {
+        std::uint32_t index;
+        if (!m_free.empty()) {
+            index = m_free.back();
+            m_free.pop_back();
+            m_items[index] = item;
+        } else {
+            index = static_cast<std::uint32_t>(m_items.size());
+            m_items.push_back(item);
+            m_generations.push_back(1);
+        }
+        return { index, m_generations[index] };
+    }
+
+    void remove(BodyHandle h) {
+        if (!alive(h)) return;
+        m_items[h.index] = nullptr;
+        ++m_generations[h.index];
+        m_free.push_back(h.index);
+    }
+
+    bool alive(BodyHandle h) const noexcept {
+        return h.index < m_items.size() && m_generations[h.index] == h.generation && m_items[h.index] != nullptr;
+    }
+
+    T* get(BodyHandle h) const noexcept { return alive(h) ? m_items[h.index] : nullptr; }
+
+    void clear() {
+        for (std::size_t i = 0; i < m_items.size(); ++i) {
+            if (m_items[i]) {
+                m_items[i] = nullptr;
+                ++m_generations[i];
+                m_free.push_back(static_cast<std::uint32_t>(i));
+            }
+        }
+    }
+
+private:
+    std::vector<T*> m_items;
+    std::vector<std::uint32_t> m_generations;
+    std::vector<std::uint32_t> m_free;
+};
+
+} // namespace detail
 
 } // namespace physics
 } // namespace fizmo

@@ -22,31 +22,33 @@ enum class SpriteCollisionKind : std::uint8_t {
 struct SpriteCollisionDef {
     SpriteCollisionKind kind = SpriteCollisionKind::AutoBox;
     physics::Shape2D custom_shape;
-    double padding = 0.0;
+    physics::Real padding = 0;
 };
 
-inline physics::AABB sprite_aabb(const graphics::Sprite& s) noexcept {
+inline physics::AABB sprite_aabb(const graphics::Sprite& s, physics::Real pad) noexcept {
     auto b = s.bounds();
-    return { { b.x, b.y }, { b.x + b.w, b.y + b.h } };
-}
-
-inline physics::AABB sprite_aabb(const graphics::Sprite& s, double pad) noexcept {
-    auto b = s.bounds();
-
+    const auto x = static_cast<physics::Real>(b.x), y = static_cast<physics::Real>(b.y);
+    const auto w = static_cast<physics::Real>(b.w), h = static_cast<physics::Real>(b.h);
     return {
-        { b.x - pad,       b.y - pad },
-        { b.x + b.w + pad, b.y + b.h + pad }
+        { x - pad,     y - pad },
+        { x + w + pad, y + h + pad }
     };
 }
 
-inline std::pair<linalg::vector2d, double> sprite_circle(const graphics::Sprite& s) noexcept {
+inline physics::AABB sprite_aabb(const graphics::Sprite& s) noexcept {
+    return sprite_aabb(s, physics::Real(0));
+}
+
+inline std::pair<physics::RVec2, physics::Real> sprite_circle(const graphics::Sprite& s) noexcept {
     auto b = s.bounds();
-    linalg::vector2d c{ b.x + b.w * 0.5, b.y + b.h * 0.5 };
-    double r = std::max(b.w, b.h) * 0.5;
+    const auto x = static_cast<physics::Real>(b.x), y = static_cast<physics::Real>(b.y);
+    const auto w = static_cast<physics::Real>(b.w), h = static_cast<physics::Real>(b.h);
+    physics::RVec2 c{ x + w * physics::Real(0.5), y + h * physics::Real(0.5) };
+    physics::Real r = std::max(w, h) * physics::Real(0.5);
     return { c, r };
 }
 
-inline std::pair<linalg::vector2d, double> sprite_circle(const graphics::Sprite& s, double pad) noexcept {
+inline std::pair<physics::RVec2, physics::Real> sprite_circle(const graphics::Sprite& s, physics::Real pad) noexcept {
     auto [c, r] = sprite_circle(s);
     return { c, r + pad };
 }
@@ -62,10 +64,10 @@ inline physics::AABB sprite_collision_aabb(
             return sprite_aabb(s, def.padding);
         case SpriteCollisionKind::AutoCircle: {
             auto [c, r] = sprite_circle(s, def.padding);
-            return { c - linalg::vector2d(r, r), c + linalg::vector2d(r, r) };
+            return { c - physics::RVec2(r, r), c + physics::RVec2(r, r) };
         }
         case SpriteCollisionKind::Custom:
-            return def.custom_shape.compute_aabb(physics::Transform2D({ s.x(), s.y() }, 0.0));
+            return def.custom_shape.compute_aabb(physics::Transform2D({ static_cast<physics::Real>(s.x()), static_cast<physics::Real>(s.y()) }, physics::Real(0)));
     }
     return {};
 }
@@ -98,7 +100,7 @@ inline physics::OverlapResult collides(
     } else {
         auto [ca, ra] = sprite_circle(a, da.padding);
         auto r = physics::overlap_aabb_circle_mtv(ab, ca, ra);
-        r.normal = r.normal * -1.0; 
+        r.normal = r.normal * physics::Real(-1); 
         return r;
     }
 }
@@ -122,7 +124,7 @@ public:
         const physics::AABB& world_bounds,
         std::size_t          max_per_node = 8,
         std::size_t          max_depth    = 6,
-        double               looseness    = physics::Quadtree<graphics::Sprite>::RECOMMENDED_LOOSENESS
+        physics::Real               looseness    = physics::Quadtree<graphics::Sprite>::RECOMMENDED_LOOSENESS
     ) noexcept : m_tree(world_bounds, max_per_node, max_depth, looseness) {}
 
     std::size_t add(graphics::Sprite& s, SpriteCollisionDef def = {}) noexcept {
@@ -165,7 +167,7 @@ public:
         });
     }
 
-    std::vector<graphics::Sprite*> query_point(double px, double py) const {
+    std::vector<graphics::Sprite*> query_point(physics::Real px, physics::Real py) const {
         physics::AABB point_box{
             { px, py }, { px, py }
         };

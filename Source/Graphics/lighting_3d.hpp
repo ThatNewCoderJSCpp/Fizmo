@@ -43,6 +43,14 @@ struct BakedLight {
 
 constexpr std::uint32_t LIGHT_FULL_SKY = BakedLight::full_sky().packed();
 
+enum class LightShape3D : std::uint8_t {
+    Point = 0,
+    Sphere,
+    Tube,
+    Rectangle,
+    Disk
+};
+
 struct PointLight3D {
     static constexpr float FULL_CONE = 180.0f;
 
@@ -56,14 +64,24 @@ struct PointLight3D {
     float         cone_softness = 0.2f;
     bool          moving        = false;
     std::uint64_t id            = 0;
+    LightShape3D  shape         = LightShape3D::Point;
+    float         size_x        = 0.0f;
+    float         size_y        = 0.0f;
+    linalg::vector3d      axis{ 1.0, 0.0, 0.0 };
+    bool          two_sided     = false;
 
     PointLight3D() = default;
     PointLight3D(const linalg::vector3d& at, const Color& c, float strength, float reach, bool shadows = false) noexcept
         : position(at), color(c), intensity(strength), radius(reach), casts_shadows(shadows) {}
 
     static PointLight3D spot(const linalg::vector3d& at, const linalg::vector3d& facing, const Color& c, float strength, float reach, float half_angle, bool shadows = false) noexcept;
+    static PointLight3D sphere(const linalg::vector3d& at, float source_radius, const Color& c, float strength, float reach, bool shadows = false) noexcept;
+    static PointLight3D tube(const linalg::vector3d& center, const linalg::vector3d& along, float length, float source_radius, const Color& c, float strength, float reach, bool shadows = false) noexcept;
+    static PointLight3D rectangle(const linalg::vector3d& center, const linalg::vector3d& facing, const linalg::vector3d& width_axis, float width, float height, const Color& c, float strength, float reach, bool shadows = false) noexcept;
+    static PointLight3D disk(const linalg::vector3d& center, const linalg::vector3d& facing, float disk_radius, const Color& c, float strength, float reach, bool shadows = false) noexcept;
 
     bool is_spot() const noexcept { return cone > 0.0f && cone < FULL_CONE; }
+    bool is_area() const noexcept { return shape != LightShape3D::Point; }
 };
 
 struct SunShadow3D {
@@ -82,6 +100,8 @@ struct SunShadow3D {
     float        max_softness  = 12.0f;
     unsigned int filter_taps   = 4;
     double       recenter      = 0.125;
+    bool         layered       = true;
+    unsigned int stable_frames = 4;
 
     static SunShadow3D off() noexcept { return {}; }
 

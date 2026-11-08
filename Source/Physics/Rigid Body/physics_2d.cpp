@@ -4,49 +4,49 @@
 namespace fizmo {
 namespace physics {
 
-auto Sweep2D::get_transform(double t) const noexcept -> Transform2D { // t: unitless [0,1]
-    linalg::vector2d p = position0 * (1.0 - t) + position1 * t;
-    double a   = angle0 * (1.0 - t) + angle1 * t;
+auto Sweep2D::get_transform(Real t) const noexcept -> Transform2D { // t: unitless [0,1]
+    RVec2 p = position0 * (1.0_r - t) + position1 * t;
+    Real a   = angle0 * (1.0_r - t) + angle1 * t;
     Transform2D xf(p, a);
     xf.position = p - xf.rotate(center_local);
     return xf;
 }
 
-void PolygonShape::set(const linalg::vector2d* pts, std::size_t n) {
+void PolygonShape::set(const RVec2* pts, std::size_t n) {
     assert(n >= 3 && n <= MAX_POLYGON_VERTICES);
     count = n;
     for (std::size_t i = 0; i < n; ++i) vertices[i] = pts[i];
 
     for (std::size_t i = 0; i < n; ++i) {
-        const linalg::vector2d& v0 = vertices[i];
-        const linalg::vector2d& v1 = vertices[(i + 1) % n];
-        linalg::vector2d edge = v1 - v0;
-        normals[i] = fast::normalize(linalg::vector2d(edge.y, -edge.x));
+        const RVec2& v0 = vertices[i];
+        const RVec2& v1 = vertices[(i + 1) % n];
+        RVec2 edge = v1 - v0;
+        normals[i] = fast::normalize(RVec2(edge.y, -edge.x));
     }
 
-    double area_sum = 0.0; 
-    linalg::vector2d c{};
+    Real area_sum = 0.0_r; 
+    RVec2 c{};
 
     for (std::size_t i = 0; i < n; ++i) {
-        const linalg::vector2d& v0 = vertices[i];
-        const linalg::vector2d& v1 = vertices[(i + 1) % n];
-        double cross = fast::perp_dot(v0, v1); 
+        const RVec2& v0 = vertices[i];
+        const RVec2& v1 = vertices[(i + 1) % n];
+        Real cross = fast::perp_dot(v0, v1); 
         area_sum += cross;
         c += (v0 + v1) * cross;
     }
 
-    double inv6A = 1.0 / (3.0 * area_sum);
+    Real inv6A = 1.0_r / (3.0_r * area_sum);
     centroid = c * inv6A;
 }
 
-auto PolygonShape::make_box(double hx, double hy) -> PolygonShape { // hx, hy: meters (half-extents)
+auto PolygonShape::make_box(Real hx, Real hy) -> PolygonShape { // hx, hy: meters (half-extents)
     PolygonShape s;
-    linalg::vector2d pts[4] = { {-hx, -hy}, { hx, -hy}, { hx,  hy}, {-hx,  hy} };
+    RVec2 pts[4] = { {-hx, -hy}, { hx, -hy}, { hx,  hy}, {-hx,  hy} };
     s.set(pts, 4);
     return s;
 }
 
-auto PolygonShape::make_box(double hx, double hy, const linalg::vector2d& center, double angle_rad) -> PolygonShape {
+auto PolygonShape::make_box(Real hx, Real hy, const RVec2& center, Real angle_rad) -> PolygonShape {
     PolygonShape s = make_box(hx, hy);
     Transform2D xf(center, angle_rad);
 
@@ -59,16 +59,16 @@ auto PolygonShape::make_box(double hx, double hy, const linalg::vector2d& center
     return s;
 }
 
-auto Shape2D::make_circle(const linalg::vector2d& center, double radius) -> Shape2D {
+auto Shape2D::make_circle(const RVec2& center, Real radius) -> Shape2D {
     Shape2D s;
     s.type = ShapeType::Circle;
     s.circle = { center, radius };
     s.bounding_radius = fast::length(center) + radius;
-    s.local_aabb = { center - linalg::vector2d(radius, radius), center + linalg::vector2d(radius, radius) };
+    s.local_aabb = { center - RVec2(radius, radius), center + RVec2(radius, radius) };
     return s;
 }
 
-auto Shape2D::make_polygon(const linalg::vector2d* pts, std::size_t n) -> Shape2D {
+auto Shape2D::make_polygon(const RVec2* pts, std::size_t n) -> Shape2D {
     Shape2D s;
     s.type = ShapeType::Polygon;
     s.polygon.set(pts, n);
@@ -76,7 +76,7 @@ auto Shape2D::make_polygon(const linalg::vector2d* pts, std::size_t n) -> Shape2
     return s;
 }
 
-auto Shape2D::make_box(double hx, double hy) -> Shape2D { // meter half-extents
+auto Shape2D::make_box(Real hx, Real hy) -> Shape2D { // meter half-extents
     Shape2D s;
     s.type = ShapeType::Polygon;
     s.polygon = PolygonShape::make_box(hx, hy);
@@ -84,26 +84,26 @@ auto Shape2D::make_box(double hx, double hy) -> Shape2D { // meter half-extents
     return s;
 }
 
-auto Shape2D::make_capsule(const linalg::vector2d& p1, const linalg::vector2d& p2, double radius) -> Shape2D {
+auto Shape2D::make_capsule(const RVec2& p1, const RVec2& p2, Real radius) -> Shape2D {
     Shape2D s;
     s.type = ShapeType::Capsule;
     s.capsule = { p1, p2, radius };
-    double r1 = fast::length(p1) + radius;
-    double r2 = fast::length(p2) + radius;
+    Real r1 = fast::length(p1) + radius;
+    Real r2 = fast::length(p2) + radius;
     s.bounding_radius = r1 > r2 ? r1 : r2;
-    double minx = (p1.x < p2.x ? p1.x : p2.x) - radius;
-    double miny = (p1.y < p2.y ? p1.y : p2.y) - radius;
-    double maxx = (p1.x > p2.x ? p1.x : p2.x) + radius;
-    double maxy = (p1.y > p2.y ? p1.y : p2.y) + radius;
+    Real minx = (p1.x < p2.x ? p1.x : p2.x) - radius;
+    Real miny = (p1.y < p2.y ? p1.y : p2.y) - radius;
+    Real maxx = (p1.x > p2.x ? p1.x : p2.x) + radius;
+    Real maxy = (p1.y > p2.y ? p1.y : p2.y) + radius;
     s.local_aabb = { {minx, miny}, {maxx, maxy} };
     return s;
 }
 
-auto Shape2D::make_edge(const linalg::vector2d& v1, const linalg::vector2d& v2) -> Shape2D {
+auto Shape2D::make_edge(const RVec2& v1, const RVec2& v2) -> Shape2D {
     Shape2D s;
     s.type = ShapeType::Edge;
     s.edge = { v1, v2, {}, {}, false, false };
-    double r1 = fast::length(v1), r2 = fast::length(v2);
+    Real r1 = fast::length(v1), r2 = fast::length(v2);
     s.bounding_radius = r1 > r2 ? r1 : r2;
 
     s.local_aabb = {
@@ -117,12 +117,12 @@ auto Shape2D::make_edge(const linalg::vector2d& v1, const linalg::vector2d& v2) 
 auto Shape2D::compute_aabb(const Transform2D& xf) const noexcept -> AABB {
     switch (type) {
         case ShapeType::Circle: {
-            linalg::vector2d c = xf.apply(circle.center);
-            double r = circle.radius;
-            return { c - linalg::vector2d(r, r), c + linalg::vector2d(r, r) };
+            RVec2 c = xf.apply(circle.center);
+            Real r = circle.radius;
+            return { c - RVec2(r, r), c + RVec2(r, r) };
         }
         case ShapeType::Polygon: {
-            linalg::vector2d v = xf.apply(polygon.vertices[0]);
+            RVec2 v = xf.apply(polygon.vertices[0]);
             AABB box = { v, v };
 
             for (std::size_t i = 1; i < polygon.count; ++i) {
@@ -136,9 +136,9 @@ auto Shape2D::compute_aabb(const Transform2D& xf) const noexcept -> AABB {
             return box;
         }
         case ShapeType::Capsule: {
-            linalg::vector2d p1 = xf.apply(capsule.point1);
-            linalg::vector2d p2 = xf.apply(capsule.point2);
-            double r = capsule.radius;
+            RVec2 p1 = xf.apply(capsule.point1);
+            RVec2 p2 = xf.apply(capsule.point2);
+            Real r = capsule.radius;
 
             return {
                 {
@@ -152,8 +152,8 @@ auto Shape2D::compute_aabb(const Transform2D& xf) const noexcept -> AABB {
             };
         }
         case ShapeType::Edge: {
-            linalg::vector2d v1 = xf.apply(edge.v1);
-            linalg::vector2d v2 = xf.apply(edge.v2);
+            RVec2 v1 = xf.apply(edge.v1);
+            RVec2 v2 = xf.apply(edge.v2);
 
             return {
                 { v1.x < v2.x ? v1.x : v2.x, v1.y < v2.y ? v1.y : v2.y },
@@ -165,11 +165,11 @@ auto Shape2D::compute_aabb(const Transform2D& xf) const noexcept -> AABB {
 }
 
 void Shape2D::compute_polygon_bounds() {
-    bounding_radius = 0.0;
-    linalg::vector2d lo = polygon.vertices[0], hi = lo;
+    bounding_radius = 0.0_r;
+    RVec2 lo = polygon.vertices[0], hi = lo;
 
     for (std::size_t i = 0; i < polygon.count; ++i) {
-        double r = fast::length(polygon.vertices[i]);
+        Real r = fast::length(polygon.vertices[i]);
         if (r > bounding_radius) bounding_radius = r;
         if (polygon.vertices[i].x < lo.x) lo.x = polygon.vertices[i].x;
         if (polygon.vertices[i].y < lo.y) lo.y = polygon.vertices[i].y;
@@ -197,12 +197,12 @@ auto MassData::combine(const MassData* parts, std::size_t n) -> MassData {
     MassData total;
     if (n == 0) return total;
     for (std::size_t i = 0; i < n; ++i) total.mass += parts[i].mass;
-    if (total.mass <= 0.0) return total;
+    if (total.mass <= 0.0_r) return total;
     for (std::size_t i = 0; i < n; ++i) total.center += parts[i].center * parts[i].mass;
     total.center = total.center / total.mass;
 
     for (std::size_t i = 0; i < n; ++i) {
-        linalg::vector2d d = parts[i].center - total.center;
+        RVec2 d = parts[i].center - total.center;
         total.inertia += parts[i].inertia + parts[i].mass * fast::length_squared(d);
     }
 
@@ -216,22 +216,22 @@ namespace fizmo {
 namespace physics {
 namespace detail {
 
-double polygon_area(const PolygonShape& p) {
-    double area = 0.0;
+Real polygon_area(const PolygonShape& p) {
+    Real area = 0.0_r;
 
     for (std::size_t i = 0; i < p.count; ++i) {
-        const linalg::vector2d& v0 = p.vertices[i];
-        const linalg::vector2d& v1 = p.vertices[(i + 1) % p.count];
+        const RVec2& v0 = p.vertices[i];
+        const RVec2& v1 = p.vertices[(i + 1) % p.count];
         area += fast::perp_dot(v0, v1);
     }
 
-    return std::abs(area) * 0.5;
+    return std::abs(area) * 0.5_r;
 }
 
-double capsule_area(const CapsuleShape& c) {
-    double r = c.radius;
-    double d = fast::length(c.point2 - c.point1);
-    return r * (2.0 * d + constants::pi() * r);
+Real capsule_area(const CapsuleShape& c) {
+    Real r = c.radius;
+    Real d = fast::length(c.point2 - c.point1);
+    return r * (2.0_r * d + constants::pi() * r);
 }
 
 } // namespace detail
@@ -241,14 +241,14 @@ double capsule_area(const CapsuleShape& c) {
 namespace fizmo {
 namespace physics {
 
-double compute_shape_area(const Shape2D& shape) {
+Real compute_shape_area(const Shape2D& shape) {
     switch (shape.type) {
         case ShapeType::Circle:  return detail::circle_area(shape.circle);
         case ShapeType::Polygon: return detail::polygon_area(shape.polygon);
         case ShapeType::Capsule: return detail::capsule_area(shape.capsule);
         case ShapeType::Edge:    return detail::edge_area(shape.edge);
     }
-    return 0.0;
+    return 0.0_r;
 }
 
 } // namespace physics
@@ -258,49 +258,49 @@ namespace fizmo {
 namespace physics {
 namespace detail {
 
-MassData compute_circle_mass(const CircleShape& c, double density) { 
-    double area = constants::pi() * c.radius * c.radius; // m2
-    double mass = density * area; // kg
-    double I_local = 0.5 * mass * c.radius * c.radius; // kg*m2
+MassData compute_circle_mass(const CircleShape& c, Real density) { 
+    Real area = constants::pi() * c.radius * c.radius; // m2
+    Real mass = density * area; // kg
+    Real I_local = 0.5_r * mass * c.radius * c.radius; // kg*m2
     return { mass, I_local, c.center };
 }
 
-MassData compute_polygon_mass(const PolygonShape& p, double density) { 
-    double area = 0.0;    // m2
-    double inertia = 0.0; // kg*m2
-    linalg::vector2d center{};
+MassData compute_polygon_mass(const PolygonShape& p, Real density) { 
+    Real area = 0.0_r;    // m2
+    Real inertia = 0.0_r; // kg*m2
+    RVec2 center{};
 
     for (std::size_t i = 0; i < p.count; ++i) {
-        const linalg::vector2d& v0 = p.vertices[i];
-        const linalg::vector2d& v1 = p.vertices[(i + 1) % p.count];
-        double cross = fast::perp_dot(v0, v1); // m2
+        const RVec2& v0 = p.vertices[i];
+        const RVec2& v1 = p.vertices[(i + 1) % p.count];
+        Real cross = fast::perp_dot(v0, v1); // m2
         area += cross;
         center += (v0 + v1) * cross;
-        double tri_I = fast::dot(v0, v0) + fast::dot(v0, v1) + fast::dot(v1, v1); // m2
+        Real tri_I = fast::dot(v0, v0) + fast::dot(v0, v1) + fast::dot(v1, v1); // m2
         inertia += cross * tri_I;
     }
 
-    area *= 0.5;
-    double mass = density * std::abs(area); // kg
-    double inv6A = 1.0 / (3.0 * area);
+    area *= 0.5_r;
+    Real mass = density * std::abs(area); // kg
+    Real inv6A = 1.0_r / (3.0_r * area);
     center = center * inv6A;
-    inertia = density * std::abs(inertia) / 12.0; // kg*m2
+    inertia = density * std::abs(inertia) / 12.0_r; // kg*m2
     inertia -= mass * fast::length_squared(center);
     return { mass, inertia, center };
 }
 
-MassData compute_capsule_mass(const CapsuleShape& c, double density) { 
-    double r = c.radius; // m
-    double d = fast::length(c.point2 - c.point1); // m
-    double rect_area = 2.0 * r * d; // m2
-    double rect_mass = density * rect_area; // kg
-    double rect_I = rect_mass * (d * d / 12.0 + r * r / 3.0); // kg*m2
-    double circ_area = constants::pi() * r * r; // m2
-    double circ_mass = density * circ_area; // kg
-    double circ_I = 0.5 * circ_mass * r * r + circ_mass * (d * 0.5) * (d * 0.5); // kg*m2
-    linalg::vector2d center = c.center();
-    double total_mass = rect_mass + circ_mass; // kg
-    double total_I = rect_I + circ_I; // kg*m2
+MassData compute_capsule_mass(const CapsuleShape& c, Real density) { 
+    Real r = c.radius; // m
+    Real d = fast::length(c.point2 - c.point1); // m
+    Real rect_area = 2.0_r * r * d; // m2
+    Real rect_mass = density * rect_area; // kg
+    Real rect_I = rect_mass * (d * d / 12.0_r + r * r / 3.0_r); // kg*m2
+    Real circ_area = constants::pi() * r * r; // m2
+    Real circ_mass = density * circ_area; // kg
+    Real circ_I = 0.5_r * circ_mass * r * r + circ_mass * (d * 0.5_r) * (d * 0.5_r); // kg*m2
+    RVec2 center = c.center();
+    Real total_mass = rect_mass + circ_mass; // kg
+    Real total_I = rect_I + circ_I; // kg*m2
     return { total_mass, total_I, center };
 }
 
@@ -311,7 +311,7 @@ MassData compute_capsule_mass(const CapsuleShape& c, double density) {
 namespace fizmo {
 namespace physics {
 
-MassData compute_mass(const Shape2D& shape, double density) {
+MassData compute_mass(const Shape2D& shape, Real density) {
     switch (shape.type) {
         case ShapeType::Circle:  return detail::compute_circle_mass(shape.circle, density);
         case ShapeType::Polygon: return detail::compute_polygon_mass(shape.polygon, density);
@@ -321,18 +321,18 @@ MassData compute_mass(const Shape2D& shape, double density) {
     return {};
 }
 
-double MassSpec::resolve_density(double shape_area_m2, double gravity) const noexcept {
+Real MassSpec::resolve_density(Real shape_area_m2, Real gravity) const noexcept {
     switch (mode) {
         case MassMode::Density: return value;
-        case MassMode::Mass:    return (shape_area_m2 > 0.0) ? value / shape_area_m2 : 0.0;
-        case MassMode::Weight:  return (shape_area_m2 > 0.0 && gravity > 0.0) ? (value / gravity) / shape_area_m2 : 0.0;
+        case MassMode::Mass:    return (shape_area_m2 > 0.0_r) ? value / shape_area_m2 : 0.0_r;
+        case MassMode::Weight:  return (shape_area_m2 > 0.0_r && gravity > 0.0_r) ? (value / gravity) / shape_area_m2 : 0.0_r;
     }
-    return 0.0;
+    return 0.0_r;
 }
 
-void Collider2D::recompute_mass(double gravity) {
-    const double area    = compute_shape_area(shape);
-    const double density = material.mass_spec.resolve_density(area, gravity);
+void Collider2D::recompute_mass(Real gravity) {
+    const Real area    = compute_shape_area(shape);
+    const Real density = material.mass_spec.resolve_density(area, gravity);
     mass_data = compute_mass(shape, density);
     mass_data.center = local_offset.apply(mass_data.center);
 }
@@ -378,7 +378,7 @@ auto RigidBody2D::add_collider(
     return c;
 }
 
-void RigidBody2D::set_density(double d) noexcept {
+void RigidBody2D::set_density(Real d) noexcept {
     if (is_frozen(FrozenProperty::Density)) return;
     refresh_shape_area();
     m_density = d;
@@ -386,83 +386,83 @@ void RigidBody2D::set_density(double d) noexcept {
     m_mass_dirty = false;
 }
 
-void RigidBody2D::set_mass(double kg) noexcept {
+void RigidBody2D::set_mass(Real kg) noexcept {
     if (is_frozen(FrozenProperty::Mass)) return;
     refresh_shape_area();
     m_mass     = kg;
-    m_inv_mass = (kg > 0.0) ? 1.0 / kg : 0.0;
+    m_inv_mass = (kg > 0.0_r) ? 1.0_r / kg : 0.0_r;
     resolve_mass_constraint_from(FrozenProperty::Mass);
     m_mass_dirty = false;
 }
 
-void RigidBody2D::apply_force_at(const linalg::vector2d& f, const linalg::vector2d& world_point) {
+void RigidBody2D::apply_force_at(const RVec2& f, const RVec2& world_point) {
     if (!has(PhysicsFlags::LinearForces)) return;
     ensure_mass_uptodate();
     m_force += f;
 
     if (has(PhysicsFlags::Torque)) {
-        linalg::vector2d r = world_point - m_transform.apply(m_local_center);
+        RVec2 r = world_point - m_transform.apply(m_local_center);
         m_torque += fast::perp_dot(r, f);
     }
 
     wake();
 }
 
-void RigidBody2D::apply_linear_impulse(const linalg::vector2d& impulse) {
+void RigidBody2D::apply_linear_impulse(const RVec2& impulse) {
     if (!has(PhysicsFlags::LinearImpulses)) return;
     ensure_mass_uptodate();
     m_linear_velocity += impulse * m_inv_mass;
     wake();
 }
 
-void RigidBody2D::apply_impulse_at(const linalg::vector2d& impulse, const linalg::vector2d& world_point) {
+void RigidBody2D::apply_impulse_at(const RVec2& impulse, const RVec2& world_point) {
     if (!has(PhysicsFlags::LinearImpulses)) return;
     ensure_mass_uptodate();
     m_linear_velocity += impulse * m_inv_mass;
         
     if (has(PhysicsFlags::AngularImpulses)) {
-        linalg::vector2d r = world_point - m_transform.apply(m_local_center);
+        RVec2 r = world_point - m_transform.apply(m_local_center);
         m_angular_velocity += m_inv_inertia * fast::perp_dot(r, impulse);
     }
         
     wake();
 }
 
-void RigidBody2D::apply_angular_impulse(double impulse) {
+void RigidBody2D::apply_angular_impulse(Real impulse) {
     if (!has(PhysicsFlags::AngularImpulses)) return;
     ensure_mass_uptodate();
     m_angular_velocity += m_inv_inertia * impulse;
     wake();
 }
 
-void RigidBody2D::integrate_forces(double dt, const linalg::vector2d& gravity) {
+void RigidBody2D::integrate_forces(Real dt, const RVec2& gravity) {
     ensure_mass_uptodate();
     if (has(PhysicsFlags::Gravity))        m_linear_velocity += gravity * m_gravity_scale * dt;
     if (has(PhysicsFlags::LinearForces))   m_linear_velocity += m_force * m_inv_mass * dt;
     if (has(PhysicsFlags::Torque))         m_angular_velocity += m_torque * m_inv_inertia * dt;
-    if (has(PhysicsFlags::LinearDamping))  m_linear_velocity *= 1.0 / (1.0 + dt * m_linear_damping);
-    if (has(PhysicsFlags::AngularDamping)) m_angular_velocity *= 1.0 / (1.0 + dt * m_angular_damping);
+    if (has(PhysicsFlags::LinearDamping))  m_linear_velocity *= 1.0_r / (1.0_r + dt * m_linear_damping);
+    if (has(PhysicsFlags::AngularDamping)) m_angular_velocity *= 1.0_r / (1.0_r + dt * m_angular_damping);
 
     if (has(PhysicsFlags::VelocityClamping)) {
-        double speed_sq = fast::length_squared(m_linear_velocity);
+        Real speed_sq = fast::length_squared(m_linear_velocity);
         if (speed_sq > m_max_linear_speed * m_max_linear_speed) m_linear_velocity = m_linear_velocity * (m_max_linear_speed / std::sqrt(speed_sq));
     }
 
     if (has(PhysicsFlags::AngularClamping)) {
-        if (std::abs(m_angular_velocity) > m_max_angular_speed) m_angular_velocity = (m_angular_velocity > 0.0 ? 1.0 : -1.0) * m_max_angular_speed;
+        if (std::abs(m_angular_velocity) > m_max_angular_speed) m_angular_velocity = (m_angular_velocity > 0.0_r ? 1.0_r : -1.0_r) * m_max_angular_speed;
     }
 }
 
-void RigidBody2D::integrate_velocities(double dt) {
+void RigidBody2D::integrate_velocities(Real dt) {
     ensure_mass_uptodate();
-    linalg::vector2d center = m_transform.apply(m_local_center);
+    RVec2 center = m_transform.apply(m_local_center);
     m_sweep.position0 = center;
     m_sweep.angle0    = m_transform.angle;
 
     if (has(PhysicsFlags::LinearVelocity)) {
-        linalg::vector2d dv = m_linear_velocity * dt;
-        if (has(PhysicsFlags::LockPositionX)) dv.x = 0.0;
-        if (has(PhysicsFlags::LockPositionY)) dv.y = 0.0;
+        RVec2 dv = m_linear_velocity * dt;
+        if (has(PhysicsFlags::LockPositionX)) dv.x = 0.0_r;
+        if (has(PhysicsFlags::LockPositionY)) dv.y = 0.0_r;
         center += dv;
     }
 
@@ -472,32 +472,32 @@ void RigidBody2D::integrate_velocities(double dt) {
     m_sweep.angle1    = m_transform.angle;
 }
 
-void RigidBody2D::apply_position_correction(const linalg::vector2d& d_center, double d_angle) {
-    if (d_center.x == 0.0 && d_center.y == 0.0 && d_angle == 0.0) return;
+void RigidBody2D::apply_position_correction(const RVec2& d_center, Real d_angle) {
+    if (d_center.x == 0.0_r && d_center.y == 0.0_r && d_angle == 0.0_r) return;
     ensure_mass_uptodate();
-    linalg::vector2d dc = d_center;
-    if (has(PhysicsFlags::LockPositionX)) dc.x = 0.0;
-    if (has(PhysicsFlags::LockPositionY)) dc.y = 0.0;
-    linalg::vector2d center = m_transform.apply(m_local_center) + dc;
-    if (d_angle != 0.0) m_transform.set_angle(m_transform.angle + d_angle);
+    RVec2 dc = d_center;
+    if (has(PhysicsFlags::LockPositionX)) dc.x = 0.0_r;
+    if (has(PhysicsFlags::LockPositionY)) dc.y = 0.0_r;
+    RVec2 center = m_transform.apply(m_local_center) + dc;
+    if (d_angle != 0.0_r) m_transform.set_angle(m_transform.angle + d_angle);
     m_transform.position = center - m_transform.rotate(m_local_center);
 }
 
 void RigidBody2D::put_to_sleep() {
     m_is_awake         = false;
-    m_sleep_timer      = 0.0;
+    m_sleep_timer      = 0.0_r;
     m_linear_velocity  = {};
-    m_angular_velocity = 0.0;
+    m_angular_velocity = 0.0_r;
     m_force            = {};
-    m_torque           = 0.0;
+    m_torque           = 0.0_r;
 }
 
-double RigidBody2D::advance_sleep_timer(double dt) {
-    if (!has(PhysicsFlags::AllowSleep)) { m_sleep_timer = 0.0; return 0.0; }
+Real RigidBody2D::advance_sleep_timer(Real dt) {
+    if (!has(PhysicsFlags::AllowSleep)) { m_sleep_timer = 0.0_r; return 0.0_r; }
 
     if (fast::length_squared(m_linear_velocity) > LINEAR_SLEEP_TOLERANCE * LINEAR_SLEEP_TOLERANCE ||
         std::abs(m_angular_velocity) > ANGULAR_SLEEP_TOLERANCE) {
-        m_sleep_timer = 0.0;
+        m_sleep_timer = 0.0_r;
     } else {
         m_sleep_timer += dt;
     }
@@ -505,7 +505,7 @@ double RigidBody2D::advance_sleep_timer(double dt) {
     return m_sleep_timer;
 }
 
-void RigidBody2D::update_sleep(double dt) {
+void RigidBody2D::update_sleep(Real dt) {
     if (!has(PhysicsFlags::AllowSleep)) return;
     if (advance_sleep_timer(dt) >= SLEEP_TIME_THRESHOLD) put_to_sleep();
 }
@@ -517,16 +517,16 @@ auto RigidBody2D::compute_body_aabb() const -> AABB {
     return result;
 }
 
-auto RigidBody2D::get_velocity_at(const linalg::vector2d& world_point) const noexcept -> linalg::vector2d {
+auto RigidBody2D::get_velocity_at(const RVec2& world_point) const noexcept -> RVec2 {
     ensure_mass_uptodate();
-    linalg::vector2d r = world_point - m_transform.apply(m_local_center);
-    return m_linear_velocity + linalg::vector2d(-m_angular_velocity * r.y, m_angular_velocity * r.x);
+    RVec2 r = world_point - m_transform.apply(m_local_center);
+    return m_linear_velocity + RVec2(-m_angular_velocity * r.y, m_angular_velocity * r.x);
 }
 
-double RigidBody2D::kinetic_energy() const noexcept {
+Real RigidBody2D::kinetic_energy() const noexcept {
     ensure_mass_uptodate();
-    double lin = 0.5 * m_mass * fast::length_squared(m_linear_velocity);
-    double rot = 0.5 * m_inertia * m_angular_velocity * m_angular_velocity;
+    Real lin = 0.5_r * m_mass * fast::length_squared(m_linear_velocity);
+    Real rot = 0.5_r * m_inertia * m_angular_velocity * m_angular_velocity;
     return lin + rot;
 }
 
@@ -539,9 +539,9 @@ bool RigidBody2D::validate_frozen(FrozenProperty f) noexcept {
     return count <= 2;
 }
 
-void RigidBody2D::recompute_mass_data(double gravity) const {
-    m_mass = 0.0; m_inv_mass = 0.0;
-    m_inertia = 0.0; m_inv_inertia = 0.0;
+void RigidBody2D::recompute_mass_data(Real gravity) const {
+    m_mass = 0.0_r; m_inv_mass = 0.0_r;
+    m_inertia = 0.0_r; m_inv_inertia = 0.0_r;
     m_local_center = {};
 
     if (!has(PhysicsFlags::LinearForces) && !has(PhysicsFlags::LinearImpulses)) {
@@ -555,8 +555,8 @@ void RigidBody2D::recompute_mass_data(double gravity) const {
 
     for (auto& c : m_colliders) {
         if (c.is_sensor) continue;
-        const double area    = compute_shape_area(c.shape);
-        const double density = c.material.mass_spec.resolve_density(area, gravity);
+        const Real area    = compute_shape_area(c.shape);
+        const Real density = c.material.mass_spec.resolve_density(area, gravity);
         MassData md = compute_mass(c.shape, density);
         md.center   = c.local_offset.apply(md.center);
         parts.push_back(md);
@@ -564,25 +564,25 @@ void RigidBody2D::recompute_mass_data(double gravity) const {
 
     MassData total = MassData::combine(parts.data(), parts.size());
 
-    if (total.mass > 0.0) {
+    if (total.mass > 0.0_r) {
         m_mass     = total.mass;
-        m_inv_mass = 1.0 / m_mass;
+        m_inv_mass = 1.0_r / m_mass;
         m_local_center = total.center;
     } else {
-        m_mass     = 1.0;
-        m_inv_mass = 1.0;
+        m_mass     = 1.0_r;
+        m_inv_mass = 1.0_r;
     }
 
-    if (total.inertia > 0.0 && !rotation_locked()) {
+    if (total.inertia > 0.0_r && !rotation_locked()) {
         m_inertia     = total.inertia;
-        m_inv_inertia = 1.0 / m_inertia;
+        m_inv_inertia = 1.0_r / m_inertia;
     } else {
-        m_inertia     = 0.0;
-        m_inv_inertia = 0.0;
+        m_inertia     = 0.0_r;
+        m_inv_inertia = 0.0_r;
     }
 
     m_sweep.center_local = m_local_center;
-    m_density = (m_shape_area > 0.0) ? m_mass / m_shape_area : 0.0;
+    m_density = (m_shape_area > 0.0_r) ? m_mass / m_shape_area : 0.0_r;
 }
 
 void RigidBody2D::resolve_mass_constraint_from(FrozenProperty just_set) noexcept {
@@ -592,7 +592,7 @@ void RigidBody2D::resolve_mass_constraint_from(FrozenProperty just_set) noexcept
 
     if (just_set == FrozenProperty::Mass) {
         if (area_frozen || !density_frozen) {
-            m_density = (m_shape_area > 0.0) ? m_mass / m_shape_area : 0.0;
+            m_density = (m_shape_area > 0.0_r) ? m_mass / m_shape_area : 0.0_r;
         } else {
             derive_area_from_mass_density();
         }
@@ -608,7 +608,7 @@ void RigidBody2D::resolve_mass_constraint_from(FrozenProperty just_set) noexcept
         if (density_frozen || !mass_frozen) {
             derive_mass_from_density_area();
         } else {
-            m_density = (m_shape_area > 0.0) ? m_mass / m_shape_area : 0.0;
+            m_density = (m_shape_area > 0.0_r) ? m_mass / m_shape_area : 0.0_r;
             recompute_inertia_from_density();
         }
     }
@@ -616,22 +616,22 @@ void RigidBody2D::resolve_mass_constraint_from(FrozenProperty just_set) noexcept
 
 void RigidBody2D::derive_mass_from_density_area() noexcept {
     m_mass     = m_density * m_shape_area;
-    m_inv_mass = (m_mass > 0.0) ? 1.0 / m_mass : 0.0;
+    m_inv_mass = (m_mass > 0.0_r) ? 1.0_r / m_mass : 0.0_r;
     recompute_inertia_from_density();
 }
 
 void RigidBody2D::derive_area_from_mass_density() noexcept {
-    if (m_density <= 0.0 || m_colliders.empty()) return;
-    double target_area = m_mass / m_density;
-    double current     = m_shape_area;
-    if (current <= 0.0) return;
-    double linear_scale = std::sqrt(target_area / current);  
+    if (m_density <= 0.0_r || m_colliders.empty()) return;
+    Real target_area = m_mass / m_density;
+    Real current     = m_shape_area;
+    if (current <= 0.0_r) return;
+    Real linear_scale = std::sqrt(target_area / current);  
     scale_collider_geometry(linear_scale);
     refresh_shape_area();
     recompute_inertia_from_density();
 }
 
-void RigidBody2D::scale_collider_geometry(double s) noexcept {
+void RigidBody2D::scale_collider_geometry(Real s) noexcept {
     for (auto& c : m_colliders) {
         switch (c.shape.type) {
             case ShapeType::Circle:
@@ -665,14 +665,14 @@ auto RigidBody2D::rebuild_shape_bounds(const Shape2D& src) noexcept -> Shape2D {
     switch (s.type) {
         case ShapeType::Circle:
             s.bounding_radius = fast::length(s.circle.center) + s.circle.radius;
-            s.local_aabb = { s.circle.center - linalg::vector2d(s.circle.radius, s.circle.radius), s.circle.center + linalg::vector2d(s.circle.radius, s.circle.radius) };
+            s.local_aabb = { s.circle.center - RVec2(s.circle.radius, s.circle.radius), s.circle.center + RVec2(s.circle.radius, s.circle.radius) };
             break;
         case ShapeType::Polygon: {
-            s.bounding_radius = 0.0;
-            linalg::vector2d lo = s.polygon.vertices[0], hi = lo;
+            s.bounding_radius = 0.0_r;
+            RVec2 lo = s.polygon.vertices[0], hi = lo;
 
             for (std::size_t i = 0; i < s.polygon.count; ++i) {
-                double r = fast::length(s.polygon.vertices[i]);
+                Real r = fast::length(s.polygon.vertices[i]);
                 if (r > s.bounding_radius) s.bounding_radius = r;
                 if (s.polygon.vertices[i].x < lo.x) lo.x = s.polygon.vertices[i].x;
                 if (s.polygon.vertices[i].y < lo.y) lo.y = s.polygon.vertices[i].y;
@@ -685,8 +685,8 @@ auto RigidBody2D::rebuild_shape_bounds(const Shape2D& src) noexcept -> Shape2D {
         }
         case ShapeType::Capsule: {
             auto& c = s.capsule;
-            double r1 = fast::length(c.point1) + c.radius;
-            double r2 = fast::length(c.point2) + c.radius;
+            Real r1 = fast::length(c.point1) + c.radius;
+            Real r2 = fast::length(c.point2) + c.radius;
             s.bounding_radius = r1 > r2 ? r1 : r2;
 
             s.local_aabb = {
@@ -698,7 +698,7 @@ auto RigidBody2D::rebuild_shape_bounds(const Shape2D& src) noexcept -> Shape2D {
         }
         case ShapeType::Edge: {
             auto& e = s.edge;
-            double r1 = fast::length(e.v1), r2 = fast::length(e.v2);
+            Real r1 = fast::length(e.v1), r2 = fast::length(e.v2);
             s.bounding_radius = r1 > r2 ? r1 : r2;
 
             s.local_aabb = {
@@ -714,7 +714,7 @@ auto RigidBody2D::rebuild_shape_bounds(const Shape2D& src) noexcept -> Shape2D {
 }
 
 void RigidBody2D::refresh_shape_area() const noexcept {
-    m_shape_area = 0.0;
+    m_shape_area = 0.0_r;
     for (const auto& c : m_colliders) { if (!c.is_sensor) m_shape_area += compute_shape_area(c.shape); }
 }
 
@@ -732,15 +732,32 @@ void RigidBody2D::recompute_inertia_from_density() noexcept {
     MassData combined = MassData::combine(parts.data(), parts.size());
     m_local_center = combined.center;
 
-    if (combined.inertia > 0.0 && !rotation_locked()) {
+    if (combined.inertia > 0.0_r && !rotation_locked()) {
         m_inertia     = combined.inertia;
-        m_inv_inertia = 1.0 / m_inertia;
+        m_inv_inertia = 1.0_r / m_inertia;
     } else {
-        m_inertia     = 0.0;
-        m_inv_inertia = 0.0;
+        m_inertia     = 0.0_r;
+        m_inv_inertia = 0.0_r;
     }
 
     m_sweep.center_local = m_local_center;
+}
+
+void* RigidBody2D::operator new(std::size_t size) {
+    if (size != sizeof(RigidBody2D)) return ::operator new(size);
+    return detail::ObjectPool<sizeof(RigidBody2D), alignof(RigidBody2D)>::instance().allocate();
+}
+
+void RigidBody2D::operator delete(void* p, std::size_t size) noexcept {
+    if (size != sizeof(RigidBody2D)) {
+        ::operator delete(p);
+        return;
+    }
+    detail::ObjectPool<sizeof(RigidBody2D), alignof(RigidBody2D)>::instance().release(p);
+}
+
+std::size_t RigidBody2D::pooled_bodies() {
+    return detail::ObjectPool<sizeof(RigidBody2D), alignof(RigidBody2D)>::instance().live();
 }
 
 } // namespace physics

@@ -18,6 +18,9 @@
 #include "../Source/Graphics/mesh.hpp"
 #include "../Source/Graphics/ray.hpp"
 #include "../Source/Graphics/lighting_3d.hpp"
+#include "../Source/Graphics/visibility_3d.hpp"
+#include "../Source/Graphics/lighting_bridge.hpp"
+#include "../Source/Graphics/gpu_path_tracer.hpp"
 
 #include "../Source/GPU/include.hpp"
 

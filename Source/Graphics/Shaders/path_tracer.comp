@@ -1,0 +1,1842 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(std140, set = 0, binding = 0) uniform Params {
+    vec4 cam_pos;
+    vec4 cam_forward;
+    vec4 cam_right;
+    vec4 cam_up;
+    uvec4 size;
+    uvec4 counts;
+    uvec4 opts;
+    uvec4 opts2;
+    uvec4 offsets;
+    uvec4 offsets2;
+    vec4 scene;
+    vec4 photon;
+    vec4 fog0;
+    vec4 fog1;
+    vec4 tone;
+    vec4 balance;
+    vec4 misc;
+} P;
+
+layout(std430, set = 0, binding = 1) readonly buffer Tris { vec4 tris[]; };
+layout(std430, set = 0, binding = 2) readonly buffer Nodes { vec4 nodes[]; };
+layout(std430, set = 0, binding = 3) readonly buffer Materials { vec4 mats[]; };
+layout(std430, set = 0, binding = 4) readonly buffer Lights { vec4 lights[]; };
+layout(std430, set = 0, binding = 5) readonly buffer Tables { float tables[]; };
+layout(std430, set = 0, binding = 6) buffer Accum { vec4 accum[]; };
+layout(std430, set = 0, binding = 7) buffer Cells { uint cells[]; };
+layout(std430, set = 0, binding = 8) buffer Photons { vec4 photons[]; };
+layout(set = 0, binding = 9, rgba8) uniform writeonly image2D out_image;
+
+layout(push_constant) uniform Push {
+    uvec4 pc;
+} K;
+
+const float PI = 3.14159265358979;
+const float TWO_PI = 6.28318530717959;
+const float INV_PI = 0.318309886183791;
+const float INF = 1e30;
+const uint CELL_COUNT = 65536u;
+const uint CELL_SLOTS = 16u;
+
+const uint F_AREA = 1u;
+const uint F_EMISSIVE = 2u;
+const uint F_SHADOWS = 4u;
+const uint F_SPECTRAL = 8u;
+const uint F_DISPERSION = 16u;
+const uint F_CAUSTICS = 32u;
+const uint F_FOG = 64u;
+const uint F_ENV_VISIBLE = 128u;
+const uint F_ENV_LIGHTS = 256u;
+const uint F_ENV_SAMPLE = 512u;
+const uint F_SRGB = 1024u;
+const uint F_FLIP = 2048u;
+const uint F_CASTERS_ALL = 4096u;
+const uint F_CASTERS_SUN = 8192u;
+
+const uint TRI_CASTS = 1u;
+const uint TRI_VISIBLE = 2u;
+const uint TRI_SMOOTH = 8u;
+
+const uint L_POINT = 0u;
+const uint L_DIRECTIONAL = 1u;
+const uint L_SPHERE = 2u;
+const uint L_DISK = 3u;
+const uint L_RECT = 4u;
+const uint L_TUBE = 5u;
+const uint L_TRIANGLE = 6u;
+
+uint rng_state;
+
+uint pcg(inout uint s) {
+    s = s * 747796405u + 2891336453u;
+    uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+    return (w >> 22u) ^ w;
+}
+
+float rnd() {
+    return float(pcg(rng_state) >> 8u) * (1.0 / 16777216.0);
+}
+
+uint hash2(uint a, uint b) {
+    uint s = a * 0x9E3779B9u ^ (b + 0x7F4A7C15u);
+    pcg(s);
+    return pcg(s);
+}
+
+bool has(uint f) {
+    return (P.opts.z & f) != 0u;
+}
+
+float lum(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+float maxc(vec3 c) {
+    return max(c.x, max(c.y, c.z));
+}
+
+float clamp01(float x) {
+    return clamp(x, 0.0, 1.0);
+}
+
+float power_heuristic(float a, float b) {
+    float a2 = a * a;
+    float b2 = b * b;
+    return a2 + b2 > 0.0 ? a2 / (a2 + b2) : 0.0;
+}
+
+struct Frame {
+    vec3 t;
+    vec3 b;
+    vec3 n;
+};
+
+Frame make_frame(vec3 n) {
+    Frame f;
+    float sgn = n.z >= 0.0 ? 1.0 : -1.0;
+    float a = -1.0 / (sgn + n.z);
+    float c = n.x * n.y * a;
+    f.t = vec3(1.0 + sgn * n.x * n.x * a, sgn * c, -sgn * n.x);
+    f.b = vec3(c, sgn + n.y * n.y * a, -n.y);
+    f.n = n;
+    return f;
+}
+
+vec3 to_world(Frame f, vec3 v) {
+    return f.t * v.x + f.b * v.y + f.n * v.z;
+}
+
+vec3 to_local(Frame f, vec3 v) {
+    return vec3(dot(v, f.t), dot(v, f.b), dot(v, f.n));
+}
+
+vec3 sample_cosine(float u1, float u2) {
+    float r = sqrt(u1);
+    float phi = TWO_PI * u2;
+    return vec3(r * cos(phi), r * sin(phi), sqrt(max(0.0, 1.0 - u1)));
+}
+
+vec3 sample_sphere(float u1, float u2) {
+    float z = 1.0 - 2.0 * u1;
+    float r = sqrt(max(0.0, 1.0 - z * z));
+    float phi = TWO_PI * u2;
+    return vec3(r * cos(phi), r * sin(phi), z);
+}
+
+vec3 sample_cone(float u1, float u2, float cos_max) {
+    float ct = 1.0 - u1 * (1.0 - cos_max);
+    float st = sqrt(max(0.0, 1.0 - ct * ct));
+    float phi = TWO_PI * u2;
+    return vec3(st * cos(phi), st * sin(phi), ct);
+}
+
+vec2 sample_disk(float u1, float u2) {
+    float a = 2.0 * u1 - 1.0;
+    float b = 2.0 * u2 - 1.0;
+    if (a == 0.0 && b == 0.0) return vec2(0.0);
+    float r;
+    float theta;
+    if (abs(a) > abs(b)) {
+        r = a;
+        theta = (PI / 4.0) * (b / a);
+    } else {
+        r = b;
+        theta = PI / 2.0 - (PI / 4.0) * (a / b);
+    }
+    return vec2(r * cos(theta), r * sin(theta));
+}
+
+uint tri_material(uint i) { return floatBitsToUint(tris[i * 6u].w); }
+uint tri_flags(uint i) { return floatBitsToUint(tris[i * 6u + 1u].w); }
+uint tri_channels(uint i) { return floatBitsToUint(tris[i * 6u + 2u].w); }
+int tri_light(uint i) { return floatBitsToInt(tris[i * 6u + 3u].w); }
+
+bool hit_tri(uint i, vec3 o, vec3 d, float tmax, out float t, out float u, out float v) {
+    vec3 v0 = tris[i * 6u].xyz;
+    vec3 e1 = tris[i * 6u + 1u].xyz;
+    vec3 e2 = tris[i * 6u + 2u].xyz;
+    vec3 p = cross(d, e2);
+    float det = dot(e1, p);
+    t = 0.0;
+    u = 0.0;
+    v = 0.0;
+    if (abs(det) < 1e-12) return false;
+    float inv = 1.0 / det;
+    vec3 s = o - v0;
+    u = dot(s, p) * inv;
+    if (u < 0.0 || u > 1.0) return false;
+    vec3 q = cross(s, e1);
+    v = dot(d, q) * inv;
+    if (v < 0.0 || u + v > 1.0) return false;
+    t = dot(e2, q) * inv;
+    return t > 0.0 && t < tmax;
+}
+
+bool slab(uint n, vec3 o, vec3 inv, float tmax, out float tn) {
+    vec3 lo = nodes[n * 2u].xyz;
+    vec3 hi = nodes[n * 2u + 1u].xyz;
+    vec3 t0 = (lo - o) * inv;
+    vec3 t1 = (hi - o) * inv;
+    vec3 a = min(t0, t1);
+    vec3 b = max(t0, t1);
+    float enter = max(max(a.x, a.y), max(a.z, 0.0));
+    float leave = min(min(b.x, b.y), min(b.z, tmax));
+    tn = enter;
+    return enter <= leave;
+}
+
+vec3 inverse_dir(vec3 d) {
+    return vec3(abs(d.x) > 1e-20 ? 1.0 / d.x : (d.x >= 0.0 ? 1e20 : -1e20),
+                abs(d.y) > 1e-20 ? 1.0 / d.y : (d.y >= 0.0 ? 1e20 : -1e20),
+                abs(d.z) > 1e-20 ? 1.0 / d.z : (d.z >= 0.0 ? 1e20 : -1e20));
+}
+
+struct Hit {
+    float t;
+    uint tri;
+    float u;
+    float v;
+};
+
+bool trace(vec3 o, vec3 d, float tmax, uint require, out Hit hit) {
+    hit.t = tmax;
+    hit.tri = 0u;
+    hit.u = 0.0;
+    hit.v = 0.0;
+    if (P.counts.y == 0u) return false;
+    vec3 inv = inverse_dir(d);
+    uint stack[48];
+    int sp = 0;
+    stack[sp++] = 0u;
+    bool found = false;
+    while (sp > 0) {
+        uint n = stack[--sp];
+        float tn;
+        if (!slab(n, o, inv, hit.t, tn)) continue;
+        uint first = floatBitsToUint(nodes[n * 2u].w);
+        uint count = floatBitsToUint(nodes[n * 2u + 1u].w);
+        if (count > 0u) {
+            for (uint i = first; i < first + count; ++i) {
+                if ((tri_flags(i) & require) != require) continue;
+                float t;
+                float u;
+                float v;
+                if (hit_tri(i, o, d, hit.t, t, u, v)) {
+                    hit.t = t;
+                    hit.tri = i;
+                    hit.u = u;
+                    hit.v = v;
+                    found = true;
+                }
+            }
+        } else {
+            float ta;
+            float tb;
+            bool ha = slab(first, o, inv, hit.t, ta);
+            bool hb = slab(first + 1u, o, inv, hit.t, tb);
+            if (ha && hb && sp < 46) {
+                if (ta < tb) {
+                    stack[sp++] = first + 1u;
+                    stack[sp++] = first;
+                } else {
+                    stack[sp++] = first;
+                    stack[sp++] = first + 1u;
+                }
+            } else if (ha && sp < 47) {
+                stack[sp++] = first;
+            } else if (hb && sp < 47) {
+                stack[sp++] = first + 1u;
+            }
+        }
+    }
+    return found;
+}
+
+bool occluded(vec3 o, vec3 d, float tmax) {
+    if (P.counts.y == 0u) return false;
+    vec3 inv = inverse_dir(d);
+    uint stack[48];
+    int sp = 0;
+    stack[sp++] = 0u;
+    while (sp > 0) {
+        uint n = stack[--sp];
+        float tn;
+        if (!slab(n, o, inv, tmax, tn)) continue;
+        uint first = floatBitsToUint(nodes[n * 2u].w);
+        uint count = floatBitsToUint(nodes[n * 2u + 1u].w);
+        if (count > 0u) {
+            for (uint i = first; i < first + count; ++i) {
+                if ((tri_flags(i) & TRI_CASTS) == 0u) continue;
+                float t;
+                float u;
+                float v;
+                if (hit_tri(i, o, d, tmax, t, u, v)) return true;
+            }
+        } else if (sp < 46) {
+            stack[sp++] = first;
+            stack[sp++] = first + 1u;
+        }
+    }
+    return false;
+}
+
+struct Mat {
+    vec3 base;
+    float metallic;
+    vec3 emit;
+    float roughness;
+    float specular;
+    float transmission;
+    float ior;
+    float abbe;
+    vec3 absorb_color;
+    float absorb_distance;
+    float opacity;
+    bool thin;
+    bool double_sided;
+};
+
+Mat load_material(uint i) {
+    Mat m;
+    if (i >= P.counts.z) {
+        m.base = vec3(0.8);
+        m.metallic = 0.0;
+        m.emit = vec3(0.0);
+        m.roughness = 0.5;
+        m.specular = 0.5;
+        m.transmission = 0.0;
+        m.ior = 1.5;
+        m.abbe = 0.0;
+        m.absorb_color = vec3(1.0);
+        m.absorb_distance = 0.0;
+        m.opacity = 1.0;
+        m.thin = false;
+        m.double_sided = true;
+        return m;
+    }
+    vec4 a = mats[i * 5u];
+    vec4 b = mats[i * 5u + 1u];
+    vec4 c = mats[i * 5u + 2u];
+    vec4 d = mats[i * 5u + 3u];
+    vec4 e = mats[i * 5u + 4u];
+    m.base = a.xyz;
+    m.metallic = a.w;
+    m.emit = b.xyz;
+    m.roughness = b.w;
+    m.specular = c.x;
+    m.transmission = c.y;
+    m.ior = c.z;
+    m.abbe = c.w;
+    m.absorb_color = d.xyz;
+    m.absorb_distance = d.w;
+    m.opacity = e.x;
+    uint f = floatBitsToUint(e.y);
+    m.thin = (f & 1u) != 0u;
+    m.double_sided = (f & 2u) != 0u;
+    return m;
+}
+
+bool transmissive(Mat m) {
+    return m.transmission > 0.0 && m.metallic < 1.0;
+}
+
+bool dispersive(Mat m) {
+    return m.abbe > 0.0 && transmissive(m);
+}
+
+bool emits(Mat m) {
+    return maxc(m.emit) > 0.0;
+}
+
+float ior_at(Mat m, float nm) {
+    if (m.abbe <= 0.0) return m.ior;
+    float lf = 0.4861;
+    float lc = 0.6563;
+    float ld = 0.5893;
+    float b = (m.ior - 1.0) / (m.abbe * (1.0 / (lf * lf) - 1.0 / (lc * lc)));
+    float a = m.ior - b / (ld * ld);
+    float l = nm * 1e-3;
+    return a + b / (l * l);
+}
+
+struct Wave {
+    bool spectral;
+    float nm;
+    int channel;
+};
+
+vec3 lift(Wave w, vec3 c) {
+    if (!w.spectral) return c;
+    float s1 = smoothstep(480.0, 510.0, w.nm);
+    float s2 = smoothstep(570.0, 610.0, w.nm);
+    return vec3(c.x * s2 + c.y * (s1 - s2) + c.z * (1.0 - s1));
+}
+
+float wave_ior(Wave w, Mat m) {
+    if (!has(F_DISPERSION) || m.abbe <= 0.0) return m.ior;
+    if (w.spectral) return ior_at(m, w.nm);
+    if (w.channel == 0) return ior_at(m, 610.0);
+    if (w.channel == 1) return ior_at(m, 550.0);
+    if (w.channel == 2) return ior_at(m, 465.0);
+    return m.ior;
+}
+
+vec3 wavelength_weight(float nm) {
+    uint base = P.offsets2.y;
+    float x = clamp((nm - 360.0) / (830.0 - 360.0), 0.0, 1.0) * 127.0;
+    uint i = min(uint(x), 126u);
+    float f = x - float(i);
+    vec3 a = vec3(tables[base + i * 3u], tables[base + i * 3u + 1u], tables[base + i * 3u + 2u]);
+    vec3 b = vec3(tables[base + i * 3u + 3u], tables[base + i * 3u + 4u], tables[base + i * 3u + 5u]);
+    return mix(a, b, f);
+}
+
+float sample_wavelength(float u, out float pdf) {
+    float x = 0.85691062 - 1.82750197 * u;
+    float at = 0.5 * log((1.0 + x) / (1.0 - x));
+    float nm = 538.0 - 138.888889 * at;
+    float c = cosh(0.0072 * (nm - 538.0));
+    pdf = 0.003939804229 / (c * c);
+    return nm;
+}
+
+struct Bsdf {
+    vec3 diffuse;
+    vec3 f0;
+    vec3 tint;
+    float alpha;
+    bool delta_spec;
+    float transmission;
+    float eta;
+    bool thin;
+    float p_diffuse;
+    float p_spec;
+    float p_trans;
+};
+
+bool smooth_lobes(Bsdf b) {
+    return b.p_diffuse > 0.0 || (b.p_spec > 0.0 && !b.delta_spec);
+}
+
+float schlick_weight(float c) {
+    float m = clamp01(1.0 - c);
+    float m2 = m * m;
+    return m2 * m2 * m;
+}
+
+vec3 schlick(vec3 f0, float c) {
+    return f0 + (vec3(1.0) - f0) * schlick_weight(c);
+}
+
+float fresnel_dielectric(float cos_i, float eta) {
+    cos_i = clamp01(cos_i);
+    float sin2_t = eta * eta * (1.0 - cos_i * cos_i);
+    if (sin2_t >= 1.0) return 1.0;
+    float cos_t = sqrt(1.0 - sin2_t);
+    float rs = (eta * cos_i - cos_t) / (eta * cos_i + cos_t);
+    float rp = (cos_i - eta * cos_t) / (cos_i + eta * cos_t);
+    return 0.5 * (rs * rs + rp * rp);
+}
+
+bool refract_dir(vec3 wo, vec3 n, float eta, out vec3 wt) {
+    float cos_i = dot(wo, n);
+    float sin2_t = eta * eta * max(0.0, 1.0 - cos_i * cos_i);
+    wt = vec3(0.0);
+    if (sin2_t >= 1.0) return false;
+    float cos_t = sqrt(1.0 - sin2_t);
+    wt = normalize(-wo * eta + n * (eta * cos_i - cos_t));
+    return true;
+}
+
+float ggx_d(vec3 h, float a) {
+    float a2 = a * a;
+    float c = h.z * h.z * (a2 - 1.0) + 1.0;
+    return a2 / (PI * c * c);
+}
+
+float ggx_lambda(vec3 w, float a) {
+    float z2 = w.z * w.z;
+    if (z2 <= 0.0) return 0.0;
+    float t2 = max(0.0, 1.0 - z2) / z2;
+    return 0.5 * (sqrt(1.0 + a * a * t2) - 1.0);
+}
+
+float ggx_g1(vec3 w, float a) {
+    return 1.0 / (1.0 + ggx_lambda(w, a));
+}
+
+float ggx_g2(vec3 wo, vec3 wi, float a) {
+    return 1.0 / (1.0 + ggx_lambda(wo, a) + ggx_lambda(wi, a));
+}
+
+vec3 ggx_vndf(vec3 v, float a, float u1, float u2) {
+    vec3 vh = normalize(vec3(a * v.x, a * v.y, v.z));
+    float lensq = vh.x * vh.x + vh.y * vh.y;
+    vec3 t1 = lensq > 0.0 ? vec3(-vh.y, vh.x, 0.0) / sqrt(lensq) : vec3(1.0, 0.0, 0.0);
+    vec3 t2 = cross(vh, t1);
+    float r = sqrt(u1);
+    float phi = TWO_PI * u2;
+    float p1 = r * cos(phi);
+    float p2 = r * sin(phi);
+    float s = 0.5 * (1.0 + vh.z);
+    p2 = (1.0 - s) * sqrt(max(0.0, 1.0 - p1 * p1)) + s * p2;
+    vec3 nh = t1 * p1 + t2 * p2 + vh * sqrt(max(0.0, 1.0 - p1 * p1 - p2 * p2));
+    return normalize(vec3(a * nh.x, a * nh.y, max(1e-6, nh.z)));
+}
+
+Bsdf make_bsdf(Mat m, vec3 base, float cos_o, bool front, float ior) {
+    Bsdf b;
+    float metal = clamp01(m.metallic);
+    float trans = m.transmission > 0.0 ? clamp01(m.transmission) * (1.0 - metal) : 0.0;
+    float rough = clamp01(m.roughness);
+    b.alpha = max(rough * rough, 1e-3);
+    b.delta_spec = rough < 0.02;
+    float r0 = (ior - 1.0) / (ior + 1.0);
+    float dielectric = min(r0 * r0 * 2.0 * clamp01(m.specular), 1.0);
+    b.f0 = vec3(dielectric) * (1.0 - metal) + base * metal;
+    b.diffuse = base * ((1.0 - metal) * (1.0 - trans));
+    b.tint = base;
+    b.transmission = trans;
+    b.thin = m.thin;
+    b.eta = front ? 1.0 / ior : ior;
+    if (m.thin) b.eta = 1.0 / ior;
+    float fsel = lum(schlick(b.f0, cos_o));
+    float wd = lum(b.diffuse) * (1.0 - fsel);
+    float ws = (1.0 - trans) * fsel;
+    float opaque = wd + ws;
+    b.p_trans = trans;
+    if (opaque > 0.0) {
+        b.p_diffuse = (1.0 - trans) * wd / opaque;
+        b.p_spec = (1.0 - trans) * ws / opaque;
+    } else {
+        b.p_diffuse = 0.0;
+        b.p_spec = 1.0 - trans;
+    }
+    return b;
+}
+
+vec3 bsdf_eval_split(Bsdf b, vec3 wo, vec3 wi, out vec3 spec) {
+    spec = vec3(0.0);
+    if (wo.z <= 0.0 || wi.z <= 0.0) return vec3(0.0);
+    float keep = 1.0 - lum(schlick(b.f0, wo.z));
+    vec3 diff = b.diffuse * (keep * INV_PI);
+    if (!b.delta_spec) {
+        vec3 h = normalize(wo + wi);
+        vec3 f = schlick(b.f0, dot(wi, h));
+        float d = ggx_d(h, b.alpha);
+        float g = ggx_g2(wo, wi, b.alpha);
+        spec = f * ((1.0 - b.transmission) * d * g / (4.0 * wo.z * wi.z));
+    }
+    return diff;
+}
+
+vec3 bsdf_eval(Bsdf b, vec3 wo, vec3 wi) {
+    vec3 spec;
+    vec3 diff = bsdf_eval_split(b, wo, wi, spec);
+    return diff + spec;
+}
+
+float bsdf_pdf(Bsdf b, vec3 wo, vec3 wi) {
+    if (wo.z <= 0.0 || wi.z <= 0.0) return 0.0;
+    float pdf = b.p_diffuse * wi.z * INV_PI;
+    if (!b.delta_spec && b.p_spec > 0.0) {
+        vec3 h = normalize(wo + wi);
+        pdf += b.p_spec * ggx_g1(wo, b.alpha) * ggx_d(h, b.alpha) / (4.0 * wo.z);
+    }
+    return pdf;
+}
+
+struct BsdfSample {
+    vec3 wi;
+    vec3 weight;
+    float pdf;
+    bool specular;
+    bool transmitted;
+};
+
+bool bsdf_sample(Bsdf b, vec3 wo, float u1, float u2, float u3, float u4, out BsdfSample s) {
+    s.wi = vec3(0.0, 0.0, 1.0);
+    s.weight = vec3(0.0);
+    s.pdf = 0.0;
+    s.specular = false;
+    s.transmitted = false;
+    if (wo.z <= 0.0) return false;
+    if (u3 < b.p_trans) {
+        s.specular = true;
+        if (b.thin) {
+            float f = fresnel_dielectric(wo.z, b.eta);
+            float fr = f < 1.0 ? 2.0 * f / (1.0 + f) : 1.0;
+            if (u1 < fr) {
+                s.wi = vec3(-wo.x, -wo.y, wo.z);
+                s.weight = vec3(1.0);
+            } else {
+                s.wi = -wo;
+                s.weight = b.tint;
+                s.transmitted = true;
+            }
+            s.pdf = 1.0;
+            return true;
+        }
+        vec3 m = vec3(0.0, 0.0, 1.0);
+        if (!b.delta_spec) m = ggx_vndf(wo, b.alpha, u1, u2);
+        float cos_om = dot(wo, m);
+        if (cos_om <= 0.0) return false;
+        float f = fresnel_dielectric(cos_om, b.eta);
+        float pick = b.delta_spec ? u1 : u4;
+        if (pick < f) {
+            s.wi = m * (2.0 * cos_om) - wo;
+            if (s.wi.z <= 0.0) return false;
+            s.weight = vec3(1.0);
+        } else {
+            if (!refract_dir(wo, m, b.eta, s.wi)) return false;
+            if (s.wi.z >= 0.0) return false;
+            s.weight = b.tint;
+            s.transmitted = true;
+        }
+        if (!b.delta_spec) s.weight *= ggx_g1(vec3(s.wi.xy, abs(s.wi.z)), b.alpha);
+        s.pdf = 1.0;
+        return true;
+    }
+    if (u3 < b.p_trans + b.p_spec) {
+        if (b.delta_spec) {
+            s.wi = vec3(-wo.x, -wo.y, wo.z);
+            s.weight = schlick(b.f0, wo.z) * ((1.0 - b.transmission) / max(b.p_spec, 1e-6));
+            s.pdf = 1.0;
+            s.specular = true;
+            return true;
+        }
+        vec3 m = ggx_vndf(wo, b.alpha, u1, u2);
+        s.wi = m * (2.0 * dot(wo, m)) - wo;
+        if (s.wi.z <= 0.0) return false;
+    } else {
+        if (b.p_diffuse <= 0.0) return false;
+        s.wi = sample_cosine(u1, u2);
+        if (s.wi.z <= 0.0) return false;
+    }
+    s.pdf = bsdf_pdf(b, wo, s.wi);
+    if (s.pdf <= 0.0) return false;
+    s.weight = bsdf_eval(b, wo, s.wi) * (s.wi.z / s.pdf);
+    return true;
+}
+
+struct Light {
+    uint kind;
+    vec3 p;
+    vec3 n;
+    vec3 t;
+    vec3 b;
+    vec3 e1;
+    vec3 e2;
+    float radius;
+    float half_length;
+    float half_width;
+    float half_height;
+    float area;
+    float cyl_area;
+    vec3 emit;
+    float cos_inner;
+    float cos_outer;
+    float cos_sun;
+    float sun_solid_angle;
+    float range;
+    uint falloff;
+    float exponent;
+    float power;
+    float diffuse;
+    float specular;
+    float volumetric;
+    bool two_sided;
+    bool cone;
+    bool shadows;
+    bool visible;
+    uint channels;
+    float shadow_strength;
+    float bias;
+    uint tri;
+};
+
+Light load_light(uint i) {
+    uint o = i * 11u;
+    Light l;
+    vec4 a = lights[o];
+    l.p = a.xyz;
+    l.kind = floatBitsToUint(a.w);
+    a = lights[o + 1u];
+    l.n = a.xyz;
+    l.radius = a.w;
+    a = lights[o + 2u];
+    l.t = a.xyz;
+    l.half_length = a.w;
+    a = lights[o + 3u];
+    l.b = a.xyz;
+    l.half_width = a.w;
+    a = lights[o + 4u];
+    l.e1 = a.xyz;
+    l.half_height = a.w;
+    a = lights[o + 5u];
+    l.e2 = a.xyz;
+    l.area = a.w;
+    a = lights[o + 6u];
+    l.emit = a.xyz;
+    l.cyl_area = a.w;
+    a = lights[o + 7u];
+    l.cos_inner = a.x;
+    l.cos_outer = a.y;
+    l.cos_sun = a.z;
+    l.sun_solid_angle = a.w;
+    a = lights[o + 8u];
+    l.range = a.x;
+    l.falloff = floatBitsToUint(a.y);
+    l.exponent = a.z;
+    l.power = a.w;
+    a = lights[o + 9u];
+    l.diffuse = a.x;
+    l.specular = a.y;
+    l.volumetric = a.z;
+    uint f = floatBitsToUint(a.w);
+    l.two_sided = (f & 1u) != 0u;
+    l.cone = (f & 2u) != 0u;
+    l.shadows = (f & 4u) != 0u;
+    l.visible = (f & 8u) != 0u;
+    a = lights[o + 10u];
+    l.channels = floatBitsToUint(a.x);
+    l.shadow_strength = a.y;
+    l.bias = a.z;
+    l.tri = floatBitsToUint(a.w);
+    return l;
+}
+
+float light_extent(Light l) {
+    if (l.kind == L_SPHERE || l.kind == L_DISK) return l.radius;
+    if (l.kind == L_RECT) return sqrt(l.half_width * l.half_width + l.half_height * l.half_height);
+    if (l.kind == L_TUBE) return l.half_length + l.radius;
+    if (l.kind == L_TRIANGLE) return max(length(l.e1), length(l.e2));
+    return 0.0;
+}
+
+bool light_reaches(Light l, vec3 p) {
+    if (l.kind == L_DIRECTIONAL || l.range <= 0.0) return true;
+    float reach = l.range + light_extent(l);
+    vec3 d = p - l.p;
+    return dot(d, d) <= reach * reach;
+}
+
+float attenuation(Light l, float d) {
+    d = max(d, 0.01);
+    float window = 1.0;
+    if (l.range > 0.0) {
+        float q = d / l.range;
+        float q4 = q * q * q * q;
+        window = clamp01(1.0 - q4);
+        window *= window;
+    }
+    if (l.falloff == 0u) return window;
+    if (l.falloff == 4u) return window * pow(d, 2.0 - l.exponent);
+    if (l.falloff == 1u) {
+        if (l.range <= 0.0) return 1.0;
+        return max(0.0, 1.0 - d / l.range) * d * d;
+    }
+    if (l.falloff == 2u) {
+        if (l.range <= 0.0) return 1.0;
+        float q = clamp01(1.0 - (d / l.range) * (d / l.range));
+        return q * q * d * d;
+    }
+    if (l.falloff == 3u) {
+        if (l.range > 0.0 && d > l.range) return 0.0;
+        return d * d;
+    }
+    return window;
+}
+
+float light_factor(Light l, vec3 p) {
+    if (l.kind == L_DIRECTIONAL || l.kind == L_TRIANGLE) return 1.0;
+    vec3 d = p - l.p;
+    float dist = length(d);
+    vec3 from = dist > 0.0 ? d / dist : l.n;
+    float f = attenuation(l, dist);
+    if (f <= 0.0) return 0.0;
+    if (l.cone) f *= smoothstep(l.cos_outer, l.cos_inner, dot(from, l.n));
+    return f;
+}
+
+float light_importance(Light l, vec3 p, vec3 n) {
+    if (l.kind == L_DIRECTIONAL) return max(lum(l.emit), 1e-8) * max(dot(n, -l.n), 0.05);
+    vec3 d = l.p - p;
+    float ext = light_extent(l);
+    float d2 = max(dot(d, d), ext * ext + 1e-4);
+    if (l.range > 0.0 && d2 > (l.range + ext) * (l.range + ext)) return 0.0;
+    float dist = sqrt(d2);
+    float facing = dot(n, d / dist);
+    float cosine = clamp(facing + ext / dist, 0.05, 1.0);
+    return l.power * cosine / (4.0 * PI * d2);
+}
+
+struct LightSample {
+    vec3 wi;
+    float distance;
+    vec3 radiance;
+    float pdf;
+    bool delta;
+};
+
+bool sample_light(Light l, vec3 p, float u1, float u2, bool area, out LightSample s) {
+    s.delta = false;
+    s.pdf = 1.0;
+    s.wi = vec3(0.0, 1.0, 0.0);
+    s.distance = INF;
+    s.radiance = vec3(0.0);
+    if (l.kind == L_DIRECTIONAL) {
+        if (area && l.cos_sun < 1.0 && l.sun_solid_angle > 0.0) {
+            s.wi = normalize(to_world(make_frame(-l.n), sample_cone(u1, u2, l.cos_sun)));
+            s.pdf = 1.0 / l.sun_solid_angle;
+            s.radiance = l.emit / l.sun_solid_angle;
+        } else {
+            s.wi = -l.n;
+            s.delta = true;
+            s.radiance = l.emit;
+        }
+        s.distance = INF;
+        return maxc(s.radiance) > 0.0;
+    }
+    if (!area || l.kind == L_POINT) {
+        vec3 d = l.p - p;
+        float d2 = max(dot(d, d), 1e-8);
+        float dist = sqrt(d2);
+        s.wi = d / dist;
+        s.distance = dist;
+        s.delta = true;
+        vec3 intensity = l.emit;
+        if (l.kind == L_SPHERE) intensity = l.emit * (PI * l.radius * l.radius);
+        else if (l.kind == L_DISK || l.kind == L_RECT || l.kind == L_TRIANGLE) {
+            float c = dot(-s.wi, l.n);
+            float cc = l.two_sided ? abs(c) : max(c, 0.0);
+            intensity = l.emit * (l.area * cc);
+        } else if (l.kind == L_TUBE) intensity = l.emit * (2.0 * l.radius * 2.0 * l.half_length + PI * l.radius * l.radius);
+        s.radiance = intensity * light_factor(l, p) / d2;
+        return maxc(s.radiance) > 0.0;
+    }
+    vec3 q;
+    vec3 nq;
+    if (l.kind == L_SPHERE) {
+        vec3 dc = l.p - p;
+        float dc2 = dot(dc, dc);
+        float r2 = l.radius * l.radius;
+        if (dc2 <= r2 * 1.0001) {
+            nq = sample_sphere(u1, u2);
+            q = l.p + nq * l.radius;
+        } else {
+            float dist_c = sqrt(dc2);
+            float cos_max = sqrt(max(0.0, 1.0 - r2 / dc2));
+            vec3 axis = dc / dist_c;
+            s.wi = normalize(to_world(make_frame(axis), sample_cone(u1, u2, cos_max)));
+            float proj = dot(dc, s.wi);
+            float disc = max(0.0, r2 - (dc2 - proj * proj));
+            s.distance = max(proj - sqrt(disc), 1e-5);
+            s.pdf = 1.0 / (TWO_PI * max(1.0 - cos_max, 1e-7));
+            s.radiance = l.emit * light_factor(l, p);
+            return maxc(s.radiance) > 0.0;
+        }
+    } else if (l.kind == L_DISK) {
+        vec2 xy = sample_disk(u1, u2);
+        q = l.p + l.t * (xy.x * l.radius) + l.b * (xy.y * l.radius);
+        nq = l.n;
+    } else if (l.kind == L_RECT) {
+        q = l.p + l.t * ((2.0 * u1 - 1.0) * l.half_width) + l.b * ((2.0 * u2 - 1.0) * l.half_height);
+        nq = l.n;
+    } else if (l.kind == L_TUBE) {
+        float pc = l.area > 0.0 ? l.cyl_area / l.area : 0.0;
+        if (u1 < pc) {
+            float a = u1 / pc;
+            float phi = TWO_PI * u2;
+            vec3 radial = l.t * cos(phi) + l.b * sin(phi);
+            q = l.p + l.n * ((2.0 * a - 1.0) * l.half_length) + radial * l.radius;
+            nq = radial;
+        } else {
+            float a = pc < 1.0 ? (u1 - pc) / (1.0 - pc) : 0.5;
+            vec3 w = sample_sphere(a, u2);
+            vec3 world = l.t * w.x + l.b * w.y + l.n * w.z;
+            vec3 end = l.p + l.n * (w.z >= 0.0 ? l.half_length : -l.half_length);
+            q = end + world * l.radius;
+            nq = world;
+        }
+    } else if (l.kind == L_TRIANGLE) {
+        float su = sqrt(u1);
+        q = l.p + l.e1 * (su * (1.0 - u2)) + l.e2 * (su * u2);
+        nq = l.n;
+    } else {
+        return false;
+    }
+    vec3 d = q - p;
+    float d2 = dot(d, d);
+    if (d2 <= 1e-10) return false;
+    float dist = sqrt(d2);
+    s.wi = d / dist;
+    float cl = dot(-s.wi, nq);
+    bool one_sided = !(l.two_sided && (l.kind == L_DISK || l.kind == L_RECT || l.kind == L_TRIANGLE));
+    if (one_sided && cl <= 0.0) return false;
+    cl = abs(cl);
+    if (cl <= 1e-6) return false;
+    s.distance = dist;
+    s.pdf = d2 / (cl * l.area);
+    s.radiance = l.emit * light_factor(l, p);
+    return maxc(s.radiance) > 0.0;
+}
+
+bool hit_sphere(vec3 c, float r, vec3 o, vec3 d, float tmax, out float t) {
+    vec3 oc = o - c;
+    float b = dot(oc, d);
+    float cc = dot(oc, oc) - r * r;
+    float h = b * b - cc;
+    t = 0.0;
+    if (h < 0.0) return false;
+    float sq = sqrt(h);
+    float tt = -b - sq;
+    if (tt <= 1e-5) tt = -b + sq;
+    if (tt <= 1e-5 || tt >= tmax) return false;
+    t = tt;
+    return true;
+}
+
+bool hit_capsule(vec3 pa, vec3 pb, float r, vec3 o, vec3 d, float tmax, out float t, out vec3 normal) {
+    vec3 ba = pb - pa;
+    vec3 oa = o - pa;
+    float baba = dot(ba, ba);
+    float bard = dot(ba, d);
+    float baoa = dot(ba, oa);
+    float rdoa = dot(d, oa);
+    float oaoa = dot(oa, oa);
+    float a = baba - bard * bard;
+    float b = baba * rdoa - baoa * bard;
+    float c = baba * oaoa - baoa * baoa - r * r * baba;
+    float h = b * b - a * c;
+    float best = INF;
+    normal = vec3(0.0, 1.0, 0.0);
+    t = 0.0;
+    if (h >= 0.0 && a > 1e-12) {
+        float tt = (-b - sqrt(h)) / a;
+        float y = baoa + tt * bard;
+        if (y > 0.0 && y < baba && tt > 1e-5 && tt < tmax) {
+            best = tt;
+            vec3 p = o + d * tt;
+            normal = normalize(p - (pa + ba * (y / baba)));
+        }
+    }
+    float ts;
+    if (hit_sphere(pa, r, o, d, tmax, ts) && ts < best) {
+        vec3 p = o + d * ts;
+        if (dot(p - pa, ba) <= 0.0 || baba <= 1e-12) {
+            best = ts;
+            normal = normalize(p - pa);
+        }
+    }
+    if (hit_sphere(pb, r, o, d, tmax, ts) && ts < best) {
+        vec3 p = o + d * ts;
+        if (dot(p - pb, ba) >= 0.0) {
+            best = ts;
+            normal = normalize(p - pb);
+        }
+    }
+    if (best >= INF) return false;
+    t = best;
+    return true;
+}
+
+bool intersect_light(Light l, vec3 o, vec3 d, float tmax, out float t, out vec3 point, out vec3 normal) {
+    t = 0.0;
+    point = vec3(0.0);
+    normal = l.n;
+    if (l.kind == L_SPHERE) {
+        if (!hit_sphere(l.p, l.radius, o, d, tmax, t)) return false;
+        point = o + d * t;
+        normal = normalize(point - l.p);
+        return true;
+    }
+    if (l.kind == L_DISK || l.kind == L_RECT) {
+        float denom = dot(d, l.n);
+        if (abs(denom) < 1e-8) return false;
+        float tt = dot(l.p - o, l.n) / denom;
+        if (tt <= 1e-5 || tt >= tmax) return false;
+        vec3 q = o + d * tt;
+        vec3 rel = q - l.p;
+        float x = dot(rel, l.t);
+        float y = dot(rel, l.b);
+        if (l.kind == L_DISK) {
+            if (x * x + y * y > l.radius * l.radius) return false;
+        } else if (abs(x) > l.half_width || abs(y) > l.half_height) {
+            return false;
+        }
+        t = tt;
+        point = q;
+        normal = l.n;
+        return true;
+    }
+    if (l.kind == L_TUBE) {
+        vec3 a = l.p - l.n * l.half_length;
+        vec3 b = l.p + l.n * l.half_length;
+        if (!hit_capsule(a, b, l.radius, o, d, tmax, t, normal)) return false;
+        point = o + d * t;
+        return true;
+    }
+    return false;
+}
+
+float light_pdf(Light l, vec3 p, vec3 wi, float t, vec3 normal) {
+    if (l.kind == L_SPHERE) {
+        vec3 dc = l.p - p;
+        float dc2 = dot(dc, dc);
+        float r2 = l.radius * l.radius;
+        if (dc2 <= r2 * 1.0001) {
+            float c = abs(dot(-wi, normal));
+            return c > 0.0 ? t * t / (c * l.area) : 0.0;
+        }
+        float cos_max = sqrt(max(0.0, 1.0 - r2 / dc2));
+        return 1.0 / (TWO_PI * max(1.0 - cos_max, 1e-7));
+    }
+    if (l.kind == L_DISK || l.kind == L_RECT || l.kind == L_TRIANGLE || l.kind == L_TUBE) {
+        float c = dot(-wi, normal);
+        bool one_sided = !(l.two_sided && l.kind != L_TUBE);
+        if (one_sided && c <= 0.0) return 0.0;
+        c = abs(c);
+        return c > 1e-6 ? t * t / (c * l.area) : 0.0;
+    }
+    return 0.0;
+}
+
+vec3 light_hit_radiance(Light l, vec3 point, vec3 normal, vec3 viewer) {
+    vec3 to_viewer = normalize(viewer - point);
+    float c = dot(to_viewer, normal);
+    bool one_sided = !(l.two_sided && l.kind != L_TUBE && l.kind != L_SPHERE);
+    if (one_sided && c <= 0.0) return vec3(0.0);
+    return l.emit * light_factor(l, viewer);
+}
+
+bool casts_for(Light l) {
+    if (has(F_CASTERS_ALL)) return true;
+    if (has(F_CASTERS_SUN)) return l.shadows && l.kind == L_DIRECTIONAL;
+    return l.shadows;
+}
+
+vec3 env_lookup(vec3 dir) {
+    uint w = P.offsets2.z;
+    uint h = P.offsets2.w;
+    if (w == 0u || h == 0u) return vec3(0.0);
+    float theta = acos(clamp(dir.y, -1.0, 1.0));
+    float phi = atan(dir.x, -dir.z);
+    float u = phi / TWO_PI + 0.5;
+    float v = theta / PI;
+    float fx = u * float(w) - 0.5;
+    float fy = clamp(v * float(h) - 0.5, 0.0, float(h - 1u));
+    int x0 = int(floor(fx));
+    int y0 = int(floor(fy));
+    float tx = fx - float(x0);
+    float ty = fy - float(y0);
+    int x1 = x0 + 1;
+    int y1 = min(y0 + 1, int(h) - 1);
+    x0 = (x0 % int(w) + int(w)) % int(w);
+    x1 = (x1 % int(w) + int(w)) % int(w);
+    uint base = P.offsets.z;
+    uint i00 = base + (uint(y0) * w + uint(x0)) * 3u;
+    uint i10 = base + (uint(y0) * w + uint(x1)) * 3u;
+    uint i01 = base + (uint(y1) * w + uint(x0)) * 3u;
+    uint i11 = base + (uint(y1) * w + uint(x1)) * 3u;
+    vec3 a = vec3(tables[i00], tables[i00 + 1u], tables[i00 + 2u]);
+    vec3 b = vec3(tables[i10], tables[i10 + 1u], tables[i10 + 2u]);
+    vec3 c = vec3(tables[i01], tables[i01 + 1u], tables[i01 + 2u]);
+    vec3 d = vec3(tables[i11], tables[i11 + 1u], tables[i11 + 2u]);
+    return mix(mix(a, b, tx), mix(c, d, tx), ty);
+}
+
+vec3 env_texel(uint x, uint y) {
+    uint i = P.offsets.z + (y * P.offsets2.z + x) * 3u;
+    return vec3(tables[i], tables[i + 1u], tables[i + 2u]);
+}
+
+uint upper_bound(uint base, uint n, float target) {
+    uint lo = 0u;
+    uint hi = n;
+    while (lo < hi) {
+        uint mid = (lo + hi) >> 1u;
+        if (tables[base + mid] <= target) lo = mid + 1u;
+        else hi = mid;
+    }
+    return lo;
+}
+
+bool sample_env(float u1, float u2, out vec3 dir, out vec3 radiance, out float pdf) {
+    uint w = P.offsets2.z;
+    uint h = P.offsets2.w;
+    float total = P.misc.x;
+    dir = vec3(0.0, 1.0, 0.0);
+    radiance = vec3(0.0);
+    pdf = 0.0;
+    if (total <= 0.0) return false;
+    uint y = clamp(upper_bound(P.offsets.w, h + 1u, u1 * total), 1u, h) - 1u;
+    uint row = P.offsets2.x + y * (w + 1u);
+    float row_total = tables[row + w];
+    if (row_total <= 0.0) return false;
+    uint x = clamp(upper_bound(row, w + 1u, u2 * row_total), 1u, w) - 1u;
+    float u = (float(x) + 0.5) / float(w);
+    float v = (float(y) + 0.5) / float(h);
+    float theta = v * PI;
+    float phi = (u - 0.5) * TWO_PI;
+    float st = sin(theta);
+    dir = normalize(vec3(st * sin(phi), cos(theta), -st * cos(phi)));
+    float texel_p = (tables[row + x + 1u] - tables[row + x]) / total;
+    float texel_solid = (TWO_PI / float(w)) * (PI / float(h)) * max(st, 1e-6);
+    pdf = texel_p / texel_solid;
+    radiance = env_texel(x, y);
+    return pdf > 0.0;
+}
+
+float env_pdf(vec3 dir) {
+    uint w = P.offsets2.z;
+    uint h = P.offsets2.w;
+    float total = P.misc.x;
+    if (total <= 0.0 || !has(F_ENV_SAMPLE)) return 0.0;
+    float theta = acos(clamp(dir.y, -1.0, 1.0));
+    float phi = atan(dir.x, -dir.z);
+    uint x = min(uint((phi / TWO_PI + 0.5) * float(w)), w - 1u);
+    uint y = min(uint(theta / PI * float(h)), h - 1u);
+    uint row = P.offsets2.x + y * (w + 1u);
+    float texel_p = (tables[row + x + 1u] - tables[row + x]) / total;
+    float st = sin((float(y) + 0.5) / float(h) * PI);
+    float texel_solid = (TWO_PI / float(w)) * (PI / float(h)) * max(st, 1e-6);
+    return texel_p / texel_solid;
+}
+
+struct Surface {
+    vec3 p;
+    vec3 ng;
+    vec3 ns;
+    vec3 wo;
+    bool front;
+    uint tri;
+    uint material;
+    uint channels;
+};
+
+Surface make_surface(vec3 o, vec3 d, Hit h) {
+    Surface s;
+    uint i = h.tri;
+    s.tri = i;
+    s.p = o + d * h.t;
+    s.material = tri_material(i);
+    s.channels = tri_channels(i);
+    vec3 gn = normalize(cross(tris[i * 6u + 1u].xyz, tris[i * 6u + 2u].xyz));
+    float w = 1.0 - h.u - h.v;
+    vec3 ns = gn;
+    if ((tri_flags(i) & TRI_SMOOTH) != 0u) {
+        vec3 sn = tris[i * 6u + 3u].xyz * w + tris[i * 6u + 4u].xyz * h.u + tris[i * 6u + 5u].xyz * h.v;
+        if (dot(sn, sn) > 0.0) ns = normalize(sn);
+    }
+    if (dot(gn, ns) < 0.0) gn = -gn;
+    s.front = dot(d, gn) < 0.0;
+    if (!s.front) {
+        gn = -gn;
+        ns = -ns;
+    }
+    s.ng = gn;
+    s.wo = -d;
+    if (dot(ns, s.wo) <= 1e-4) ns = gn;
+    s.ns = ns;
+    return s;
+}
+
+float surface_eps(Surface s) {
+    float m = max(abs(s.p.x), max(abs(s.p.y), abs(s.p.z)));
+    return 2e-4 * (1.0 + m * 0.01) + m * 2e-6;
+}
+
+vec3 offset_ray(Surface s, vec3 dir) {
+    float e = surface_eps(s);
+    return s.p + s.ng * (dot(dir, s.ng) >= 0.0 ? e : -e);
+}
+
+bool usable(Light l, uint index, Surface s) {
+    if ((l.channels & s.channels) == 0u) return false;
+    if (l.kind == L_TRIANGLE) {
+        if (!has(F_EMISSIVE)) return false;
+        if (l.tri == s.tri) return false;
+    }
+    return light_reaches(l, s.p);
+}
+
+float select_pdf(uint index, vec3 p, vec3 n) {
+    uint na = P.size.w;
+    uint total = P.size.z;
+    uint threshold = P.opts2.x;
+    float k = float(max(P.opts2.y, 1u));
+    if (index >= na) {
+        uint ne = total - na;
+        if (ne <= threshold) return 1.0;
+        return P.photon.w > 0.0 ? k * load_light(index).power / P.photon.w : 0.0;
+    }
+    if (na <= threshold) return 1.0;
+    float sum = 0.0;
+    float mine = 0.0;
+    for (uint i = 0u; i < na; ++i) {
+        float imp = light_importance(load_light(i), p, n);
+        sum += imp;
+        if (i == index) mine = imp;
+    }
+    if (sum <= 0.0) return 0.0;
+    return k * mine / sum;
+}
+
+vec3 shade_light(uint idx, Surface s, Bsdf b, Frame frame, vec3 wo, float sel, float scale, Wave w) {
+    Light l = load_light(idx);
+    LightSample ls;
+    if (!sample_light(l, s.p, rnd(), rnd(), has(F_AREA), ls)) return vec3(0.0);
+    vec3 wi = to_local(frame, ls.wi);
+    if (wi.z <= 0.0) return vec3(0.0);
+    vec3 spec;
+    vec3 diff = bsdf_eval_split(b, wo, wi, spec);
+    vec3 f = diff * l.diffuse + spec * l.specular;
+    if (maxc(f) <= 0.0) return vec3(0.0);
+    vec3 c = f * lift(w, ls.radiance) * (wi.z / ls.pdf);
+    if (!ls.delta) c *= power_heuristic(ls.pdf * sel, bsdf_pdf(b, wo, wi));
+    if (has(F_SHADOWS) && casts_for(l)) {
+        vec3 from = offset_ray(s, ls.wi);
+        if (l.bias > 0.0) from += ls.wi * l.bias;
+        if (P.balance.w > 0.0) from += ls.wi * P.balance.w;
+        float dist = ls.distance < INF * 0.5 ? max(ls.distance * (1.0 - 1e-3) - surface_eps(s) * 2.0, 0.0) : 1e30;
+        float vis = occluded(from, ls.wi, dist) ? 0.0 : 1.0;
+        if (l.shadow_strength < 1.0) vis = 1.0 - (1.0 - vis) * l.shadow_strength;
+        c *= vis;
+    }
+    return c * scale;
+}
+
+vec3 direct_lighting(Surface s, Bsdf b, Frame frame, vec3 wo, Wave w) {
+    vec3 sum = vec3(0.0);
+    if (!smooth_lobes(b)) return sum;
+    uint na = P.size.w;
+    uint total = P.size.z;
+    uint ne = total - min(na, total);
+    uint threshold = P.opts2.x;
+    uint k = max(P.opts2.y, 1u);
+    if (na <= threshold) {
+        for (uint i = 0u; i < na; ++i) {
+            if (!usable(load_light(i), i, s)) continue;
+            sum += shade_light(i, s, b, frame, wo, 1.0, 1.0, w);
+        }
+    } else if (na > 0u) {
+        float all = 0.0;
+        for (uint i = 0u; i < na; ++i) {
+            Light l = load_light(i);
+            all += usable(l, i, s) ? light_importance(l, s.p, s.ns) : 0.0;
+        }
+        if (all > 0.0) {
+            for (uint j = 0u; j < k; ++j) {
+                float target = rnd() * all;
+                float run = 0.0;
+                uint pick = na;
+                float pp = 0.0;
+                for (uint i = 0u; i < na; ++i) {
+                    Light l = load_light(i);
+                    float imp = usable(l, i, s) ? light_importance(l, s.p, s.ns) : 0.0;
+                    run += imp;
+                    if (target < run && imp > 0.0) {
+                        pick = i;
+                        pp = imp / all;
+                        break;
+                    }
+                }
+                if (pick >= na || pp <= 0.0) continue;
+                sum += shade_light(pick, s, b, frame, wo, float(k) * pp, 1.0 / (float(k) * pp), w);
+            }
+        }
+    }
+    if (ne > 0u && has(F_EMISSIVE)) {
+        if (ne <= threshold) {
+            for (uint i = na; i < total; ++i) {
+                if (!usable(load_light(i), i, s)) continue;
+                sum += shade_light(i, s, b, frame, wo, 1.0, 1.0, w);
+            }
+        } else if (P.photon.w > 0.0) {
+            for (uint j = 0u; j < k; ++j) {
+                float target = rnd() * P.photon.w;
+                uint e = clamp(upper_bound(P.offsets.x, ne + 1u, target), 1u, ne) - 1u;
+                uint idx = na + e;
+                Light l = load_light(idx);
+                float p = l.power / P.photon.w;
+                if (p <= 0.0 || !usable(l, idx, s)) continue;
+                sum += shade_light(idx, s, b, frame, wo, float(k) * p, 1.0 / (float(k) * p), w);
+            }
+        }
+    }
+    if (has(F_ENV_SAMPLE) && has(F_ENV_LIGHTS)) {
+        vec3 dir;
+        vec3 rad;
+        float pdf;
+        if (sample_env(rnd(), rnd(), dir, rad, pdf)) {
+            vec3 wi = to_local(frame, dir);
+            if (wi.z > 0.0) {
+                vec3 f = bsdf_eval(b, wo, wi);
+                if (maxc(f) > 0.0) {
+                    vec3 c = f * lift(w, rad) * (wi.z / pdf);
+                    c *= power_heuristic(pdf, bsdf_pdf(b, wo, wi));
+                    if (has(F_SHADOWS) && occluded(offset_ray(s, dir), dir, 1e30)) c = vec3(0.0);
+                    sum += c;
+                }
+            }
+        }
+    }
+    return sum;
+}
+
+vec3 absorb(Mat m, float t, Wave w) {
+    if (m.absorb_distance <= 0.0 || t >= INF * 0.5) return vec3(1.0);
+    vec3 c = clamp(lift(w, m.absorb_color), vec3(1e-4), vec3(1.0));
+    return exp(log(c) / m.absorb_distance * t);
+}
+
+float hg(float cos_t, float g) {
+    float d = max(1.0 + g * g - 2.0 * g * cos_t, 1e-4);
+    return (1.0 - g * g) / (4.0 * PI * d * sqrt(d));
+}
+
+vec3 sample_hg(vec3 forward, float g, float u1, float u2) {
+    float cos_t;
+    if (abs(g) < 1e-3) cos_t = 1.0 - 2.0 * u1;
+    else {
+        float sq = (1.0 - g * g) / (1.0 - g + 2.0 * g * u1);
+        cos_t = (1.0 + g * g - sq * sq) / (2.0 * g);
+    }
+    cos_t = clamp(cos_t, -1.0, 1.0);
+    float sin_t = sqrt(max(0.0, 1.0 - cos_t * cos_t));
+    float phi = TWO_PI * u2;
+    return normalize(to_world(make_frame(forward), vec3(sin_t * cos(phi), sin_t * sin(phi), cos_t)));
+}
+
+uint cell_hash(ivec3 c) {
+    uint h = (uint(c.x) * 73856093u) ^ (uint(c.y) * 19349663u) ^ (uint(c.z) * 83492791u);
+    return h & (CELL_COUNT - 1u);
+}
+
+ivec3 cell_of(vec3 p) {
+    return ivec3(floor(p * P.photon.y));
+}
+
+void store_photon(vec3 p, vec3 wi, vec3 n, vec3 power) {
+    uint cell = cell_hash(cell_of(p));
+    uint slot = atomicAdd(cells[cell], 1u);
+    if (slot >= CELL_SLOTS) return;
+    uint base = (cell * CELL_SLOTS + slot) * 3u;
+    photons[base] = vec4(p, 0.0);
+    photons[base + 1u] = vec4(wi, 0.0);
+    photons[base + 2u] = vec4(n, 0.0);
+    photons[base + 1u].w = power.x;
+    photons[base + 2u].w = power.y;
+    photons[base].w = power.z;
+}
+
+vec3 gather_photons(Surface s, Bsdf b, Frame frame, vec3 wo) {
+    float r = P.photon.x;
+    float r2 = r * r;
+    ivec3 lo = cell_of(s.p - vec3(r));
+    ivec3 hi = cell_of(s.p + vec3(r));
+    uint seen[8];
+    uint seen_count = 0u;
+    vec3 sum = vec3(0.0);
+    for (int z = lo.z; z <= hi.z; ++z) {
+        for (int y = lo.y; y <= hi.y; ++y) {
+            for (int x = lo.x; x <= hi.x; ++x) {
+                uint cell = cell_hash(ivec3(x, y, z));
+                bool dup = false;
+                for (uint q = 0u; q < seen_count; ++q) dup = dup || seen[q] == cell;
+                if (dup) continue;
+                if (seen_count < 8u) seen[seen_count++] = cell;
+                uint count = cells[cell];
+                if (count == 0u) continue;
+                uint stored = min(count, CELL_SLOTS);
+                float scale = float(count) / float(stored);
+                for (uint i = 0u; i < stored; ++i) {
+                    uint base = (cell * CELL_SLOTS + i) * 3u;
+                    vec4 a = photons[base];
+                    vec4 bb = photons[base + 1u];
+                    vec4 c = photons[base + 2u];
+                    vec3 d = a.xyz - s.p;
+                    float dd = dot(d, d);
+                    if (dd > r2) continue;
+                    if (dot(c.xyz, s.ns) < 0.6) continue;
+                    if (abs(dot(d, s.ns)) > r * 0.25) continue;
+                    vec3 wi = to_local(frame, bb.xyz);
+                    if (wi.z <= 0.0) continue;
+                    float kk = 1.0 - sqrt(dd / r2);
+                    sum += bsdf_eval(b, wo, wi) * vec3(bb.w, c.w, a.w) * (3.0 * kk * scale);
+                }
+            }
+        }
+    }
+    return sum / (PI * r2);
+}
+
+bool caustic_caster(Mat m) {
+    if (transmissive(m)) return true;
+    return m.metallic > 0.5 && m.roughness < 0.15;
+}
+
+vec3 add_clamped(vec3 L, vec3 v, int depth) {
+    float c = P.tone.w;
+    if (c > 0.0 && depth > 0) {
+        float m = maxc(v);
+        return L + (m > c ? v * (c / m) : v);
+    }
+    return L + v;
+}
+
+vec3 path(vec3 ro, vec3 rd, inout Wave w) {
+    vec3 L = vec3(0.0);
+    vec3 beta = vec3(1.0);
+    bool specular = true;
+    float pdf_prev = 1.0;
+    vec3 prev_p = ro;
+    vec3 prev_n = vec3(0.0, 1.0, 0.0);
+    bool had_diffuse = false;
+    bool in_medium = false;
+    uint medium = 0u;
+    bool caustics = has(F_CAUSTICS);
+    int max_depth = int(max(P.opts.x, 1u));
+    int guard = 0;
+    for (int depth = 0; depth <= max_depth; ++depth) {
+        Hit h;
+        bool hit_tri_any = trace(ro, rd, INF, TRI_VISIBLE, h);
+        float t_close = hit_tri_any ? h.t : INF;
+        int light_hit = -1;
+        vec3 lp = vec3(0.0);
+        vec3 ln = vec3(0.0);
+        if (has(F_AREA)) {
+            for (uint i = 0u; i < P.size.w; ++i) {
+                Light l = load_light(i);
+                if (!l.visible || l.kind == L_POINT || l.kind == L_DIRECTIONAL || l.kind == L_TRIANGLE) continue;
+                float t;
+                vec3 p;
+                vec3 n;
+                if (intersect_light(l, ro, rd, t_close, t, p, n) && t < t_close) {
+                    t_close = t;
+                    light_hit = int(i);
+                    lp = p;
+                    ln = n;
+                }
+            }
+        }
+        if (has(F_FOG) && P.fog0.x > 0.0) {
+            float sigma = P.fog0.w > 0.0 ? P.fog0.x * exp(-P.fog0.w * max(ro.y - P.fog0.z, -20.0)) : P.fog0.x;
+            float limit = min(t_close, P.fog1.w);
+            float ts = -log(max(1.0 - rnd(), 1e-12)) / max(sigma, 1e-8);
+            if (ts < limit) {
+                vec3 x = ro + rd * ts;
+                beta *= lift(w, P.fog1.xyz);
+                for (uint i = 0u; i < P.size.w; ++i) {
+                    Light l = load_light(i);
+                    if (l.volumetric <= 0.0 || !light_reaches(l, x)) continue;
+                    LightSample ls;
+                    if (!sample_light(l, x, rnd(), rnd(), has(F_AREA), ls)) continue;
+                    float dist = ls.distance < INF * 0.5 ? ls.distance * 0.999 : 1e30;
+                    if (l.shadows && occluded(x, ls.wi, dist)) continue;
+                    L = add_clamped(L, beta * lift(w, ls.radiance) * (hg(dot(ls.wi, rd), P.fog0.y) * l.volumetric / ls.pdf), depth);
+                }
+                vec3 nd = sample_hg(rd, P.fog0.y, rnd(), rnd());
+                pdf_prev = hg(dot(nd, rd), P.fog0.y);
+                specular = false;
+                prev_p = x;
+                prev_n = nd;
+                ro = x;
+                rd = nd;
+                continue;
+            }
+        }
+        if (!hit_tri_any && light_hit < 0) {
+            if (depth == 0 && !has(F_ENV_VISIBLE)) break;
+            vec3 Le = lift(w, env_lookup(rd));
+            float weight = 1.0;
+            if (!specular && has(F_ENV_SAMPLE)) weight = power_heuristic(pdf_prev, env_pdf(rd));
+            if (!(caustics && had_diffuse && specular)) L = add_clamped(L, beta * Le * weight, depth);
+            break;
+        }
+        if (light_hit >= 0) {
+            Light l = load_light(uint(light_hit));
+            vec3 Le = lift(w, light_hit_radiance(l, lp, ln, ro));
+            if (in_medium) Le *= absorb(load_material(medium), t_close, w);
+            float weight = 1.0;
+            if (!specular) {
+                float lpdf = light_pdf(l, prev_p, rd, t_close, ln) * select_pdf(uint(light_hit), prev_p, prev_n);
+                weight = power_heuristic(pdf_prev, lpdf);
+            }
+            if (!(caustics && had_diffuse && specular)) L = add_clamped(L, beta * Le * weight, depth);
+            break;
+        }
+        Surface s = make_surface(ro, rd, h);
+        Mat m = load_material(s.material);
+        if (in_medium) beta *= absorb(load_material(medium), h.t, w);
+        if (m.opacity < 1.0 && rnd() > m.opacity && guard < 32) {
+            ++guard;
+            --depth;
+            ro = s.p + rd * surface_eps(s) * 4.0;
+            continue;
+        }
+        if (emits(m) && (m.double_sided || s.front)) {
+            vec3 Le = lift(w, m.emit);
+            float weight = 1.0;
+            int li = tri_light(h.tri);
+            if (!specular && li >= 0 && has(F_EMISSIVE)) {
+                Light l = load_light(uint(li));
+                float lpdf = light_pdf(l, prev_p, rd, h.t, s.ng) * select_pdf(uint(li), prev_p, prev_n);
+                weight = power_heuristic(pdf_prev, lpdf);
+            }
+            if (!(caustics && had_diffuse && specular)) L = add_clamped(L, beta * Le * weight, depth);
+        }
+        if (dispersive(m) && has(F_DISPERSION) && !w.spectral && w.channel < 0) {
+            int k = min(2, int(rnd() * 3.0));
+            vec3 mask = vec3(0.0);
+            mask[k] = 3.0;
+            beta *= mask;
+            w.channel = k;
+        }
+        Bsdf b = make_bsdf(m, lift(w, m.base), max(dot(s.ns, s.wo), 1e-4), s.front, wave_ior(w, m));
+        Frame frame = make_frame(s.ns);
+        vec3 wo = to_local(frame, s.wo);
+        if (caustics && !had_diffuse && smooth_lobes(b) && !transmissive(m) && !(m.metallic > 0.5 && m.roughness < 0.15)) {
+            Bsdf rgb = make_bsdf(m, m.base, max(dot(s.ns, s.wo), 1e-4), s.front, m.ior);
+            L = add_clamped(L, beta * lift(w, gather_photons(s, rgb, frame, wo)), depth);
+        }
+        if (smooth_lobes(b)) L = add_clamped(L, beta * direct_lighting(s, b, frame, wo, w), depth + 1);
+        if (depth == max_depth) break;
+        BsdfSample bs;
+        if (!bsdf_sample(b, wo, rnd(), rnd(), rnd(), rnd(), bs)) break;
+        beta *= bs.weight;
+        if (any(isnan(beta)) || any(isinf(beta)) || maxc(beta) <= 0.0) break;
+        specular = bs.specular;
+        pdf_prev = bs.pdf;
+        prev_p = s.p;
+        prev_n = s.ns;
+        if (!bs.specular && smooth_lobes(b)) had_diffuse = true;
+        vec3 nd = normalize(to_world(frame, bs.wi));
+        if (bs.transmitted && !m.thin) {
+            in_medium = s.front;
+            medium = s.material;
+        }
+        ro = offset_ray(s, nd);
+        rd = nd;
+        if (depth >= int(P.opts.y & 0xFFFFu)) {
+            float q = clamp(1.0 - maxc(beta), 0.05, 0.95);
+            if (rnd() < q) break;
+            beta *= 1.0 / (1.0 - q);
+        }
+    }
+    return L;
+}
+
+bool emit_photon(out vec3 o, out vec3 d, out vec3 power) {
+    o = vec3(0.0);
+    d = vec3(0.0, -1.0, 0.0);
+    power = vec3(0.0);
+    uint n = P.size.z;
+    float total = P.photon.z;
+    if (total <= 0.0 || n == 0u) return false;
+    uint idx = clamp(upper_bound(P.offsets.y, n + 1u, rnd() * total), 1u, n) - 1u;
+    Light l = load_light(idx);
+    float p_light = l.power / total;
+    if (p_light <= 0.0) return false;
+    float u1 = rnd();
+    float u2 = rnd();
+    float u3 = rnd();
+    float u4 = rnd();
+    vec3 q = l.p;
+    vec3 nn = l.n;
+    vec3 phi = vec3(0.0);
+    bool cosine = false;
+    bool both = false;
+    vec3 cn = l.n;
+    if (l.kind == L_POINT) {
+        if (l.cone) {
+            d = normalize(to_world(make_frame(l.n), sample_cone(u1, u2, l.cos_outer)));
+            phi = l.emit * (TWO_PI * (1.0 - l.cos_outer));
+        } else {
+            d = sample_sphere(u1, u2);
+            phi = l.emit * (4.0 * PI);
+        }
+        nn = d;
+    } else if (l.kind == L_DIRECTIONAL) {
+        vec2 xy = sample_disk(u1, u2);
+        float r = P.scene.w * 1.05;
+        q = P.scene.xyz - l.n * (r * 2.0) + (l.t * xy.x + l.b * xy.y) * r;
+        d = l.n;
+        if (l.cos_sun < 1.0) d = normalize(to_world(make_frame(l.n), sample_cone(u3, u4, l.cos_sun)));
+        phi = l.emit * (PI * r * r);
+        nn = d;
+    } else if (l.kind == L_SPHERE) {
+        vec3 w = sample_sphere(u1, u2);
+        q = l.p + w * l.radius;
+        cn = w;
+        cosine = true;
+    } else if (l.kind == L_DISK) {
+        vec2 xy = sample_disk(u1, u2);
+        q = l.p + l.t * (xy.x * l.radius) + l.b * (xy.y * l.radius);
+        cosine = true;
+        both = l.two_sided;
+    } else if (l.kind == L_RECT) {
+        q = l.p + l.t * ((2.0 * u1 - 1.0) * l.half_width) + l.b * ((2.0 * u2 - 1.0) * l.half_height);
+        cosine = true;
+        both = l.two_sided;
+    } else if (l.kind == L_TUBE) {
+        float pc = l.area > 0.0 ? l.cyl_area / l.area : 0.0;
+        if (u1 < pc) {
+            float pa = TWO_PI * u2;
+            vec3 radial = l.t * cos(pa) + l.b * sin(pa);
+            q = l.p + l.n * ((2.0 * (u1 / pc) - 1.0) * l.half_length) + radial * l.radius;
+            cn = radial;
+        } else {
+            vec3 w = sample_sphere(pc < 1.0 ? (u1 - pc) / (1.0 - pc) : 0.5, u2);
+            vec3 world = l.t * w.x + l.b * w.y + l.n * w.z;
+            q = l.p + l.n * (w.z >= 0.0 ? l.half_length : -l.half_length) + world * l.radius;
+            cn = world;
+        }
+        cosine = true;
+    } else {
+        float su = sqrt(u1);
+        q = l.p + l.e1 * (su * (1.0 - u2)) + l.e2 * (su * u2);
+        cosine = true;
+        both = l.two_sided;
+    }
+    if (cosine) {
+        float scale = 1.0;
+        if (both) {
+            if (u4 < 0.5) cn = -cn;
+            scale = 2.0;
+        }
+        d = normalize(to_world(make_frame(cn), sample_cosine(u3, rnd())));
+        phi = l.emit * (PI * l.area * scale);
+        nn = cn;
+    }
+    if (l.kind != L_DIRECTIONAL && l.kind != L_TRIANGLE) phi *= light_factor(l, l.p + d);
+    o = q + nn * 1e-4;
+    power = phi / p_light;
+    return maxc(power) > 0.0;
+}
+
+void trace_photon() {
+    vec3 o;
+    vec3 d;
+    vec3 power;
+    if (!emit_photon(o, d, power)) return;
+    power *= P.misc.y;
+    float start_max = maxc(power);
+    bool spec = false;
+    bool split = false;
+    Wave w;
+    w.spectral = false;
+    w.nm = 550.0;
+    w.channel = -1;
+    float wave_weight = 1.0;
+    bool in_medium = false;
+    uint medium = 0u;
+    int max_bounces = int(P.opts2.w);
+    for (int depth = 0; depth < max_bounces; ++depth) {
+        Hit h;
+        if (!trace(o, d, INF, 0u, h)) return;
+        vec3 before = power;
+        if (in_medium) {
+            Mat mm = load_material(medium);
+            if (mm.absorb_distance > 0.0) power *= exp(log(clamp(mm.absorb_color, vec3(1e-4), vec3(1.0))) / mm.absorb_distance * h.t);
+        }
+        Surface s = make_surface(o, d, h);
+        Mat m = load_material(s.material);
+        if (!caustic_caster(m)) {
+            if (spec && s.front) {
+                vec3 p = power;
+                if (split && w.spectral) p = wavelength_weight(w.nm) * (power.x * wave_weight);
+                store_photon(s.p, -d, s.ns, p);
+            }
+            return;
+        }
+        if (!split && dispersive(m) && has(F_DISPERSION)) {
+            split = true;
+            if (has(F_SPECTRAL)) {
+                float pdf = 1.0;
+                w.spectral = true;
+                w.nm = sample_wavelength(min(rnd(), 0.9999999), pdf);
+                wave_weight = 1.0 / pdf;
+                power = vec3(dot(before, vec3(smoothstep(570.0, 610.0, w.nm), smoothstep(480.0, 510.0, w.nm) - smoothstep(570.0, 610.0, w.nm), 1.0 - smoothstep(480.0, 510.0, w.nm))));
+            } else {
+                int k = min(2, int(rnd() * 3.0));
+                w.channel = k;
+                vec3 mask = vec3(0.0);
+                mask[k] = 3.0;
+                power = before * mask;
+                if (maxc(power) <= 0.0) return;
+            }
+        }
+        Bsdf b = make_bsdf(m, lift(w, m.base), max(dot(s.ns, s.wo), 1e-4), s.front, wave_ior(w, m));
+        Frame frame = make_frame(s.ns);
+        vec3 wo = to_local(frame, s.wo);
+        BsdfSample bs;
+        if (!bsdf_sample(b, wo, rnd(), rnd(), rnd(), rnd(), bs)) return;
+        if (!bs.specular) return;
+        power *= bs.weight;
+        spec = true;
+        d = normalize(to_world(frame, bs.wi));
+        if (bs.transmitted && !m.thin) {
+            in_medium = s.front;
+            medium = s.material;
+        }
+        o = offset_ray(s, d);
+        if (depth >= 3) {
+            float ratio = maxc(power) / max(start_max, 1e-30);
+            float q = clamp(1.0 - ratio, 0.1, 0.95);
+            if (rnd() < q) return;
+            power *= 1.0 / (1.0 - q);
+        }
+    }
+}
+
+float aces(float x) {
+    return clamp01((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
+}
+
+float hable(float x) {
+    return ((x * (0.15 * x + 0.05)) + 0.004) / (x * (0.15 * x + 0.5) + 0.06) - 0.02 / 0.3;
+}
+
+float agx_curve(float x) {
+    float x2 = x * x;
+    float x4 = x2 * x2;
+    return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
+}
+
+vec3 agx(vec3 c) {
+    vec3 i = vec3(0.842479062253094 * c.x + 0.0423282422610123 * c.y + 0.0423756549057051 * c.z,
+                  0.0784335999999992 * c.x + 0.878468636469772 * c.y + 0.0784336 * c.z,
+                  0.0792237451477643 * c.x + 0.0791661274605434 * c.y + 0.879142973793104 * c.z);
+    float lo = -12.47393;
+    float hi = 4.026069;
+    vec3 v;
+    for (int k = 0; k < 3; ++k) v[k] = agx_curve(clamp01((log2(max(i[k], 1e-10)) - lo) / (hi - lo)));
+    vec3 o = vec3(1.19687900512017 * v.x - 0.0528968517574562 * v.y - 0.0529716355144438 * v.z,
+                  -0.0980208811401368 * v.x + 1.15190312990417 * v.y - 0.0980434501171241 * v.z,
+                  -0.0990297440797205 * v.x - 0.0989611768448433 * v.y + 1.15107367264116 * v.z);
+    return pow(max(o, vec3(0.0)), vec3(2.2));
+}
+
+vec3 tone_map(vec3 hdr) {
+    hdr = max(hdr, vec3(0.0)) * P.tone.x;
+    hdr = hdr / max(P.balance.xyz, vec3(1e-4));
+    if (P.tone.y != 1.0) {
+        float y = lum(hdr);
+        hdr = max(vec3(y) + (hdr - vec3(y)) * P.tone.y, vec3(0.0));
+    }
+    vec3 o;
+    uint tm = P.opts.w;
+    if (tm == 0u) o = clamp(hdr, 0.0, 1.0);
+    else if (tm == 1u) o = hdr / (vec3(1.0) + hdr);
+    else if (tm == 2u) o = vec3(aces(hdr.x * 0.6), aces(hdr.y * 0.6), aces(hdr.z * 0.6));
+    else if (tm == 3u) {
+        float white = 1.0 / hable(11.2);
+        o = vec3(hable(hdr.x * 2.0), hable(hdr.y * 2.0), hable(hdr.z * 2.0)) * white;
+    } else o = agx(hdr);
+    if (P.tone.z != 1.0) o = clamp((o - vec3(0.18)) * P.tone.z + vec3(0.18), 0.0, 1.0);
+    return clamp(o, 0.0, 1.0);
+}
+
+float to_srgb(float v) {
+    if (!(v > 0.0)) return 0.0;
+    return v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1.0 / 2.4) - 0.055;
+}
+
+void main() {
+    uint mode = K.pc.x;
+    uvec2 id = gl_GlobalInvocationID.xy;
+    uint width = P.size.x;
+    uint height = P.size.y;
+    if (mode == 0u) {
+        uint i = id.y * (gl_NumWorkGroups.x * 8u) + id.x;
+        if (i < CELL_COUNT) cells[i] = 0u;
+        return;
+    }
+    if (mode == 1u) {
+        uint i = id.y * (gl_NumWorkGroups.x * 8u) + id.x;
+        if (i >= P.opts2.z) return;
+        rng_state = hash2(K.pc.w ^ 0xA511E9B3u, i * 2u + 1u);
+        trace_photon();
+        return;
+    }
+    if (id.x >= width || id.y >= height) return;
+    uint pi = id.y * width + id.x;
+    if (mode == 3u) {
+        vec4 a = accum[pi];
+        vec3 c = a.w > 0.0 ? a.xyz / a.w : vec3(0.0);
+        vec3 o = tone_map(c);
+        if (has(F_SRGB)) o = vec3(to_srgb(o.x), to_srgb(o.y), to_srgb(o.z));
+        else o = pow(o, vec3(1.0 / max(P.misc.z, 0.1)));
+        int y = has(F_FLIP) ? int(height - 1u - id.y) : int(id.y);
+        imageStore(out_image, ivec2(int(id.x), y), vec4(o, 1.0));
+        return;
+    }
+    uint first_sample = K.pc.z;
+    uint spp = max(P.opts.y >> 16u, 1u);
+    rng_state = hash2(K.pc.w, pi * 2u + 1u);
+    float lambda_offset = float(hash2(floatBitsToUint(P.misc.w) ^ 0x51ED270Bu, pi) >> 8u) * (1.0 / 16777216.0);
+    vec3 fwd = P.cam_forward.xyz;
+    vec3 right = P.cam_right.xyz;
+    vec3 up = P.cam_up.xyz;
+    float tan_half = P.cam_pos.w;
+    float aspect = P.cam_forward.w;
+    vec3 sum = vec3(0.0);
+    for (uint s = 0u; s < spp; ++s) {
+        bool center = first_sample == 0u && s == 0u;
+        float jx = center ? 0.5 : rnd();
+        float jy = center ? 0.5 : rnd();
+        float px = (2.0 * (float(id.x) + jx) / float(width) - 1.0) * tan_half * aspect;
+        float py = (1.0 - 2.0 * (float(id.y) + jy) / float(height)) * tan_half;
+        vec3 dir = normalize(fwd + right * px + up * py);
+        vec3 origin = P.cam_pos.xyz;
+        if (P.cam_right.w > 0.0 && P.cam_up.w > 0.0) {
+            vec3 focus = origin + dir * (P.cam_up.w / max(dot(dir, fwd), 1e-3));
+            vec2 dxy = sample_disk(rnd(), rnd());
+            origin = origin + right * (dxy.x * P.cam_right.w) + up * (dxy.y * P.cam_right.w);
+            dir = normalize(focus - origin);
+        }
+        Wave w;
+        w.spectral = has(F_SPECTRAL);
+        w.nm = 550.0;
+        w.channel = -1;
+        float pdf = 1.0;
+        if (w.spectral) {
+            float u = lambda_offset + float(first_sample + s) * 0.6180339887;
+            u -= floor(u);
+            w.nm = sample_wavelength(min(u, 0.9999999), pdf);
+        }
+        vec3 L = path(origin, dir, w);
+        vec3 v = w.spectral ? wavelength_weight(w.nm) * (L.y / pdf) : L;
+        if (any(isnan(v)) || any(isinf(v))) v = vec3(0.0);
+        sum += v;
+    }
+    vec4 prev = first_sample == 0u ? vec4(0.0) : accum[pi];
+    accum[pi] = prev + vec4(sum, float(spp));
+}

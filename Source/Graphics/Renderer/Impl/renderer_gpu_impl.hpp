@@ -437,9 +437,12 @@ private:
         float        swell_phase[4]                  = {};
         float        point_spot[kMaxPointLights][4]  = {};
         float        point_map[kPointShadowMaps][4]  = {};
+        float        point_shape[kMaxPointLights][4] = {};
+        float        point_size[kMaxPointLights][4]  = {};
+        float        point_normal[kMaxPointLights][4] = {};
     };
 
-    static_assert(sizeof(SceneUniforms) == 4256, "scene uniforms must match the std140 block in the shaders");
+    static_assert(sizeof(SceneUniforms) == 7328, "scene uniforms must match the std140 block in the shaders");
     
     struct Caster {
         enum class Kind : std::uint8_t { Mesh = 0, Instanced, Quads };
@@ -674,6 +677,13 @@ private:
     gpu::Format                                              m_shadow_format = gpu::Format::D16Unorm;
     std::unique_ptr<ShadowMap>                               m_sun_map;
     std::unique_ptr<ShadowMap>                               m_sun_map_b;
+    std::unique_ptr<ShadowMap>                               m_sun_static;
+    std::unordered_map<std::uint64_t, std::uint32_t>         m_caster_age;
+    std::unordered_map<std::uint64_t, std::uint32_t>         m_caster_age_next;
+    std::vector<char>                                        m_caster_moving;
+    bool                                                     m_copyable_shadows = true;
+    mutable bool                                             m_sun_layered = true;
+    mutable unsigned int                                     m_sun_stable_frames = 4;
     std::array<ReflectionTarget, kMaxPlanes>                 m_reflections;
     mutable linalg::vector3d                                         m_sun_a{ 0.0, 0.0, -1.0 };
     mutable linalg::vector3d                                         m_sun_b{ 0.0, 0.0, -1.0 };
@@ -771,6 +781,9 @@ public:
         m_retired_maps.clear();
         m_sun_map.reset();
         m_sun_map_b.reset();
+        m_sun_static.reset();
+        m_caster_age.clear();
+        m_caster_age_next.clear();
 
         for (auto& r : m_reflections) { 
             r.color.reset(); 
@@ -2130,6 +2143,28 @@ private:
         out[3] = static_cast<float>(outer);
     }
 
+    static void shape_uniform(float* shape, float* size, float* normal, const graphics::PointLight3D& p) noexcept {
+        for (int i = 0; i < 4; ++i) shape[i] = size[i] = normal[i] = 0.0f;
+        if (p.shape == graphics::LightShape3D::Point) return;
+        auto unit = [](const linalg::vector3d& v, const linalg::vector3d& fallback) {
+            const double len = v.magnitude();
+            return len > 1e-12 ? v / len : fallback;
+        };
+        const linalg::vector3d n = unit(p.direction, linalg::vector3d{ 0.0, 0.0, -1.0 });
+        linalg::vector3d a = unit(p.axis, linalg::vector3d{ 1.0, 0.0, 0.0 });
+        if (p.shape == graphics::LightShape3D::Rectangle) {
+            a = a - n * a.dot(n);
+            a = unit(a, std::fabs(n.x) < 0.9 ? linalg::vector3d{ 1.0, 0.0, 0.0 } : linalg::vector3d{ 0.0, 1.0, 0.0 });
+            if (a.dot(n) != 0.0) a = unit(a - n * a.dot(n), linalg::vector3d{ 0.0, 1.0, 0.0 });
+        }
+        shape[0] = static_cast<float>(a.x); shape[1] = static_cast<float>(a.y); shape[2] = static_cast<float>(a.z);
+        shape[3] = static_cast<float>(static_cast<int>(p.shape));
+        size[0] = std::max(p.size_x, 0.0f);
+        size[1] = std::max(p.size_y, 0.0f);
+        size[2] = p.two_sided ? 1.0f : 0.0f;
+        normal[0] = static_cast<float>(n.x); normal[1] = static_cast<float>(n.y); normal[2] = static_cast<float>(n.z);
+    }
+
     static std::uint8_t cone_faces(const graphics::PointLight3D& p) noexcept {
         const double len = p.direction.magnitude();
         if (!p.is_spot() || len <= 0.0) return kAllCubeFaces;
@@ -2244,6 +2279,7 @@ private:
             float* col = u.point_color[k];
             pos[0] = static_cast<float>(rel.x); pos[1] = static_cast<float>(rel.y); pos[2] = static_cast<float>(rel.z); pos[3] = p.radius;
             spot_uniform(u.point_spot[k], p);
+            shape_uniform(u.point_shape[k], u.point_size[k], u.point_normal[k], p);
             const double dist = std::sqrt(all[k].first);
             double weight = fade(count_cut, dist);
             col[3] = -1.0f;
@@ -2293,6 +2329,8 @@ private:
         }
 
         const graphics::SunShadow3D& s = l.sun_shadow;
+        m_sun_layered = s.layered;
+        m_sun_stable_frames = std::max(1u, s.stable_frames);
 
         if (s.enabled && l.sun_intensity > 0.0f && s.resolution > 0 && s.distance > 0.0 && sun_len > 0.0) {
             const SunAnchors anchors = s.crossfade ? sun_anchors(sun, s.angle_step) : SunAnchors{};
@@ -3370,6 +3408,13 @@ private:
         d.format    = m_shadow_format;
         d.usage     = gpu::TextureUsage::DepthStencil | gpu::TextureUsage::Sampled;
         d.name      = cube ? "fizmo point shadow map" : "fizmo sun shadow map";
+        if (!cube && m_copyable_shadows) {
+            gpu::TextureDesc copyable = d;
+            copyable.usage = d.usage | gpu::TextureUsage::CopySrc | gpu::TextureUsage::CopyDst;
+            if (!failed(map->image->create(m_device, copyable))) return map;
+            map->image = std::make_unique<gpu::Texture>();
+            m_copyable_shadows = false;
+        }
         if (failed(map->image->create(m_device, d))) return nullptr;
         return map;
     }
@@ -4828,6 +4873,49 @@ private:
         map.cached    = true;
     }
 
+    bool render_layered_sun(gpu::CommandList& cmd, PerFrame& pf, std::uint64_t key, std::uint64_t full_signature, const Mat4f& m, const float* light, std::size_t first, std::size_t last, const double* origin) {
+        if (!m_sun_layered || !m_copyable_shadows || !m_sun_map || last <= first) return false;
+        m_caster_moving.assign(last - first, 0);
+        m_caster_age_next.clear();
+        std::uint64_t still_sum = 0, still_count = 0;
+        bool moving = false, still = false;
+        for (std::size_t i = first; i < last; ++i) {
+            const Caster& c = m_casters[i];
+            if (!c.vertices || outside_light(c, m.data(), false, 0, nullptr)) continue;
+            const std::uint64_t sig = caster_signature(c, origin);
+            auto it = m_caster_age.find(sig);
+            const std::uint32_t age = (it == m_caster_age.end() ? 0u : it->second) + 1u;
+            auto& next = m_caster_age_next[sig];
+            next = std::max(next, age);
+            if (age >= m_sun_stable_frames) {
+                still_sum += sig;
+                ++still_count;
+                still = true;
+            } else {
+                m_caster_moving[i - first] = 1;
+                moving = true;
+            }
+        }
+        m_caster_age.swap(m_caster_age_next);
+        if (!moving || !still) return false;
+        if (!ensure_shadow_map(m_sun_static, m_sun_map->size, false) || !m_copyable_shadows) return false;
+        std::uint64_t still_signature = key;
+        mix_hash(still_signature, still_sum);
+        mix_hash(still_signature, still_count);
+        mix_hash(still_signature, 0x5374696c6cULL);
+        if (!holds(m_sun_static, still_signature)) {
+            record_shadow_view(cmd, pf, *m_sun_static, 0, m.data(), light, false, first, last, &m_caster_moving, false, false);
+            m_sun_static->signature = still_signature;
+            m_sun_static->cached = true;
+        }
+        const gpu::Rect2D area{ { 0, 0 }, { m_sun_map->size, m_sun_map->size } };
+        cmd.copy_texture(*m_sun_static->image, *m_sun_map->image, area);
+        record_shadow_view(cmd, pf, *m_sun_map, 0, m.data(), light, false, first, last, &m_caster_moving, true, true);
+        m_sun_map->signature = full_signature;
+        m_sun_map->cached = true;
+        return true;
+    }
+
     void record_shadow_passes(gpu::CommandList& cmd, PerFrame& pf, std::size_t scene, std::size_t first, std::size_t last) {
         const SceneLightRec& sl = m_scene_lights[scene];
         if (!sl.sun_shadow && sl.point_count == 0) return;
@@ -4845,7 +4933,7 @@ private:
             if (blend && !holds(m_sun_map_b, sig_b) && holds(m_sun_map, sig_b)) std::swap(m_sun_map, m_sun_map_b);
             const float light_a[4] = { sl.sun_dir_a[0], sl.sun_dir_a[1], sl.sun_dir_a[2], 0.0f };
             const float light_b[4] = { sl.sun_dir_b[0], sl.sun_dir_b[1], sl.sun_dir_b[2], 0.0f };
-            if (!holds(m_sun_map, sig_a)) render_shadow_map(cmd, pf, *m_sun_map, sig_a, &ma, light_a, false, first, last);
+            if (!holds(m_sun_map, sig_a) && !render_layered_sun(cmd, pf, sl.sun_key_a, sig_a, ma, light_a, first, last, origin)) render_shadow_map(cmd, pf, *m_sun_map, sig_a, &ma, light_a, false, first, last);
             if (blend && !holds(m_sun_map_b, sig_b)) render_shadow_map(cmd, pf, *m_sun_map_b, sig_b, &mb, light_b, false, first, last);
         }
 
@@ -4961,12 +5049,15 @@ private:
         const float* light, 
         bool point, 
         std::size_t first, 
-        std::size_t last
+        std::size_t last,
+        const std::vector<char>* moving = nullptr,
+        bool want_moving = false,
+        bool keep = false
     ) {
         gpu::DepthTarget depth;
         depth.texture     = map.image.get();
         depth.layer       = map.cube ? static_cast<std::uint32_t>(face) : 0u;
-        depth.load        = gpu::LoadOp::Clear;
+        depth.load        = keep ? gpu::LoadOp::Load : gpu::LoadOp::Clear;
         depth.store       = gpu::StoreOp::Store;
         depth.clear_depth = 1.0f;
         gpu::RenderPassDesc rd;
@@ -4983,6 +5074,7 @@ private:
 
         for (std::size_t i = first; i < last; ++i) {
             const Caster& c = m_casters[i];
+            if (moving && ((*moving)[i - first] != 0) != want_moving) continue;
             if (!c.vertices || outside_light(c, light_vp, point, face, light)) continue;
             graphics::FaceMask faces = c.faces;
 

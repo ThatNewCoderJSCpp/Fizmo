@@ -15,36 +15,36 @@ namespace physics {
 inline bool overlap_aabb(const AABB3D& a, const AABB3D& b) noexcept { return a.overlaps(b); }
 
 inline bool overlap_spheres(
-    const linalg::vector3d& c1, double r1,
-    const linalg::vector3d& c2, double r2
+    const RVec3& c1, Real r1,
+    const RVec3& c2, Real r2
 ) noexcept {
-    double r_sum = r1 + r2;
+    Real r_sum = r1 + r2;
     return vec3::length_squared(c2 - c1) <= r_sum * r_sum;
 }
 
 bool overlap_aabb_sphere(
     const AABB3D& box,
-    const linalg::vector3d& center,
-    double radius
+    const RVec3& center,
+    Real radius
 ) noexcept;
 
 struct OverlapResult3D {
     bool     hit = false;
-    double   depth = 0.0; // meters (positive = overlapping)
-    linalg::vector3d normal{};    // unit push direction (a out of b)
+    Real   depth = 0.0_r; // meters (positive = overlapping)
+    RVec3 normal{};    // unit push direction (a out of b)
 };
 
 OverlapResult3D overlap_aabb_mtv(const AABB3D& a, const AABB3D& b) noexcept;
 
 OverlapResult3D overlap_spheres_mtv(
-    const linalg::vector3d& c1, double r1,
-    const linalg::vector3d& c2, double r2
+    const RVec3& c1, Real r1,
+    const RVec3& c2, Real r2
 ) noexcept;
 
 OverlapResult3D overlap_aabb_sphere_mtv(
     const AABB3D& box,
-    const linalg::vector3d& center,
-    double radius
+    const RVec3& center,
+    Real radius
 ) noexcept;
 
 template <typename T>
@@ -55,8 +55,8 @@ public:
         AABB3D aabb;
     };
 
-    static constexpr double TIGHT = 1.0;
-    static constexpr double RECOMMENDED_LOOSENESS = 2.0;
+    static constexpr Real TIGHT = 1.0_r;
+    static constexpr Real RECOMMENDED_LOOSENESS = 2.0_r;
 
     Octree() { reset_root(); }
 
@@ -64,14 +64,14 @@ public:
         const AABB3D& bounds,
         std::size_t   max_per_node = 8,
         std::size_t   max_depth    = 6,
-        double        looseness    = TIGHT
+        Real        looseness    = TIGHT
     ) : m_max_entries(max_per_node), m_max_depth(max_depth), m_looseness(std::max(looseness, TIGHT)) {
         reset_root();
         m_nodes[ROOT].bounds = bounds;
         m_nodes[ROOT].loose  = loosen(bounds);
     }
 
-    void configure(std::size_t max_per_node, std::size_t max_depth, double looseness) {
+    void configure(std::size_t max_per_node, std::size_t max_depth, Real looseness) {
         m_max_entries = max_per_node;
         m_max_depth   = max_depth;
         m_looseness   = std::max(looseness, TIGHT);
@@ -142,7 +142,7 @@ public:
     const AABB3D& loose_bounds() const noexcept { return m_nodes[ROOT].loose; }
     std::size_t max_per_node()   const noexcept { return m_max_entries; }
     std::size_t max_depth()      const noexcept { return m_max_depth; }
-    double looseness()           const noexcept { return m_looseness; }
+    Real looseness()           const noexcept { return m_looseness; }
     bool   is_loose()            const noexcept { return m_looseness > TIGHT; }
 
 private:
@@ -167,14 +167,14 @@ private:
     }
 
     AABB3D loosen(const AABB3D& b) const noexcept {
-        const linalg::vector3d c = b.center();
-        const linalg::vector3d h = b.extents() * m_looseness;
+        const RVec3 c = b.center();
+        const RVec3 h = b.extents() * m_looseness;
         return { c - h, c + h };
     }
 
     static AABB3D octant_bounds(const AABB3D& b, int q) noexcept {
-        linalg::vector3d mid = b.center();
-        linalg::vector3d lo = b.min, hi = b.max;
+        RVec3 mid = b.center();
+        RVec3 lo = b.min, hi = b.max;
         if (q & 1) lo.x = mid.x; else hi.x = mid.x;
         if (q & 2) lo.y = mid.y; else hi.y = mid.y;
         if (q & 4) lo.z = mid.z; else hi.z = mid.z;
@@ -182,10 +182,10 @@ private:
     }
 
     int find_child(const Node& node, const AABB3D& item_aabb) const noexcept {
-        linalg::vector3d mid = node.bounds.center();
+        RVec3 mid = node.bounds.center();
 
         if (is_loose()) {
-            const linalg::vector3d c = item_aabb.center();
+            const RVec3 c = item_aabb.center();
             const int q = (c.x >= mid.x ? 1 : 0) | (c.y >= mid.y ? 2 : 0) | (c.z >= mid.z ? 4 : 0);
             return loosen(octant_bounds(node.bounds, q)).contains(item_aabb) ? q : -1;
         }
@@ -302,7 +302,7 @@ private:
     std::size_t                        m_used        = 1;
     std::size_t                        m_max_entries = 8;
     std::size_t                        m_max_depth   = 6;
-    double                             m_looseness   = TIGHT;
+    Real                             m_looseness   = TIGHT;
     std::vector<std::vector<Entry>>    m_scratch;
     mutable std::vector<const Entry*>  m_ancestors;
 };

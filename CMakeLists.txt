@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 0.4.1
+    VERSION 1.0.0
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -29,6 +29,30 @@ else()
     set(FIZMO_SHARED_DEFAULT OFF)
 endif()
 option(FIZMO_SHARED "Make fizmo::fizmo the shared library (.so / .dll) instead of the static one" ${FIZMO_SHARED_DEFAULT})
+
+option(FIZMO_BUILD_LIGHTING_TESTS "Build Testing/lighting_tests.cpp as fizmo-lighting-tests" OFF)
+if(FIZMO_BUILD_LIGHTING_TESTS)
+    add_executable(fizmo-lighting-tests Testing/lighting_tests.cpp)
+    target_compile_features(fizmo-lighting-tests PRIVATE cxx_std_17)
+    if(TARGET fizmo::lighting)
+        target_link_libraries(fizmo-lighting-tests PRIVATE fizmo::lighting)
+    else()
+        target_link_libraries(fizmo-lighting-tests PRIVATE fizmo::fizmo)
+    endif()
+    enable_testing()
+    add_test(NAME fizmo-lighting COMMAND fizmo-lighting-tests)
+endif()
+
+option(FIZMO_BUILD_LIGHTING_GPU_TESTS "Build Testing/lighting_gpu_tests.cpp, which draws area lights with the GPU renderer (needs a display and a GPU or Mesa)" OFF)
+
+option(FIZMO_BUILD_VISIBILITY_TESTS "Build Testing/visibility_tests.cpp (culling, LOD, shadow LOD) as fizmo-visibility-tests" OFF)
+if(FIZMO_BUILD_VISIBILITY_TESTS)
+    add_executable(fizmo-visibility-tests Testing/visibility_tests.cpp)
+    target_compile_features(fizmo-visibility-tests PRIVATE cxx_std_17)
+    target_link_libraries(fizmo-visibility-tests PRIVATE fizmo::fizmo)
+    enable_testing()
+    add_test(NAME fizmo-visibility COMMAND fizmo-visibility-tests)
+endif()
 
 option(FIZMO_BUILD_PHYSICS_TESTS "Build Testing/physics_tests.cpp as fizmo-physics-tests" OFF)
 if(FIZMO_BUILD_PHYSICS_TESTS)
@@ -356,6 +380,17 @@ if(FIZMO_BUILD_VIDEO_TESTS)
         add_test(NAME fizmo-video-${_fizmo_video_test} COMMAND fizmo-video-${_fizmo_video_test}-tests)
     endforeach()
     unset(_fizmo_video_test)
+endif()
+
+if(FIZMO_BUILD_LIGHTING_GPU_TESTS)
+    add_executable(fizmo-lighting-gpu-tests Testing/lighting_gpu_tests.cpp)
+    target_compile_features(fizmo-lighting-gpu-tests PRIVATE cxx_std_17)
+    target_include_directories(fizmo-lighting-gpu-tests SYSTEM PRIVATE ${FIZMO_VULKAN_INCLUDE_DIR})
+    if(TARGET fizmo::graphics)
+        target_link_libraries(fizmo-lighting-gpu-tests PRIVATE fizmo::graphics)
+    else()
+        target_link_libraries(fizmo-lighting-gpu-tests PRIVATE fizmo::fizmo)
+    endif()
 endif()
 
 option(FIZMO_BUILD_VIDEO_GPU_TESTS "Build Testing/video_gpu_tests.cpp, which compares GPU video conversion with to_rgba (needs a display and a GPU or Mesa)" OFF)

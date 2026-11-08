@@ -15,34 +15,34 @@ namespace physics {
 inline bool overlap_aabb(const AABB& a, const AABB& b) noexcept { return a.overlaps(b); }
 
 bool overlap_circles(
-    const linalg::vector2d& c1, double r1,
-    const linalg::vector2d& c2, double r2
+    const RVec2& c1, Real r1,
+    const RVec2& c2, Real r2
 ) noexcept;
 
 bool overlap_aabb_circle(
     const AABB& box,
-    const linalg::vector2d& center,
-    double radius
+    const RVec2& center,
+    Real radius
 ) noexcept;
 
 struct OverlapResult {
     bool     hit = false;
-    double   depth_x = 0.0; 
-    double   depth_y = 0.0;
-    linalg::vector2d normal{};      
+    Real   depth_x = 0.0_r; 
+    Real   depth_y = 0.0_r;
+    RVec2 normal{};      
 };
 
 OverlapResult overlap_aabb_mtv(const AABB& a, const AABB& b) noexcept;
 
 OverlapResult overlap_circles_mtv(
-    const linalg::vector2d& c1, double r1,
-    const linalg::vector2d& c2, double r2
+    const RVec2& c1, Real r1,
+    const RVec2& c2, Real r2
 ) noexcept;
 
 OverlapResult overlap_aabb_circle_mtv(
     const AABB& box,
-    const linalg::vector2d& center,
-    double radius
+    const RVec2& center,
+    Real radius
 ) noexcept;
 
 template <typename T>
@@ -53,8 +53,8 @@ public:
         AABB aabb;
     };
 
-    static constexpr double TIGHT = 1.0;
-    static constexpr double RECOMMENDED_LOOSENESS = 2.0;
+    static constexpr Real TIGHT = 1.0_r;
+    static constexpr Real RECOMMENDED_LOOSENESS = 2.0_r;
 
     Quadtree() { reset_root(); }
 
@@ -62,14 +62,14 @@ public:
         const AABB&  bounds,
         std::size_t  max_per_node = 8,
         std::size_t  max_depth    = 6,
-        double       looseness    = TIGHT
+        Real       looseness    = TIGHT
     ) : m_max_entries(max_per_node), m_max_depth(max_depth), m_looseness(std::max(looseness, TIGHT)) {
         reset_root();
         m_nodes[ROOT].bounds = bounds;
         m_nodes[ROOT].loose  = loosen(bounds);
     }
 
-    void configure(std::size_t max_per_node, std::size_t max_depth, double looseness) {
+    void configure(std::size_t max_per_node, std::size_t max_depth, Real looseness) {
         m_max_entries = max_per_node;
         m_max_depth   = max_depth;
         m_looseness   = std::max(looseness, TIGHT);
@@ -140,7 +140,7 @@ public:
     const AABB& loose_bounds() const noexcept { return m_nodes[ROOT].loose; }
     std::size_t max_per_node() const noexcept { return m_max_entries; }
     std::size_t max_depth()    const noexcept { return m_max_depth; }
-    double looseness()         const noexcept { return m_looseness; }
+    Real looseness()         const noexcept { return m_looseness; }
     bool   is_loose()          const noexcept { return m_looseness > TIGHT; }
 
 private:
@@ -165,24 +165,24 @@ private:
     }
 
     AABB loosen(const AABB& b) const noexcept {
-        const linalg::vector2d c = b.center();
-        const linalg::vector2d h = b.extents() * m_looseness;
+        const RVec2 c = b.center();
+        const RVec2 h = b.extents() * m_looseness;
         return { c - h, c + h };
     }
 
     static AABB quadrant_bounds(const AABB& b, int q) noexcept {
-        const linalg::vector2d mid = b.center();
-        linalg::vector2d lo = b.min, hi = b.max;
+        const RVec2 mid = b.center();
+        RVec2 lo = b.min, hi = b.max;
         if (q & 1) lo.x = mid.x; else hi.x = mid.x;
         if (q & 2) lo.y = mid.y; else hi.y = mid.y;
         return { lo, hi };
     }
 
     int find_child(const Node& node, const AABB& item_aabb) const noexcept {
-        const linalg::vector2d mid = node.bounds.center();
+        const RVec2 mid = node.bounds.center();
 
         if (is_loose()) {
-            const linalg::vector2d c = item_aabb.center();
+            const RVec2 c = item_aabb.center();
             const int q = (c.x >= mid.x ? 1 : 0) | (c.y >= mid.y ? 2 : 0);
             return loosen(quadrant_bounds(node.bounds, q)).contains(item_aabb) ? q : -1;
         }
@@ -298,7 +298,7 @@ private:
     std::size_t                        m_used        = 1;
     std::size_t                        m_max_entries = 8;
     std::size_t                        m_max_depth   = 6;
-    double                             m_looseness   = TIGHT;
+    Real                             m_looseness   = TIGHT;
     std::vector<std::vector<Entry>>    m_scratch;
     mutable std::vector<const Entry*>  m_ancestors;
 };

@@ -42,7 +42,7 @@ jobs:
       - name: Configure
         run: |
           prefix=$(brew --prefix)
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_BUILD_NUMERICS_TESTS=ON -DFIZMO_BUILD_CHEMISTRY_TESTS=ON \
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIZMO_TUNE=OFF -DFIZMO_BUILD_NUMERICS_TESTS=ON -DFIZMO_BUILD_CHEMISTRY_TESTS=ON -DFIZMO_BUILD_PHYSICS_TESTS=ON -DFIZMO_BUILD_LIGHTING_TESTS=ON \
             -DFIZMO_BUILD_AUDIO_TESTS=ON -DFIZMO_BUILD_VIDEO_TESTS=ON \
             -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)" \
             -DFIZMO_VULKAN_INCLUDE_DIR="$FIZMO_VULKAN_INC" \
@@ -56,6 +56,12 @@ jobs:
 
       - name: Run the chemistry tests
         run: build/fizmo-chemistry-tests
+
+      - name: Run the physics tests
+        run: build/fizmo-physics-tests
+
+      - name: Run the lighting tests
+        run: build/fizmo-lighting-tests
 
       - name: Run the audio and video tests
         run: |
