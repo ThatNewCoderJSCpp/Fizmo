@@ -80,13 +80,13 @@ jobs:
           check random libfizmo_core.a
           check crypto libfizmo_random.a libfizmo_core.a
           check string libfizmo_random.a libfizmo_core.a
-          for c in statistics numerics chemistry physics symbolic time collections system util audio; do
+          for c in statistics numerics chemistry physics lighting symbolic time collections system util audio; do
             check $c libfizmo_core.a
           done
           check video libfizmo_audio.a libfizmo_core.a
           check net libfizmo_crypto.a libfizmo_util.a libfizmo_random.a libfizmo_core.a -lssl -lcrypto
           check db libfizmo_crypto.a libfizmo_random.a libfizmo_core.a
-          check graphics libfizmo_system.a libfizmo_util.a libfizmo_string.a libfizmo_random.a libfizmo_core.a \
+          check graphics libfizmo_system.a libfizmo_util.a libfizmo_string.a libfizmo_lighting.a libfizmo_random.a libfizmo_core.a \
             -lz -ljpeg -lX11 -lXft -lXrender -lfontconfig -lfreetype \
             $(pkg-config --libs harfbuzz)
 

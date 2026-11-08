@@ -303,17 +303,17 @@ int ConvexProxy3D::feature(const V3& world_dir, V3* out, int capacity) const noe
             }
             return n;
         }
-        int small = 0;
+        int thinnest = 0;
         for (int i = 1; i < 3; ++i) {
-            if (ax[i] < ax[small]) small = i;
+            if (ax[i] < ax[thinnest]) thinnest = i;
         }
-        if (ax[small] <= 0.01_r) {
+        if (ax[thinnest] <= 0.01_r) {
             Real p[3], q[3];
             for (int i = 0; i < 3; ++i) {
                 p[i] = q[i] = dd[i] >= 0.0_r ? h[i] : -h[i];
             }
-            p[small] = -h[small];
-            q[small] = h[small];
+            p[thinnest] = -h[thinnest];
+            q[thinnest] = h[thinnest];
             put(V3{ p[0], p[1], p[2] });
             put(V3{ q[0], q[1], q[2] });
             return n;

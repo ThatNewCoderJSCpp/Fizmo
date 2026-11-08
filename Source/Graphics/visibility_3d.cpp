@@ -419,15 +419,15 @@ std::size_t Visibility3D::build_occlusion(const Camera3D& camera, const std::vec
         m_scratch = m_depth;
         for (std::size_t y = 0; y < h; ++y) {
             for (std::size_t x = 0; x < w; ++x) {
-                float far = m_scratch[y * w + x];
+                float deepest = m_scratch[y * w + x];
                 for (int dy = -1; dy <= 1; ++dy) {
                     const std::size_t yy = static_cast<std::size_t>(std::clamp(static_cast<long>(y) + dy, 0L, static_cast<long>(h) - 1));
                     for (int dx = -1; dx <= 1; ++dx) {
                         const std::size_t xx = static_cast<std::size_t>(std::clamp(static_cast<long>(x) + dx, 0L, static_cast<long>(w) - 1));
-                        far = std::max(far, m_scratch[yy * w + xx]);
+                        deepest = std::max(deepest, m_scratch[yy * w + xx]);
                     }
                 }
-                m_depth[y * w + x] = far;
+                m_depth[y * w + x] = deepest;
             }
         }
     }
@@ -497,7 +497,7 @@ void Visibility3D::cull(const Camera3D& camera) {
         r.lod = lod;
     }
     const V3 eye = camera.position();
-    const double far = m_settings.max_distance > 0.0 ? m_settings.max_distance : camera.far_plane();
+    const double far_limit = m_settings.max_distance > 0.0 ? m_settings.max_distance : camera.far_plane();
     const Frustum3D& fr = camera.frustum();
     std::vector<Handle> candidates;
     candidates.reserve(m_live);
@@ -536,7 +536,7 @@ void Visibility3D::cull(const Camera3D& camera) {
         const double d = o.bounds.distance_to(eye);
         distance[h] = d;
         const bool always = (o.flags & VIS_ALWAYS) != 0;
-        if (!always && m_settings.distance && d > far) {
+        if (!always && m_settings.distance && d > far_limit) {
             ++stats.distance_culled;
             continue;
         }
