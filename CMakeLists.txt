@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 1.1.0
+    VERSION 1.2.0
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -44,6 +44,8 @@ if(FIZMO_BUILD_LIGHTING_TESTS)
 endif()
 
 option(FIZMO_BUILD_LIGHTING_GPU_TESTS "Build Testing/lighting_gpu_tests.cpp, which draws area lights with the GPU renderer (needs a display and a GPU or Mesa)" OFF)
+
+option(FIZMO_BUILD_TEXTURE_TESTS "Build Testing/texture_tests.cpp as fizmo-texture-tests (the GPU part needs a display and a GPU or Mesa, and is skipped without one)" OFF)
 
 option(FIZMO_BUILD_VISIBILITY_TESTS "Build Testing/visibility_tests.cpp (culling, LOD, shadow LOD) as fizmo-visibility-tests" OFF)
 if(FIZMO_BUILD_VISIBILITY_TESTS)
@@ -391,6 +393,32 @@ if(FIZMO_BUILD_LIGHTING_GPU_TESTS)
     else()
         target_link_libraries(fizmo-lighting-gpu-tests PRIVATE fizmo::fizmo)
     endif()
+endif()
+
+if(FIZMO_BUILD_TEXTURE_TESTS)
+    add_executable(fizmo-texture-tests Testing/texture_tests.cpp)
+    target_compile_features(fizmo-texture-tests PRIVATE cxx_std_17)
+    target_include_directories(fizmo-texture-tests SYSTEM PRIVATE ${FIZMO_VULKAN_INCLUDE_DIR})
+    if(TARGET fizmo::graphics)
+        target_link_libraries(fizmo-texture-tests PRIVATE fizmo::graphics)
+    else()
+        target_link_libraries(fizmo-texture-tests PRIVATE fizmo::fizmo)
+    endif()
+    enable_testing()
+    add_test(NAME fizmo-texture COMMAND fizmo-texture-tests)
+endif()
+
+option(FIZMO_BUILD_PARTICLE_TESTS "Build Testing/particle_tests.cpp (particle system tests and benchmark) as fizmo-particle-tests" OFF)
+if(FIZMO_BUILD_PARTICLE_TESTS)
+    add_executable(fizmo-particle-tests Testing/particle_tests.cpp)
+    target_compile_features(fizmo-particle-tests PRIVATE cxx_std_17)
+    if(TARGET fizmo::graphics)
+        target_link_libraries(fizmo-particle-tests PRIVATE fizmo::graphics)
+    else()
+        target_link_libraries(fizmo-particle-tests PRIVATE fizmo::fizmo)
+    endif()
+    enable_testing()
+    add_test(NAME fizmo-particles COMMAND fizmo-particle-tests --no-bench)
 endif()
 
 option(FIZMO_BUILD_VIDEO_GPU_TESTS "Build Testing/video_gpu_tests.cpp, which compares GPU video conversion with to_rgba (needs a display and a GPU or Mesa)" OFF)

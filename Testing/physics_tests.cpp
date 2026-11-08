@@ -829,6 +829,116 @@ void test_cloth_mesh_and_resolution() {
     check(picked.triangle_count() == 1600 && near(static_cast<double>(picked.height()), 1.0, 1e-5), "cloth: set_resolution keeps the cloth's size");
 }
 
+
+double section_parts_volume(const std::vector<Shape3D>& parts) {
+    double v = 0.0;
+    for (const auto& s : parts) v += static_cast<double>(compute_shape_volume(s));
+    return v;
+}
+
+double section_triangle_volume(const std::vector<std::array<RVec3, 3>>& tris) {
+    double v = 0.0;
+    for (const auto& t : tris) v += static_cast<double>(vec3::dot(t[0], vec3::cross(t[1], t[2]))) / 6.0;
+    return v;
+}
+
+void test_sphere_sections() {
+    const double pi = 3.14159265358979323846;
+    const Shape3D hemi = Shape3D::make_hemisphere(1.0);
+    const double hv = static_cast<double>(compute_shape_volume(hemi));
+    check(hemi.type == ShapeType3D::Hull && near(hv, 2.0 / 3.0 * pi, 0.02), "sections: a solid hemisphere has 2/3 pi r^3 volume (" + std::to_string(hv) + ")");
+    const MassData3D hm = compute_mass(hemi, 2.0);
+    check(near(static_cast<double>(hm.mass), 4.0 / 3.0 * pi, 0.04), "sections: hemisphere mass is volume times density (" + std::to_string(hm.mass) + ")");
+    check(near(static_cast<double>(hm.center.y), 0.375, 0.01) && near(static_cast<double>(hm.center.x), 0.0, 1e-3) && near(static_cast<double>(hm.center.z), 0.0, 1e-3), "sections: hemisphere centre of mass is 3r/8 above the flat face (" + std::to_string(hm.center.y) + ")");
+    const double m = static_cast<double>(hm.mass);
+    check(near(static_cast<double>(hm.inertia.entry(1, 1)), 0.4 * m, 0.4 * m * 0.03) && near(static_cast<double>(hm.inertia.entry(0, 0)), 83.0 / 320.0 * m, 83.0 / 320.0 * m * 0.03), "sections: hemisphere inertia matches 2/5 m r^2 and 83/320 m r^2");
+    check(near(static_cast<double>(hemi.local_aabb.min.y), 0.0, 1e-4) && hemi.local_aabb.max.y > 0.99f && hemi.bounding_radius >= 0.99f, "sections: hemisphere bounds start at the flat face");
+
+    const Shape3D quarter = Shape3D::make_sphere_section(SphereSection3D::wedge(1.0, 90.0));
+    check(SphereSection3D::wedge(1.0, 90.0).is_convex() && quarter.type == ShapeType3D::Hull && near(static_cast<double>(compute_shape_volume(quarter)), pi / 3.0, 0.015), "sections: a 90 degree wedge is a quarter of the sphere (" + std::to_string(compute_shape_volume(quarter)) + ")");
+
+    SphereSection3D full;
+    full.radius = 0.7;
+    full.polar_min = 0.0;
+    full.polar_max = 180.0;
+    full.azimuth_min = 30.0;
+    full.azimuth_max = 390.0;
+    const Shape3D whole = Shape3D::make_sphere_section(full);
+    check(full.is_full_sphere() && whole.type == ShapeType3D::Sphere && near(static_cast<double>(compute_shape_volume(whole)), static_cast<double>(compute_shape_volume(Shape3D::make_sphere({}, 0.7))), 1e-6), "sections: full ranges give a plain sphere");
+
+    const Shape3D cap = Shape3D::make_sphere_section(SphereSection3D::cap(1.0, 0.5));
+    check(cap.type == ShapeType3D::Hull && near(static_cast<double>(compute_shape_volume(cap)), pi * 0.25 * 2.5 / 3.0, 0.012) && near(static_cast<double>(cap.local_aabb.min.y), 0.5, 1e-3), "sections: a cap of height h has pi h^2 (3r - h) / 3 volume (" + std::to_string(compute_shape_volume(cap)) + ")");
+
+    const SphereSection3D bowl = SphereSection3D::bowl(1.0, 0.1);
+    const std::vector<Shape3D> bowl_parts = Shape3D::make_sphere_section_parts(bowl);
+    const double bowl_exact = 2.0 / 3.0 * pi * (1.0 - 0.9 * 0.9 * 0.9);
+    const double bowl_v = section_parts_volume(bowl_parts);
+    check(!bowl.is_convex() && near(static_cast<double>(bowl.exact_volume()), bowl_exact, bowl_exact * 0.002), "sections: bowl exact volume");
+    check(bowl_parts.size() > 4 && near(bowl_v, bowl_exact, bowl_exact * 0.04), "sections: bowl parts add up to the shell volume (" + std::to_string(bowl_v) + " vs " + std::to_string(bowl_exact) + ")");
+    const double bowl_tri = section_triangle_volume(sphere_section_triangles(bowl));
+    check(near(bowl_tri, bowl_v, bowl_v * 0.01), "sections: bowl triangles close up around the same volume as the parts (" + std::to_string(bowl_tri) + ")");
+    check(near(section_triangle_volume(sphere_section_triangles(SphereSection3D::hemisphere(1.0))), hv, hv * 0.002), "sections: hemisphere triangles match the collision hull");
+
+    const SphereSection3D d135 = SphereSection3D::dome(1.0, 135.0);
+    const double d135_v = section_parts_volume(Shape3D::make_sphere_section_parts(d135));
+    check(near(d135_v, static_cast<double>(d135.exact_volume()), static_cast<double>(d135.exact_volume()) * 0.03), "sections: a 135 degree dome splits into convex parts of the right volume (" + std::to_string(d135_v) + ")");
+    SphereSection3D three_quarter = SphereSection3D::wedge(1.0, 270.0);
+    const std::vector<Shape3D> tq = Shape3D::make_sphere_section_parts(three_quarter);
+    check(tq.size() == 2 && near(section_parts_volume(tq), pi, 0.04), "sections: a 270 degree wedge is two convex parts of 3/4 the sphere");
+
+    const double flat = rest_height(Shape3D::make_hemisphere(0.5), 300);
+    check(near(flat, 0.0, 0.03), "sections: hemisphere rests on its flat face (y = " + std::to_string(flat) + ")");
+
+    {
+        Simulation3D sim(ground_cfg());
+        add_ground(sim);
+        RigidBody3D& b = sim.add_body({0.0, 1.0, 0.0}, PhysicsFlags::DefaultDynamic);
+        b.add_collider(Shape3D::make_hemisphere(0.5));
+        b.set_rotation({1.0, 0.0, 0.0}, 3.14159265f + 0.45f);
+        b.set_angular_damping(0.3);
+        for (int i = 0; i < 900; ++i) sim.step();
+        const RVec3 up = b.orientation().rotate(RVec3{0.0, 1.0, 0.0});
+        check(up.y < -0.97f && near(b.position().y, 0.5, 0.04), "sections: a hemisphere dropped on its dome rocks back flat side up (up.y = " + std::to_string(up.y) + ", y = " + std::to_string(b.position().y) + ")");
+    }
+
+    {
+        Simulation3D sim(ground_cfg());
+        RigidBody3D& h = sim.add_body({0.0, 0.0, 0.0}, PhysicsFlags::DefaultStatic);
+        h.add_collider(Shape3D::make_hemisphere(1.0));
+        auto hit = sim.raycast({0.3, 5.0, 0.2}, {0.0, -1.0, 0.0}, 10.0);
+        const double want = std::sqrt(1.0 - 0.13);
+        check(hit && hit->body == &h && near(static_cast<double>(hit->point.y), want, 0.015) && hit->normal.y > 0.85f, "sections: raycast down hits the dome at the right height (" + std::to_string(hit ? hit->point.y : -1.0f) + ")");
+        auto side = sim.raycast({0.3, -5.0, 0.2}, {0.0, 1.0, 0.0}, 10.0);
+        check(side && near(static_cast<double>(side->point.y), 0.0, 1e-3) && side->normal.y < -0.99f, "sections: raycast up hits the flat face");
+    }
+
+    for (int mode = 0; mode < 2; ++mode) {
+        Simulation3D sim(ground_cfg());
+        add_ground(sim);
+        RigidBody3D& b = sim.add_body({0.0, 1.0, 0.0}, PhysicsFlags::DefaultStatic);
+        if (mode == 0) { for (const auto& p : bowl_parts) b.add_collider(p); }
+        else b.add_collider(Shape3D::make_sphere_section(bowl));
+        RigidBody3D& ball = sim.add_body({0.35, 1.8, 0.1}, PhysicsFlags::DefaultDynamic);
+        ball.add_collider(Shape3D::make_sphere({}, 0.15));
+        for (int i = 0; i < 600; ++i) sim.step();
+        const RVec3 rel = ball.position() - b.position();
+        const double dist = static_cast<double>(vec3::length(rel));
+        check(dist < 0.9 - 0.15 + 0.03 && rel.y < 0.0f && ball.position().y > 0.1f, std::string("sections: a bowl ") + (mode == 0 ? "made of parts" : "mesh") + " holds a ball (dist = " + std::to_string(dist) + ", y = " + std::to_string(rel.y) + ")");
+    }
+
+    {
+        Simulation3D sim(ground_cfg());
+        add_ground(sim);
+        RigidBody3D& b = sim.add_body({0.0, 1.02, 0.0}, PhysicsFlags::DefaultDynamic);
+        for (const auto& p : Shape3D::make_sphere_section_parts(SphereSection3D::bowl(1.0, 0.1), 16)) b.add_collider(p);
+        RigidBody3D& ball = sim.add_body({0.2, 1.6, 0.0}, PhysicsFlags::DefaultDynamic);
+        ball.add_collider(Shape3D::make_sphere({}, 0.15));
+        for (int i = 0; i < 600; ++i) sim.step();
+        const RVec3 rel = b.orientation().rotate_inverse(ball.position() - b.position());
+        check(vec3::length(rel) < 0.9f && rel.y < 0.0f && near(b.position().y, 1.0, 0.06), "sections: a dynamic bowl on the ground keeps a ball inside (y = " + std::to_string(b.position().y) + ")");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -855,6 +965,7 @@ int main() {
     test_rebasing_and_snapshots();
     test_cloth();
     test_cloth_mesh_and_resolution();
+    test_sphere_sections();
     std::printf("%d passed, %d failed\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;
 }

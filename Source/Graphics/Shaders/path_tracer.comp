@@ -319,6 +319,10 @@ struct Mat {
     float opacity;
     bool thin;
     bool double_sided;
+    uint flags;
+    float cutoff;
+    vec4 uvx;
+    vec4 uvy;
 };
 
 Mat load_material(uint i) {
@@ -337,13 +341,19 @@ Mat load_material(uint i) {
         m.opacity = 1.0;
         m.thin = false;
         m.double_sided = true;
+        m.flags = 2u;
+        m.cutoff = 0.0;
+        m.uvx = vec4(1.0, 0.0, 0.0, 0.0);
+        m.uvy = vec4(0.0, 1.0, 0.0, 0.0);
         return m;
     }
-    vec4 a = mats[i * 5u];
-    vec4 b = mats[i * 5u + 1u];
-    vec4 c = mats[i * 5u + 2u];
-    vec4 d = mats[i * 5u + 3u];
-    vec4 e = mats[i * 5u + 4u];
+    vec4 a = mats[i * 7u];
+    vec4 b = mats[i * 7u + 1u];
+    vec4 c = mats[i * 7u + 2u];
+    vec4 d = mats[i * 7u + 3u];
+    vec4 e = mats[i * 7u + 4u];
+    m.uvx = mats[i * 7u + 5u];
+    m.uvy = mats[i * 7u + 6u];
     m.base = a.xyz;
     m.metallic = a.w;
     m.emit = b.xyz;
@@ -358,6 +368,8 @@ Mat load_material(uint i) {
     uint f = floatBitsToUint(e.y);
     m.thin = (f & 1u) != 0u;
     m.double_sided = (f & 2u) != 0u;
+    m.flags = f;
+    m.cutoff = e.z;
     return m;
 }
 
@@ -1140,6 +1152,68 @@ struct Surface {
     uint channels;
 };
 
+const uint MAT_BASE_MAP = 4u;
+const uint MAT_WRAP_SHIFT = 3u;
+const uint MAT_NEAREST = 32u;
+const uint MAT_SRGB = 64u;
+const uint MAT_ALPHA = 128u;
+const uint NO_UV = 0xFFFFFFFFu;
+
+int wrap_texel(int c, int n, uint mode) {
+    if (mode == 1u) return clamp(c, 0, n - 1);
+    if (mode == 2u) {
+        int period = n * 2;
+        int k = c - (c / period) * period;
+        if (k < 0) k += period;
+        return k < n ? k : period - 1 - k;
+    }
+    int k = c - (c / n) * n;
+    return k < 0 ? k + n : k;
+}
+
+float srgb_channel(float c) {
+    return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+}
+
+vec4 base_texel(Mat m, int x, int y) {
+    uint off = floatBitsToUint(m.uvx.w);
+    uint info = floatBitsToUint(m.uvy.w);
+    int tw = int(info & 0xFFFFu);
+    int th = int(info >> 16u);
+    uint mode = (m.flags >> MAT_WRAP_SHIFT) & 3u;
+    uint idx = uint(wrap_texel(y, th, mode)) * uint(tw) + uint(wrap_texel(x, tw, mode));
+    uint v = uint(tables[off + idx]);
+    vec3 rgb = vec3(float(v & 255u), float((v >> 8u) & 255u), float((v >> 16u) & 255u)) / 255.0;
+    if ((m.flags & MAT_SRGB) != 0u) rgb = vec3(srgb_channel(rgb.r), srgb_channel(rgb.g), srgb_channel(rgb.b));
+    float a = (m.flags & MAT_ALPHA) != 0u ? tables[off + uint(tw * th) + idx] / 255.0 : 1.0;
+    return vec4(rgb, a);
+}
+
+void apply_maps(inout Mat m, uint i, Hit h) {
+    if ((m.flags & MAT_BASE_MAP) == 0u) return;
+    uint off = floatBitsToUint(tris[i * 6u + 4u].w);
+    if (off == NO_UV) return;
+    float w = 1.0 - h.u - h.v;
+    vec2 uv = vec2(tables[off], tables[off + 1u]) * w + vec2(tables[off + 2u], tables[off + 3u]) * h.u + vec2(tables[off + 4u], tables[off + 5u]) * h.v;
+    vec2 st = vec2(dot(m.uvx.xyz, vec3(uv, 1.0)), dot(m.uvy.xyz, vec3(uv, 1.0)));
+    uint info = floatBitsToUint(m.uvy.w);
+    vec2 px = st * vec2(float(info & 0xFFFFu), float(info >> 16u));
+    vec4 c;
+    if ((m.flags & MAT_NEAREST) != 0u) {
+        c = base_texel(m, int(floor(px.x)), int(floor(px.y)));
+    } else {
+        vec2 f = px - 0.5;
+        vec2 b = floor(f);
+        vec2 t = f - b;
+        int x0 = int(b.x);
+        int y0 = int(b.y);
+        c = mix(mix(base_texel(m, x0, y0), base_texel(m, x0 + 1, y0), t.x), mix(base_texel(m, x0, y0 + 1), base_texel(m, x0 + 1, y0 + 1), t.x), t.y);
+    }
+    m.base *= c.rgb;
+    m.opacity *= c.a;
+    if (m.cutoff > 0.0) m.opacity = m.opacity >= m.cutoff ? 1.0 : 0.0;
+}
+
 Surface make_surface(vec3 o, vec3 d, Hit h) {
     Surface s;
     uint i = h.tri;
@@ -1494,6 +1568,7 @@ vec3 path(vec3 ro, vec3 rd, inout Wave w) {
         }
         Surface s = make_surface(ro, rd, h);
         Mat m = load_material(s.material);
+        apply_maps(m, h.tri, h);
         if (in_medium) beta *= absorb(load_material(medium), h.t, w);
         if (m.opacity < 1.0 && rnd() > m.opacity && guard < 32) {
             ++guard;
@@ -1668,6 +1743,7 @@ void trace_photon() {
         }
         Surface s = make_surface(o, d, h);
         Mat m = load_material(s.material);
+        apply_maps(m, h.tri, h);
         if (!caustic_caster(m)) {
             if (spec && s.front) {
                 vec3 p = power;

@@ -104,11 +104,11 @@ inline Vec3f ggx_sample_vndf(const Vec3f& v, float a, float u1, float u2) noexce
     return normalize(Vec3f{ a * nh.x, a * nh.y, std::max(1e-6f, nh.z) });
 }
 
-inline Bsdf make_bsdf(const Material& m, const Rgb& base, float cos_o, bool front, float ior) noexcept {
+inline Bsdf make_bsdf(const Material& m, const Rgb& base, float metallic, float roughness, float transmission, float cos_o, bool front, float ior) noexcept {
     Bsdf b;
-    const float metal = clamp01(m.metallic);
-    const float trans = m.transmission > 0.0f ? clamp01(m.transmission) * (1.0f - metal) : 0.0f;
-    const float rough = clamp01(m.roughness);
+    const float metal = clamp01(metallic);
+    const float trans = transmission > 0.0f ? clamp01(transmission) * (1.0f - metal) : 0.0f;
+    const float rough = clamp01(roughness);
     b.alpha = std::max(rough * rough, 1e-3f);
     b.delta_spec = rough < 0.02f;
     const float r0 = (ior - 1.0f) / (ior + 1.0f);
@@ -133,6 +133,10 @@ inline Bsdf make_bsdf(const Material& m, const Rgb& base, float cos_o, bool fron
         b.p_spec = 1.0f - trans;
     }
     return b;
+}
+
+inline Bsdf make_bsdf(const Material& m, const Rgb& base, float cos_o, bool front, float ior) noexcept {
+    return make_bsdf(m, base, m.metallic, m.roughness, m.transmission, cos_o, front, ior);
 }
 
 inline BsdfEval bsdf_eval(const Bsdf& b, const Vec3f& wo, const Vec3f& wi) noexcept {

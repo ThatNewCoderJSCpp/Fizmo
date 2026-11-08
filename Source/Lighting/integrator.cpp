@@ -26,7 +26,117 @@ const Material& fallback_material() {
     return m;
 }
 
+Vec2f interpolate_uv(const Tri& tri, const Hit& hit) noexcept {
+    const float w = 1.0f - hit.u - hit.v;
+    return { tri.tex0.x * w + tri.tex1.x * hit.u + tri.tex2.x * hit.v, tri.tex0.y * w + tri.tex1.y * hit.u + tri.tex2.y * hit.v };
+}
+
+bool wants_triplanar(const Material& m) noexcept {
+    return (m.base_color_map.valid() && m.base_color_map.triplanar) || (m.roughness_map.valid() && m.roughness_map.triplanar)
+        || (m.metallic_map.valid() && m.metallic_map.triplanar) || (m.emission_map.valid() && m.emission_map.triplanar)
+        || (m.opacity_map.valid() && m.opacity_map.triplanar) || (m.transmission_map.valid() && m.transmission_map.triplanar);
+}
+
+struct MapPoint {
+    Vec2f uv;
+    Vec3f p;
+    Vec3f n;
+};
+
+MapPoint map_point(const Context& ctx, const Tri& tri, const Hit& hit, const Material& m, const Vec3f& world, const Vec3f& normal) {
+    MapPoint mp;
+    mp.uv = (tri.flags & tri_texcoords) ? interpolate_uv(tri, hit) : Vec2f{};
+    mp.p = world;
+    mp.n = normal;
+    if (!wants_triplanar(m) || !ctx.scene || tri.instance >= ctx.scene->instances().size()) return mp;
+    const auto& x = ctx.scene->instances()[tri.instance].transform.m;
+    const float a = x[0], b = x[1], c = x[2], d = x[4], e = x[5], f = x[6], g = x[8], h = x[9], i = x[10];
+    const float det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+    if (std::fabs(det) < 1e-20f) return mp;
+    const float inv = 1.0f / det;
+    const Vec3f q{ world.x - x[3], world.y - x[7], world.z - x[11] };
+    mp.p = Vec3f{ (e * i - f * h) * q.x + (c * h - b * i) * q.y + (b * f - c * e) * q.z,
+                  (f * g - d * i) * q.x + (a * i - c * g) * q.y + (c * d - a * f) * q.z,
+                  (d * h - e * g) * q.x + (b * g - a * h) * q.y + (a * e - b * d) * q.z } * inv;
+    mp.n = normalize(Vec3f{ a * normal.x + d * normal.y + g * normal.z, b * normal.x + e * normal.y + h * normal.z, c * normal.x + f * normal.y + i * normal.z });
+    return mp;
+}
+
+Rgba sample_map(const TextureMap& map, const Material& m, const MapPoint& mp) noexcept {
+    return map.triplanar ? map.sample_triplanar(mp.p, mp.n) : map.sample(mp.uv, m.uv);
+}
+
+float map_value(const TextureMap& map, const Material& m, const MapPoint& mp) noexcept {
+    return sample_map(map, m, mp)[std::clamp(map.channel, 0, 3)];
+}
+
+float mapped_opacity(const Material& m, const MapPoint& mp) noexcept {
+    float a = m.opacity;
+    if (m.base_color_map.valid()) a *= sample_map(m.base_color_map, m, mp).a;
+    if (m.opacity_map.valid()) a *= map_value(m.opacity_map, m, mp);
+    return m.has_opacity_maps() ? m.cutout(a) : a;
+}
+
+Vec3f mapped_normal(const Context& ctx, const Tri& tri, const Hit& hit, const Material& m, const Vec3f& ns) {
+    if (!(tri.flags & tri_texcoords)) return ns;
+    const Vec2f uv = interpolate_uv(tri, hit);
+    const Vec3f ts = decode_normal(m.normal_map.sample(uv, m.uv), m.normal_map.strength);
+    Vec3f t, up;
+    if (tri.tangents < ctx.c->tangents.size()) {
+        const TriTangents& tt = ctx.c->tangents[tri.tangents];
+        const float w = 1.0f - hit.u - hit.v;
+        t = tt.t[0] * w + tt.t[1] * hit.u + tt.t[2] * hit.v;
+        t = t - ns * dot(ns, t);
+        if (length_squared(t) < 1e-12f) return ns;
+        t = normalize(t);
+        up = cross(ns, t) * tt.sign[0];
+    } else {
+        const float du1 = tri.tex1.x - tri.tex0.x, dv1 = tri.tex1.y - tri.tex0.y;
+        const float du2 = tri.tex2.x - tri.tex0.x, dv2 = tri.tex2.y - tri.tex0.y;
+        const float det = du1 * dv2 - du2 * dv1;
+        if (std::fabs(det) < 1e-12f) return ns;
+        const float r = 1.0f / det;
+        const Vec3f dpdu = (tri.e1 * dv2 - tri.e2 * dv1) * r;
+        const Vec3f dpdv = (tri.e2 * du1 - tri.e1 * du2) * r;
+        t = dpdu - ns * dot(ns, dpdu);
+        if (length_squared(t) < 1e-12f) return ns;
+        t = normalize(t);
+        const Vec3f b = cross(ns, t);
+        up = dot(b, dpdv) > 0.0f ? -b : b;
+    }
+    const Vec3f n = perturb_normal(ns, t, up, ts);
+    return dot(n, n) > 0.0f ? n : ns;
+}
+
 } // namespace
+
+void apply_material_maps(const Context& ctx, const Tri& tri, const Hit& hit, Surface& s) {
+    const Material& m = *s.m;
+    s.base_color = m.base_color;
+    s.metallic = m.metallic;
+    s.roughness = m.roughness;
+    s.opacity = m.opacity;
+    s.transmission = m.transmission;
+    s.emission = m.emitted();
+    s.mapped = false;
+    if (!m.has_maps()) return;
+    s.mapped = true;
+    const MapPoint mp = map_point(ctx, tri, hit, m, s.p, s.ns);
+    s.texcoord = mp.uv;
+    if (m.base_color_map.valid()) s.base_color = s.base_color * sample_map(m.base_color_map, m, mp).rgb();
+    s.opacity = mapped_opacity(m, mp);
+    if (m.roughness_map.valid()) s.roughness *= map_value(m.roughness_map, m, mp);
+    if (m.metallic_map.valid()) s.metallic *= map_value(m.metallic_map, m, mp);
+    if (m.transmission_map.valid()) s.transmission *= map_value(m.transmission_map, m, mp);
+    if (m.emission_map.valid()) s.emission = s.emission * sample_map(m.emission_map, m, mp).rgb();
+}
+
+float hit_opacity(const Context& ctx, const Tri& tri, const Hit& hit, const Material& m) {
+    if (!m.has_opacity_maps()) return m.opacity;
+    const Vec3f n = normalize(cross(tri.e1, tri.e2));
+    const Vec3f p = tri.v0 + tri.e1 * hit.u + tri.e2 * hit.v;
+    return mapped_opacity(m, map_point(ctx, tri, hit, m, p, n));
+}
 
 float Wave::ior(const Material& m, bool dispersion) const noexcept {
     if (!dispersion || m.abbe <= 0.0f) return m.ior;
@@ -70,6 +180,9 @@ void parallel_for(std::size_t count, unsigned threads, const std::function<void(
 }
 
 void build_tri_light_map(Context& ctx) {
+    ctx.cutouts = false;
+    if (ctx.scene)
+        for (const Material& m : ctx.scene->materials()) ctx.cutouts = ctx.cutouts || m.has_opacity_maps();
     ctx.tri_light.assign(ctx.c->tris.size(), -1);
     for (std::size_t i = ctx.c->emissive_begin.empty() ? ctx.c->lights.size() : ctx.c->emissive_begin.front(); i < ctx.c->lights.size(); ++i) {
         const PreparedLight& l = ctx.c->lights[i];
@@ -92,6 +205,7 @@ Surface make_surface(const Context& ctx, const Ray& ray, const Hit& hit) {
     const float w = 1.0f - hit.u - hit.v;
     Vec3f ns = (tri.flags & tri_smooth) ? normalize(tri.n0 * w + tri.n1 * hit.u + tri.n2 * hit.v) : gn;
     if (length_squared(ns) == 0.0f) ns = gn;
+    if (s.m->normal_map.valid()) ns = mapped_normal(ctx, tri, hit, *s.m, ns);
     if (dot(gn, ns) < 0.0f) gn = -gn;
     s.front = dot(ray.d, gn) < 0.0f;
     if (!s.front) {
@@ -106,13 +220,15 @@ Surface make_surface(const Context& ctx, const Ray& ray, const Hit& hit) {
         s.lightmap = true;
         s.uv = { tri.uv0.x * w + tri.uv1.x * hit.u + tri.uv2.x * hit.v, tri.uv0.y * w + tri.uv1.y * hit.u + tri.uv2.y * hit.v };
     }
+    apply_material_maps(ctx, tri, hit, s);
     return s;
 }
 
 Bsdf surface_bsdf(const Context& ctx, const Surface& s, const Wave& w, bool dispersion, bool diffuse_only) {
     (void)ctx;
     const Material& m = *s.m;
-    Bsdf b = make_bsdf(m, w.lift(m.base_color), std::max(dot(s.ns, s.wo), 1e-4f), s.front, w.ior(m, dispersion));
+    Bsdf b = s.mapped ? make_bsdf(m, w.lift(s.base_color), s.metallic, s.roughness, s.transmission, std::max(dot(s.ns, s.wo), 1e-4f), s.front, w.ior(m, dispersion))
+                      : make_bsdf(m, w.lift(m.base_color), std::max(dot(s.ns, s.wo), 1e-4f), s.front, w.ior(m, dispersion));
     if (diffuse_only) {
         b.diffuse_only = true;
         b.p_trans = 0.0f;
@@ -135,9 +251,25 @@ Vec3f offset_ray(const Surface& s, const Vec3f& dir) noexcept {
 }
 
 Rgb transmittance(const Context& ctx, const Vec3f& from, const Vec3f& dir, float dist, bool colored, const Wave& w) {
-    if (!colored) {
+    if (!colored && !ctx.cutouts) {
         Ray r{ from, dir, dist };
         return occluded(*ctx.c, r) ? Rgb() : Rgb(1.0f);
+    }
+    if (!colored) {
+        Vec3f o = from;
+        float left = dist;
+        for (int i = 0; i < 16 && left > 1e-5f; ++i) {
+            Ray r{ o, dir, left };
+            Hit h;
+            if (!ctx.c->bvh.intersect(ctx.c->tris, r, h, tri_casts_shadows)) return Rgb(1.0f);
+            const Tri& tri = ctx.c->tris[h.tri];
+            const Material& m = ctx.material(tri.material);
+            if (!m.has_opacity_maps() || hit_opacity(ctx, tri, h, m) >= 0.5f) return Rgb();
+            const float step = h.t + 1e-4f;
+            o = o + dir * step;
+            left -= step;
+        }
+        return Rgb();
     }
     Rgb t(1.0f);
     Vec3f o = from;
@@ -147,14 +279,18 @@ Rgb transmittance(const Context& ctx, const Vec3f& from, const Vec3f& dir, float
         Hit h;
         if (!ctx.c->bvh.intersect(ctx.c->tris, r, h, tri_casts_shadows)) return t;
         const Material& m = ctx.material(ctx.c->tris[h.tri].material);
-        if (m.is_transmissive()) {
+        const bool cut = m.has_opacity_maps();
+        const float alpha = cut ? hit_opacity(ctx, ctx.c->tris[h.tri], h, m) : m.opacity;
+        if (cut && alpha <= 0.0f) {
+            t *= Rgb(1.0f);
+        } else if (m.is_transmissive()) {
             const float pass = clamp01(m.transmission) * (1.0f - clamp01(m.metallic));
             Rgb tint = w.lift(m.base_color);
             const float cos_t = std::fabs(dot(dir, normalize(cross(ctx.c->tris[h.tri].e1, ctx.c->tris[h.tri].e2))));
             const float f = fresnel_dielectric(cos_t, 1.0f / std::max(m.ior, 1.0001f));
             t *= tint * (pass * (1.0f - f) + (1.0f - pass) * 0.0f);
-        } else if (m.opacity < 1.0f) {
-            t *= Rgb(1.0f - clamp01(m.opacity));
+        } else if (alpha < 1.0f) {
+            t *= Rgb(1.0f - clamp01(alpha));
         } else {
             return Rgb();
         }
@@ -475,11 +611,11 @@ Rgb irradiance_estimate(const Context& ctx, const Vec3f& p, const Vec3f& n, int 
                 break;
             }
             const Surface hs = make_surface(ctx, r, h);
-            if (hs.m->emits()) {
+            if (hs.emits()) {
                 PreparedLight probe;
                 probe.mobility = hs.is_static ? LightMobility::baked : LightMobility::dynamic;
                 const bool counted = light_allowed(probe, indirect_filter);
-                if (counted) L += beta * hs.m->emitted();
+                if (counted) L += beta * hs.emitted();
             }
             if (!hs.front && !hs.m->is_transmissive()) break;
             const Bsdf hb = surface_bsdf(ctx, hs, wave, false);
@@ -540,7 +676,7 @@ void update_probes(ProbeVolume& volume, const Context& ctx, int rays, float hyst
                     ++back;
                     continue;
                 }
-                Rgb L = s.m->emitted();
+                Rgb L = s.emitted();
                 const Bsdf b = surface_bsdf(ctx, s, wave, false, true);
                 if (!b.diffuse.is_black()) {
                     const Frame f(s.ns);

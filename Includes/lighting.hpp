@@ -5,6 +5,7 @@
 #include "../Source/Lighting/color.hpp"
 #include "../Source/Lighting/ies.hpp"
 #include "../Source/Lighting/light.hpp"
+#include "../Source/Lighting/texture.hpp"
 #include "../Source/Lighting/material.hpp"
 #include "../Source/Lighting/mesh.hpp"
 #include "../Source/Lighting/settings.hpp"

@@ -39,6 +39,11 @@ enum class LightUnit : std::uint8_t {
     watts
 };
 
+enum class LightSpread : std::uint8_t {
+    natural,
+    blob
+};
+
 enum class Falloff : std::uint8_t {
     physical,
     linear,
@@ -84,6 +89,8 @@ struct Light {
     float range = 0.0f;
     Falloff falloff = Falloff::physical;
     float falloff_exponent = 2.0f;
+    LightSpread spread = LightSpread::natural;
+    float spill = 0.35f;
 
     float radius = 0.0f;
     float length = 1.0f;

@@ -99,6 +99,18 @@ Static instances (`Instance::is_static`) get per-vertex light and, if the mesh h
 
 Sun shadows are cached in layers. A shadow map is reused as is while no caster changes. When some casters move, the casters that have stayed put for `SunShadow3D::stable_frames` frames (4 by default) are drawn once into a cached layer. Each frame copies that layer and draws only the moving casters on top. Set `SunShadow3D::layered = false` to always redraw the whole map. For shadows that only reach part of the view, see [visibility](visibility.md): real shadows inside `distance`, blobs past it.
 
+### Light spread and spill
+
+`PointLight3D::falloff` picks how a real-time light fades. `LightFalloff3D::Window` (the default, unchanged) is the old compact pool that fades to zero at `radius`. `LightFalloff3D::Physical` uses inverse-square falloff from `reference_distance` (the light is `intensity` bright there), windowed smoothly to zero at `radius`, so light keeps spreading across a room instead of stopping in a blob. `spill` (0 to 4) wraps light past the terminator and onto surfaces facing slightly away, which reads like light bouncing off nearby walls. `fizmo::lighting::Light` has `spread` (`natural` or `blob`) and `spill` (default 0.35); `to_point_light` maps `natural` to `Physical` with that spill.
+
+### Reflections
+
+`Material3D::reflectivity` (0 to 1) makes a PBR mesh reflect: 1 is a mirror, lower values a polished or wet look, scaled by roughness. Reflective meshes are drawn with `Blend3D::Alpha` so they come after the scene copy; with `SceneLighting3D::surfaces.screen_reflections` on they reflect what's on screen, and otherwise the sky. Combined with a vertex or material alpha below 1 this gives glass that both shows through and reflects at grazing angles.
+
+### Water rendering cost
+
+Liquid and glossy surfaces only run the screen-space reflection march when the Fresnel term is above about 3% (looking straight down at water skips it), and the march uses fewer steps for pixels far away. Mirrors always march. `surfaces.reflection_steps` is still the upper limit.
+
 ## Path tracing and photons on the GPU
 
 `fizmo::graphics::GpuPathTracer` runs the `path_traced` and `photon` tiers on the GPU with compute shaders, on Vulkan and on OpenGL 4.3. It uploads the same compiled scene the CPU renderer uses (triangles, BVH, materials, every light shape, the sky), so the two agree: the tests render one room with both and check they match.

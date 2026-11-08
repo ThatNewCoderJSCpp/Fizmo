@@ -138,11 +138,11 @@ struct Tracer {
         if (!intersect(c, r, h, tri_visible)) return c.env.visible ? sky_radiance(c, r.d) : Rgb();
         const Surface s = make_surface(ctx, r, h);
         if (g) {
-            g->albedo = s.m->base_color;
+            g->albedo = s.albedo();
             g->normal = s.ns;
             g->depth = h.t;
         }
-        return s.m->base_color + s.m->emitted();
+        return s.albedo() + s.emitted();
     }
 
     Rgb direct(const Ray& r, int refl, int trans, Rng& rng, const Material* medium, bool camera, GSample* g, int guard = 0) const {
@@ -171,16 +171,16 @@ struct Tracer {
         const Surface s = make_surface(ctx, r, cl.h);
         const Material& m = *s.m;
         if (g) {
-            g->albedo = m.base_color;
+            g->albedo = s.albedo();
             g->normal = s.ns;
             g->depth = cl.t;
         }
-        if (m.opacity < 1.0f && rng.uniform() > m.opacity && guard < 16) {
+        if (s.alpha() < 1.0f && rng.uniform() > s.alpha() && guard < 16) {
             Ray next{ s.p + r.d * surface_eps(s) * 4.0f, r.d, kInfinity };
             Rgb L = direct(next, refl, trans, rng, medium, camera, nullptr, guard + 1);
             return L;
         }
-        Rgb L = m.emitted();
+        Rgb L = s.emitted();
         const Bsdf b = surface_bsdf(ctx, s, w, false);
         const Frame frame(s.ns);
         const Vec3f wo = frame.to_local(s.wo);
@@ -335,19 +335,19 @@ struct Tracer {
             const Surface s = make_surface(ctx, r, cl.h);
             const Material& m = *s.m;
             if (g && depth == 0) {
-                g->albedo = m.base_color;
+                g->albedo = s.albedo();
                 g->normal = s.ns;
                 g->depth = cl.t;
             }
             if (medium) beta *= absorb(*medium, cl.t, w);
-            if (m.opacity < 1.0f && rng.uniform() > m.opacity && guard < 32) {
+            if (s.alpha() < 1.0f && rng.uniform() > s.alpha() && guard < 32) {
                 ++guard;
                 --depth;
                 r = Ray{ s.p + r.d * surface_eps(s) * 4.0f, r.d, kInfinity };
                 continue;
             }
-            if (m.emits() && (m.double_sided || s.front)) {
-                const Rgb Le = w.lift(m.emitted());
+            if (s.emits() && (m.double_sided || s.front)) {
+                const Rgb Le = w.lift(s.emitted());
                 float weight = 1.0f;
                 if (!specular && cl.h.tri < ctx.tri_light.size() && ctx.tri_light[cl.h.tri] >= 0 && st.emissive_lights) {
                     const std::size_t li = static_cast<std::size_t>(ctx.tri_light[cl.h.tri]);
@@ -369,7 +369,7 @@ struct Tracer {
             const Bsdf b = surface_bsdf(ctx, s, w, st.dispersion);
             const Frame frame(s.ns);
             const Vec3f wo = frame.to_local(s.wo);
-            if (caustics && !had_diffuse && b.has_smooth_lobes() && !m.is_transmissive() && !(m.metallic > 0.5f && m.roughness < 0.15f)) {
+            if (caustics && !had_diffuse && b.has_smooth_lobes() && !m.is_transmissive() && !(s.metallic > 0.5f && s.roughness < 0.15f)) {
                 const Bsdf rgb = surface_bsdf(ctx, s, Wave(), false);
                 add(beta * w.lift(ctx.photons->gather(s, rgb, frame, wo)), depth);
             }

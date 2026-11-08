@@ -524,7 +524,8 @@ void compile_lights(Compiled& c, const Scene& scene) {
         if (tri.material >= scene.materials().size()) continue;
         const Material& m = scene.materials()[tri.material];
         if (!m.emits()) continue;
-        const Rgb e = m.emitted();
+        const Rgb e = m.average_emitted();
+        if (e.is_black()) continue;
         PreparedLight p;
         p.kind = LightKind::triangle;
         p.p = tri.v0;
@@ -565,6 +566,21 @@ void compile_lights(Compiled& c, const Scene& scene) {
     }
 }
 
+namespace {
+
+TriTangents tangent_frame(const Transform& xf, const Mesh& m, std::uint32_t i0, std::uint32_t i1, std::uint32_t i2) {
+    TriTangents t;
+    const std::uint32_t idx[3] = { i0, i1, i2 };
+    for (int k = 0; k < 3; ++k) {
+        const Vec4f& v = m.tangents[idx[k]];
+        t.t[k] = normalize(xf.vector(Vec3f{ v.x, v.y, v.z }));
+        t.sign[k] = v.w < 0.0f ? -1.0f : 1.0f;
+    }
+    return t;
+}
+
+} // namespace
+
 Compiled compile(const Scene& scene) {
     Compiled c;
     const auto& instances = scene.instances();
@@ -579,12 +595,15 @@ Compiled compile(const Scene& scene) {
         const Mesh& m = meshes[inst.mesh];
         const bool smooth = m.has_normals();
         const bool lm = m.has_lightmap_uvs();
+        const bool tex = m.has_uvs();
+        const bool tan = tex && m.has_tangents();
         std::uint32_t flags = 0;
         if (inst.casts_shadows) flags |= tri_casts_shadows;
         if (inst.visible) flags |= tri_visible;
         if (inst.is_static) flags |= tri_static;
         if (smooth) flags |= tri_smooth;
         if (lm) flags |= tri_lightmap;
+        if (tex) flags |= tri_texcoords;
         for (std::size_t t = 0; t + 2 < m.indices.size(); t += 3) {
             const std::uint32_t i0 = m.indices[t], i1 = m.indices[t + 1], i2 = m.indices[t + 2];
             if (i0 >= m.positions.size() || i1 >= m.positions.size() || i2 >= m.positions.size()) continue;
@@ -607,6 +626,15 @@ Compiled compile(const Scene& scene) {
                 tri.uv0 = m.lightmap_uvs[i0];
                 tri.uv1 = m.lightmap_uvs[i1];
                 tri.uv2 = m.lightmap_uvs[i2];
+            }
+            if (tex) {
+                tri.tex0 = m.uvs[i0];
+                tri.tex1 = m.uvs[i1];
+                tri.tex2 = m.uvs[i2];
+            }
+            if (tan) {
+                tri.tangents = static_cast<std::uint32_t>(c.tangents.size());
+                c.tangents.push_back(tangent_frame(inst.transform, m, i0, i1, i2));
             }
             tri.instance = static_cast<std::uint32_t>(ii);
             tri.material = static_cast<std::uint32_t>(inst.material);
@@ -667,6 +695,7 @@ bool refit_moved(Compiled& c, const Scene& scene, const std::vector<std::uint32_
             } else {
                 tri.n0 = tri.n1 = tri.n2 = normalize(cross(tri.e1, tri.e2));
             }
+            if (tri.tangents < c.tangents.size() && m.has_tangents()) c.tangents[tri.tangents] = tangent_frame(inst.transform, m, i0, i1, i2);
         }
     }
     c.bvh.refit(c.tris);

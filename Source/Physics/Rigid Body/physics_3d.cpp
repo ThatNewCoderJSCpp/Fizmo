@@ -1239,3 +1239,665 @@ std::size_t RigidBody3D::pooled_bodies() {
 
 } // namespace physics
 } // namespace fizmo
+
+namespace fizmo {
+namespace physics {
+namespace {
+
+struct SectionSpec {
+    Real r = 0.5_r;
+    Real inner = 0.0_r;
+    Real p0 = 0.0_r;
+    Real p1 = 180.0_r;
+    Real a0 = 0.0_r;
+    Real a1 = 360.0_r;
+    Real h0 = 0.0_r;
+    Real h1 = 0.0_r;
+    bool full_az = true;
+    bool cut_low = false;
+    bool cut_high = false;
+};
+
+struct SectionFace {
+    std::vector<RVec3> pts;
+    RVec3 normal{};
+    bool shown = true;
+};
+
+using SectionPoly = std::vector<SectionFace>;
+
+struct SectionPlane {
+    RVec3 n{};
+    Real d = 0.0_r;
+    bool shown = true;
+};
+
+Real section_snap(Real v) {
+    const Real marks[3] = { 0.0_r, 90.0_r, 180.0_r };
+    for (Real m : marks) { if (std::abs(v - m) < 1e-3_r) return m; }
+    return v;
+}
+
+SectionSpec section_spec(const SphereSection3D& s) {
+    SectionSpec q;
+    q.r = (s.radius > 1e-6_r && std::isfinite(s.radius)) ? s.radius : 1e-6_r;
+    const Real inner = std::isfinite(s.inner_radius) ? s.inner_radius : 0.0_r;
+    q.inner = std::clamp(inner, 0.0_r, 0.999_r * q.r);
+    if (q.inner < 1e-4_r * q.r) q.inner = 0.0_r;
+
+    Real p0 = std::isfinite(s.polar_min) ? std::clamp(s.polar_min, 0.0_r, 180.0_r) : 0.0_r;
+    Real p1 = std::isfinite(s.polar_max) ? std::clamp(s.polar_max, 0.0_r, 180.0_r) : 180.0_r;
+    if (p0 > p1) std::swap(p0, p1);
+    p0 = section_snap(p0);
+    p1 = section_snap(p1);
+
+    if (p1 - p0 < 1.0_r) {
+        p1 = std::min(180.0_r, p0 + 1.0_r);
+        p0 = p1 - 1.0_r;
+    }
+
+    q.p0 = p0;
+    q.p1 = p1;
+
+    Real a0 = std::isfinite(s.azimuth_min) ? s.azimuth_min : 0.0_r;
+    Real a1 = std::isfinite(s.azimuth_max) ? s.azimuth_max : 360.0_r;
+    if (a1 < a0) std::swap(a0, a1);
+    const Real span = a1 - a0;
+
+    if (span >= 360.0_r - 1e-3_r) {
+        q.full_az = true;
+        q.a0 = 0.0_r;
+        q.a1 = 360.0_r;
+    } else {
+        q.full_az = false;
+        a0 = std::fmod(a0, 360.0_r);
+        if (a0 < 0.0_r) a0 += 360.0_r;
+        q.a0 = a0;
+        q.a1 = a0 + std::max(span, 1.0_r);
+    }
+
+    Real h0 = s.height_min, h1 = s.height_max;
+    if (!(h0 > -q.r)) h0 = -q.r;
+    if (!(h1 < q.r)) h1 = q.r;
+    if (h0 > h1) std::swap(h0, h1);
+
+    if (h1 - h0 < 1e-3_r * q.r) {
+        h1 = std::min(q.r, h0 + 1e-3_r * q.r);
+        h0 = h1 - 1e-3_r * q.r;
+    }
+
+    q.h0 = h0;
+    q.h1 = h1;
+    q.cut_low = h0 > -q.r * (1.0_r - 1e-5_r);
+    q.cut_high = h1 < q.r * (1.0_r - 1e-5_r);
+    return q;
+}
+
+bool spec_full(const SectionSpec& q) {
+    return q.inner == 0.0_r && q.p0 == 0.0_r && q.p1 == 180.0_r && q.full_az && !q.cut_low && !q.cut_high;
+}
+
+bool spec_convex(const SectionSpec& q) {
+    return q.inner == 0.0_r && (q.full_az || q.a1 - q.a0 <= 180.0_r + 1e-3_r)
+        && (q.p0 == 0.0_r || q.p0 >= 90.0_r) && (q.p1 == 180.0_r || q.p1 <= 90.0_r);
+}
+
+void section_trig(Real deg, Real& s, Real& c) {
+    const double q = static_cast<double>(deg) / 90.0;
+    const double qr = std::round(q);
+
+    if (std::abs(q - qr) < 1e-9) {
+        const long long k = ((static_cast<long long>(qr) % 4) + 4) % 4;
+        const Real ss[4] = { 0.0_r, 1.0_r, 0.0_r, -1.0_r };
+        const Real cc[4] = { 1.0_r, 0.0_r, -1.0_r, 0.0_r };
+        s = ss[k];
+        c = cc[k];
+        return;
+    }
+
+    const double rad = static_cast<double>(deg) * static_cast<double>(constants::pi()) / 180.0;
+    s = static_cast<Real>(std::sin(rad));
+    c = static_cast<Real>(std::cos(rad));
+}
+
+RVec3 section_dir(Real polar, Real azimuth) {
+    Real sp, cp, sa, ca;
+    section_trig(polar, sp, cp);
+    section_trig(azimuth, sa, ca);
+    return { sp * ca, cp, sp * sa };
+}
+
+RVec3 section_tangent(Real azimuth) {
+    Real sa, ca;
+    section_trig(azimuth, sa, ca);
+    return { -sa, 0.0_r, ca };
+}
+
+std::vector<Real> section_subdivide(std::vector<Real> crit, Real step) {
+    std::sort(crit.begin(), crit.end());
+    std::vector<Real> u;
+    for (Real v : crit) { if (u.empty() || v - u.back() > 1e-4_r) u.push_back(v); }
+    std::vector<Real> out;
+
+    for (std::size_t i = 0; i < u.size(); ++i) {
+        out.push_back(u[i]);
+        if (i + 1 >= u.size()) break;
+        const Real len = u[i + 1] - u[i];
+        const int n = std::max(1, static_cast<int>(std::ceil(len / step - 1e-3_r)));
+        for (int k = 1; k < n; ++k) out.push_back(u[i] + len * static_cast<Real>(k) / static_cast<Real>(n));
+    }
+
+    return out;
+}
+
+std::vector<Real> section_refine(const std::vector<Real>& coarse, int sub) {
+    std::vector<Real> out;
+
+    for (std::size_t i = 0; i < coarse.size(); ++i) {
+        out.push_back(coarse[i]);
+        if (i + 1 >= coarse.size()) break;
+        for (int k = 1; k < sub; ++k) out.push_back(coarse[i] + (coarse[i + 1] - coarse[i]) * static_cast<Real>(k) / static_cast<Real>(sub));
+    }
+
+    return out;
+}
+
+RVec3 section_newell(const std::vector<RVec3>& p) {
+    RVec3 n{};
+
+    for (std::size_t i = 0; i < p.size(); ++i) {
+        const RVec3& a = p[i];
+        const RVec3& b = p[(i + 1) % p.size()];
+        n.x += (a.y - b.y) * (a.z + b.z);
+        n.y += (a.z - b.z) * (a.x + b.x);
+        n.z += (a.x - b.x) * (a.y + b.y);
+    }
+
+    return n;
+}
+
+SectionPoly section_sphere_poly(const std::vector<Real>& rows, const std::vector<Real>& cols, Real rad) {
+    SectionPoly poly;
+    const std::size_t nr = rows.size();
+    const std::size_t nc = cols.size() - 1;
+
+    for (std::size_t i = 0; i + 1 < nr; ++i) {
+        for (std::size_t j = 0; j < nc; ++j) {
+            const RVec3 a = section_dir(rows[i], cols[j]) * rad;
+            const RVec3 b = section_dir(rows[i], cols[j + 1]) * rad;
+            const RVec3 c = section_dir(rows[i + 1], cols[j + 1]) * rad;
+            const RVec3 d = section_dir(rows[i + 1], cols[j]) * rad;
+            SectionFace f;
+            if (rows[i] <= 0.0_r) f.pts = { a, c, d };
+            else if (rows[i + 1] >= 180.0_r) f.pts = { a, b, c };
+            else f.pts = { a, b, c, d };
+            RVec3 n = section_newell(f.pts);
+            RVec3 mid{};
+            for (const auto& p : f.pts) mid += p;
+
+            if (vec3::dot(n, mid) < 0.0_r) {
+                std::reverse(f.pts.begin(), f.pts.end());
+                n = n * -1.0_r;
+            }
+
+            f.normal = vec3::normalize(n);
+            poly.push_back(std::move(f));
+        }
+    }
+
+    return poly;
+}
+
+Real section_poly_volume(const SectionPoly& poly) {
+    Real v = 0.0_r;
+
+    for (const auto& f : poly) {
+        for (std::size_t i = 1; i + 1 < f.pts.size(); ++i) v += vec3::dot(f.pts[0], vec3::cross(f.pts[i], f.pts[i + 1])) / 6.0_r;
+    }
+
+    return v;
+}
+
+Real section_fit_scale(const std::vector<Real>& rows, const std::vector<Real>& cols) {
+    const Real v = section_poly_volume(section_sphere_poly(rows, cols, 1.0_r));
+    const Real ball = 4.0_r / 3.0_r * static_cast<Real>(constants::pi());
+    return v > 0.0_r ? std::cbrt(ball / v) : 1.0_r;
+}
+
+void section_clip(SectionPoly& poly, const SectionPlane& pl, Real eps, Real weld) {
+    bool outside = false;
+
+    for (const auto& f : poly) {
+        for (const auto& p : f.pts) { if (vec3::dot(pl.n, p) - pl.d > eps) { outside = true; break; } }
+        if (outside) break;
+    }
+
+    if (!outside) return;
+    SectionPoly kept;
+    std::vector<RVec3> cap;
+
+    for (const auto& f : poly) {
+        const std::size_t n = f.pts.size();
+        std::vector<Real> s(n);
+        bool on_plane = true;
+
+        for (std::size_t i = 0; i < n; ++i) {
+            s[i] = vec3::dot(pl.n, f.pts[i]) - pl.d;
+            if (std::abs(s[i]) > eps) on_plane = false;
+        }
+
+        if (on_plane) continue;
+        SectionFace g;
+        g.normal = f.normal;
+        g.shown = f.shown;
+
+        for (std::size_t i = 0; i < n; ++i) {
+            const std::size_t j = (i + 1) % n;
+            const RVec3& a = f.pts[i];
+            const RVec3& b = f.pts[j];
+
+            if (s[i] <= eps) {
+                g.pts.push_back(a);
+                if (s[i] >= -eps) cap.push_back(a);
+            }
+
+            if ((s[i] < -eps && s[j] > eps) || (s[i] > eps && s[j] < -eps)) {
+                const RVec3 x = a + (b - a) * (s[i] / (s[i] - s[j]));
+                g.pts.push_back(x);
+                cap.push_back(x);
+            }
+        }
+
+        std::vector<RVec3> clean;
+
+        for (const auto& p : g.pts) {
+            if (clean.empty() || vec3::length_squared(p - clean.back()) > weld * weld) clean.push_back(p);
+        }
+
+        while (clean.size() > 1 && vec3::length_squared(clean.front() - clean.back()) <= weld * weld) clean.pop_back();
+        if (clean.size() < 3) continue;
+        g.pts = std::move(clean);
+        kept.push_back(std::move(g));
+    }
+
+    std::vector<RVec3> unique;
+
+    for (const auto& p : cap) {
+        bool dup = false;
+        for (const auto& q : unique) { if (vec3::length_squared(p - q) <= weld * weld) { dup = true; break; } }
+        if (!dup) unique.push_back(p);
+    }
+
+    if (unique.size() >= 3) {
+        RVec3 c{};
+        for (const auto& p : unique) c += p;
+        c = c * (1.0_r / static_cast<Real>(unique.size()));
+        const RVec3 helper = std::abs(pl.n.x) < 0.9_r ? RVec3{ 1.0_r, 0.0_r, 0.0_r } : RVec3{ 0.0_r, 0.0_r, 1.0_r };
+        const RVec3 u = vec3::normalize(vec3::cross(helper, pl.n));
+        const RVec3 w = vec3::cross(pl.n, u);
+        std::vector<std::pair<Real, RVec3>> order;
+        for (const auto& p : unique) order.push_back({ std::atan2(vec3::dot(p - c, w), vec3::dot(p - c, u)), p });
+        std::sort(order.begin(), order.end(), [](const std::pair<Real, RVec3>& x, const std::pair<Real, RVec3>& y) { return x.first < y.first; });
+        SectionFace f;
+        f.normal = pl.n;
+        f.shown = pl.shown;
+        for (const auto& o : order) f.pts.push_back(o.second);
+        kept.push_back(std::move(f));
+    }
+
+    poly = std::move(kept);
+}
+
+SectionPlane section_fan(Real polar, Real az_a, Real az_b, bool keep_up, bool shown) {
+    if (polar == 90.0_r) return { RVec3{ 0.0_r, keep_up ? -1.0_r : 1.0_r, 0.0_r }, 0.0_r, shown };
+    RVec3 n = vec3::normalize(vec3::cross(section_dir(polar, az_a), section_dir(polar, az_b)));
+    if (n.y > 0.0_r) n = n * -1.0_r;
+    if (!keep_up) n = n * -1.0_r;
+    return { n, 0.0_r, shown };
+}
+
+void section_add_polar(std::vector<SectionPlane>& planes, Real polar, bool is_min, const std::vector<Real>& cols, Real wa, Real wb, bool shown) {
+    if (is_min && polar <= 0.0_r) return;
+    if (!is_min && polar >= 180.0_r) return;
+
+    if (polar == 90.0_r) {
+        planes.push_back(section_fan(polar, wa, wb, !is_min, shown));
+        return;
+    }
+
+    for (std::size_t j = 0; j + 1 < cols.size(); ++j) {
+        if (cols[j] < wa - 1e-4_r || cols[j + 1] > wb + 1e-4_r) continue;
+        planes.push_back(section_fan(polar, cols[j], cols[j + 1], !is_min, shown));
+    }
+}
+
+void section_add_wedge(std::vector<SectionPlane>& planes, const SectionSpec& q, Real wa, Real wb) {
+    if (wb - wa >= 360.0_r - 1e-4_r) return;
+    planes.push_back({ section_tangent(wa) * -1.0_r, 0.0_r, !q.full_az && std::abs(wa - q.a0) < 1e-4_r });
+    planes.push_back({ section_tangent(wb), 0.0_r, !q.full_az && std::abs(wb - q.a1) < 1e-4_r });
+}
+
+void section_add_heights(std::vector<SectionPlane>& planes, const SectionSpec& q) {
+    if (q.cut_high) planes.push_back({ RVec3{ 0.0_r, 1.0_r, 0.0_r }, q.h1, true });
+    if (q.cut_low) planes.push_back({ RVec3{ 0.0_r, -1.0_r, 0.0_r }, -q.h0, true });
+}
+
+std::vector<SectionPoly> section_cells(const SectionSpec& q, int detail) {
+    const int segs = std::clamp(detail, 8, 96);
+    const Real step = 360.0_r / static_cast<Real>(segs);
+    const bool shell = q.inner > 0.0_r;
+    const int sub = shell ? 2 : 1;
+    const Real coarse_step = step * static_cast<Real>(sub);
+
+    std::vector<Real> az_crit = { q.a0, q.a0 + 360.0_r };
+    if (!q.full_az) az_crit.push_back(q.a1);
+    std::vector<Real> wedges = { q.a0 };
+
+    if (!q.full_az) {
+        const Real span = q.a1 - q.a0;
+        const int n = std::max(1, static_cast<int>(std::ceil(span / 180.0_r - 1e-4_r)));
+
+        for (int k = 1; k < n; ++k) {
+            wedges.push_back(q.a0 + span * static_cast<Real>(k) / static_cast<Real>(n));
+            az_crit.push_back(wedges.back());
+        }
+    }
+
+    wedges.push_back(q.a1);
+    const std::vector<Real> az_coarse = section_subdivide(az_crit, coarse_step);
+    const std::vector<Real> az_base = section_refine(az_coarse, sub);
+
+    std::vector<Real> polar_crit = { 0.0_r, 180.0_r, q.p0, q.p1 };
+    if (q.p0 < 90.0_r && q.p1 > 90.0_r) polar_crit.push_back(90.0_r);
+    std::vector<Real> polar_coarse0 = section_subdivide(polar_crit, coarse_step);
+    std::vector<Real> polar_base0 = section_refine(polar_coarse0, sub);
+    const Real scale = section_fit_scale(polar_base0, az_base);
+    const Real rad = q.r * scale;
+    const Real deg = 180.0_r / static_cast<Real>(constants::pi());
+    if (q.cut_high && q.h1 < rad) polar_crit.push_back(section_snap(std::acos(std::clamp(q.h1 / rad, -1.0_r, 1.0_r)) * deg));
+    if (q.cut_low && q.h0 > -rad) polar_crit.push_back(section_snap(std::acos(std::clamp(q.h0 / rad, -1.0_r, 1.0_r)) * deg));
+    const std::vector<Real> polar_coarse = section_subdivide(polar_crit, coarse_step);
+    const std::vector<Real> polar_base = section_refine(polar_coarse, sub);
+
+    const SectionPoly base = section_sphere_poly(polar_base, az_base, rad);
+    const Real eps = q.r * 64.0_r * std::numeric_limits<Real>::epsilon();
+    const Real weld = eps * 4.0_r;
+    std::vector<std::vector<SectionPlane>> cells;
+
+    if (shell) {
+        const Real in_rad = q.inner * section_fit_scale(polar_coarse0, az_coarse);
+
+        for (std::size_t i = 0; i + 1 < polar_coarse.size(); ++i) {
+            const Real ta = polar_coarse[i], tb = polar_coarse[i + 1];
+            if (ta < q.p0 - 1e-4_r || tb > q.p1 + 1e-4_r) continue;
+
+            for (std::size_t j = 0; j + 1 < az_coarse.size(); ++j) {
+                const Real wa = az_coarse[j], wb = az_coarse[j + 1];
+                if (wa < q.a0 - 1e-4_r || wb > q.a1 + 1e-4_r) continue;
+                std::vector<SectionPlane> planes;
+                section_add_wedge(planes, q, wa, wb);
+                const std::vector<Real> col = { wa, wb };
+                section_add_polar(planes, ta, true, col, wa, wb, std::abs(ta - q.p0) < 1e-4_r);
+                section_add_polar(planes, tb, false, col, wa, wb, std::abs(tb - q.p1) < 1e-4_r);
+                const std::vector<RVec3> in = { section_dir(ta, wa) * in_rad, section_dir(ta, wb) * in_rad, section_dir(tb, wb) * in_rad, section_dir(tb, wa) * in_rad };
+                RVec3 m = vec3::normalize(section_newell(in));
+                if (vec3::dot(m, section_dir((ta + tb) * 0.5_r, (wa + wb) * 0.5_r)) < 0.0_r) m = m * -1.0_r;
+                Real k = 0.0_r;
+                for (const auto& p : in) k += vec3::dot(m, p);
+                planes.push_back({ m * -1.0_r, -k * 0.25_r, true });
+                section_add_heights(planes, q);
+                cells.push_back(std::move(planes));
+            }
+        }
+    } else {
+        std::vector<std::array<Real, 2>> bands;
+        if (q.p0 == 0.0_r && q.p1 == 180.0_r) bands.push_back({ 0.0_r, 180.0_r });
+        else if (q.p0 < 90.0_r && q.p1 > 90.0_r) { bands.push_back({ q.p0, 90.0_r }); bands.push_back({ 90.0_r, q.p1 }); }
+        else bands.push_back({ q.p0, q.p1 });
+
+        for (const auto& band : bands) {
+            const Real ta = band[0], tb = band[1];
+            const bool convex_band = (ta == 0.0_r || ta >= 90.0_r) && (tb == 180.0_r || tb <= 90.0_r);
+            const std::vector<Real>& splits = convex_band ? wedges : az_coarse;
+
+            for (std::size_t j = 0; j + 1 < splits.size(); ++j) {
+                const Real wa = splits[j], wb = splits[j + 1];
+                if (wa < q.a0 - 1e-4_r || wb > q.a1 + 1e-4_r) continue;
+                std::vector<SectionPlane> planes;
+                section_add_wedge(planes, q, wa, wb);
+                section_add_polar(planes, ta, true, az_base, wa, wb, std::abs(ta - q.p0) < 1e-4_r);
+                section_add_polar(planes, tb, false, az_base, wa, wb, std::abs(tb - q.p1) < 1e-4_r);
+                section_add_heights(planes, q);
+                cells.push_back(std::move(planes));
+            }
+        }
+    }
+
+    std::vector<SectionPoly> out;
+    const Real min_volume = 1e-6_r * q.r * q.r * q.r;
+
+    for (const auto& planes : cells) {
+        SectionPoly poly = base;
+        for (const auto& pl : planes) {
+            section_clip(poly, pl, eps, weld);
+            if (poly.size() < 4) break;
+        }
+        if (poly.size() >= 4 && section_poly_volume(poly) > min_volume) out.push_back(std::move(poly));
+    }
+
+    return out;
+}
+
+bool section_hull(const SectionPoly& poly, Real weld, HullShape& h) {
+    h = HullShape{};
+
+    for (const auto& f : poly) {
+        HullFace hf;
+        hf.normal = vec3::normalize(f.normal);
+
+        for (const auto& p : f.pts) {
+            std::size_t idx = h.vertices.size();
+
+            for (std::size_t i = 0; i < h.vertices.size(); ++i) {
+                if (vec3::length_squared(h.vertices[i] - p) <= weld * weld) { idx = i; break; }
+            }
+
+            if (idx == h.vertices.size()) {
+                if (h.vertices.size() >= 0xFFFF) return false;
+                h.vertices.push_back(p);
+            }
+
+            const auto v = static_cast<std::uint16_t>(idx);
+            if (hf.indices.empty() || hf.indices.back() != v) hf.indices.push_back(v);
+        }
+
+        while (hf.indices.size() > 1 && hf.indices.front() == hf.indices.back()) hf.indices.pop_back();
+        if (hf.indices.size() >= 3) h.faces.push_back(std::move(hf));
+    }
+
+    h.finalize();
+    return h.valid();
+}
+
+Real section_weld(const SectionSpec& q) {
+    return q.r * 256.0_r * std::numeric_limits<Real>::epsilon();
+}
+
+void section_append_triangles(const SectionPoly& poly, bool all, std::vector<std::array<RVec3, 3>>& out) {
+    for (const auto& f : poly) {
+        if (!all && !f.shown) continue;
+        for (std::size_t i = 1; i + 1 < f.pts.size(); ++i) out.push_back({ f.pts[0], f.pts[i], f.pts[i + 1] });
+    }
+}
+
+std::vector<std::array<RVec3, 3>> section_full_triangles(const SectionSpec& q, int detail) {
+    const Real step = 360.0_r / static_cast<Real>(std::clamp(detail, 8, 96));
+    const std::vector<Real> rows = section_subdivide({ 0.0_r, 90.0_r, 180.0_r }, step);
+    const std::vector<Real> cols = section_subdivide({ 0.0_r, 360.0_r }, step);
+    std::vector<std::array<RVec3, 3>> out;
+    section_append_triangles(section_sphere_poly(rows, cols, q.r), true, out);
+    return out;
+}
+
+} // namespace
+
+SphereSection3D SphereSection3D::sphere(Real r) {
+    SphereSection3D s;
+    s.radius = r;
+    return s;
+}
+
+SphereSection3D SphereSection3D::hemisphere(Real r) {
+    SphereSection3D s;
+    s.radius = r;
+    s.polar_max = 90.0_r;
+    return s;
+}
+
+SphereSection3D SphereSection3D::dome(Real r, Real polar_degrees) {
+    SphereSection3D s;
+    s.radius = r;
+    s.polar_max = polar_degrees;
+    return s;
+}
+
+SphereSection3D SphereSection3D::cap(Real r, Real height) {
+    SphereSection3D s;
+    s.radius = r;
+    s.height_min = r - height;
+    return s;
+}
+
+SphereSection3D SphereSection3D::wedge(Real r, Real azimuth_degrees) {
+    SphereSection3D s;
+    s.radius = r;
+    s.azimuth_max = azimuth_degrees;
+    return s;
+}
+
+SphereSection3D SphereSection3D::shell(Real r, Real thickness) {
+    SphereSection3D s;
+    s.radius = r;
+    s.inner_radius = r - thickness;
+    return s;
+}
+
+SphereSection3D SphereSection3D::bowl(Real r, Real thickness) {
+    SphereSection3D s;
+    s.radius = r;
+    s.polar_min = 90.0_r;
+    s.inner_radius = r - thickness;
+    return s;
+}
+
+bool SphereSection3D::is_full_sphere() const noexcept { return spec_full(section_spec(*this)); }
+
+bool SphereSection3D::is_convex() const noexcept { return spec_convex(section_spec(*this)); }
+
+Real SphereSection3D::exact_volume() const noexcept {
+    const SectionSpec q = section_spec(*this);
+    const double pi = static_cast<double>(constants::pi());
+    const double R = q.r, ri = q.inner, h0 = q.h0, h1 = q.h1;
+    const double t0 = q.p0 * pi / 180.0, t1 = q.p1 * pi / 180.0;
+    const double az = (q.a1 - q.a0) * pi / 180.0;
+    const int n = 4096;
+    double sum = 0.0;
+
+    for (int i = 0; i <= n; ++i) {
+        const double t = t0 + (t1 - t0) * i / n;
+        const double c = std::cos(t);
+        double lo = ri, hi = R;
+
+        if (c > 1e-12) { lo = std::max(lo, h0 / c); hi = std::min(hi, h1 / c); }
+        else if (c < -1e-12) { lo = std::max(lo, h1 / c); hi = std::min(hi, h0 / c); }
+        else if (h0 > 0.0 || h1 < 0.0) hi = lo;
+
+        const double f = hi > lo ? (hi * hi * hi - lo * lo * lo) / 3.0 * std::sin(t) : 0.0;
+        sum += f * ((i == 0 || i == n) ? 1.0 : (i % 2 ? 4.0 : 2.0));
+    }
+
+    return static_cast<Real>(sum * (t1 - t0) / (3.0 * n) * az);
+}
+
+auto Shape3D::make_sphere_section_parts(const SphereSection3D& section, int detail) -> std::vector<Shape3D> {
+    const SectionSpec q = section_spec(section);
+    std::vector<Shape3D> out;
+
+    if (spec_full(q)) {
+        out.push_back(make_sphere(RVec3{}, q.r));
+        return out;
+    }
+
+    const Real weld = section_weld(q);
+
+    for (const auto& poly : section_cells(q, detail)) {
+        HullShape h;
+        if (section_hull(poly, weld, h)) out.push_back(make_hull(std::move(h)));
+    }
+
+    return out;
+}
+
+auto Shape3D::make_sphere_section(const SphereSection3D& section, int detail) -> Shape3D {
+    const SectionSpec q = section_spec(section);
+    if (spec_full(q)) return make_sphere(RVec3{}, q.r);
+    const std::vector<SectionPoly> cells = section_cells(q, detail);
+    const Real weld = section_weld(q);
+
+    if (spec_convex(q) && cells.size() == 1) {
+        HullShape h;
+        if (section_hull(cells[0], weld, h)) return make_hull(std::move(h));
+    }
+
+    std::vector<std::array<RVec3, 3>> tris;
+    for (const auto& poly : cells) section_append_triangles(poly, false, tris);
+    if (tris.empty()) return make_sphere(RVec3{}, q.r);
+    std::vector<RVec3> verts;
+    std::vector<std::array<std::uint32_t, 3>> idx;
+
+    for (const auto& t : tris) {
+        std::array<std::uint32_t, 3> tri{};
+
+        for (int k = 0; k < 3; ++k) {
+            std::size_t found = verts.size();
+
+            for (std::size_t i = 0; i < verts.size(); ++i) {
+                if (vec3::length_squared(verts[i] - t[k]) <= weld * weld) { found = i; break; }
+            }
+
+            if (found == verts.size()) verts.push_back(t[k]);
+            tri[k] = static_cast<std::uint32_t>(found);
+        }
+
+        if (tri[0] != tri[1] && tri[1] != tri[2] && tri[0] != tri[2]) idx.push_back(tri);
+    }
+
+    return make_mesh(std::move(verts), std::move(idx), true);
+}
+
+std::vector<std::array<RVec3, 3>> sphere_section_triangles(const SphereSection3D& section, int detail) {
+    const SectionSpec q = section_spec(section);
+    if (spec_full(q)) return section_full_triangles(q, detail);
+    std::vector<std::array<RVec3, 3>> out;
+    for (const auto& poly : section_cells(q, detail)) section_append_triangles(poly, false, out);
+    return out;
+}
+
+std::vector<RVec3> sphere_section_points(const SphereSection3D& section, int detail) {
+    const SectionSpec q = section_spec(section);
+    const Real weld = section_weld(q);
+    std::vector<RVec3> out;
+
+    for (const auto& t : sphere_section_triangles(section, detail)) {
+        for (const auto& p : t) {
+            bool dup = false;
+            for (const auto& o : out) { if (vec3::length_squared(o - p) <= weld * weld) { dup = true; break; } }
+            if (!dup) out.push_back(p);
+        }
+    }
+
+    return out;
+}
+
+} // namespace physics
+} // namespace fizmo

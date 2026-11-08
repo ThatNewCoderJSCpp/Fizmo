@@ -32,6 +32,15 @@ struct Tri {
     std::uint32_t material = 0;
     std::uint32_t local = 0;
     std::uint32_t flags = 0;
+    Vec2f tex0;
+    Vec2f tex1;
+    Vec2f tex2;
+    std::uint32_t tangents = 0xFFFFFFFFu;
+};
+
+struct TriTangents {
+    Vec3f t[3];
+    float sign[3] = { 1.0f, 1.0f, 1.0f };
 };
 
 enum TriFlag : std::uint32_t {
@@ -39,7 +48,8 @@ enum TriFlag : std::uint32_t {
     tri_visible = 1u << 1,
     tri_static = 1u << 2,
     tri_smooth = 1u << 3,
-    tri_lightmap = 1u << 4
+    tri_lightmap = 1u << 4,
+    tri_texcoords = 1u << 5
 };
 
 struct Hit {
@@ -170,6 +180,7 @@ struct Compiled {
     std::vector<std::vector<std::uint32_t>> instance_tris;
     float built_area = 0.0f;
     std::uint32_t refits = 0;
+    std::vector<TriTangents> tangents;
 };
 
 Compiled compile(const Scene& scene);

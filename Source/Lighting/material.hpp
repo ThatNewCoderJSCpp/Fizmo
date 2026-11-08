@@ -2,6 +2,7 @@
 #define FIZMO_LIGHTING_MATERIAL_HPP
 
 #include "color.hpp"
+#include "texture.hpp"
 
 #include <string>
 
@@ -28,6 +29,16 @@ struct Material {
     float opacity = 1.0f;
     bool double_sided = true;
 
+    UvTransform uv;
+    TextureMap base_color_map;
+    TextureMap normal_map;
+    TextureMap roughness_map;
+    TextureMap metallic_map;
+    TextureMap emission_map;
+    TextureMap opacity_map;
+    TextureMap transmission_map;
+    float alpha_cutoff = 0.0f;
+
     static Material diffuse(const Rgb& color);
     static Material plastic(const Rgb& color, float roughness = 0.35f);
     static Material metal(const Rgb& color, float roughness = 0.2f);
@@ -47,6 +58,12 @@ struct Material {
     bool is_transmissive() const noexcept { return transmission > 0.0f && metallic < 1.0f; }
     bool is_dispersive() const noexcept { return abbe > 0.0f && is_transmissive(); }
     float ior_at(float nanometers) const noexcept;
+
+    bool has_maps() const noexcept;
+    bool has_opacity_maps() const noexcept;
+    Rgb average_base_color() const noexcept;
+    Rgb average_emitted() const noexcept;
+    float cutout(float alpha) const noexcept;
 };
 
 } // namespace lighting

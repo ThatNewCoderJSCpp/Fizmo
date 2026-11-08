@@ -10,6 +10,7 @@ void add_quad(Mesh& m, const Vec3f& a, const Vec3f& b, const Vec3f& c, const Vec
     m.positions.insert(m.positions.end(), { a, b, c, d });
     m.normals.insert(m.normals.end(), { n, n, n, n });
     m.lightmap_uvs.insert(m.lightmap_uvs.end(), { Vec2f{ uv0.x, uv0.y }, Vec2f{ uv1.x, uv0.y }, Vec2f{ uv1.x, uv1.y }, Vec2f{ uv0.x, uv1.y } });
+    m.uvs.insert(m.uvs.end(), { Vec2f{ 0.0f, 0.0f }, Vec2f{ 1.0f, 0.0f }, Vec2f{ 1.0f, 1.0f }, Vec2f{ 0.0f, 1.0f } });
     m.indices.insert(m.indices.end(), { base, base + 1, base + 2, base, base + 2, base + 3 });
 }
 
@@ -29,6 +30,40 @@ void Mesh::compute_normals() {
     for (auto& n : normals) n = normalize(n);
 }
 
+void Mesh::compute_tangents() {
+    if (!has_uvs()) {
+        tangents.clear();
+        return;
+    }
+    if (!has_normals()) compute_normals();
+    std::vector<Vec3f> tan(positions.size()), up(positions.size());
+    for (std::size_t i = 0; i + 2 < indices.size(); i += 3) {
+        const std::uint32_t i0 = indices[i], i1 = indices[i + 1], i2 = indices[i + 2];
+        if (i0 >= positions.size() || i1 >= positions.size() || i2 >= positions.size()) continue;
+        const Vec3f e1 = positions[i1] - positions[i0], e2 = positions[i2] - positions[i0];
+        const float du1 = uvs[i1].x - uvs[i0].x, dv1 = uvs[i1].y - uvs[i0].y;
+        const float du2 = uvs[i2].x - uvs[i0].x, dv2 = uvs[i2].y - uvs[i0].y;
+        const float det = du1 * dv2 - du2 * dv1;
+        if (std::fabs(det) < 1e-12f) continue;
+        const float r = 1.0f / det;
+        const Vec3f t = (e1 * dv2 - e2 * dv1) * r;
+        const Vec3f b = (e2 * du1 - e1 * du2) * r;
+        for (std::uint32_t k : { i0, i1, i2 }) {
+            tan[k] += t;
+            up[k] -= b;
+        }
+    }
+    tangents.assign(positions.size(), Vec4f{});
+    for (std::size_t i = 0; i < positions.size(); ++i) {
+        const Vec3f n = normals[i];
+        Vec3f t = tan[i] - n * dot(n, tan[i]);
+        if (length_squared(t) < 1e-20f) t = Frame(n).t;
+        t = normalize(t);
+        const float w = dot(cross(n, t), up[i]) < 0.0f ? -1.0f : 1.0f;
+        tangents[i] = Vec4f{ t.x, t.y, t.z, w };
+    }
+}
+
 void Mesh::append(const Mesh& other, const Transform& xf) {
     const std::uint32_t base = static_cast<std::uint32_t>(positions.size());
     const bool keep_normals = has_normals() || positions.empty();
@@ -42,6 +77,19 @@ void Mesh::append(const Mesh& other, const Transform& xf) {
         lightmap_uvs.insert(lightmap_uvs.end(), other.lightmap_uvs.begin(), other.lightmap_uvs.end());
     } else {
         lightmap_uvs.clear();
+    }
+    if (other.has_uvs() && uvs.size() == base) {
+        uvs.insert(uvs.end(), other.uvs.begin(), other.uvs.end());
+    } else {
+        uvs.clear();
+    }
+    if (other.has_tangents() && tangents.size() == base) {
+        for (const auto& t : other.tangents) {
+            const Vec3f v = normalize(xf.vector(Vec3f{ t.x, t.y, t.z }));
+            tangents.push_back(Vec4f{ v.x, v.y, v.z, t.w });
+        }
+    } else {
+        tangents.clear();
     }
     for (auto i : other.indices) indices.push_back(base + i);
 }
@@ -83,6 +131,7 @@ Mesh Mesh::sphere(float radius, int segments, int rings) {
             m.positions.push_back(n * radius);
             m.normals.push_back(n);
             m.lightmap_uvs.push_back({ u, v });
+            m.uvs.push_back({ u, v });
         }
     }
     const std::uint32_t row = static_cast<std::uint32_t>(segments + 1);
@@ -122,6 +171,8 @@ Mesh Mesh::cylinder(float radius, float hh, int segments, bool capped) {
         m.normals.push_back(n);
         m.lightmap_uvs.push_back({ u, 0.0f });
         m.lightmap_uvs.push_back({ u, 0.5f });
+        m.uvs.push_back({ u, 1.0f });
+        m.uvs.push_back({ u, 0.0f });
     }
     for (int s = 0; s < segments; ++s) {
         const std::uint32_t a = static_cast<std::uint32_t>(s) * 2;
@@ -135,11 +186,13 @@ Mesh Mesh::cylinder(float radius, float hh, int segments, bool capped) {
             m.positions.push_back({ 0.0f, y, 0.0f });
             m.normals.push_back(n);
             m.lightmap_uvs.push_back({ 0.25f + 0.5f * static_cast<float>(side), 0.75f });
+            m.uvs.push_back({ 0.5f, 0.5f });
             for (int s = 0; s <= segments; ++s) {
                 const float phi = static_cast<float>(s) / static_cast<float>(segments) * kTwoPi;
                 m.positions.push_back({ std::cos(phi) * radius, y, std::sin(phi) * radius });
                 m.normals.push_back(n);
                 m.lightmap_uvs.push_back({ 0.25f + 0.5f * static_cast<float>(side) + 0.2f * std::cos(phi), 0.75f + 0.2f * std::sin(phi) });
+                m.uvs.push_back({ 0.5f + 0.5f * std::cos(phi), 0.5f + 0.5f * std::sin(phi) });
             }
             for (int s = 0; s < segments; ++s) {
                 const std::uint32_t a = center + 1 + static_cast<std::uint32_t>(s);
@@ -172,6 +225,7 @@ Mesh Mesh::capsule(float radius, float hh, int segments, int rings) {
             m.positions.push_back({ n.x * radius, n.y * radius + y, n.z * radius });
             m.normals.push_back(n);
             m.lightmap_uvs.push_back({ u, static_cast<float>(r) / static_cast<float>(total) });
+            m.uvs.push_back({ u, static_cast<float>(r) / static_cast<float>(total) });
         }
     }
     const std::uint32_t row = static_cast<std::uint32_t>(segments + 1);
@@ -208,6 +262,7 @@ Mesh Mesh::prism(float radius, float hh) {
             m.positions.push_back({ c[i].x, y, c[i].z });
             m.normals.push_back(n);
             m.lightmap_uvs.push_back({ 0.25f + 0.5f * static_cast<float>(side) + 0.2f * c[i].x / radius, 0.75f + 0.2f * c[i].z / radius });
+            m.uvs.push_back({ 0.5f + 0.5f * c[i].x / radius, 0.5f + 0.5f * c[i].z / radius });
         }
         const Vec3f tri_n = cross(m.positions[base + 1] - m.positions[base], m.positions[base + 2] - m.positions[base]);
         if (dot(tri_n, n) > 0.0f) m.indices.insert(m.indices.end(), { base, base + 1, base + 2 });

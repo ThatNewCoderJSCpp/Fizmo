@@ -38,10 +38,10 @@ Rgb trace_radiance(const Context& ctx, Vec3f o, Vec3f dir, int bounces, LightFil
             break;
         }
         const Surface s = make_surface(ctx, r, h);
-        if (s.m->emits()) {
+        if (s.emits()) {
             PreparedLight probe;
             probe.mobility = s.is_static ? LightMobility::baked : LightMobility::dynamic;
-            if (light_allowed(probe, filter)) L += beta * s.m->emitted();
+            if (light_allowed(probe, filter)) L += beta * s.emitted();
         }
         if (!s.front && !s.m->is_transmissive()) break;
         const Bsdf b = surface_bsdf(ctx, s, wave, false);

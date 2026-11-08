@@ -267,6 +267,29 @@ struct TriangleMeshShape {
     bool raycast(const RVec3& origin, const RVec3& dir, Real max_t, Real& t, RVec3& normal, std::uint32_t& triangle) const;
 };
 
+struct SphereSection3D {
+    Real radius = 0.5_r;
+    Real polar_min = 0.0_r;
+    Real polar_max = 180.0_r;
+    Real azimuth_min = 0.0_r;
+    Real azimuth_max = 360.0_r;
+    Real inner_radius = 0.0_r;
+    Real height_min = -std::numeric_limits<Real>::infinity();
+    Real height_max = std::numeric_limits<Real>::infinity();
+
+    static SphereSection3D sphere(Real r);
+    static SphereSection3D hemisphere(Real r);
+    static SphereSection3D dome(Real r, Real polar_degrees);
+    static SphereSection3D cap(Real r, Real height);
+    static SphereSection3D wedge(Real r, Real azimuth_degrees);
+    static SphereSection3D shell(Real r, Real thickness);
+    static SphereSection3D bowl(Real r, Real thickness);
+
+    bool is_full_sphere() const noexcept;
+    bool is_convex() const noexcept;
+    Real exact_volume() const noexcept;
+};
+
 enum class ShapeType3D : std::uint8_t {
     Sphere = 0,
     Capsule,
@@ -314,6 +337,9 @@ struct Shape3D {
     static Shape3D make_heightfield(std::vector<Real> heights, int columns, int rows, Real cell_x, Real cell_z);
     static Shape3D make_mesh(TriangleMeshShape m);
     static Shape3D make_mesh(std::vector<RVec3> vertices, std::vector<std::array<std::uint32_t, 3>> triangles, bool two_sided = true);
+    static Shape3D make_sphere_section(const SphereSection3D& section, int detail = 24);
+    static std::vector<Shape3D> make_sphere_section_parts(const SphereSection3D& section, int detail = 24);
+    static Shape3D make_hemisphere(Real radius, int detail = 24) { return make_sphere_section(SphereSection3D::hemisphere(radius), detail); }
 
     bool is_convex() const noexcept { return type != ShapeType3D::Plane && type != ShapeType3D::Heightfield && type != ShapeType3D::Mesh; }
     bool is_static_only() const noexcept { return type == ShapeType3D::Plane || type == ShapeType3D::Heightfield || type == ShapeType3D::Mesh; }
@@ -324,6 +350,10 @@ struct Shape3D {
 
     static constexpr Real PLANE_EXTENT = 1e15_r; // meters, stands in for infinity in plane AABBs
 };
+
+std::vector<std::array<RVec3, 3>> sphere_section_triangles(const SphereSection3D& section, int detail = 24);
+
+std::vector<RVec3> sphere_section_points(const SphereSection3D& section, int detail = 24);
 
 struct MassData3D {
     Real         mass = 0.0_r; // kg

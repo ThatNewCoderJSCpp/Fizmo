@@ -14,15 +14,27 @@ struct Vec2f {
     float y = 0.0f;
 };
 
+struct Vec4f {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float w = 1.0f;
+};
+
 struct Mesh {
     std::vector<Vec3f> positions;
     std::vector<Vec3f> normals;
     std::vector<Vec2f> lightmap_uvs;
     std::vector<std::uint32_t> indices;
+    std::vector<Vec2f> uvs;
+    std::vector<Vec4f> tangents;
 
     std::size_t triangle_count() const noexcept { return indices.size() / 3; }
     bool has_normals() const noexcept { return normals.size() == positions.size(); }
     bool has_lightmap_uvs() const noexcept { return lightmap_uvs.size() == positions.size(); }
+    bool has_uvs() const noexcept { return !positions.empty() && uvs.size() == positions.size(); }
+    bool has_tangents() const noexcept { return !positions.empty() && tangents.size() == positions.size(); }
+    void compute_tangents();
     void compute_normals();
     void append(const Mesh& other, const Transform& xf);
 

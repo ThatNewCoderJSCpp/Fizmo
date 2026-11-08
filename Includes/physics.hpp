@@ -13,5 +13,7 @@
 
 #include "../Source/Physics/Rigid Body/simulation_2d.hpp"
 #include "../Source/Physics/Rigid Body/simulation_3d.hpp"
+#include "../Source/Physics/Fluid/fluid_3d.hpp"
+#include "../Source/Physics/Fluid/fluid_2d.hpp"
 
 #endif // PHYSICS_INCLUDE_FILE_HPP

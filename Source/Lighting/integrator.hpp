@@ -31,6 +31,19 @@ struct Surface {
     bool lightmap = false;
     bool is_static = false;
     std::uint32_t channels = 1u;
+    bool mapped = false;
+    Vec2f texcoord;
+    Rgb base_color;
+    float metallic = 0.0f;
+    float roughness = 0.5f;
+    float opacity = 1.0f;
+    float transmission = 0.0f;
+    Rgb emission;
+
+    Rgb albedo() const noexcept { return mapped ? base_color : m->base_color; }
+    Rgb emitted() const noexcept { return mapped ? emission : m->emitted(); }
+    bool emits() const noexcept { return !emitted().is_black(); }
+    float alpha() const noexcept { return mapped ? opacity : m->opacity; }
 };
 
 struct Wave {
@@ -74,12 +87,15 @@ struct Context {
     const PhotonMap* photons = nullptr;
     float photon_radius = 0.05f;
     std::vector<int> tri_light;
+    bool cutouts = false;
 
     const Material& material(std::uint32_t i) const;
 };
 
 void build_tri_light_map(Context& ctx);
 Surface make_surface(const Context& ctx, const Ray& ray, const Hit& hit);
+void apply_material_maps(const Context& ctx, const Tri& tri, const Hit& hit, Surface& s);
+float hit_opacity(const Context& ctx, const Tri& tri, const Hit& hit, const Material& m);
 Bsdf surface_bsdf(const Context& ctx, const Surface& s, const Wave& w, bool dispersion, bool diffuse_only = false);
 float surface_eps(const Surface& s) noexcept;
 Vec3f offset_ray(const Surface& s, const Vec3f& dir) noexcept;

@@ -112,5 +112,26 @@ float Material::ior_at(float nm) const noexcept {
     return a + b / (l * l);
 }
 
+bool Material::has_maps() const noexcept {
+    return base_color_map.valid() || normal_map.valid() || roughness_map.valid() || metallic_map.valid() || emission_map.valid() || opacity_map.valid() || transmission_map.valid();
+}
+
+bool Material::has_opacity_maps() const noexcept {
+    return (base_color_map.valid() && base_color_map.texture->has_alpha()) || opacity_map.valid();
+}
+
+Rgb Material::average_base_color() const noexcept {
+    return base_color_map.valid() ? base_color * base_color_map.texture->average().rgb() : base_color;
+}
+
+Rgb Material::average_emitted() const noexcept {
+    return emission_map.valid() ? emitted() * emission_map.texture->average().rgb() : emitted();
+}
+
+float Material::cutout(float alpha) const noexcept {
+    if (alpha_cutoff <= 0.0f) return alpha;
+    return alpha >= alpha_cutoff ? 1.0f : 0.0f;
+}
+
 } // namespace lighting
 } // namespace fizmo

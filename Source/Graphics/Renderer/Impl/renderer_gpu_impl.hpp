@@ -58,6 +58,25 @@ private:
         NearestClamp = 0, LinearClamp, NearestRepeat, LinearRepeat, NearestMirror, LinearMirror, kSamplerCount
     };
 
+    static constexpr std::uint8_t  kMipSampler     = kSamplerCount;
+    static constexpr std::size_t   kMeshMaps       = 4;
+    static constexpr std::uint32_t kMapNormal      = 1u;
+    static constexpr std::uint32_t kMapOrm         = 2u;
+    static constexpr std::uint32_t kMapEmissive    = 4u;
+    static constexpr std::uint32_t kMapOpacity     = 8u;
+    static constexpr std::uint32_t kMapTriplanar   = 16u;
+    static constexpr std::uint32_t kMapOcclusion   = 32u;
+    static constexpr std::uint32_t kMapAlbedoUv    = 64u;
+    static constexpr std::uint32_t kMapCutout      = 128u;
+
+    struct MaterialMapsGpu {
+        float         rows[10][4];
+        float         params[4];
+        std::uint32_t flags[4];
+    };
+
+    static_assert(sizeof(MaterialMapsGpu) == 192, "MaterialMapsGpu must match the std140 MaterialMaps block in mesh3d.frag");
+
     struct Brush {
         std::uint32_t color   = 0;     
         std::uint32_t mode    = 0;
@@ -214,6 +233,7 @@ private:
         gpu::Buffer                                           batch_commands;
         gpu::Buffer                                           instances3d;
         gpu::Buffer                                           scene_uniforms;
+        gpu::Buffer                                           material_uniforms;
         gpu::QuerySet                                         timestamps;
         std::uint32_t                                         stamps_used = 0;
         std::vector<std::pair<GpuPass, std::uint32_t>>        spans;
@@ -304,6 +324,9 @@ private:
         std::uint32_t            first          = 0, count = 0;
         const gpu::Texture*      view           = nullptr;
         std::uint8_t             sampler        = NearestClamp;
+        const gpu::Texture*      maps[kMeshMaps] = {};
+        std::uint8_t             map_samplers[kMeshMaps] = {};
+        std::uint32_t            material_slot  = 0;
         float                    push[32]       = {};
         bool                     quads          = false;
         std::uint32_t            page           = 0;
@@ -549,6 +572,13 @@ private:
     gpu::ShaderModule                                            m_upscale_fs;
     gpu::RenderPipeline                                          m_upscale_pipeline;
     std::array<gpu::Sampler, kSamplerCount>                      m_samplers;
+    std::array<gpu::Sampler, kSamplerCount>                      m_mip_samplers;
+    gpu::BindGroupLayout                                         m_mesh_set_layout;
+    std::unordered_map<std::uint64_t, CachedTexture>             m_map_textures;
+    std::vector<const gpu::Texture*>                             m_mip_uploads;
+    std::vector<MaterialMapsGpu>                                 m_material_records;
+    std::vector<std::uint8_t>                                    m_material_bytes;
+    std::uint64_t                                                m_material_stride = 256;
     gpu::Texture                                                 m_white;
     gpu::Texture                                                 m_target;
     gpu::Texture                                                 m_msaa_target;
@@ -835,6 +865,8 @@ public:
         m_sprite_pages.clear();
         m_sprite_entries.clear();
         m_textures.clear();
+        m_map_textures.clear();
+        m_mip_uploads.clear();
         m_texture_bytes = 0;
 
         for (auto& pf : m_per_frame) { 
@@ -843,6 +875,7 @@ public:
             pf.stamps_used = 0;
             pf.scene_sets.clear();
             pf.scene_uniforms.destroy(); 
+            pf.material_uniforms.destroy();
             pf.instances3d.destroy(); 
             pf.batch_commands.destroy(); 
             pf.batch_instances.destroy(); 
@@ -859,6 +892,7 @@ public:
         m_target.destroy();
         m_white.destroy();
         for (auto& s : m_samplers) s.destroy();
+        for (auto& s : m_mip_samplers) s.destroy();
         m_draw_pipeline.destroy();
         m_sprite_pipeline.destroy();
         for (auto& p : m_draw_blend) p.destroy();
@@ -883,6 +917,7 @@ public:
         m_draw_layout.destroy();
         m_present_set_layout.destroy(); 
         m_draw_set_layout.destroy();
+        m_mesh_set_layout.destroy();
         m_device.destroy();
         reset_recording();
     }
@@ -2280,6 +2315,8 @@ private:
             pos[0] = static_cast<float>(rel.x); pos[1] = static_cast<float>(rel.y); pos[2] = static_cast<float>(rel.z); pos[3] = p.radius;
             spot_uniform(u.point_spot[k], p);
             shape_uniform(u.point_shape[k], u.point_size[k], u.point_normal[k], p);
+            u.point_size[k][3] = p.falloff == graphics::LightFalloff3D::Physical ? std::max(p.reference_distance, 0.01f) : 0.0f;
+            u.point_normal[k][3] = std::max(0.0f, std::min(p.spill, 4.0f));
             const double dist = std::sqrt(all[k].first);
             double weight = fade(count_cut, dist);
             col[3] = -1.0f;
@@ -2879,7 +2916,10 @@ private:
         d.in_reflections = m.reflected();
         d.sky            = !m.fog;
 
-        if (m.texture && m.texture->valid()) {
+        if (m.texture && m.texture->valid() && m.texture->mipmaps()) {
+            d.view    = map_view(*m.texture, true);
+            d.sampler = map_sampler(*m.texture);
+        } else if (m.texture && m.texture->valid()) {
             d.view    = texture_view(*m.texture);
             d.sampler = sampler_for(*m.texture);
         } else {
@@ -2887,7 +2927,163 @@ private:
             d.sampler = NearestClamp;
         }
 
+        material_maps(d, m);
         return d.view != nullptr;
+    }
+
+    static void put_rows(float* u, float* v, const graphics::UvTransform& first, const graphics::UvTransform& second) noexcept {
+        float m[6];
+        graphics::UvTransform::compose(first, second, m);
+        u[0] = m[0]; u[1] = m[1]; u[2] = m[2]; u[3] = 0.0f;
+        v[0] = m[3]; v[1] = m[4]; v[2] = m[5]; v[3] = 0.0f;
+    }
+
+    static MaterialMapsGpu default_material_record() noexcept {
+        MaterialMapsGpu r{};
+        const graphics::UvTransform id;
+        for (int i = 0; i < 5; ++i) put_rows(r.rows[i * 2], r.rows[i * 2 + 1], id, id);
+        r.params[0] = 1.0f;
+        r.params[2] = 1.0f;
+        r.params[3] = 4.0f;
+        return r;
+    }
+
+    void material_maps(Draw3D& d, const graphics::Material3D& m) {
+        for (std::size_t i = 0; i < kMeshMaps; ++i) { d.maps[i] = nullptr; d.map_samplers[i] = NearestClamp; }
+        d.material_slot = 0;
+        if (!m.has_maps() || !m_mesh_set_layout.valid()) return;
+        if (m_material_records.empty()) m_material_records.push_back(default_material_record());
+        MaterialMapsGpu r = default_material_record();
+        const graphics::Texture* maps[kMeshMaps] = { m.normal_map, m.orm_map, m.emissive_map, m.opacity_map };
+        const graphics::UvTransform* uvs[kMeshMaps] = { &m.normal_uv, &m.orm_uv, &m.emissive_uv, &m.opacity_uv };
+        const std::uint32_t bits[kMeshMaps] = { kMapNormal, kMapOrm, kMapEmissive, kMapOpacity };
+        std::uint32_t flags = 0;
+        put_rows(r.rows[0], r.rows[1], m.uv, graphics::UvTransform());
+        if (!m.uv.is_identity() || m.triplanar) flags |= kMapAlbedoUv;
+
+        for (std::size_t i = 0; i < kMeshMaps; ++i) {
+            if (!maps[i] || !maps[i]->valid()) continue;
+            const gpu::Texture* view = map_view(*maps[i], false);
+            if (!view) continue;
+            d.maps[i] = view;
+            d.map_samplers[i] = map_sampler(*maps[i]);
+            put_rows(r.rows[(i + 1) * 2], r.rows[(i + 1) * 2 + 1], m.uv, *uvs[i]);
+            flags |= bits[i];
+        }
+
+        if (m.triplanar) flags |= kMapTriplanar;
+        if (m.orm_occlusion) flags |= kMapOcclusion;
+        if (m.alpha_cutoff > 0.0f) flags |= kMapCutout;
+        r.params[0] = m.normal_strength;
+        r.params[1] = m.alpha_cutoff;
+        r.params[2] = m.triplanar_scale;
+        r.params[3] = m.triplanar_sharpness;
+        r.flags[0] = flags;
+        if (flags == 0u) return;
+        d.material_slot = static_cast<std::uint32_t>(m_material_records.size());
+        m_material_records.push_back(r);
+    }
+
+    std::uint8_t map_sampler(const graphics::Texture& tex) const noexcept {
+        return static_cast<std::uint8_t>(sampler_for(tex) + (tex.mipmaps() ? kMipSampler : 0u));
+    }
+
+    const gpu::Sampler& sampler_at(std::uint8_t i) const noexcept {
+        return i >= kMipSampler ? m_mip_samplers[static_cast<std::size_t>(i - kMipSampler) % kSamplerCount] : m_samplers[i % kSamplerCount];
+    }
+
+    static std::uint32_t mip_count(unsigned int w, unsigned int h) noexcept {
+        std::uint32_t n = 1;
+        for (unsigned int e = std::max(w, h); e > 1; e >>= 1) ++n;
+        return n;
+    }
+
+    std::size_t push_staging_raw(const colors::Color* px, std::size_t count) {
+        const std::size_t offset = staging_reserve(count * 4);
+        std::uint8_t* dst = m_staging.data() + offset;
+
+        for (std::size_t i = 0; i < count; ++i, dst += 4) {
+            dst[0] = px[i].red(); dst[1] = px[i].green(); dst[2] = px[i].blue(); dst[3] = px[i].alpha();
+        }
+
+        return offset;
+    }
+
+    const gpu::Texture* map_view(const graphics::Texture& tex, bool premultiply) {
+        const images::BitmapImage* img = tex.image();
+        if (!img || !img->is_valid_image()) return nullptr;
+        const unsigned int w = img->width(), h = img->height();
+        const bool mips = tex.mipmaps() && (w > 1 || h > 1);
+        const std::uint64_t key = (static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(img)) << 2) | (premultiply ? 1u : 0u) | (mips ? 2u : 0u);
+        const std::size_t count = static_cast<std::size_t>(w) * h;
+        const std::uint64_t stamp = img->version() != 0 ? img->version() : gfx::hash_bytes(img->pixels().data(), count * 4);
+        const std::uint32_t levels = mips ? mip_count(w, h) : 1u;
+        auto it = m_map_textures.find(key);
+
+        if (it != m_map_textures.end() && it->second.width == w && it->second.height == h) {
+            CachedTexture& e = it->second;
+            if (e.stamp == stamp) { e.last_used = m_frame_serial; return e.image.get(); }
+            if (e.last_used == m_frame_serial) return e.image.get();
+            e.stamp = stamp;
+            e.last_used = m_frame_serial;
+            e.keep_alive = tex;
+            upload_map(*e.image, img, premultiply, mips);
+            return e.image.get();
+        }
+
+        if (it != m_map_textures.end()) {
+            m_texture_bytes -= std::min<std::uint64_t>(m_texture_bytes, static_cast<std::uint64_t>(it->second.width) * it->second.height * 4);
+            m_retired.push_back({ m_frame_serial, std::move(it->second.image) });
+            m_map_textures.erase(it);
+        }
+
+        CachedTexture e;
+        e.image = std::make_unique<gpu::Texture>();
+        gpu::TextureDesc d;
+        d.extent     = { w, h, 1 };
+        d.format     = gpu::Format::RGBA8Unorm;
+        d.mip_levels = levels;
+        d.usage      = gpu::TextureUsage::Sampled | gpu::TextureUsage::CopyDst | (mips ? gpu::TextureUsage::CopySrc : gpu::TextureUsage::None);
+        d.name       = "fizmo material map";
+        if (failed(e.image->create(m_device, d))) return nullptr;
+        e.width = w; e.height = h; e.stamp = stamp; e.last_used = m_frame_serial;
+        e.keep_alive = tex;
+        upload_map(*e.image, img, premultiply, mips);
+        m_texture_bytes += static_cast<std::uint64_t>(count) * 4;
+        const gpu::Texture* view = e.image.get();
+        m_map_textures.emplace(key, std::move(e));
+        return view;
+    }
+
+    void upload_map(gpu::Texture& image, const images::BitmapImage* img, bool premultiply, bool mips) {
+        const std::size_t count = static_cast<std::size_t>(img->width()) * img->height();
+        const std::size_t offset = premultiply ? push_staging_premul(img->pixels().data(), count) : push_staging_raw(img->pixels().data(), count);
+        m_uploads.push_back({ &image, offset, { 0, 0 }, { img->width(), img->height() } });
+        if (mips) m_mip_uploads.push_back(&image);
+    }
+
+    gpu::BindGroup mesh_descriptor_for(PerFrame& pf, const Draw3D& d, std::vector<std::pair<std::uint64_t, gpu::BindGroup>>& cache) {
+        std::uint64_t key = gfx::hash_bytes(&d.view, sizeof(d.view), 0x3D5E7A11ull);
+        key = gfx::hash_bytes(&d.sampler, sizeof(d.sampler), key);
+        key = gfx::hash_bytes(d.maps, sizeof(d.maps), key);
+        key = gfx::hash_bytes(d.map_samplers, sizeof(d.map_samplers), key);
+        key = gfx::hash_bytes(&d.material_slot, sizeof(d.material_slot), key);
+        for (const auto& s : cache) if (s.first == key) return s.second;
+        if (!pf.material_uniforms.valid()) return {};
+        const std::uint64_t slot = d.material_slot < m_material_records.size() ? d.material_slot : 0u;
+
+        const gpu::BindGroupEntry entries[] = {
+            gpu::BindGroupEntry::sampled(0, *d.view, sampler_at(d.sampler)),
+            gpu::BindGroupEntry::uniform(1, pf.material_uniforms, slot * m_material_stride, sizeof(MaterialMapsGpu)),
+            gpu::BindGroupEntry::sampled(2, d.maps[0] ? *d.maps[0] : m_white, sampler_at(d.maps[0] ? d.map_samplers[0] : static_cast<std::uint8_t>(NearestClamp))),
+            gpu::BindGroupEntry::sampled(3, d.maps[1] ? *d.maps[1] : m_white, sampler_at(d.maps[1] ? d.map_samplers[1] : static_cast<std::uint8_t>(NearestClamp))),
+            gpu::BindGroupEntry::sampled(4, d.maps[2] ? *d.maps[2] : m_white, sampler_at(d.maps[2] ? d.map_samplers[2] : static_cast<std::uint8_t>(NearestClamp))),
+            gpu::BindGroupEntry::sampled(5, d.maps[3] ? *d.maps[3] : m_white, sampler_at(d.maps[3] ? d.map_samplers[3] : static_cast<std::uint8_t>(NearestClamp))),
+        };
+
+        const gpu::BindGroup set = frame_group(m_mesh_set_layout, entries);
+        if (set.valid()) cache.emplace_back(key, set);
+        return set;
     }
 
     void mesh_push(Draw3D& d, const float* model, const graphics::Material3D& mat) const noexcept {
@@ -2900,7 +3096,7 @@ private:
         put_bits(d.push[28], mat.light);
         put_bits(d.push[29], material_flags(mat) | kFlagLegacy | (mat.pbr && mat.lit ? kFlagPbr : 0u));
         put_bits(d.push[30], mat.pbr ? pack_pbr(mat) : 0u);
-        put_bits(d.push[31], mat.pbr ? gfx::pack_rgba(mat.emissive.red(), mat.emissive.green(), mat.emissive.blue(), 255) : 0u);
+        put_bits(d.push[31], mat.pbr ? gfx::pack_rgba(mat.emissive.red(), mat.emissive.green(), mat.emissive.blue(), static_cast<std::uint8_t>(std::lround(std::max(0.0f, std::min(1.0f, mat.reflectivity)) * 255.0f))) : 0u);
     }
 
     static bool clip_to_near(const Mat4f& vp, linalg::vector3d& a, linalg::vector3d& b) noexcept {
@@ -3230,6 +3426,9 @@ private:
             s.address_u = s.address_v = s.address_w = modes[i / 2];
             s.max_lod = 0.0f;
             if (failed(m_samplers[static_cast<std::size_t>(i)].create(m_device, s))) return false;
+            s.mip_filter = (i % 2) ? gpu::Filter::Linear : gpu::Filter::Nearest;
+            s.max_lod = 1000.0f;
+            if (failed(m_mip_samplers[static_cast<std::size_t>(i)].create(m_device, s))) return false;
         }
 
         gpu::TextureDesc wd;
@@ -3289,8 +3488,19 @@ private:
         };
 
         if (failed(m_scene_set_layout.create(m_device, { scene_entries, "fizmo scene set" }))) return false;
+
+        const gpu::BindGroupLayoutEntry mesh_entries[] = {
+            { 0, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+            { 1, gpu::BindingType::UniformBuffer,  gpu::ShaderStage::Fragment },
+            { 2, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+            { 3, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+            { 4, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+            { 5, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+        };
+
+        if (failed(m_mesh_set_layout.create(m_device, { mesh_entries, "fizmo mesh material set" }))) return false;
         gpu::PipelineLayoutDesc ml;
-        ml.groups               = { &m_draw_set_layout, &m_scene_set_layout };
+        ml.groups               = { &m_mesh_set_layout, &m_scene_set_layout };
         ml.push_constant_size   = 128;
         ml.push_constant_stages = gpu::ShaderStage::Vertex;
         if (failed(m_mesh_layout.create(m_device, ml))) return false;
@@ -3322,6 +3532,7 @@ private:
         m_plane_capacity = std::max(1u, std::min<std::uint32_t>(kMaxPlanes, m_mesh_layout.array_capacity(1, 8)));
         const std::uint64_t align = std::max<std::uint64_t>(1, m_device.caps().uniform_alignment);
         m_uniform_stride = (sizeof(SceneUniforms) + align - 1) / align * align;
+        m_material_stride = (sizeof(MaterialMapsGpu) + align - 1) / align * align;
         if (!create_shadow_resources() || !create_dummy_volume()) return false;
         const std::uint32_t warm[] = { 0u, kInstanced, kQuads, kBatch, kLines | (1u << kBlendShift) | kDepthTest };
         for (std::uint32_t key : warm) if (!pipeline_3d(key)) return false;
@@ -3618,6 +3829,8 @@ private:
         m_batches.clear();
         m_video_draws.clear();
         m_uploads.clear();
+        m_mip_uploads.clear();
+        m_material_records.clear();
         m_staging.clear();
         m_ramp_rows.clear();
         m_ramp_used = 0;
@@ -4236,6 +4449,15 @@ private:
             if (it->second.last_used + kEvictAfterFrames <= now) {
                 m_texture_bytes -= static_cast<std::uint64_t>(it->second.width) * it->second.height * 4;
                 it = m_textures.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        for (auto it = m_map_textures.begin(); it != m_map_textures.end();) {
+            if (it->second.last_used + kEvictAfterFrames <= now) {
+                m_texture_bytes -= std::min<std::uint64_t>(m_texture_bytes, static_cast<std::uint64_t>(it->second.width) * it->second.height * 4);
+                it = m_map_textures.erase(it);
             } else {
                 ++it;
             }
@@ -5334,7 +5556,7 @@ private:
                 if (d.count == 0 || !d.in_reflections || d.kind == DrawKind3D::Lines) continue;
                 const gpu::RenderPipeline* p = pipeline_3d(mirrored_state(d.state));
                 if (!p) continue;
-                const gpu::BindGroup set = descriptor_for(pf, d.view, d.sampler, sets);
+                const gpu::BindGroup set = mesh_descriptor_for(pf, d, sets);
                 if (!set.valid()) continue;
                 if (p != bound) { cmd.set_pipeline(*p); bound = p; }
                 if (!lighting_bound) { cmd.set_bind_group(1, lighting); lighting_bound = true; }
@@ -5432,7 +5654,7 @@ private:
                     continue;
                 }
 
-                const gpu::BindGroup set = descriptor_for(pf, d.view, d.sampler, sets);
+                const gpu::BindGroup set = mesh_descriptor_for(pf, d, sets);
                 if (!set.valid()) continue;
 
                 if (!lighting.valid()) {
@@ -5477,6 +5699,8 @@ private:
             region.extent = { u.size.width, u.size.height, 1 };
             cmd.copy_buffer_to_texture(pf.staging, u.offset, u.row_pixels, *u.image, region);
         }
+
+        for (const gpu::Texture* t : m_mip_uploads) cmd.generate_mipmaps(*t);
 
         for (const BufferUpload& u : m_buffer_uploads) cmd.copy_buffer(pf.staging, u.offset, *u.dst, u.dst_offset, u.bytes);
     }
@@ -5582,6 +5806,14 @@ private:
             }
 
             if (!stream(pf.scene_uniforms, m_uniform_bytes.data(), m_uniform_bytes.size(), gpu::BufferUsage::Uniform, "fizmo scene lighting")) return false;
+        }
+
+        if (!m_draws3d.empty()) {
+            if (m_material_records.empty()) m_material_records.push_back(default_material_record());
+            m_material_bytes.assign(static_cast<std::size_t>(m_material_stride * m_material_records.size()), 0);
+            for (std::size_t i = 0; i < m_material_records.size(); ++i)
+                std::memcpy(m_material_bytes.data() + i * m_material_stride, &m_material_records[i], sizeof(MaterialMapsGpu));
+            if (!stream(pf.material_uniforms, m_material_bytes.data(), m_material_bytes.size(), gpu::BufferUsage::Uniform, "fizmo material maps")) return false;
         }
 
         cmd.push_label("fizmo uploads");
