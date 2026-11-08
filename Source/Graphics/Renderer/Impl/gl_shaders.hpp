@@ -377,7 +377,7 @@ inline ::fizmo::gpu::ShaderDesc mesh3d_vert() noexcept {
 inline constexpr int kMesh3DFragVersion = 410;
 
 inline constexpr const char* kMesh3DFrag[] = {
-R"fizmo_glsl(const vec3 _1374[8] = vec3[](vec3(1.0), vec3(-1.0, -1.0, 1.0), vec3(-1.0, 1.0, -1.0), vec3(1.0, -1.0, -1.0), vec3(1.0, 1.0, -1.0), vec3(-1.0), vec3(1.0, -1.0, 1.0), vec3(-1.0, 1.0, 1.0));
+R"fizmo_glsl(const vec3 _1377[8] = vec3[](vec3(1.0), vec3(-1.0, -1.0, 1.0), vec3(-1.0, 1.0, -1.0), vec3(1.0, -1.0, -1.0), vec3(1.0, 1.0, -1.0), vec3(-1.0), vec3(1.0, -1.0, 1.0), vec3(-1.0, 1.0, 1.0));
 
 layout(std140) uniform SceneLight
 {
@@ -461,6 +461,25 @@ float light_curve(float level)
     return level / (k - ((k - 1.0) * level));
 }
 
+float sky_height(vec3 d)
+{
+    float a = abs(scene.glow.z);
+    float s = (scene.glow.z < 0.0) ? (-1.0) : 1.0;
+    if ((a > 0.5) && (a < 1.5))
+    {
+        return s * d.x;
+    }
+    if ((a > 1.5) && (a < 2.5))
+    {
+        return s * d.y;
+    }
+    if (a > 2.5)
+    {
+        return s * d.z;
+    }
+    return d.z;
+}
+
 float star_hash(vec3 cell)
 {
     return fract(sin(dot(cell, vec3(12.98980045318603515625, 78.233001708984375, 37.71900177001953125))) * 43758.546875);
@@ -468,7 +487,8 @@ float star_hash(vec3 cell)
 
 vec3 sky_radiance(vec3 dir, bool disks)
 {
-    float h = dir.z;
+    vec3 param = dir;
+    float h = sky_height(param);
     vec3 col = mix(scene.sky_horizon.xyz, scene.sky_zenith.xyz, vec3(pow(clamp(h, 0.0, 1.0), 0.449999988079071044921875)));
     if (h < 0.0)
     {
@@ -481,8 +501,8 @@ vec3 sky_radiance(vec3 dir, bool disks)
         col += (scene.sun_disk.xyz * smoothstep(scene.sky_sun.w - ((1.0 - scene.sky_sun.w) * 0.300000011920928955078125), scene.sky_sun.w, cs));
         float cm = dot(dir, scene.sky_moon.xyz);
         col += ((vec3(0.85000002384185791015625, 0.89999997615814208984375, 1.0) * scene.gloss.w) * smoothstep(scene.sky_moon.w - ((1.0 - scene.sky_moon.w) * 0.300000011920928955078125), scene.sky_moon.w, cm));
-        vec3 param = floor(dir * 400.0);
-        float star = step(0.99849998950958251953125, star_hash(param));
+        vec3 param_1 = floor(dir * 400.0);
+        float star = step(0.99849998950958251953125, star_hash(param_1));
         col += vec3((star * scene.sky_zenith.w) * smoothstep(0.0, 0.100000001490116119384765625, h));
     }
     return col;
@@ -581,8 +601,8 @@ float sun_soft(sampler2DShadow map, sampler2D depth, vec2 uv, float ref)
         int param_4 = i_1;
         int param_5 = taps;
         float param_6 = spin;
-        vec3 _497 = vec3(uv + (vogel(param_4, param_5, param_6) * radius), ref);
-        lit += texture(map, vec3(_497.xy, _497.z));
+        vec3 _500 = vec3(uv + (vogel(param_4, param_5, param_6) * radius), ref);
+        lit += texture(map, vec3(_500.xy, _500.z));
     }
     return lit / float(taps);
 }
@@ -595,8 +615,8 @@ float sun_grid(sampler2DShadow map, vec2 uv, float ref)
     {
         for (int x = 0; x < 4; x++)
         {
-            vec3 _356 = vec3(uv + ((vec2(float(x), float(y)) - vec2(1.5)) * texel), ref);
-            lit += texture(map, vec3(_356.xy, _356.z));
+            vec3 _359 = vec3(uv + ((vec2(float(x), float(y)) - vec2(1.5)) * texel), ref);
+            lit += texture(map, vec3(_359.xy, _359.z));
         }
     }
     return lit / 16.0;
@@ -607,55 +627,55 @@ float sun_sample(mat4 m, sampler2DShadow map, sampler2D depth, vec3 p)
     vec4 c = m * vec4(p, 1.0);
     vec2 edge = abs(c.xy);
     float reach = max(edge.x, edge.y);
-    bool _529 = reach >= 1.0;
-    bool _536;
-    if (!_529)
+    bool _532 = reach >= 1.0;
+    bool _539;
+    if (!_532)
     {
-        _536 = c.z <= 0.0;
+        _539 = c.z <= 0.0;
     }
     else
     {
-        _536 = _529;
+        _539 = _532;
     }
-    bool _543;
-    if (!_536)
+    bool _546;
+    if (!_539)
     {
-        _543 = c.z >= 1.0;
+        _546 = c.z >= 1.0;
     }
     else
     {
-        _543 = _536;
+        _546 = _539;
     }
-    if (_543)
+    if (_546)
     {
         return 1.0;
     }
     vec2 uv = (c.xy * 0.5) + vec2(0.5);
     float ref = c.z - scene.sun_shadow.x;
-    float _561;
+    float _564;
     if (reflection_pass())
     {
-        vec3 _569 = vec3(uv, ref);
-        _561 = texture(map, vec3(_569.xy, _569.z));
+        vec3 _572 = vec3(uv, ref);
+        _564 = texture(map, vec3(_572.xy, _572.z));
     }
     else
     {
-        float _578;
+        float _581;
         if ((scene.counts.y & 512) != 0)
         {
             vec2 param = uv;
             float param_1 = ref;
-            _578 = sun_soft(map, depth, param, param_1);
+            _581 = sun_soft(map, depth, param, param_1);
         }
         else
         {
             vec2 param_2 = uv;
             float param_3 = ref;
-            _578 = sun_grid(map, param_2, param_3);
+            _581 = sun_grid(map, param_2, param_3);
         }
-        _561 = _578;
+        _564 = _581;
     }
-    float lit = _561;
+    float lit = _564;
     return mix(lit, 1.0, smoothstep(0.85000002384185791015625, 1.0, reach));
 }
 
@@ -665,9 +685,9 @@ float capsule_lit(vec3 p, vec3 to_light, float reach, float spread, float source
     float lit = 1.0;
     vec3 ray = to_light * reach;
     float rr = dot(ray, ray);
-    float _656;
-    float _712;
-    float _730;
+    float _659;
+    float _715;
+    float _733;
     for (int i = 0; i < count; i++)
     {
         vec3 a = scene.capsule_a[i].xyz;
@@ -677,25 +697,25 @@ float capsule_lit(vec3 p, vec3 to_light, float reach, float spread, float source
         float aa = dot(axis, axis);
         if (aa > 9.9999997473787516355514526367188e-05)
         {
-            _656 = clamp(dot(w, axis) / aa, 0.0, 1.0);
+            _659 = clamp(dot(w, axis) / aa, 0.0, 1.0);
         }
         else
         {
-            _656 = 0.0;
+            _659 = 0.0;
         }
-        float own = _656;
+        float own = _659;
         vec3 out_dir = w - (axis * own);
-        bool _678 = length(out_dir) < (r + 0.0500000007450580596923828125);
-        bool _685;
-        if (_678)
+        bool _681 = length(out_dir) < (r + 0.0500000007450580596923828125);
+        bool _688;
+        if (_681)
         {
-            _685 = dot(out_dir, to_light) >= 0.0;
+            _688 = dot(out_dir, to_light) >= 0.0;
         }
         else
         {
-            _685 = _678;
+            _688 = _681;
         }
-        if (_685)
+        if (_688)
         {
             continue;
         }
@@ -705,22 +725,22 @@ float capsule_lit(vec3 p, vec3 to_light, float reach, float spread, float source
         float denom = (rr * aa) - (b * b);
         if (denom > 9.9999997473787516355514526367188e-05)
         {
-            _712 = clamp(((b * f) - (c * aa)) / denom, 0.0, 1.0);
+            _715 = clamp(((b * f) - (c * aa)) / denom, 0.0, 1.0);
         }
         else
         {
-            _712 = 0.0;
+            _715 = 0.0;
         }
-        float s = _712;
+        float s = _715;
         if (aa > 9.9999997473787516355514526367188e-05)
         {
-            _730 = ((b * s) + f) / aa;
+            _733 = ((b * s) + f) / aa;
         }
         else
         {
-            _730 = 0.0;
+            _733 = 0.0;
         }
-        float t = _730;
+        float t = _733;
         if (t < 0.0)
         {
             t = 0.0;
@@ -783,7 +803,8 @@ vec3 segment_closest(vec3 a, vec3 b, vec3 p)
 vec3 light_anchor(int i, vec3 world, vec3 r, bool use_ray)
 {
     vec3 c = scene.point_pos[i].xyz;
-    vec4 shape = scene.point_shape[i];
+)fizmo_glsl",
+R"fizmo_glsl(    vec4 shape = scene.point_shape[i];
     int kind = int(shape.w + 0.5);
     if (kind == 0)
     {
@@ -799,8 +820,7 @@ vec3 light_anchor(int i, vec3 world, vec3 r, bool use_ray)
         vec3 param = c - world;
         vec3 param_1 = r;
         float param_2 = size.x;
-)fizmo_glsl",
-R"fizmo_glsl(        return world + widen_to_sphere(param, param_1, param_2);
+        return world + widen_to_sphere(param, param_1, param_2);
     }
     if (kind == 2)
     {
@@ -845,16 +865,16 @@ R"fizmo_glsl(        return world + widen_to_sphere(param, param_1, param_2);
         return (c + (tangent * clamp(dot(local, tangent), -size.x, size.x))) + (bitangent * clamp(dot(local, bitangent), -size.y, size.y));
     }
     float len = length(local);
-    float _1170;
+    float _1173;
     if (len > size.x)
     {
-        _1170 = size.x / len;
+        _1173 = size.x / len;
     }
     else
     {
-        _1170 = 1.0;
+        _1173 = 1.0;
     }
-    return c + (local * _1170);
+    return c + (local * _1173);
 }
 
 float spot_factor(vec4 spot, vec3 dir)
@@ -875,16 +895,16 @@ float light_face(int i, vec3 dir)
         return 1.0;
     }
     float f = dot(scene.point_normal[i].xyz, dir);
-    float _1205;
+    float _1208;
     if (scene.point_size[i].z > 0.5)
     {
-        _1205 = abs(f);
+        _1208 = abs(f);
     }
     else
     {
-        _1205 = max(f, 0.0);
+        _1208 = max(f, 0.0);
     }
-    return _1205;
+    return _1208;
 }
 
 float point_tap(int slot, vec4 coord)
@@ -941,7 +961,7 @@ float point_visibility(int slot, vec3 light, vec3 d, float radius)
     for (int i = 0; i < 8; i++)
     {
         int param_7 = slot;
-        vec4 param_8 = vec4(d + (_1374[i] * spread), ref);
+        vec4 param_8 = vec4(d + (_1377[i] * spread), ref);
         lit += point_tap(param_7, param_8);
     }
     return mix(1.0, lit / 8.0, scene.point_shadow.y) * body;
@@ -951,16 +971,16 @@ vec3 pbr_shade(vec3 world, vec3 normal, vec4 baked, vec3 albedo, float metallic,
 {
     float len = length(normal);
     vec3 v = normalize(-world);
-    vec3 _2502;
+    vec3 _2553;
     if (len > 9.9999999747524270787835121154785e-07)
     {
-        _2502 = normal / vec3(len);
+        _2553 = normal / vec3(len);
     }
     else
     {
-        _2502 = v;
+        _2553 = v;
     }
-    vec3 n = _2502;
+    vec3 n = _2553;
     if (dot(n, v) < 0.0)
     {
         n = -n;
@@ -980,18 +1000,18 @@ vec3 pbr_shade(vec3 world, vec3 normal, vec4 baked, vec3 albedo, float metallic,
     float ndv = max(dot(n, v), 0.0);
     vec3 fa = f0 + ((max(vec3(1.0 - r), f0) - f0) * pow(1.0 - ndv, 5.0));
     vec3 color = (diffuse * ambient) * (vec3(1.0) - fa);
-    vec3 _2622;
+    vec3 _2673;
     if ((scene.counts.y & 8) != 0)
     {
         vec3 param_4 = reflect(-v, n);
         bool param_5 = false;
-        _2622 = sky_radiance(param_4, param_5);
+        _2673 = sky_radiance(param_4, param_5);
     }
     else
     {
-        _2622 = scene.sky_color.xyz;
+        _2673 = scene.sky_color.xyz;
     }
-    vec3 env = _2622;
+    vec3 env = _2673;
     color += ((((env * fa) * sky) * (1.0 - (r * 0.75))) + (((fa * from_block) * r) * 0.25));
     if (dot(scene.sun_color.xyz, vec3(1.0)) > 0.0)
     {
@@ -1045,17 +1065,17 @@ vec3 pbr_shade(vec3 world, vec3 normal, vec4 baked, vec3 albedo, float metallic,
         }
         float vis = 1.0;
         int slot = int(scene.point_color[i].w);
-        bool _2810 = slot >= 0;
-        bool _2817;
-        if (_2810)
+        bool _2861 = slot >= 0;
+        bool _2868;
+        if (_2861)
         {
-            _2817 = (scene.counts.y & 4) != 0;
+            _2868 = (scene.counts.y & 4) != 0;
         }
         else
         {
-            _2817 = _2810;
+            _2868 = _2861;
         }
-        if (_2817)
+        if (_2868)
         {
             vec4 map = scene.point_map[slot];
             int param_22 = slot;
@@ -1101,40 +1121,40 @@ float screen_noise()
 float sun_tap(mat4 m, sampler2DShadow map, vec3 p)
 {
     vec4 c = m * vec4(p, 1.0);
-    bool _1909 = abs(c.x) >= 1.0;
-    bool _1917;
-    if (!_1909)
+    bool _1960 = abs(c.x) >= 1.0;
+    bool _1968;
+    if (!_1960)
     {
-        _1917 = abs(c.y) >= 1.0;
+        _1968 = abs(c.y) >= 1.0;
     }
     else
     {
-        _1917 = _1909;
+        _1968 = _1960;
     }
-    bool _1924;
-    if (!_1917)
+    bool _1975;
+    if (!_1968)
     {
-        _1924 = c.z <= 0.0;
+        _1975 = c.z <= 0.0;
     }
     else
     {
-        _1924 = _1917;
+        _1975 = _1968;
     }
-    bool _1931;
-    if (!_1924)
+    bool _1982;
+    if (!_1975)
     {
-        _1931 = c.z >= 1.0;
+        _1982 = c.z >= 1.0;
     }
     else
     {
-        _1931 = _1924;
+        _1982 = _1975;
     }
-    if (_1931)
+    if (_1982)
     {
         return 1.0;
     }
-    vec3 _1948 = vec3((c.xy * 0.5) + vec2(0.5), c.z - scene.sun_shadow.x);
-    return texture(map, vec3(_1948.xy, _1948.z));
+    vec3 _1999 = vec3((c.xy * 0.5) + vec2(0.5), c.z - scene.sun_shadow.x);
+    return texture(map, vec3(_1999.xy, _1999.z));
 }
 
 float sun_lit_at(vec3 p)
@@ -1195,23 +1215,23 @@ float phase_hg(float g, float cs)
 
 vec3 inscatter(vec3 dir, float dist)
 {
-    float reach = min(dist, scene.volume.z);
-    float _2159;
+)fizmo_glsl",
+R"fizmo_glsl(    float reach = min(dist, scene.volume.z);
+    float _2210;
     if ((scene.counts.y & 8192) != 0)
     {
         vec3 param = dir;
         float param_1 = reach;
-        _2159 = volume_lookup(param, param_1);
+        _2210 = volume_lookup(param, param_1);
     }
     else
     {
         vec3 param_2 = dir;
         float param_3 = reach;
-        _2159 = march_light(param_2, param_3);
+        _2210 = march_light(param_2, param_3);
     }
-    float lit = _2159;
-)fizmo_glsl",
-R"fizmo_glsl(    float cs = dot(dir, -scene.sun_dir.xyz);
+    float lit = _2210;
+    float cs = dot(dir, -scene.sun_dir.xyz);
     float param_4 = 0.0;
     float param_5 = cs;
     float param_6 = scene.volume.y;
@@ -1250,23 +1270,23 @@ vec3 finish(vec3 rgb, vec3 world, uint flags)
     {
         return rgb;
     }
-    vec3 _2346;
+    vec3 _2397;
     if ((flags & 64u) != 0u)
     {
         vec3 param = rgb;
-        vec3 _2351 = tone(param);
-        _2346 = _2351;
+        vec3 _2402 = tone(param);
+        _2397 = _2402;
     }
     else
     {
         vec3 param_1 = rgb;
         vec3 param_2 = world;
-        vec3 _2357 = atmosphere(param_1, param_2);
-        vec3 param_3 = _2357;
-        vec3 _2359 = tone(param_3);
-        _2346 = _2359;
+        vec3 _2408 = atmosphere(param_1, param_2);
+        vec3 param_3 = _2408;
+        vec3 _2410 = tone(param_3);
+        _2397 = _2410;
     }
-    return _2346;
+    return _2397;
 }
 
 vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
@@ -1282,16 +1302,16 @@ vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
     vec3 total = (vec3(1.0) - ((vec3(1.0) - from_sky) * (vec3(1.0) - from_block))) + vec3(scene.params.x);
     if (dot(scene.sun_color.xyz, vec3(1.0)) > 0.0)
     {
-        float _1466;
+        float _1469;
         if (has_normal)
         {
-            _1466 = max(dot(n, -scene.sun_dir.xyz), 0.0);
+            _1469 = max(dot(n, -scene.sun_dir.xyz), 0.0);
         }
         else
         {
-            _1466 = 1.0;
+            _1469 = 1.0;
         }
-        float ndl = _1466;
+        float ndl = _1469;
         if (ndl > 0.0)
         {
             float exposure = pow(baked.w, scene.sun_color.w);
@@ -1304,7 +1324,7 @@ vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
         }
     }
     int count = min(scene.counts.x, 64);
-    float _1565;
+    float _1568;
     for (int i = 0; i < count; i++)
     {
         int param_6 = i;
@@ -1323,13 +1343,13 @@ vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
         vec3 dir = d / vec3(max(dist, 9.9999997473787516355514526367188e-05));
         if (has_normal)
         {
-            _1565 = max(dot(n, -dir), 0.0);
+            _1568 = max(dot(n, -dir), 0.0);
         }
         else
         {
-            _1565 = 1.0;
+            _1568 = 1.0;
         }
-        float ndl_1 = _1565;
+        float ndl_1 = _1568;
         if (ndl_1 <= 0.0)
         {
             continue;
@@ -1345,17 +1365,17 @@ vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
         }
         float vis = 1.0;
         int slot = int(scene.point_color[i].w);
-        bool _1616 = slot >= 0;
-        bool _1623;
-        if (_1616)
+        bool _1619 = slot >= 0;
+        bool _1626;
+        if (_1619)
         {
-            _1623 = (scene.counts.y & 4) != 0;
+            _1626 = (scene.counts.y & 4) != 0;
         }
         else
         {
-            _1623 = _1616;
+            _1626 = _1619;
         }
-        if (_1623)
+        if (_1626)
         {
             vec4 map = scene.point_map[slot];
             int param_14 = slot;
@@ -1377,29 +1397,29 @@ vec3 shade(vec3 world, vec3 normal, vec4 baked, uint flags)
     }
     float len = length(normal);
     bool has_normal = len > 9.9999999747524270787835121154785e-07;
-    vec3 _1694;
+    vec3 _1697;
     if (has_normal)
     {
-        _1694 = normal / vec3(len);
+        _1697 = normal / vec3(len);
     }
     else
     {
-        _1694 = vec3(0.0);
+        _1697 = vec3(0.0);
     }
-    vec3 n = _1694;
+    vec3 n = _1697;
     if ((scene.counts.y & 1) == 0)
     {
-        bool _1711 = !has_normal;
-        bool _1718;
-        if (!_1711)
+        bool _1714 = !has_normal;
+        bool _1721;
+        if (!_1714)
         {
-            _1718 = (flags & 4u) == 0u;
+            _1721 = (flags & 4u) == 0u;
         }
         else
         {
-            _1718 = _1711;
+            _1721 = _1714;
         }
-        if (_1718)
+        if (_1721)
         {
             return vec3(1.0);
         }
@@ -1415,17 +1435,17 @@ vec3 shade(vec3 world, vec3 normal, vec4 baked, uint flags)
 void main()
 {
     vec4 t = texture(tex, v_uv);
-    bool _2894 = (v_flags & 2048u) != 0u;
-    bool _2901;
-    if (_2894)
+    bool _2945 = (v_flags & 2048u) != 0u;
+    bool _2952;
+    if (_2945)
     {
-        _2901 = (scene.counts.y & 1) != 0;
+        _2952 = (scene.counts.y & 1) != 0;
     }
     else
     {
-        _2901 = _2894;
+        _2952 = _2945;
     }
-    if (_2901)
+    if (_2952)
     {
         vec4 params = unpackUnorm4x8(v_pbr.x);
         vec3 emissive = (unpackUnorm4x8(v_pbr.y).xyz * params.z) * 16.0;
@@ -1641,12 +1661,12 @@ inline ::fizmo::gpu::ShaderDesc quad3d_vert() noexcept {
 inline constexpr int kQuad3DFragVersion = 410;
 
 inline constexpr const char* kQuad3DFrag[] = {
-R"fizmo_glsl(const vec3 _1509[8] = vec3[](vec3(1.0), vec3(-1.0, -1.0, 1.0), vec3(-1.0, 1.0, -1.0), vec3(1.0, -1.0, -1.0), vec3(1.0, 1.0, -1.0), vec3(-1.0), vec3(1.0, -1.0, 1.0), vec3(-1.0, 1.0, 1.0));
-const float _2547[3] = float[](0.0, 0.5, -0.699999988079071044921875);
-const float _2585[3] = float[](1.0, 1.37000000476837158203125, 1.83000004291534423828125);
-const float _2594[3] = float[](1.0, 0.4000000059604644775390625, 0.180000007152557373046875);
-const vec3 _2670[4] = vec3[](vec3(1.0, 0.3499999940395355224609375, 1.0), vec3(-0.60000002384185791015625, 1.0, 1.7000000476837158203125), vec3(0.300000011920928955078125, -1.0, 2.900000095367431640625), vec3(-1.0, -0.20000000298023223876953125, 4.30000019073486328125));
-const vec3 _3647[6] = vec3[](vec3(-1.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(0.0, -1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, -1.0), vec3(0.0, 0.0, 1.0));
+R"fizmo_glsl(const vec3 _1512[8] = vec3[](vec3(1.0), vec3(-1.0, -1.0, 1.0), vec3(-1.0, 1.0, -1.0), vec3(1.0, -1.0, -1.0), vec3(1.0, 1.0, -1.0), vec3(-1.0), vec3(1.0, -1.0, 1.0), vec3(-1.0, 1.0, 1.0));
+const float _2598[3] = float[](0.0, 0.5, -0.699999988079071044921875);
+const float _2636[3] = float[](1.0, 1.37000000476837158203125, 1.83000004291534423828125);
+const float _2645[3] = float[](1.0, 0.4000000059604644775390625, 0.180000007152557373046875);
+const vec3 _2721[4] = vec3[](vec3(1.0, 0.3499999940395355224609375, 1.0), vec3(-0.60000002384185791015625, 1.0, 1.7000000476837158203125), vec3(0.300000011920928955078125, -1.0, 2.900000095367431640625), vec3(-1.0, -0.20000000298023223876953125, 4.30000019073486328125));
+const vec3 _3698[6] = vec3[](vec3(-1.0, 0.0, 0.0), vec3(1.0, 0.0, 0.0), vec3(0.0, -1.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, -1.0), vec3(0.0, 0.0, 1.0));
 
 layout(std140) uniform SceneLight
 {
@@ -1785,8 +1805,8 @@ float sun_soft(sampler2DShadow map, sampler2D depth, vec2 uv, float ref)
         int param_4 = i_1;
         int param_5 = taps;
         float param_6 = spin;
-        vec3 _635 = vec3(uv + (vogel(param_4, param_5, param_6) * radius), ref);
-        lit += texture(map, vec3(_635.xy, _635.z));
+        vec3 _638 = vec3(uv + (vogel(param_4, param_5, param_6) * radius), ref);
+        lit += texture(map, vec3(_638.xy, _638.z));
     }
     return lit / float(taps);
 }
@@ -1799,8 +1819,8 @@ float sun_grid(sampler2DShadow map, vec2 uv, float ref)
     {
         for (int x = 0; x < 4; x++)
         {
-            vec3 _496 = vec3(uv + ((vec2(float(x), float(y)) - vec2(1.5)) * texel), ref);
-            lit += texture(map, vec3(_496.xy, _496.z));
+            vec3 _499 = vec3(uv + ((vec2(float(x), float(y)) - vec2(1.5)) * texel), ref);
+            lit += texture(map, vec3(_499.xy, _499.z));
         }
     }
     return lit / 16.0;
@@ -1811,55 +1831,55 @@ float sun_sample(mat4 m, sampler2DShadow map, sampler2D depth, vec3 p)
     vec4 c = m * vec4(p, 1.0);
     vec2 edge = abs(c.xy);
     float reach = max(edge.x, edge.y);
-    bool _667 = reach >= 1.0;
-    bool _674;
-    if (!_667)
+    bool _670 = reach >= 1.0;
+    bool _677;
+    if (!_670)
     {
-        _674 = c.z <= 0.0;
+        _677 = c.z <= 0.0;
     }
     else
     {
-        _674 = _667;
+        _677 = _670;
     }
-    bool _681;
-    if (!_674)
+    bool _684;
+    if (!_677)
     {
-        _681 = c.z >= 1.0;
+        _684 = c.z >= 1.0;
     }
     else
     {
-        _681 = _674;
+        _684 = _677;
     }
-    if (_681)
+    if (_684)
     {
         return 1.0;
     }
     vec2 uv = (c.xy * 0.5) + vec2(0.5);
     float ref = c.z - scene.sun_shadow.x;
-    float _699;
+    float _702;
     if (reflection_pass())
     {
-        vec3 _707 = vec3(uv, ref);
-        _699 = texture(map, vec3(_707.xy, _707.z));
+        vec3 _710 = vec3(uv, ref);
+        _702 = texture(map, vec3(_710.xy, _710.z));
     }
     else
     {
-        float _716;
+        float _719;
         if ((scene.counts.y & 512) != 0)
         {
             vec2 param = uv;
             float param_1 = ref;
-            _716 = sun_soft(map, depth, param, param_1);
+            _719 = sun_soft(map, depth, param, param_1);
         }
         else
         {
             vec2 param_2 = uv;
             float param_3 = ref;
-            _716 = sun_grid(map, param_2, param_3);
+            _719 = sun_grid(map, param_2, param_3);
         }
-        _699 = _716;
+        _702 = _719;
     }
-    float lit = _699;
+    float lit = _702;
     return mix(lit, 1.0, smoothstep(0.85000002384185791015625, 1.0, reach));
 }
 
@@ -1869,9 +1889,9 @@ float capsule_lit(vec3 p, vec3 to_light, float reach, float spread, float source
     float lit = 1.0;
     vec3 ray = to_light * reach;
     float rr = dot(ray, ray);
-    float _793;
-    float _848;
-    float _866;
+    float _796;
+    float _851;
+    float _869;
     for (int i = 0; i < count; i++)
     {
         vec3 a = scene.capsule_a[i].xyz;
@@ -1881,25 +1901,25 @@ float capsule_lit(vec3 p, vec3 to_light, float reach, float spread, float source
         float aa = dot(axis, axis);
         if (aa > 9.9999997473787516355514526367188e-05)
         {
-            _793 = clamp(dot(w, axis) / aa, 0.0, 1.0);
+            _796 = clamp(dot(w, axis) / aa, 0.0, 1.0);
         }
         else
         {
-            _793 = 0.0;
+            _796 = 0.0;
         }
-        float own = _793;
+        float own = _796;
         vec3 out_dir = w - (axis * own);
-        bool _814 = length(out_dir) < (r + 0.0500000007450580596923828125);
-        bool _821;
-        if (_814)
+        bool _817 = length(out_dir) < (r + 0.0500000007450580596923828125);
+        bool _824;
+        if (_817)
         {
-            _821 = dot(out_dir, to_light) >= 0.0;
+            _824 = dot(out_dir, to_light) >= 0.0;
         }
         else
         {
-            _821 = _814;
+            _824 = _817;
         }
-        if (_821)
+        if (_824)
         {
             continue;
         }
@@ -1909,22 +1929,22 @@ float capsule_lit(vec3 p, vec3 to_light, float reach, float spread, float source
         float denom = (rr * aa) - (b * b);
         if (denom > 9.9999997473787516355514526367188e-05)
         {
-            _848 = clamp(((b * f) - (c * aa)) / denom, 0.0, 1.0);
+            _851 = clamp(((b * f) - (c * aa)) / denom, 0.0, 1.0);
         }
         else
         {
-            _848 = 0.0;
+            _851 = 0.0;
         }
-        float s = _848;
+        float s = _851;
         if (aa > 9.9999997473787516355514526367188e-05)
         {
-            _866 = ((b * s) + f) / aa;
+            _869 = ((b * s) + f) / aa;
         }
         else
         {
-            _866 = 0.0;
+            _869 = 0.0;
         }
-        float t = _866;
+        float t = _869;
         if (t < 0.0)
         {
             t = 0.0;
@@ -2048,16 +2068,16 @@ vec3 light_anchor(int i, vec3 world, vec3 r, bool use_ray)
         return (c + (tangent * clamp(dot(local, tangent), -size.x, size.x))) + (bitangent * clamp(dot(local, bitangent), -size.y, size.y));
     }
     float len = length(local);
-    float _1305;
+    float _1308;
     if (len > size.x)
     {
-        _1305 = size.x / len;
+        _1308 = size.x / len;
     }
     else
     {
-        _1305 = 1.0;
+        _1308 = 1.0;
     }
-    return c + (local * _1305);
+    return c + (local * _1308);
 }
 
 float spot_factor(vec4 spot, vec3 dir)
@@ -2079,16 +2099,16 @@ R"fizmo_glsl(    int kind = int(scene.point_shape[i].w + 0.5);
         return 1.0;
     }
     float f = dot(scene.point_normal[i].xyz, dir);
-    float _1340;
+    float _1343;
     if (scene.point_size[i].z > 0.5)
     {
-        _1340 = abs(f);
+        _1343 = abs(f);
     }
     else
     {
-        _1340 = max(f, 0.0);
+        _1343 = max(f, 0.0);
     }
-    return _1340;
+    return _1343;
 }
 
 float point_tap(int slot, vec4 coord)
@@ -2145,7 +2165,7 @@ float point_visibility(int slot, vec3 light, vec3 d, float radius)
     for (int i = 0; i < 8; i++)
     {
         int param_7 = slot;
-        vec4 param_8 = vec4(d + (_1509[i] * spread), ref);
+        vec4 param_8 = vec4(d + (_1512[i] * spread), ref);
         lit += point_tap(param_7, param_8);
     }
     return mix(1.0, lit / 8.0, scene.point_shadow.y) * body;
@@ -2164,16 +2184,16 @@ vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
     vec3 total = (vec3(1.0) - ((vec3(1.0) - from_sky) * (vec3(1.0) - from_block))) + vec3(scene.params.x);
     if (dot(scene.sun_color.xyz, vec3(1.0)) > 0.0)
     {
-        float _1601;
+        float _1604;
         if (has_normal)
         {
-            _1601 = max(dot(n, -scene.sun_dir.xyz), 0.0);
+            _1604 = max(dot(n, -scene.sun_dir.xyz), 0.0);
         }
         else
         {
-            _1601 = 1.0;
+            _1604 = 1.0;
         }
-        float ndl = _1601;
+        float ndl = _1604;
         if (ndl > 0.0)
         {
             float exposure = pow(baked.w, scene.sun_color.w);
@@ -2186,7 +2206,7 @@ vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
         }
     }
     int count = min(scene.counts.x, 64);
-    float _1700;
+    float _1703;
     for (int i = 0; i < count; i++)
     {
         int param_6 = i;
@@ -2205,13 +2225,13 @@ vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
         vec3 dir = d / vec3(max(dist, 9.9999997473787516355514526367188e-05));
         if (has_normal)
         {
-            _1700 = max(dot(n, -dir), 0.0);
+            _1703 = max(dot(n, -dir), 0.0);
         }
         else
         {
-            _1700 = 1.0;
+            _1703 = 1.0;
         }
-        float ndl_1 = _1700;
+        float ndl_1 = _1703;
         if (ndl_1 <= 0.0)
         {
             continue;
@@ -2227,17 +2247,17 @@ vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
         }
         float vis = 1.0;
         int slot = int(scene.point_color[i].w);
-        bool _1751 = slot >= 0;
-        bool _1758;
-        if (_1751)
+        bool _1754 = slot >= 0;
+        bool _1761;
+        if (_1754)
         {
-            _1758 = (scene.counts.y & 4) != 0;
+            _1761 = (scene.counts.y & 4) != 0;
         }
         else
         {
-            _1758 = _1751;
+            _1761 = _1754;
         }
-        if (_1758)
+        if (_1761)
         {
             vec4 map = scene.point_map[slot];
             int param_14 = slot;
@@ -2259,29 +2279,29 @@ vec3 shade(vec3 world, vec3 normal, vec4 baked, uint flags)
     }
     float len = length(normal);
     bool has_normal = len > 9.9999999747524270787835121154785e-07;
-    vec3 _1829;
+    vec3 _1832;
     if (has_normal)
     {
-        _1829 = normal / vec3(len);
+        _1832 = normal / vec3(len);
     }
     else
     {
-        _1829 = vec3(0.0);
+        _1832 = vec3(0.0);
     }
-    vec3 n = _1829;
+    vec3 n = _1832;
     if ((scene.counts.y & 1) == 0)
     {
-        bool _1846 = !has_normal;
-        bool _1853;
-        if (!_1846)
+        bool _1849 = !has_normal;
+        bool _1856;
+        if (!_1849)
         {
-            _1853 = (flags & 4u) == 0u;
+            _1856 = (flags & 4u) == 0u;
         }
         else
         {
-            _1853 = _1846;
+            _1856 = _1849;
         }
-        if (_1853)
+        if (_1856)
         {
             return vec3(1.0);
         }
@@ -2316,6 +2336,25 @@ vec3 tone(inout vec3 c)
     return clamp(mix(vec3(luma), c, vec3(scene.medium_color.w)), vec3(0.0), vec3(1.0));
 }
 
+float sky_height(vec3 d)
+{
+    float a = abs(scene.glow.z);
+    float s = (scene.glow.z < 0.0) ? (-1.0) : 1.0;
+    if ((a > 0.5) && (a < 1.5))
+    {
+        return s * d.x;
+    }
+    if ((a > 1.5) && (a < 2.5))
+    {
+        return s * d.y;
+    }
+    if (a > 2.5)
+    {
+        return s * d.z;
+    }
+    return d.z;
+}
+
 float star_hash(vec3 cell)
 {
     return fract(sin(dot(cell, vec3(12.98980045318603515625, 78.233001708984375, 37.71900177001953125))) * 43758.546875);
@@ -2323,7 +2362,8 @@ float star_hash(vec3 cell)
 
 vec3 sky_radiance(vec3 dir, bool disks)
 {
-    float h = dir.z;
+    vec3 param = dir;
+    float h = sky_height(param);
     vec3 col = mix(scene.sky_horizon.xyz, scene.sky_zenith.xyz, vec3(pow(clamp(h, 0.0, 1.0), 0.449999988079071044921875)));
     if (h < 0.0)
     {
@@ -2336,8 +2376,8 @@ vec3 sky_radiance(vec3 dir, bool disks)
         col += (scene.sun_disk.xyz * smoothstep(scene.sky_sun.w - ((1.0 - scene.sky_sun.w) * 0.300000011920928955078125), scene.sky_sun.w, cs));
         float cm = dot(dir, scene.sky_moon.xyz);
         col += ((vec3(0.85000002384185791015625, 0.89999997615814208984375, 1.0) * scene.gloss.w) * smoothstep(scene.sky_moon.w - ((1.0 - scene.sky_moon.w) * 0.300000011920928955078125), scene.sky_moon.w, cm));
-        vec3 param = floor(dir * 400.0);
-        float star = step(0.99849998950958251953125, star_hash(param));
+        vec3 param_1 = floor(dir * 400.0);
+        float star = step(0.99849998950958251953125, star_hash(param_1));
         col += vec3((star * scene.sky_zenith.w) * smoothstep(0.0, 0.100000001490116119384765625, h));
     }
     return col;
@@ -2357,40 +2397,40 @@ float screen_noise()
 float sun_tap(mat4 m, sampler2DShadow map, vec3 p)
 {
     vec4 c = m * vec4(p, 1.0);
-    bool _2043 = abs(c.x) >= 1.0;
-    bool _2051;
-    if (!_2043)
+    bool _2094 = abs(c.x) >= 1.0;
+    bool _2102;
+    if (!_2094)
     {
-        _2051 = abs(c.y) >= 1.0;
+        _2102 = abs(c.y) >= 1.0;
     }
     else
     {
-        _2051 = _2043;
+        _2102 = _2094;
     }
-    bool _2058;
-    if (!_2051)
+    bool _2109;
+    if (!_2102)
     {
-        _2058 = c.z <= 0.0;
+        _2109 = c.z <= 0.0;
     }
     else
     {
-        _2058 = _2051;
+        _2109 = _2102;
     }
-    bool _2065;
-    if (!_2058)
+    bool _2116;
+    if (!_2109)
     {
-        _2065 = c.z >= 1.0;
+        _2116 = c.z >= 1.0;
     }
     else
     {
-        _2065 = _2058;
+        _2116 = _2109;
     }
-    if (_2065)
+    if (_2116)
     {
         return 1.0;
     }
-    vec3 _2082 = vec3((c.xy * 0.5) + vec2(0.5), c.z - scene.sun_shadow.x);
-    return texture(map, vec3(_2082.xy, _2082.z));
+    vec3 _2133 = vec3((c.xy * 0.5) + vec2(0.5), c.z - scene.sun_shadow.x);
+    return texture(map, vec3(_2133.xy, _2133.z));
 }
 
 float sun_lit_at(vec3 p)
@@ -2452,26 +2492,27 @@ float phase_hg(float g, float cs)
 vec3 inscatter(vec3 dir, float dist)
 {
     float reach = min(dist, scene.volume.z);
-    float _2293;
+    float _2344;
     if ((scene.counts.y & 8192) != 0)
     {
         vec3 param = dir;
         float param_1 = reach;
-        _2293 = volume_lookup(param, param_1);
+        _2344 = volume_lookup(param, param_1);
     }
     else
     {
         vec3 param_2 = dir;
         float param_3 = reach;
-        _2293 = march_light(param_2, param_3);
+        _2344 = march_light(param_2, param_3);
     }
-    float lit = _2293;
+    float lit = _2344;
     float cs = dot(dir, -scene.sun_dir.xyz);
     float param_4 = 0.0;
     float param_5 = cs;
     float param_6 = scene.volume.y;
     float param_7 = cs;
-    float phase = mix(phase_hg(param_4, param_5), phase_hg(param_6, param_7), 0.75);
+)fizmo_glsl",
+R"fizmo_glsl(    float phase = mix(phase_hg(param_4, param_5), phase_hg(param_6, param_7), 0.75);
     return (((scene.sun_color.xyz * lit) * scene.volume.x) * phase) * scene.shafts.x;
 }
 
@@ -2480,8 +2521,7 @@ vec3 atmosphere(inout vec3 rgb, vec3 world)
     int f = scene.counts.y;
     float dist = length(world);
     vec3 dir = world / vec3(max(dist, 9.9999997473787516355514526367188e-05));
-)fizmo_glsl",
-R"fizmo_glsl(    if ((f & 64) != 0)
+    if ((f & 64) != 0)
     {
         return mix(rgb, scene.medium_color.xyz, vec3(1.0 - exp((-dist) * scene.sky_params.z)));
     }
@@ -2506,23 +2546,23 @@ vec3 finish(vec3 rgb, vec3 world, uint flags)
     {
         return rgb;
     }
-    vec3 _2496;
+    vec3 _2547;
     if ((flags & 64u) != 0u)
     {
         vec3 param = rgb;
-        vec3 _2501 = tone(param);
-        _2496 = _2501;
+        vec3 _2552 = tone(param);
+        _2547 = _2552;
     }
     else
     {
         vec3 param_1 = rgb;
         vec3 param_2 = world;
-        vec3 _2507 = atmosphere(param_1, param_2);
-        vec3 param_3 = _2507;
-        vec3 _2509 = tone(param_3);
-        _2496 = _2509;
+        vec3 _2558 = atmosphere(param_1, param_2);
+        vec3 param_3 = _2558;
+        vec3 _2560 = tone(param_3);
+        _2547 = _2560;
     }
-    return _2496;
+    return _2547;
 }
 
 vec3 swell_normal(vec3 n, vec2 p, uint flags)
@@ -2536,11 +2576,11 @@ vec3 swell_normal(vec3 n, vec2 p, uint flags)
     vec2 grad = vec2(0.0);
     for (int i = 0; i < 3; i++)
     {
-        float c = cos(_2547[i]);
-        float s = sin(_2547[i]);
+        float c = cos(_2598[i]);
+        float s = sin(_2598[i]);
         vec2 d = vec2((base.x * c) - (base.y * s), (base.x * s) + (base.y * c));
-        float k = scene.swell.y * _2585[i];
-        grad += (d * ((_2594[i] * k) * cos((k * dot(d, p)) + scene.swell_phase[i])));
+        float k = scene.swell.y * _2636[i];
+        grad += (d * ((_2645[i] * k) * cos((k * dot(d, p)) + scene.swell_phase[i])));
     }
     grad *= ((scene.swell.x * level) / 7.0);
     return normalize(n + (vec3(-grad, 0.0) * sign(n.z)));
@@ -2553,9 +2593,9 @@ vec3 wave_normal(vec3 n, vec3 p)
     float amp = scene.waves.x;
     for (int i = 0; i < 4; i++)
     {
-        vec2 d = normalize(_2670[i].xy);
-        float k = _2670[i].z * scene.waves.y;
-        grad += (d * ((amp * k) * cos((dot(d, p.xy) * k) + (t * _2670[i].z))));
+        vec2 d = normalize(_2721[i].xy);
+        float k = _2721[i].z * scene.waves.y;
+        grad += (d * ((amp * k) * cos((dot(d, p.xy) * k) + (t * _2721[i].z))));
         amp *= 0.550000011920928955078125;
     }
     return normalize(n + (vec3(-grad, 0.0) * sign(n.z)));
@@ -2572,31 +2612,31 @@ int planar_index(vec3 world, vec3 n)
     for (int i = 0; i < count; i++)
     {
         vec4 r = scene.plane_rects[i];
-        bool _325 = any(lessThan(uv, r.xy));
-        bool _334;
-        if (!_325)
+        bool _328 = any(lessThan(uv, r.xy));
+        bool _337;
+        if (!_328)
         {
-            _334 = any(greaterThan(uv, r.zw));
+            _337 = any(greaterThan(uv, r.zw));
         }
         else
         {
-            _334 = _325;
+            _337 = _328;
         }
-        if (_334)
+        if (_337)
         {
             continue;
         }
-        bool _352 = abs(dot(scene.planes[i].xyz, world) - scene.planes[i].w) < 0.0500000007450580596923828125;
-        bool _363;
-        if (_352)
+        bool _355 = abs(dot(scene.planes[i].xyz, world) - scene.planes[i].w) < 0.0500000007450580596923828125;
+        bool _366;
+        if (_355)
         {
-            _363 = dot(n, scene.planes[i].xyz) > 0.89999997615814208984375;
+            _366 = dot(n, scene.planes[i].xyz) > 0.89999997615814208984375;
         }
         else
         {
-            _363 = _352;
+            _366 = _355;
         }
-        if (_363)
+        if (_366)
         {
             return i;
         }
@@ -2623,17 +2663,17 @@ vec2 project_uv(vec3 p, out float w)
 
 bool on_screen(vec2 uv)
 {
-    bool _2804 = all(greaterThanEqual(uv, scene.screen.xy));
-    bool _2817;
-    if (_2804)
+    bool _2855 = all(greaterThanEqual(uv, scene.screen.xy));
+    bool _2868;
+    if (_2855)
     {
-        _2817 = all(lessThanEqual(uv, scene.screen.xy + scene.screen.zw));
+        _2868 = all(lessThanEqual(uv, scene.screen.xy + scene.screen.zw));
     }
     else
     {
-        _2817 = _2804;
+        _2868 = _2855;
     }
-    return _2817;
+    return _2868;
 }
 
 vec3 scene_point(vec2 uv)
@@ -2660,38 +2700,38 @@ vec4 screen_reflection(vec3 world, vec3 r)
         float a = float(i + 1) / float(steps);
         float t = (reach * a) * a;
         vec3 param = world + (r * t);
-        vec2 _2904 = project_uv(param, param_1);
+        vec2 _2955 = project_uv(param, param_1);
         float w = param_1;
-        vec2 uv = _2904;
-        bool _2907 = w <= 0.0500000007450580596923828125;
-        bool _2915;
-        if (!_2907)
+        vec2 uv = _2955;
+        bool _2958 = w <= 0.0500000007450580596923828125;
+        bool _2966;
+        if (!_2958)
         {
             vec2 param_2 = uv;
-            _2915 = !on_screen(param_2);
+            _2966 = !on_screen(param_2);
         }
         else
         {
-            _2915 = _2907;
+            _2966 = _2958;
         }
-        if (_2915)
+        if (_2966)
         {
             break;
         }
         float ray = length(world + (r * t));
         vec2 param_3 = uv;
         float hit = length(scene_point(param_3));
-        bool _2933 = ray > hit;
-        bool _2945;
-        if (_2933)
+        bool _2984 = ray > hit;
+        bool _2996;
+        if (_2984)
         {
-            _2945 = (ray - hit) < (max(t - prev, 0.5) * 1.5);
+            _2996 = (ray - hit) < (max(t - prev, 0.5) * 1.5);
         }
         else
         {
-            _2945 = _2933;
+            _2996 = _2984;
         }
-        if (_2945)
+        if (_2996)
         {
             float lo = prev;
             float hi = t;
@@ -2699,9 +2739,9 @@ vec4 screen_reflection(vec3 world, vec3 r)
             {
                 float mid = 0.5 * (lo + hi);
                 vec3 param_4 = world + (r * mid);
-                vec2 _2973 = project_uv(param_4, param_5);
+                vec2 _3024 = project_uv(param_4, param_5);
                 w = param_5;
-                vec2 m = _2973;
+                vec2 m = _3024;
                 vec2 param_6 = m;
                 if (length(world + (r * mid)) > length(scene_point(param_6)))
                 {
@@ -2713,9 +2753,9 @@ vec4 screen_reflection(vec3 world, vec3 r)
                 }
             }
             vec3 param_7 = world + (r * hi);
-            vec2 _3000 = project_uv(param_7, param_8);
+            vec2 _3051 = project_uv(param_7, param_8);
             w = param_8;
-            uv = _3000;
+            uv = _3051;
             vec2 inner = min(uv - scene.screen.xy, (scene.screen.xy + scene.screen.zw) - uv) / scene.screen.zw;
             float edge = smoothstep(0.0, 0.07999999821186065673828125, min(inner.x, inner.y));
             float fade = edge * (1.0 - (a * a));
@@ -2749,10 +2789,10 @@ vec3 finish(vec3 rgb, vec3 world)
     }
     vec3 param = rgb;
     vec3 param_1 = world;
-    vec3 _2480 = atmosphere(param, param_1);
-    vec3 param_2 = _2480;
-    vec3 _2482 = tone(param_2);
-    return _2482;
+    vec3 _2531 = atmosphere(param, param_1);
+    vec3 param_2 = _2531;
+    vec3 _2533 = tone(param_2);
+    return _2533;
 }
 
 vec4 surface_output(vec3 albedo, vec3 light, float alpha, vec3 world, vec3 n, uint flags, vec3 wave_pos, vec2 flow)
@@ -2761,17 +2801,17 @@ vec4 surface_output(vec3 albedo, vec3 light, float alpha, vec3 world, vec3 n, ui
     bool liquid = (flags & 16u) != 0u;
     bool glossy = (flags & 8u) != 0u;
     bool mirror = (flags & 32u) != 0u;
-    bool _3106 = ((!liquid) && (!glossy)) && (!mirror);
-    bool _3114;
-    if (!_3106)
+    bool _3157 = ((!liquid) && (!glossy)) && (!mirror);
+    bool _3165;
+    if (!_3157)
     {
-        _3114 = (scene.counts.y & 1) == 0;
+        _3165 = (scene.counts.y & 1) == 0;
     }
     else
     {
-        _3114 = _3106;
+        _3165 = _3157;
     }
-    if (_3114)
+    if (_3165)
     {
         vec3 param = rgb;
         vec3 param_1 = world;
@@ -2779,106 +2819,106 @@ vec4 surface_output(vec3 albedo, vec3 light, float alpha, vec3 world, vec3 n, ui
         return vec4(finish(param, param_1, param_2) * alpha, alpha);
     }
     vec3 v = normalize(-world);
-    vec3 _3141;
+    vec3 _3192;
     if (dot(n, v) < 0.0)
     {
-        _3141 = -n;
+        _3192 = -n;
     }
     else
     {
-        _3141 = n;
+        _3192 = n;
     }
-    vec3 facing = _3141;
+    vec3 facing = _3192;
     vec3 drifted = wave_pos - vec3(((flow * scene.sky_params.y) * scene.waves.z) * 1.0, 0.0);
-    bool _3171;
+    bool _3222;
     if (liquid)
     {
-        _3171 = abs(n.z) > 0.5;
+        _3222 = abs(n.z) > 0.5;
     }
     else
     {
-        _3171 = liquid;
+        _3222 = liquid;
     }
-    vec3 _3172;
-    if (_3171)
+    vec3 _3223;
+    if (_3222)
     {
         vec3 param_3 = facing;
         vec2 param_4 = world.xy;
         uint param_5 = flags;
         vec3 param_6 = swell_normal(param_3, param_4, param_5);
         vec3 param_7 = drifted;
-        _3172 = wave_normal(param_6, param_7);
+        _3223 = wave_normal(param_6, param_7);
     }
     else
     {
-        _3172 = facing;
+        _3223 = facing;
     }
-    vec3 sn = _3172;
+    vec3 sn = _3223;
     float f0 = liquid ? 0.0199999995529651641845703125 : 0.039999999105930328369140625;
     float fresnel = (f0 + ((1.0 - f0) * pow(1.0 - max(dot(sn, v), 0.0), 5.0))) * scene.waves.w;
     vec3 r = reflect(-v, sn);
     bool underwater = (scene.counts.y & 64) != 0;
     bool from_below = liquid && underwater;
-    int _3226;
+    int _3277;
     if (from_below)
     {
-        _3226 = -1;
+        _3277 = -1;
     }
     else
     {
         vec3 param_8 = world;
         vec3 param_9 = facing;
-        _3226 = planar_index(param_8, param_9);
+        _3277 = planar_index(param_8, param_9);
     }
-    int plane = _3226;
+    int plane = _3277;
     vec2 screen_uv = gl_FragCoord.xy * scene.target.xy;
-    vec4 _3245;
+    vec4 _3296;
     if (from_below)
     {
-        _3245 = vec4(0.0);
+        _3296 = vec4(0.0);
     }
     else
     {
-        vec4 _3251;
+        vec4 _3302;
         if (plane >= 0)
         {
             int param_10 = plane;
             vec2 param_11 = screen_uv + ((sn.xy - facing.xy) * scene.plane_info.y);
-            _3251 = vec4(planar_sample(param_10, param_11), 1.0);
+            _3302 = vec4(planar_sample(param_10, param_11), 1.0);
         }
         else
         {
             vec3 param_12 = world;
             vec3 param_13 = r;
-            _3251 = screen_reflection(param_12, param_13);
+            _3302 = screen_reflection(param_12, param_13);
         }
-        _3245 = _3251;
+        _3296 = _3302;
     }
-    vec4 hit = _3245;
-    vec3 _3282;
+    vec4 hit = _3296;
+    vec3 _3333;
     if (from_below)
     {
-        _3282 = scene.medium_color.xyz;
+        _3333 = scene.medium_color.xyz;
     }
     else
     {
         vec3 param_14 = r;
         bool param_15 = false;
-        _3282 = sky_radiance(param_14, param_15) * (1.0 - hit.w);
+        _3333 = sky_radiance(param_14, param_15) * (1.0 - hit.w);
     }
-    vec3 sky = _3282;
+    vec3 sky = _3333;
     vec3 half_vec = normalize(v - scene.sun_dir.xyz);
-    float _3307;
+    float _3358;
     if (from_below)
     {
-        _3307 = 0.0;
+        _3358 = 0.0;
     }
     else
     {
         vec3 param_16 = world + (facing * scene.sun_shadow.y);
-        _3307 = (pow(max(dot(sn, half_vec), 0.0), scene.gloss.x) * scene.gloss.y) * sun_lit_at(param_16);
+        _3358 = (pow(max(dot(sn, half_vec), 0.0), scene.gloss.x) * scene.gloss.y) * sun_lit_at(param_16);
     }
-    float spec = _3307;
+    float spec = _3358;
     vec3 glare = scene.sun_color.xyz * spec;
     vec3 param_17 = world;
     float keep = veil(param_17);
@@ -2889,25 +2929,25 @@ vec4 surface_output(vec3 albedo, vec3 light, float alpha, vec3 world, vec3 n, ui
         vec3 own = finish(param_18, param_19);
         return vec4(own + ((((hit.xyz * hit.w) * albedo) + (glare * (1.0 - hit.w))) * keep), 1.0);
     }
-    bool _3385;
+    bool _3436;
     if (liquid)
     {
-        _3385 = (scene.counts.y & 128) != 0;
+        _3436 = (scene.counts.y & 128) != 0;
     }
     else
     {
-        _3385 = liquid;
+        _3436 = liquid;
     }
-    bool _3392;
-    if (_3385)
+    bool _3443;
+    if (_3436)
     {
-        _3392 = scene.water.w > 0.0;
+        _3443 = scene.water.w > 0.0;
     }
     else
     {
-        _3392 = _3385;
+        _3443 = _3436;
     }
-    if (_3392)
+    if (_3443)
     {
         vec2 uv0 = gl_FragCoord.xy * scene.target.xy;
         float surface = length(world);
@@ -2920,36 +2960,36 @@ vec4 surface_output(vec3 albedo, vec3 light, float alpha, vec3 world, vec3 n, ui
         }
         vec2 uv = uv0 + ((((sn.xy - facing.xy) * scene.water.x) * 0.02999999932944774627685546875) * min(depth, 2.0));
         vec2 param_21 = uv;
-        bool _3446 = !on_screen(param_21);
-        bool _3459;
-        if (!_3446)
+        bool _3497 = !on_screen(param_21);
+        bool _3510;
+        if (!_3497)
         {
             vec2 param_22 = uv;
-            _3459 = dot(scene_point(param_22) - world, facing) > (-0.0500000007450580596923828125);
+            _3510 = dot(scene_point(param_22) - world, facing) > (-0.0500000007450580596923828125);
         }
         else
         {
-            _3459 = _3446;
+            _3510 = _3497;
         }
-        if (_3459)
+        if (_3510)
         {
             uv = uv0;
         }
-        float _3465;
+        float _3516;
         if (underwater)
         {
-            _3465 = 0.0;
+)fizmo_glsl",
+R"fizmo_glsl(            _3516 = 0.0;
         }
         else
         {
             vec2 param_23 = uv;
-            _3465 = max(length(scene_point(param_23)) - surface, 0.0);
+            _3516 = max(length(scene_point(param_23)) - surface, 0.0);
         }
-        float thick = _3465;
+        float thick = _3516;
         vec3 through = exp((vec3(1.0) - albedo) * ((-thick) * scene.water.y));
         float murk = 1.0 - exp((-thick) * scene.water.z);
-)fizmo_glsl",
-R"fizmo_glsl(        vec3 behind = (texture(scene_color, uv).xyz * through) * (1.0 - murk);
+        vec3 behind = (texture(scene_color, uv).xyz * through) * (1.0 - murk);
         vec3 lit = (sky * fresnel) + ((rgb * murk) * (1.0 - fresnel));
         vec3 param_24 = lit;
         vec3 param_25 = world;
@@ -2968,29 +3008,29 @@ void main()
 {
     vec3 rgb = floor((v_color.xyz * 255.0) + vec3(0.5));
     bool flowing = (v_flags & 128u) != 0u;
-    uint _3613;
+    uint _3664;
     if (flowing)
     {
-        _3613 = 0u;
+        _3664 = 0u;
     }
     else
     {
-        _3613 = v_params.x;
+        _3664 = v_params.x;
     }
-    uint amount = _3613;
-    bool _3624 = amount > 0u;
-    bool _3631;
-    if (_3624)
+    uint amount = _3664;
+    bool _3675 = amount > 0u;
+    bool _3682;
+    if (_3675)
     {
-        _3631 = v_params.y < 6u;
+        _3682 = v_params.y < 6u;
     }
     else
     {
-        _3631 = _3624;
+        _3682 = _3675;
     }
-    if (_3631)
+    if (_3682)
     {
-        ivec3 c = ivec3(floor(v_local - (_3647[v_params.y] * 0.5))) + v_origin;
+        ivec3 c = ivec3(floor(v_local - (_3698[v_params.y] * 0.5))) + v_origin;
         uint h = ((uint(c.x) * 374761393u) + (uint(c.y) * 668265263u)) + (uint(c.z) * 2147483647u);
         h = (h ^ (h >> 13u)) * 1274126177u;
         h ^= (h >> 16u);
@@ -3003,16 +3043,16 @@ void main()
     vec4 param_2 = v_light;
     uint param_3 = v_flags;
     vec3 light = shade(param, param_1, param_2, param_3);
-    vec3 _3739;
+    vec3 _3790;
     if (length(v_normal) > 9.9999999747524270787835121154785e-07)
     {
-        _3739 = normalize(v_normal);
+        _3790 = normalize(v_normal);
     }
     else
     {
-        _3739 = vec3(0.0, 0.0, 1.0);
+        _3790 = vec3(0.0, 0.0, 1.0);
     }
-    vec3 n = _3739;
+    vec3 n = _3790;
     uint param_4 = v_flags;
     uint param_5 = v_params.x;
     vec3 param_6 = rgb / vec3(255.0);
@@ -3537,6 +3577,25 @@ layout(location = 0) out vec4 out_color;
 
 mat4 spvWorkaroundRowMajor(mat4 wrap) { return wrap; }
 
+float sky_height(vec3 d)
+{
+    float a = abs(scene.glow.z);
+    float s = (scene.glow.z < 0.0) ? (-1.0) : 1.0;
+    if ((a > 0.5) && (a < 1.5))
+    {
+        return s * d.x;
+    }
+    if ((a > 1.5) && (a < 2.5))
+    {
+        return s * d.y;
+    }
+    if (a > 2.5)
+    {
+        return s * d.z;
+    }
+    return d.z;
+}
+
 float star_hash(vec3 cell)
 {
     return fract(sin(dot(cell, vec3(12.98980045318603515625, 78.233001708984375, 37.71900177001953125))) * 43758.546875);
@@ -3544,7 +3603,8 @@ float star_hash(vec3 cell)
 
 vec3 sky_radiance(vec3 dir, bool disks)
 {
-    float h = dir.z;
+    vec3 param = dir;
+    float h = sky_height(param);
     vec3 col = mix(scene.sky_horizon.xyz, scene.sky_zenith.xyz, vec3(pow(clamp(h, 0.0, 1.0), 0.449999988079071044921875)));
     if (h < 0.0)
     {
@@ -3557,8 +3617,8 @@ vec3 sky_radiance(vec3 dir, bool disks)
         col += (scene.sun_disk.xyz * smoothstep(scene.sky_sun.w - ((1.0 - scene.sky_sun.w) * 0.300000011920928955078125), scene.sky_sun.w, cs));
         float cm = dot(dir, scene.sky_moon.xyz);
         col += ((vec3(0.85000002384185791015625, 0.89999997615814208984375, 1.0) * scene.gloss.w) * smoothstep(scene.sky_moon.w - ((1.0 - scene.sky_moon.w) * 0.300000011920928955078125), scene.sky_moon.w, cm));
-        vec3 param = floor(dir * 400.0);
-        float star = step(0.99849998950958251953125, star_hash(param));
+        vec3 param_1 = floor(dir * 400.0);
+        float star = step(0.99849998950958251953125, star_hash(param_1));
         col += vec3((star * scene.sky_zenith.w) * smoothstep(0.0, 0.100000001490116119384765625, h));
     }
     return col;
@@ -3578,40 +3638,40 @@ float screen_noise()
 float sun_tap(mat4 m, sampler2DShadow map, vec3 p)
 {
     vec4 c = m * vec4(p, 1.0);
-    bool _282 = abs(c.x) >= 1.0;
-    bool _291;
-    if (!_282)
+    bool _336 = abs(c.x) >= 1.0;
+    bool _344;
+    if (!_336)
     {
-        _291 = abs(c.y) >= 1.0;
+        _344 = abs(c.y) >= 1.0;
     }
     else
     {
-        _291 = _282;
+        _344 = _336;
     }
-    bool _298;
-    if (!_291)
+    bool _351;
+    if (!_344)
     {
-        _298 = c.z <= 0.0;
+        _351 = c.z <= 0.0;
     }
     else
     {
-        _298 = _291;
+        _351 = _344;
     }
-    bool _305;
-    if (!_298)
+    bool _358;
+    if (!_351)
     {
-        _305 = c.z >= 1.0;
+        _358 = c.z >= 1.0;
     }
     else
     {
-        _305 = _298;
+        _358 = _351;
     }
-    if (_305)
+    if (_358)
     {
         return 1.0;
     }
-    vec3 _323 = vec3((c.xy * 0.5) + vec2(0.5), c.z - scene.sun_shadow.x);
-    return texture(map, vec3(_323.xy, _323.z));
+    vec3 _376 = vec3((c.xy * 0.5) + vec2(0.5), c.z - scene.sun_shadow.x);
+    return texture(map, vec3(_376.xy, _376.z));
 }
 
 float sun_lit_at(vec3 p)
@@ -3673,20 +3733,20 @@ float phase_hg(float g, float cs)
 vec3 inscatter(vec3 dir, float dist)
 {
     float reach = min(dist, scene.volume.z);
-    float _551;
+    float _603;
     if ((scene.counts.y & 8192) != 0)
     {
         vec3 param = dir;
         float param_1 = reach;
-        _551 = volume_lookup(param, param_1);
+        _603 = volume_lookup(param, param_1);
     }
     else
     {
         vec3 param_2 = dir;
         float param_3 = reach;
-        _551 = march_light(param_2, param_3);
+        _603 = march_light(param_2, param_3);
     }
-    float lit = _551;
+    float lit = _603;
     float cs = dot(dir, -scene.sun_dir.xyz);
     float param_4 = 0.0;
     float param_5 = cs;
@@ -3726,8 +3786,8 @@ void main()
         c = scene.medium_color.xyz;
     }
     vec3 param_4 = c;
-    vec3 _711 = tone(param_4);
-    out_color = vec4(_711, 1.0);
+    vec3 _763 = tone(param_4);
+    out_color = vec4(_763, 1.0);
 }
 )fizmo_glsl",
 };

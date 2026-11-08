@@ -177,6 +177,7 @@ struct Atmosphere3D {
     bool     enabled       = false;
     linalg::vector3d sun_position  { 0.35, 0.2, 1.0 };
     linalg::vector3d moon_position { -0.35, -0.2, -1.0 };
+    linalg::vector3d up            { 0.0, 0.0, 1.0 };
     Color    zenith        = Color(70, 130, 235);
     Color    horizon       = Color(175, 210, 250);
     Color    glow          = Color(255, 214, 160);

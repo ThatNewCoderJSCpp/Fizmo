@@ -2452,6 +2452,14 @@ private:
         rec.volume = true;
     }
 
+    static float sky_up_code(const linalg::vector3d& up) noexcept {
+        const double ax = std::abs(up.x), ay = std::abs(up.y), az = std::abs(up.z);
+        if (ax + ay + az <= 0.0) return 0.0f;
+        if (ax >= ay && ax >= az) return up.x < 0.0 ? -1.0f : 1.0f;
+        if (ay >= az) return up.y < 0.0 ? -2.0f : 2.0f;
+        return up.z < 0.0 ? -3.0f : 3.0f;
+    }
+
     static void unit_into(float* out, const linalg::vector3d& v) noexcept {
         const double len = v.magnitude();
         const linalg::vector3d n = len > 0.0 ? v / len : linalg::vector3d{ 0.0, 0.0, 1.0 };
@@ -2504,6 +2512,7 @@ private:
         u.sun_disk[3] = a.glow_focus;
         u.glow[0] = a.glow_spread;
         u.glow[1] = l.shafts.focus;
+        u.glow[2] = sky_up_code(a.up);
         u.water[0] = l.surfaces.refraction ? l.surfaces.refraction_strength : 0.0f;
         u.water[1] = l.surfaces.refraction ? l.surfaces.absorption : 0.0f;
         u.water[2] = l.surfaces.scattering;
