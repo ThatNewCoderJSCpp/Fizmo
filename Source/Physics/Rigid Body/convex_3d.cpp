@@ -10,6 +10,9 @@ namespace {
 using V3 = RVec3;
 
 constexpr Real kTiny = 1e-12_r;
+constexpr Real kEps = std::numeric_limits<Real>::epsilon();
+
+constexpr Real at_least(Real wanted, Real floor_value) noexcept { return wanted > floor_value ? wanted : floor_value; }
 
 V3 safe_normalize(const V3& v, const V3& fallback) noexcept {
     const Real l = vec3::length(v);
@@ -451,10 +454,10 @@ GjkOutput3D gjk_distance(const ConvexProxy3D& a, const ConvexProxy3D& b, int max
         scale = std::max(scale, vec3::length_squared(w));
         if (s.count > 0) {
             const Real vv = vec3::dot(v, v);
-            if (vv - vec3::dot(v, w) <= 1e-10_r * vv + 1e-24_r) break;
+            if (vv - vec3::dot(v, w) <= at_least(1e-10_r, 16.0_r * kEps) * vv + 1e-24_r) break;
             bool dup = false;
             for (int i = 0; i < s.count; ++i) {
-                if (vec3::length_squared(s.w[i] - w) <= 1e-24_r * scale) dup = true;
+                if (vec3::length_squared(s.w[i] - w) <= at_least(1e-24_r, kEps * kEps) * scale) dup = true;
             }
             if (dup) break;
         }
@@ -484,7 +487,7 @@ GjkOutput3D gjk_distance(const ConvexProxy3D& a, const ConvexProxy3D& b, int max
             break;
         }
         }
-        if (vec3::length_squared(v) <= 1e-20_r * scale) {
+        if (vec3::length_squared(v) <= at_least(1e-20_r, 4.0_r * kEps * kEps) * scale) {
             out.overlap = true;
             out.distance = 0.0_r;
             witness(s, bc, out.point_a, out.point_b);
@@ -549,6 +552,12 @@ bool epa_penetration(const ConvexProxy3D& a, const ConvexProxy3D& b, const GjkSi
             if (std::abs(vec3::dot(verts[3].w - verts[0].w, n)) < 1e-18_r) return false;
         }
     }
+    Real extent = 1.0_r;
+    for (const Vert& v : verts) extent = std::max(extent, vec3::length(v.w));
+    const Real flat = at_least(1e-30_r, kEps * kEps * extent * extent);
+    const Real seen = at_least(1e-14_r, 8.0_r * kEps * extent);
+    const Real settle = at_least(1e-9_r, 16.0_r * kEps);
+    const std::size_t max_faces = 1024;
     std::vector<Face> faces;
     faces.reserve(128);
     auto make_face = [&](int i0, int i1, int i2) {
@@ -558,14 +567,14 @@ bool epa_penetration(const ConvexProxy3D& a, const ConvexProxy3D& b, const GjkSi
         f.i[2] = i2;
         const V3 n = vec3::cross(verts[static_cast<std::size_t>(i1)].w - verts[static_cast<std::size_t>(i0)].w, verts[static_cast<std::size_t>(i2)].w - verts[static_cast<std::size_t>(i0)].w);
         const Real l = vec3::length(n);
-        f.n = l > 1e-30_r ? n * (1.0_r / l) : V3{ 0.0_r, 1.0_r, 0.0_r };
+        f.n = l > flat ? n * (1.0_r / l) : V3{ 0.0_r, 1.0_r, 0.0_r };
         f.d = vec3::dot(f.n, verts[static_cast<std::size_t>(i0)].w);
         if (f.d < 0.0_r) {
             std::swap(f.i[1], f.i[2]);
             f.n = f.n * -1.0_r;
             f.d = -f.d;
         }
-        f.alive = l > 1e-30_r;
+        f.alive = l > flat;
         return f;
     };
     {
@@ -597,13 +606,13 @@ bool epa_penetration(const ConvexProxy3D& a, const ConvexProxy3D& b, const GjkSi
         const V3 sb = b.support(f.n * -1.0_r);
         const V3 w = sa - sb;
         const Real gain = vec3::dot(w, f.n) - f.d;
-        if (gain <= 1e-9_r * std::max(1.0_r, f.d) + 1e-12_r || verts.size() > 250) break;
+        if (gain <= settle * std::max(1.0_r, f.d) + 1e-12_r || verts.size() > 250 || faces.size() > max_faces) break;
         const int vi = static_cast<int>(verts.size());
         verts.push_back({ w, sa, sb });
         std::vector<std::pair<int, int>> horizon;
         for (Face& g : faces) {
             if (!g.alive) continue;
-            if (vec3::dot(g.n, w - verts[static_cast<std::size_t>(g.i[0])].w) > 1e-14_r) {
+            if (vec3::dot(g.n, w - verts[static_cast<std::size_t>(g.i[0])].w) > seen) {
                 g.alive = false;
                 for (int e = 0; e < 3; ++e) {
                     const std::pair<int, int> edge{ g.i[e], g.i[(e + 1) % 3] };
