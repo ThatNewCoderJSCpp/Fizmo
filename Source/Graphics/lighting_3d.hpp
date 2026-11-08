@@ -43,6 +43,11 @@ struct BakedLight {
 
 constexpr std::uint32_t LIGHT_FULL_SKY = BakedLight::full_sky().packed();
 
+enum class LightFalloff3D : std::uint8_t {
+    Window = 0,
+    Physical
+};
+
 enum class LightShape3D : std::uint8_t {
     Point = 0,
     Sphere,
@@ -69,6 +74,9 @@ struct PointLight3D {
     float         size_y        = 0.0f;
     linalg::vector3d      axis{ 1.0, 0.0, 0.0 };
     bool          two_sided     = false;
+    LightFalloff3D falloff      = LightFalloff3D::Window;
+    float         reference_distance = 1.0f;
+    float         spill         = 0.0f;
 
     PointLight3D() = default;
     PointLight3D(const linalg::vector3d& at, const Color& c, float strength, float reach, bool shadows = false) noexcept

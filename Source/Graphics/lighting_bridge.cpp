@@ -57,6 +57,12 @@ PointLight3D to_point_light(const lighting::Light& l, float scale) {
     p.moving = l.mobility == lighting::LightMobility::dynamic;
     p.id = l.id;
     p.two_sided = l.two_sided;
+    if (l.spread == lighting::LightSpread::natural) {
+        p.falloff = LightFalloff3D::Physical;
+        p.reference_distance = std::max(0.25f, l.radius > 0.0f ? l.radius * 4.0f : 1.0f);
+        p.spill = std::max(0.0f, l.spill);
+        if (l.range <= 0.0f) p.radius = std::max(p.radius, std::sqrt(std::max(candela, 0.0f) * 400.0f));
+    }
     switch (l.shape) {
     case LightShape::sphere:
         p.shape = LightShape3D::Sphere;

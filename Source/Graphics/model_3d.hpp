@@ -83,6 +83,14 @@ struct ModelMaterial {
     bool        transparent  = false;
     float       alpha_cutoff = -1.0f;
     bool        unlit        = false;
+    int         normal_texture             = -1;
+    int         metallic_roughness_texture = -1;
+    int         occlusion_texture          = -1;
+    int         emissive_texture           = -1;
+    float       normal_scale       = 1.0f;
+    float       metallic_factor    = 1.0f;
+    float       roughness_factor   = 1.0f;
+    float       emissive_map_strength = 0.0f;
 };
 
 struct ModelPrimitive {

@@ -38,6 +38,11 @@ auto Texture::sample_uv(double u, double v) const noexcept -> Color {
     return sample(px, py);
 }
 
+auto Texture::sample_wrapped(double u, double v) const noexcept -> Color {
+    if (!m_image) return {};
+    return sample(u * m_image->width(), v * m_image->height());
+}
+
 int Texture::wrap_coord(int c, int size) const noexcept {
     if (size <= 0) return 0;
 

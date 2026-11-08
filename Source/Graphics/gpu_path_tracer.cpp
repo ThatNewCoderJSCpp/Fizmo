@@ -78,6 +78,66 @@ float as_float(std::uint32_t u) noexcept {
     return f;
 }
 
+constexpr std::uint32_t kNoUv = 0xFFFFFFFFu;
+constexpr unsigned kMaxMapSize = 2048u;
+constexpr std::uint32_t kMatBaseMap = 4u;
+constexpr std::uint32_t kMatWrapShift = 3u;
+constexpr std::uint32_t kMatNearest = 32u;
+constexpr std::uint32_t kMatSrgb = 64u;
+constexpr std::uint32_t kMatAlpha = 128u;
+
+struct PackedMap {
+    std::uint32_t offset = 0;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    bool alpha = false;
+};
+
+PackedMap pack_map(const lighting::Texture& tex, std::vector<float>& out) {
+    PackedMap p;
+    unsigned step = 1;
+    while (tex.width() / step > kMaxMapSize || tex.height() / step > kMaxMapSize) step *= 2;
+    p.width = std::max(1u, tex.width() / step);
+    p.height = std::max(1u, tex.height() / step);
+    p.alpha = tex.has_alpha();
+    p.offset = static_cast<std::uint32_t>(out.size());
+    const std::size_t count = static_cast<std::size_t>(p.width) * p.height;
+    out.resize(out.size() + count * (p.alpha ? 2u : 1u));
+    auto byte = [](float v) { return static_cast<std::uint32_t>(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f)); };
+    for (std::uint32_t y = 0; y < p.height; ++y) {
+        for (std::uint32_t x = 0; x < p.width; ++x) {
+            lighting::Rgba sum(0.0f, 0.0f, 0.0f, 0.0f);
+            for (unsigned sy = 0; sy < step; ++sy)
+                for (unsigned sx = 0; sx < step; ++sx) sum = sum + tex.stored(static_cast<int>(x * step + sx), static_cast<int>(y * step + sy));
+            sum = sum * (1.0f / static_cast<float>(step * step));
+            const std::size_t i = static_cast<std::size_t>(y) * p.width + x;
+            out[p.offset + i] = static_cast<float>(byte(sum.r) | (byte(sum.g) << 8) | (byte(sum.b) << 16));
+            if (p.alpha) out[p.offset + count + i] = static_cast<float>(byte(sum.a));
+        }
+    }
+    return p;
+}
+
+void map_matrix(const lighting::Material& mat, float out[6]) {
+    float a[6], b[6];
+    mat.uv.matrix(a);
+    mat.base_color_map.transform.matrix(b);
+    out[0] = b[0] * a[0] + b[1] * a[3];
+    out[1] = b[0] * a[1] + b[1] * a[4];
+    out[2] = b[0] * a[2] + b[1] * a[5] + b[2];
+    out[3] = b[3] * a[0] + b[4] * a[3];
+    out[4] = b[3] * a[1] + b[4] * a[4];
+    out[5] = b[3] * a[2] + b[4] * a[5] + b[5];
+}
+
+float average_channel(const lighting::TextureMap& map) noexcept {
+    return map.valid() ? map.texture->average()[std::clamp(map.channel, 0, 3)] : 1.0f;
+}
+
+bool gpu_base_map(const lighting::Material& mat) noexcept {
+    return mat.base_color_map.valid() && !mat.base_color_map.triplanar;
+}
+
 void put(std::vector<float>& v, const lighting::Vec3f& a, float w) {
     v.push_back(a.x);
     v.push_back(a.y);
@@ -337,6 +397,9 @@ struct GpuPathTracer::State {
         }
         std::vector<float> t;
         t.reserve(c.tris.size() * 24);
+        const auto& scene_materials = static_cast<const lighting::Scene&>(sc).materials();
+        std::vector<float> extra;
+        std::vector<std::pair<std::size_t, std::uint32_t>> patches;
         for (std::size_t i = 0; i < c.tris.size(); ++i) {
             const auto& tri = c.tris[i];
             const std::uint32_t channels = tri.instance < c.instance_channels.size() ? c.instance_channels[tri.instance] : 1u;
@@ -347,7 +410,12 @@ struct GpuPathTracer::State {
             std::uint32_t lu;
             std::memcpy(&lu, &li, sizeof(lu));
             put(t, tri.n0, as_float(lu));
-            put(t, tri.n1, 0.0f);
+            const bool uv = (tri.flags & lighting::detail::tri_texcoords) && tri.material < scene_materials.size() && gpu_base_map(scene_materials[tri.material]);
+            put(t, tri.n1, as_float(kNoUv));
+            if (uv) {
+                patches.emplace_back(t.size() - 1, static_cast<std::uint32_t>(extra.size()));
+                extra.insert(extra.end(), { tri.tex0.x, tri.tex0.y, tri.tex1.x, tri.tex1.y, tri.tex2.x, tri.tex2.y });
+            }
             put(t, tri.n2, 0.0f);
         }
         std::vector<float> n;
@@ -359,13 +427,38 @@ struct GpuPathTracer::State {
         }
         std::vector<float> m;
         const auto& materials = static_cast<const lighting::Scene&>(sc).materials();
-        m.reserve(materials.size() * 20);
+        m.reserve(materials.size() * 28);
+        std::vector<std::pair<const lighting::Texture*, PackedMap>> packed;
         for (const auto& mat : materials) {
-            put(m, mat.base_color, mat.metallic);
-            put(m, mat.emitted(), mat.roughness);
-            put(m, mat.specular, mat.transmission, mat.ior, mat.abbe);
+            const bool base_map = gpu_base_map(mat);
+            const lighting::Rgb base = base_map || !mat.base_color_map.valid() ? mat.base_color : mat.average_base_color();
+            float opacity = mat.opacity * (mat.opacity_map.valid() ? average_channel(mat.opacity_map) : 1.0f);
+            if (mat.base_color_map.valid() && !base_map) opacity *= mat.base_color_map.texture->average().a;
+            put(m, base, mat.metallic * average_channel(mat.metallic_map));
+            put(m, mat.average_emitted(), mat.roughness * average_channel(mat.roughness_map));
+            put(m, mat.specular, mat.transmission * average_channel(mat.transmission_map), mat.ior, mat.abbe);
             put(m, mat.absorption_color, mat.absorption_distance);
-            put(m, mat.opacity, as_float((mat.thin_walled ? 1u : 0u) | (mat.double_sided ? 2u : 0u)), 0.0f, 0.0f);
+            std::uint32_t flags = (mat.thin_walled ? 1u : 0u) | (mat.double_sided ? 2u : 0u);
+            float xf[6] = { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
+            PackedMap pm;
+            if (base_map) {
+                const lighting::Texture* key = mat.base_color_map.texture.get();
+                auto found = std::find_if(packed.begin(), packed.end(), [key](const auto& e) { return e.first == key; });
+                if (found == packed.end()) {
+                    packed.emplace_back(key, pack_map(*key, extra));
+                    found = packed.end() - 1;
+                }
+                pm = found->second;
+                flags |= kMatBaseMap | (static_cast<std::uint32_t>(mat.base_color_map.wrap) << kMatWrapShift);
+                if (mat.base_color_map.filter == lighting::TextureFilter::nearest) flags |= kMatNearest;
+                if (key->color_space() == lighting::ColorSpace::srgb) flags |= kMatSrgb;
+                if (pm.alpha) flags |= kMatAlpha;
+                map_matrix(mat, xf);
+            }
+            put(m, opacity, as_float(flags), mat.alpha_cutoff, 0.0f);
+            if (base_map) patches.emplace_back(m.size() + 3, pm.offset | 0x80000000u);
+            put(m, xf[0], xf[1], xf[2], 0.0f);
+            put(m, xf[3], xf[4], xf[5], as_float(pm.width | (pm.height << 16)));
         }
         std::vector<float> l;
         l.reserve(c.lights.size() * 44);
@@ -446,6 +539,14 @@ struct GpuPathTracer::State {
             tab.push_back(w.g);
             tab.push_back(w.b);
         }
+
+        const std::uint32_t extra_base = static_cast<std::uint32_t>(tab.size());
+        for (const auto& pt : patches) {
+            const bool material_slot = (pt.second & 0x80000000u) != 0u;
+            const std::uint32_t at = extra_base + (pt.second & 0x7FFFFFFFu);
+            (material_slot ? m : t)[pt.first] = as_float(at);
+        }
+        tab.insert(tab.end(), extra.begin(), extra.end());
 
         center = c.center;
         radius = c.radius;

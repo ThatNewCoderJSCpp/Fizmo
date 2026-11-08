@@ -189,6 +189,22 @@ struct Material3D {
     float          occlusion   = 1.0f;
     Color          emissive    = Color(0, 0, 0, 255);
     float          emissive_strength = 0.0f;
+    float          reflectivity = 0.0f;
+    const Texture* normal_map    = nullptr;
+    const Texture* orm_map       = nullptr;
+    const Texture* emissive_map  = nullptr;
+    const Texture* opacity_map   = nullptr;
+    float          normal_strength = 1.0f;
+    float          alpha_cutoff  = 0.0f;
+    bool           orm_occlusion = true;
+    UvTransform    uv;
+    UvTransform    normal_uv;
+    UvTransform    orm_uv;
+    UvTransform    emissive_uv;
+    UvTransform    opacity_uv;
+    bool           triplanar     = false;
+    float          triplanar_scale = 1.0f;
+    float          triplanar_sharpness = 4.0f;
 
     static Material3D opaque() noexcept { return {}; }
     static Material3D double_sided() noexcept { Material3D m; m.cull = Cull3D::None; return m; }
@@ -225,6 +241,20 @@ struct Material3D {
     Material3D& with_lit(bool on) noexcept { lit = on; return *this; }
     Material3D& with_view(View3D mode) noexcept { view = mode; return *this; }
     Material3D& with_fog(bool on) noexcept { fog = on; return *this; }
+
+    Material3D& with_texture(const Texture& t) noexcept { texture = &t; return *this; }
+    Material3D& with_normal_map(const Texture& t, float strength = 1.0f) noexcept { normal_map = &t; normal_strength = strength; return *this; }
+    Material3D& with_orm_map(const Texture& t, bool has_occlusion = true) noexcept { pbr = true; orm_map = &t; orm_occlusion = has_occlusion; return *this; }
+    Material3D& with_emissive_map(const Texture& t) noexcept { pbr = true; emissive_map = &t; return *this; }
+    Material3D& with_opacity_map(const Texture& t) noexcept { opacity_map = &t; return *this; }
+    Material3D& with_alpha_cutoff(float cutoff) noexcept { alpha_cutoff = cutoff; return *this; }
+    Material3D& with_uv(const UvTransform& t) noexcept { uv = t; return *this; }
+    Material3D& with_tiling(float u, float v) noexcept { uv.scale_u = u; uv.scale_v = v; return *this; }
+    Material3D& with_triplanar(float scale = 1.0f, float sharpness = 4.0f) noexcept { triplanar = true; triplanar_scale = scale; triplanar_sharpness = sharpness; return *this; }
+
+    bool has_maps() const noexcept {
+        return normal_map || orm_map || emissive_map || opacity_map || alpha_cutoff > 0.0f || triplanar || !uv.is_identity();
+    }
 
     bool visible()        const noexcept { return shadow != Shadow3D::CastOnly; }
     bool camera_visible() const noexcept { return visible() && view != View3D::ReflectionsOnly; }

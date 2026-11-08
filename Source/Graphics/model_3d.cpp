@@ -299,6 +299,19 @@ bool Model3D::load_gltf_doc(GltfContext& g, Model3D& m, const ModelImportOptions
         }
         mm.metallic = pbr["metallicFactor"].as_float(1.0f);
         mm.roughness = pbr["roughnessFactor"].as_float(1.0f);
+        mm.metallic_factor = mm.metallic;
+        mm.roughness_factor = mm.roughness;
+        auto image_of = [&](const json::Value& ref) -> int {
+            if (!ref.is_object()) return -1;
+            const std::size_t ti = ref["index"].as_uint();
+            if (ti >= texture_image.size() || texture_image[ti] < 0 || static_cast<std::size_t>(texture_image[ti]) >= m.textures.size()) return -1;
+            return texture_image[ti];
+        };
+        mm.normal_texture = image_of(mat["normalTexture"]);
+        mm.normal_scale = mat["normalTexture"]["scale"].as_float(1.0f);
+        mm.metallic_roughness_texture = image_of(pbr["metallicRoughnessTexture"]);
+        mm.occlusion_texture = image_of(mat["occlusionTexture"]);
+        mm.emissive_texture = image_of(mat["emissiveTexture"]);
         auto average = [&](const json::Value& ref, int channel) -> double {
             if (!ref.is_object()) return -1.0;
             const std::size_t ti = ref["index"].as_uint();
@@ -326,6 +339,7 @@ bool Model3D::load_gltf_doc(GltfContext& g, Model3D& m, const ModelImportOptions
             if (mx > 0.0) {
                 mm.emissive = Color(static_cast<std::uint8_t>(std::lround(ef[0].as_number() / mx * 255)), static_cast<std::uint8_t>(std::lround(ef[1].as_number() / mx * 255)), static_cast<std::uint8_t>(std::lround(ef[2].as_number() / mx * 255)));
                 mm.emissive_strength = static_cast<float>(mx * mat["extensions"]["KHR_materials_emissive_strength"]["emissiveStrength"].as_number(1.0) * (avg_emissive >= 0.0 ? avg_emissive : 1.0));
+                mm.emissive_map_strength = static_cast<float>(mx * mat["extensions"]["KHR_materials_emissive_strength"]["emissiveStrength"].as_number(1.0));
             }
         }
         const std::string alpha = mat["alphaMode"].as_string("OPAQUE");
@@ -725,6 +739,21 @@ auto Model3D::material3d(int material, const Material3D* override_material) cons
     out.emissive_strength = mm.emissive_strength;
     if (mm.double_sided) out.cull = Cull3D::None;
     if (mm.transparent) { out.blend = Blend3D::Alpha; out.depth_write = false; out.shadow = Shadow3D::None; }
+    auto tex = [this](int i) -> const Texture* { return i >= 0 && static_cast<std::size_t>(i) < textures.size() ? &textures[static_cast<std::size_t>(i)] : nullptr; };
+    if (const Texture* n = tex(mm.normal_texture)) { out.normal_map = n; out.normal_strength = mm.normal_scale; }
+    if (const Texture* mr = tex(mm.metallic_roughness_texture)) {
+        out.orm_map = mr;
+        out.orm_occlusion = mm.occlusion_texture == mm.metallic_roughness_texture;
+        out.metallic = mm.metallic_factor;
+        out.roughness = mm.roughness_factor;
+    }
+    if (const Texture* e = tex(mm.emissive_texture)) {
+        if (mm.emissive_map_strength > 0.0f) {
+            out.emissive_map = e;
+            out.emissive_strength = mm.emissive_map_strength;
+        }
+    }
+    if (mm.alpha_cutoff > 0.0f && !mm.transparent) out.alpha_cutoff = mm.alpha_cutoff;
     return out;
 }
 
