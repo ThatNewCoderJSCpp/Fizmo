@@ -20,6 +20,7 @@ layout(std140, set = 0, binding = 0) uniform Params {
     vec4 tone;
     vec4 balance;
     vec4 misc;
+    uvec4 inst;
 } P;
 
 layout(std430, set = 0, binding = 1) readonly buffer Tris { vec4 tris[]; };
@@ -61,6 +62,7 @@ const uint F_CASTERS_SUN = 8192u;
 const uint TRI_CASTS = 1u;
 const uint TRI_VISIBLE = 2u;
 const uint TRI_SMOOTH = 8u;
+const uint NO_INST = 0xFFFFFFFFu;
 
 const uint L_POINT = 0u;
 const uint L_DIRECTIONAL = 1u;
@@ -221,18 +223,36 @@ struct Hit {
     uint tri;
     float u;
     float v;
+    uint inst;
 };
 
-bool trace(vec3 o, vec3 d, float tmax, uint require, out Hit hit) {
-    hit.t = tmax;
-    hit.tri = 0u;
-    hit.u = 0.0;
-    hit.v = 0.0;
-    if (P.counts.y == 0u) return false;
+uint inst_root(uint k) { return floatBitsToUint(nodes[P.inst.y + k * 4u + 3u].x); }
+uint inst_material(uint k) { return floatBitsToUint(nodes[P.inst.y + k * 4u + 3u].y); }
+uint inst_flags(uint k) { return floatBitsToUint(nodes[P.inst.y + k * 4u + 3u].z); }
+uint inst_channels(uint k) { return floatBitsToUint(nodes[P.inst.y + k * 4u + 3u].w); }
+
+vec3 inst_point(uint k, vec3 p) {
+    vec4 r0 = nodes[P.inst.y + k * 4u];
+    vec4 r1 = nodes[P.inst.y + k * 4u + 1u];
+    vec4 r2 = nodes[P.inst.y + k * 4u + 2u];
+    return vec3(dot(r0.xyz, p) + r0.w, dot(r1.xyz, p) + r1.w, dot(r2.xyz, p) + r2.w);
+}
+
+vec3 inst_vector(uint k, vec3 v) {
+    return vec3(dot(nodes[P.inst.y + k * 4u].xyz, v), dot(nodes[P.inst.y + k * 4u + 1u].xyz, v), dot(nodes[P.inst.y + k * 4u + 2u].xyz, v));
+}
+
+vec3 inst_normal(uint k, vec3 n) {
+    return nodes[P.inst.y + k * 4u].xyz * n.x + nodes[P.inst.y + k * 4u + 1u].xyz * n.y + nodes[P.inst.y + k * 4u + 2u].xyz * n.z;
+}
+
+bool see_through(uint mat, uint i, float u, float v);
+
+bool trace_blas(uint root, vec3 o, vec3 d, inout Hit hit) {
     vec3 inv = inverse_dir(d);
-    uint stack[48];
+    uint stack[40];
     int sp = 0;
-    stack[sp++] = 0u;
+    stack[sp++] = root;
     bool found = false;
     while (sp > 0) {
         uint n = stack[--sp];
@@ -242,7 +262,6 @@ bool trace(vec3 o, vec3 d, float tmax, uint require, out Hit hit) {
         uint count = floatBitsToUint(nodes[n * 2u + 1u].w);
         if (count > 0u) {
             for (uint i = first; i < first + count; ++i) {
-                if ((tri_flags(i) & require) != require) continue;
                 float t;
                 float u;
                 float v;
@@ -259,7 +278,7 @@ bool trace(vec3 o, vec3 d, float tmax, uint require, out Hit hit) {
             float tb;
             bool ha = slab(first, o, inv, hit.t, ta);
             bool hb = slab(first + 1u, o, inv, hit.t, tb);
-            if (ha && hb && sp < 46) {
+            if (ha && hb && sp < 38) {
                 if (ta < tb) {
                     stack[sp++] = first + 1u;
                     stack[sp++] = first;
@@ -267,9 +286,9 @@ bool trace(vec3 o, vec3 d, float tmax, uint require, out Hit hit) {
                     stack[sp++] = first;
                     stack[sp++] = first + 1u;
                 }
-            } else if (ha && sp < 47) {
+            } else if (ha && sp < 39) {
                 stack[sp++] = first;
-            } else if (hb && sp < 47) {
+            } else if (hb && sp < 39) {
                 stack[sp++] = first + 1u;
             }
         }
@@ -277,12 +296,11 @@ bool trace(vec3 o, vec3 d, float tmax, uint require, out Hit hit) {
     return found;
 }
 
-bool occluded(vec3 o, vec3 d, float tmax) {
-    if (P.counts.y == 0u) return false;
+bool any_blas(uint root, uint mat, vec3 o, vec3 d, float tmax) {
     vec3 inv = inverse_dir(d);
-    uint stack[48];
+    uint stack[40];
     int sp = 0;
-    stack[sp++] = 0u;
+    stack[sp++] = root;
     while (sp > 0) {
         uint n = stack[--sp];
         float tn;
@@ -291,18 +309,172 @@ bool occluded(vec3 o, vec3 d, float tmax) {
         uint count = floatBitsToUint(nodes[n * 2u + 1u].w);
         if (count > 0u) {
             for (uint i = first; i < first + count; ++i) {
-                if ((tri_flags(i) & TRI_CASTS) == 0u) continue;
                 float t;
                 float u;
                 float v;
-                if (hit_tri(i, o, d, tmax, t, u, v)) return true;
+                if (hit_tri(i, o, d, tmax, t, u, v) && !see_through(mat, i, u, v)) return true;
             }
-        } else if (sp < 46) {
+        } else if (sp < 38) {
             stack[sp++] = first;
             stack[sp++] = first + 1u;
         }
     }
     return false;
+}
+
+bool trace_instances(vec3 o, vec3 d, uint require, inout Hit hit) {
+    if (P.inst.z == 0u) return false;
+    vec3 inv = inverse_dir(d);
+    uint stack[40];
+    int sp = 0;
+    stack[sp++] = P.inst.x;
+    bool found = false;
+    while (sp > 0) {
+        uint n = stack[--sp];
+        float tn;
+        if (!slab(n, o, inv, hit.t, tn)) continue;
+        uint first = floatBitsToUint(nodes[n * 2u].w);
+        uint count = floatBitsToUint(nodes[n * 2u + 1u].w);
+        if (count > 0u) {
+            for (uint k = first; k < first + count; ++k) {
+                if ((inst_flags(k) & require) != require) continue;
+                if (trace_blas(inst_root(k), inst_point(k, o), inst_vector(k, d), hit)) {
+                    hit.inst = k;
+                    found = true;
+                }
+            }
+        } else {
+            float ta;
+            float tb;
+            bool ha = slab(first, o, inv, hit.t, ta);
+            bool hb = slab(first + 1u, o, inv, hit.t, tb);
+            if (ha && hb && sp < 38) {
+                if (ta < tb) {
+                    stack[sp++] = first + 1u;
+                    stack[sp++] = first;
+                } else {
+                    stack[sp++] = first;
+                    stack[sp++] = first + 1u;
+                }
+            } else if (ha && sp < 39) {
+                stack[sp++] = first;
+            } else if (hb && sp < 39) {
+                stack[sp++] = first + 1u;
+            }
+        }
+    }
+    return found;
+}
+
+bool occluded_instances(vec3 o, vec3 d, float tmax) {
+    if (P.inst.z == 0u) return false;
+    vec3 inv = inverse_dir(d);
+    uint stack[40];
+    int sp = 0;
+    stack[sp++] = P.inst.x;
+    while (sp > 0) {
+        uint n = stack[--sp];
+        float tn;
+        if (!slab(n, o, inv, tmax, tn)) continue;
+        uint first = floatBitsToUint(nodes[n * 2u].w);
+        uint count = floatBitsToUint(nodes[n * 2u + 1u].w);
+        if (count > 0u) {
+            for (uint k = first; k < first + count; ++k) {
+                if ((inst_flags(k) & TRI_CASTS) == 0u) continue;
+                if (any_blas(inst_root(k), inst_material(k), inst_point(k, o), inst_vector(k, d), tmax)) return true;
+            }
+        } else if (sp < 38) {
+            stack[sp++] = first;
+            stack[sp++] = first + 1u;
+        }
+    }
+    return false;
+}
+
+bool trace(vec3 o, vec3 d, float tmax, uint require, out Hit hit) {
+    hit.t = tmax;
+    hit.tri = 0u;
+    hit.u = 0.0;
+    hit.v = 0.0;
+    hit.inst = NO_INST;
+    bool found = false;
+    if (P.counts.y > 0u) {
+        vec3 inv = inverse_dir(d);
+        uint stack[48];
+        int sp = 0;
+        stack[sp++] = 0u;
+        while (sp > 0) {
+            uint n = stack[--sp];
+            float tn;
+            if (!slab(n, o, inv, hit.t, tn)) continue;
+            uint first = floatBitsToUint(nodes[n * 2u].w);
+            uint count = floatBitsToUint(nodes[n * 2u + 1u].w);
+            if (count > 0u) {
+                for (uint i = first; i < first + count; ++i) {
+                    if ((tri_flags(i) & require) != require) continue;
+                    float t;
+                    float u;
+                    float v;
+                    if (hit_tri(i, o, d, hit.t, t, u, v)) {
+                        hit.t = t;
+                        hit.tri = i;
+                        hit.u = u;
+                        hit.v = v;
+                        found = true;
+                    }
+                }
+            } else {
+                float ta;
+                float tb;
+                bool ha = slab(first, o, inv, hit.t, ta);
+                bool hb = slab(first + 1u, o, inv, hit.t, tb);
+                if (ha && hb && sp < 46) {
+                    if (ta < tb) {
+                        stack[sp++] = first + 1u;
+                        stack[sp++] = first;
+                    } else {
+                        stack[sp++] = first;
+                        stack[sp++] = first + 1u;
+                    }
+                } else if (ha && sp < 47) {
+                    stack[sp++] = first;
+                } else if (hb && sp < 47) {
+                    stack[sp++] = first + 1u;
+                }
+            }
+        }
+    }
+    if (trace_instances(o, d, require, hit)) found = true;
+    return found;
+}
+
+bool occluded(vec3 o, vec3 d, float tmax) {
+    if (P.counts.y > 0u) {
+        vec3 inv = inverse_dir(d);
+        uint stack[48];
+        int sp = 0;
+        stack[sp++] = 0u;
+        while (sp > 0) {
+            uint n = stack[--sp];
+            float tn;
+            if (!slab(n, o, inv, tmax, tn)) continue;
+            uint first = floatBitsToUint(nodes[n * 2u].w);
+            uint count = floatBitsToUint(nodes[n * 2u + 1u].w);
+            if (count > 0u) {
+                for (uint i = first; i < first + count; ++i) {
+                    if ((tri_flags(i) & TRI_CASTS) == 0u) continue;
+                    float t;
+                    float u;
+                    float v;
+                    if (hit_tri(i, o, d, tmax, t, u, v) && !see_through(tri_material(i), i, u, v)) return true;
+                }
+            } else if (sp < 46) {
+                stack[sp++] = first;
+                stack[sp++] = first + 1u;
+            }
+        }
+    }
+    return occluded_instances(o, d, tmax);
 }
 
 struct Mat {
@@ -1190,6 +1362,16 @@ vec4 base_texel(Mat m, int x, int y) {
 }
 
 void apply_maps(inout Mat m, uint i, Hit h) {
+    uint vc = floatBitsToUint(tris[i * 6u + 5u].w);
+    if (vc != NO_UV) {
+        float wc = 1.0 - h.u - h.v;
+        vec4 c0 = vec4(tables[vc], tables[vc + 1u], tables[vc + 2u], tables[vc + 3u]);
+        vec4 c1 = vec4(tables[vc + 4u], tables[vc + 5u], tables[vc + 6u], tables[vc + 7u]);
+        vec4 c2 = vec4(tables[vc + 8u], tables[vc + 9u], tables[vc + 10u], tables[vc + 11u]);
+        vec4 vcol = c0 * wc + c1 * h.u + c2 * h.v;
+        m.base *= vcol.rgb;
+        m.opacity *= vcol.a;
+    }
     if ((m.flags & MAT_BASE_MAP) == 0u) return;
     uint off = floatBitsToUint(tris[i * 6u + 4u].w);
     if (off == NO_UV) return;
@@ -1214,18 +1396,38 @@ void apply_maps(inout Mat m, uint i, Hit h) {
     if (m.cutoff > 0.0) m.opacity = m.opacity >= m.cutoff ? 1.0 : 0.0;
 }
 
+bool see_through(uint mat, uint i, float u, float v) {
+    if (mat >= P.counts.z) return false;
+    vec4 e = mats[mat * 7u + 4u];
+    uint f = floatBitsToUint(e.y);
+    if ((f & MAT_ALPHA) == 0u || (f & MAT_BASE_MAP) == 0u || e.z <= 0.0) return false;
+    Mat m = load_material(mat);
+    Hit h;
+    h.t = 0.0;
+    h.tri = i;
+    h.u = u;
+    h.v = v;
+    h.inst = NO_INST;
+    apply_maps(m, i, h);
+    return m.opacity < 0.5;
+}
+
 Surface make_surface(vec3 o, vec3 d, Hit h) {
     Surface s;
     uint i = h.tri;
     s.tri = i;
     s.p = o + d * h.t;
-    s.material = tri_material(i);
-    s.channels = tri_channels(i);
-    vec3 gn = normalize(cross(tris[i * 6u + 1u].xyz, tris[i * 6u + 2u].xyz));
+    bool instanced = h.inst != NO_INST;
+    s.material = instanced ? inst_material(h.inst) : tri_material(i);
+    s.channels = instanced ? inst_channels(h.inst) : tri_channels(i);
+    vec3 gn = cross(tris[i * 6u + 1u].xyz, tris[i * 6u + 2u].xyz);
+    if (instanced) gn = inst_normal(h.inst, gn);
+    gn = normalize(gn);
     float w = 1.0 - h.u - h.v;
     vec3 ns = gn;
     if ((tri_flags(i) & TRI_SMOOTH) != 0u) {
         vec3 sn = tris[i * 6u + 3u].xyz * w + tris[i * 6u + 4u].xyz * h.u + tris[i * 6u + 5u].xyz * h.v;
+        if (instanced) sn = inst_normal(h.inst, sn);
         if (dot(sn, sn) > 0.0) ns = normalize(sn);
     }
     if (dot(gn, ns) < 0.0) gn = -gn;

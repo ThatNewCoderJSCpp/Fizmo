@@ -44,6 +44,7 @@ struct DrawBatch3D {
     bool                     lit = false;
     bool                     soft = false;
     float                    soft_distance = 0.0f;
+    float                    near_fade = 0.0f;
     int                      texture_id = 0;
     const std::string*       texture_name = nullptr;
     const graphics::Texture* texture = nullptr;

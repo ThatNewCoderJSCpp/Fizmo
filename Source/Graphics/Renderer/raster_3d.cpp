@@ -1,5 +1,6 @@
 #include "fizmo_library.hpp"
 #include "raster_3d.hpp"
+#include "Impl/splat_atlas.hpp"
 
 namespace fizmo {
 namespace graphics {
@@ -21,6 +22,7 @@ void SoftwareRasterizer3D::begin(const Scene3D& scene) {
     const std::size_t n = static_cast<std::size_t>(std::max(m_w, 0)) * static_cast<std::size_t>(std::max(m_h, 0));
     m_color.assign(n * 4, 0.0f);
     m_depth.assign(n, 1.0f);
+    m_view_w.assign(n, 3.0e38f);
     m_touched = false;
 }
 
@@ -388,6 +390,11 @@ void SoftwareRasterizer3D::raster(const ClipVertex& A, const ClipVertex& B, cons
     const graphics::Texture* tex = (mat.texture && mat.texture->valid()) ? mat.texture : nullptr;
     const double tw = tex ? tex->width() : 0.0, th = tex ? tex->height() : 0.0;
     const bool depth_write = mat.depth_write;
+    const bool perspective = m_scene.view_proj[12] != 0.0f || m_scene.view_proj[13] != 0.0f || m_scene.view_proj[14] != 0.0f;
+    const bool soft = mat.has_soft() && perspective;
+    const float inv_soft = mat.soft_distance > 0.0f ? 1.0f / mat.soft_distance : 0.0f;
+    const float inv_near = mat.soft_near_fade > 0.0f ? 1.0f / mat.soft_near_fade : 0.0f;
+    const int splat = mat.splat_layers();
 
     for (int py = y0; py <= y1; ++py) {
         const float fy = py + 0.5f;
@@ -407,7 +414,13 @@ void SoftwareRasterizer3D::raster(const ClipVertex& A, const ClipVertex& B, cons
             float c[4];
             for (int k = 0; k < 4; ++k) c[k] = (w0 * v[0]->c[k] + w1 * v[1]->c[k] + w2 * v[2]->c[k]) * iw;
 
-            if (tex) {
+            if (splat > 0) {
+                const float u = (w0 * v[0]->u + w1 * v[1]->u + w2 * v[2]->u) * iw;
+                const float vv = (w0 * v[0]->v + w1 * v[1]->v + w2 * v[2]->v) * iw;
+                float rgb[3];
+                splat_color(mat, splat, u, vv, rgb);
+                c[0] *= rgb[0]; c[1] *= rgb[1]; c[2] *= rgb[2];
+            } else if (tex) {
                 const float u = (w0 * v[0]->u + w1 * v[1]->u + w2 * v[2]->u) * iw;
                 const float vv = (w0 * v[0]->v + w1 * v[1]->v + w2 * v[2]->v) * iw;
                 const colors::Color t = tex->sample(u * tw, vv * th);
@@ -416,12 +429,46 @@ void SoftwareRasterizer3D::raster(const ClipVertex& A, const ClipVertex& B, cons
             }
 
             if (mat.blend == graphics::Blend3D::Opaque && c[3] > 0.0f) { const float k = 1.0f / c[3]; c[0] *= k; c[1] *= k; c[2] *= k; c[3] = 1.0f; }
+
+            if (soft) {
+                float fade = inv_near > 0.0f ? clamp01((iw - mat.soft_near) * inv_near) : 1.0f;
+                if (inv_soft > 0.0f && m_view_w[idx] < 1.0e38f) {
+                    const float f = clamp01((m_view_w[idx] - iw) * inv_soft);
+                    fade *= f * f * (3.0f - 2.0f * f);
+                }
+                if (fade <= 0.0f) continue;
+                for (int k = 0; k < 4; ++k) c[k] *= fade;
+            }
+
             blend(idx, c, mat.blend);
-            if (depth_write) m_depth[idx] = z;
+            if (depth_write) { m_depth[idx] = z; m_view_w[idx] = iw; }
         }
     }
 
     m_touched = true;
+}
+
+void SoftwareRasterizer3D::splat_color(const graphics::Material3D& mat, int count, float u, float v, float out[3]) noexcept {
+    float su = u, sv = v;
+    mat.splat_uv.apply(u, v, su, sv);
+    float w[graphics::Material3D::MAX_SPLAT_LAYERS];
+    splat_weights_at(mat, su, sv, w);
+    out[0] = out[1] = out[2] = 0.0f;
+    for (int i = 0; i < count; ++i) {
+        if (w[i] <= 1e-3f) continue;
+        float r = 1.0f, g = 1.0f, b = 1.0f;
+        const graphics::Texture* t = mat.layers[i];
+        if (t && t->valid()) {
+            const float tu = u * mat.layer_tiling[i], tv = v * mat.layer_tiling[i];
+            const double fu = tu - std::floor(tu), fv = tv - std::floor(tv);
+            const colors::Color c = t->sample(fu * t->width(), fv * t->height());
+            r = c.red() / 255.0f; g = c.green() / 255.0f; b = c.blue() / 255.0f;
+        }
+        const graphics::Color& tint = mat.layer_tint[i];
+        out[0] += w[i] * r * tint.red() / 255.0f;
+        out[1] += w[i] * g * tint.green() / 255.0f;
+        out[2] += w[i] * b * tint.blue() / 255.0f;
+    }
 }
 
 void SoftwareRasterizer3D::flat_triangle(const Screen& a, const Screen& b, const Screen& c, const float rgba[4], bool depth_test) {

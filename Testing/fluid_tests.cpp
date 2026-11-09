@@ -489,6 +489,277 @@ void test_realistic_bounce_and_friction() {
     check(cube.position().y > 0.3_r, "two-way: particle pressure holds a light body up (" + num(cube.position().y) + ")");
 }
 
+struct MeshReport {
+    std::size_t unmatched = 0;
+    std::size_t duplicate = 0;
+    std::size_t inward = 0;
+    std::size_t faces = 0;
+    std::size_t bad_normals = 0;
+    double volume = 0.0;
+    bool finite = true;
+    bool in_bounds = true;
+    bool foam_ok = true;
+};
+
+MeshReport inspect_mesh(const FluidSurfaceMesh3D& m, const AABB3D& bounds) {
+    MeshReport r;
+    std::vector<std::uint64_t> edges;
+    edges.reserve(m.indices.size());
+    for (std::size_t t = 0; t + 2 < m.indices.size(); t += 3) {
+        for (int e = 0; e < 3; ++e) {
+            const std::uint64_t a = m.indices[t + static_cast<std::size_t>(e)], b = m.indices[t + static_cast<std::size_t>((e + 1) % 3)];
+            edges.push_back((a << 32) | b);
+        }
+    }
+    std::sort(edges.begin(), edges.end());
+    for (std::size_t i = 0; i < edges.size(); ++i) {
+        if (i + 1 < edges.size() && edges[i + 1] == edges[i]) ++r.duplicate;
+        const std::uint64_t rev = (edges[i] << 32) | (edges[i] >> 32);
+        if (!std::binary_search(edges.begin(), edges.end(), rev)) ++r.unmatched;
+    }
+    const AABB3D box = bounds.fatten(1e-3_r);
+    for (std::size_t v = 0; v < m.positions.size(); ++v) {
+        if (!finite(m.positions[v]) || !finite(m.normals[v])) r.finite = false;
+        if (!box.contains(m.positions[v])) r.in_bounds = false;
+        if (std::abs(vec3::length(m.normals[v]) - 1.0_r) > 1e-2_r) ++r.bad_normals;
+        if (!(m.foam[v] >= 0.0_r && m.foam[v] <= 1.0_r) || !(m.speeds[v] >= 0.0_r)) r.foam_ok = false;
+    }
+    r.faces = m.indices.size() / 3;
+    for (std::size_t t = 0; t + 2 < m.indices.size(); t += 3) {
+        const RVec3 a = m.positions[m.indices[t]], b = m.positions[m.indices[t + 1]], c = m.positions[m.indices[t + 2]];
+        r.volume += static_cast<double>(vec3::dot(a, vec3::cross(b, c))) / 6.0;
+        const RVec3 n = vec3::cross(b - a, c - a);
+        const Real area = vec3::length(n);
+        if (area < 1e-6_r) continue;
+        bool flat = false;
+        for (int axis = 0; axis < 3 && !flat; ++axis) {
+            const Real ca = vec3::component(a, axis), cb = vec3::component(b, axis), cc = vec3::component(c, axis);
+            const Real lo = vec3::component(bounds.min, axis), hi = vec3::component(bounds.max, axis);
+            flat = (std::abs(ca - lo) < 1e-4_r && std::abs(cb - lo) < 1e-4_r && std::abs(cc - lo) < 1e-4_r) || (std::abs(ca - hi) < 1e-4_r && std::abs(cb - hi) < 1e-4_r && std::abs(cc - hi) < 1e-4_r);
+        }
+        if (flat) continue;
+        const RVec3 vn = m.normals[m.indices[t]] + m.normals[m.indices[t + 1]] + m.normals[m.indices[t + 2]];
+        if (vec3::dot(n, vn) < 0.0_r) ++r.inward;
+    }
+    return r;
+}
+
+bool mesh_closed(const MeshReport& r) { return r.faces > 0 && r.unmatched == 0 && r.duplicate == 0 && r.finite; }
+
+FluidVolumeDef flip_tank(FluidSolver3D solver, const RVec3& lo, const RVec3& hi, Real radius, Real fill = 0.0_r) {
+    FluidVolumeDef d = FluidVolumeDef::box(FluidLevel::realistic, AABB3D(lo, hi), FluidMaterial::water(), fill);
+    d.particles.radius = radius;
+    d.particles.solver = solver;
+    return d;
+}
+
+void add_tank_walls(Simulation3D& sim, const RVec3& lo, const RVec3& hi) {
+    const RVec3 c = (lo + hi) * 0.5_r, e = (hi - lo) * 0.5_r;
+    const Real t = 0.25_r;
+    add_static_box(sim, RVec3{ c.x, lo.y - t, c.z }, RVec3{ e.x + 2.0_r * t, t, e.z + 2.0_r * t });
+    add_static_box(sim, RVec3{ lo.x - t, c.y + t, c.z }, RVec3{ t, e.y + t, e.z + 2.0_r * t });
+    add_static_box(sim, RVec3{ hi.x + t, c.y + t, c.z }, RVec3{ t, e.y + t, e.z + 2.0_r * t });
+    add_static_box(sim, RVec3{ c.x, c.y + t, lo.z - t }, RVec3{ e.x, e.y + t, t });
+    add_static_box(sim, RVec3{ c.x, c.y + t, hi.z + t }, RVec3{ e.x, e.y + t, t });
+}
+
+void test_flip_stability() {
+    for (int mode = 0; mode < 2; ++mode) {
+        const FluidSolver3D solver = mode == 0 ? FluidSolver3D::flip : FluidSolver3D::apic;
+        const char* name = mode == 0 ? "flip" : "apic";
+        Simulation3D sim;
+        FluidWorld3D world;
+        const RVec3 lo{ 0.0_r, 0.0_r, 0.0_r }, hi{ 2.0_r, 1.0_r, 1.0_r };
+        FluidVolume3D& v = world.add_volume(flip_tank(solver, lo, hi, 0.05_r));
+        check(v.solver() == solver, std::string(name) + ": solver is selected");
+        v.add_particle_box(AABB3D(RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 0.6_r, 0.9_r, 1.0_r }));
+        RigidBody3D& ball = add_ball(sim, RVec3{ 1.5_r, 0.8_r, 0.5_r }, 0.12_r, 400.0_r);
+        add_tank_walls(sim, lo, hi);
+        bool ok = true;
+        Real fastest = 0.0_r;
+        int max_sub = 0, max_it = 0;
+        for (int f = 0; f < 300 && ok; ++f) {
+            world.step(sim, kDt);
+            sim.step(kDt);
+            fastest = std::max(fastest, v.max_speed());
+            max_sub = std::max(max_sub, v.last_substeps());
+            max_it = std::max(max_it, v.last_iterations());
+            ok = inside_tank(v) && std::isfinite(v.total_volume()) && finite(ball.position());
+            for (const RVec3& u : v.velocities()) ok = ok && finite(u);
+        }
+        check(ok, std::string(name) + ": dam break with a ball stays finite and inside the tank");
+        check(fastest < 12.0_r, std::string(name) + ": speeds stay bounded (" + num(fastest) + " m/s)");
+        check(max_sub <= world.quality().max_substeps && max_it <= 400, std::string(name) + ": substeps and solver iterations are capped (" + std::to_string(max_sub) + ", " + std::to_string(max_it) + ")");
+        check(ball.position().y > 0.1_r && ball.position().y < 1.0_r, std::string(name) + ": the light ball stays in the water (" + num(ball.position().y) + ")");
+    }
+    Simulation3D sim;
+    FluidWorld3D world;
+    FluidVolumeDef d = flip_tank(FluidSolver3D::flip, RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 1.0_r, 1.0_r, 1.0_r }, 0.05_r, 0.4_r);
+    FluidVolume3D& calm = world.add_volume(d);
+    for (int f = 0; f < 240 && !calm.sleeping(); ++f) world.step(sim, kDt);
+    check(calm.sleeping() && calm.awake_particles() == 0, "flip: a resting pool falls asleep");
+    const std::uint64_t ver = calm.surface_version();
+    world.step(sim, kDt);
+    check(calm.surface_version() == ver, "flip: a sleeping pool does not change its surface version");
+    RigidBody3D& drop = add_box(sim, RVec3{ 0.5_r, 0.8_r, 0.5_r }, 0.1_r, 700.0_r);
+    for (int f = 0; f < 30; ++f) {
+        world.step(sim, kDt);
+        sim.step(kDt);
+    }
+    check(!calm.sleeping() && calm.surface_version() != ver, "flip: a falling body wakes the pool");
+    static_cast<void>(drop);
+}
+
+void test_flip_volume() {
+    for (int band = 0; band < 2; ++band) {
+        Simulation3D sim;
+        FluidWorld3D world;
+        FluidVolumeDef d = flip_tank(FluidSolver3D::flip, RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 2.0_r, 1.2_r, 0.6_r }, 0.04_r);
+        d.particles.narrow_band = band == 1;
+        d.allow_sleep = false;
+        FluidVolume3D& v = world.add_volume(d);
+        v.add_particle_box(AABB3D(RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 0.7_r, 0.9_r, 0.6_r }));
+        world.step(sim, kDt);
+        const Real start = v.total_volume();
+        Real lo = start, hi = start;
+        for (int f = 0; f < 420; ++f) {
+            world.step(sim, kDt);
+            lo = std::min(lo, v.total_volume());
+            hi = std::max(hi, v.total_volume());
+        }
+        const std::string name = band ? "narrow band" : "full flip";
+        check(start > 0.3_r && lo > 0.97_r * start && hi < 1.03_r * start, "volume: " + name + " keeps its volume over 7 s (" + num(lo / start) + " .. " + num(hi / start) + ")");
+        Real top = 0.0_r;
+        int samples = 0;
+        for (int i = 1; i < 10; ++i) {
+            for (int k = 1; k < 4; ++k) {
+                top += v.surface_height(RVec3{ 0.2_r * static_cast<Real>(i), 0.0_r, 0.15_r * static_cast<Real>(k) });
+                ++samples;
+            }
+        }
+        top /= static_cast<Real>(samples);
+        const Real level = start / (2.0_r * 0.6_r);
+        check(std::abs(top - level) < 0.15_r * level + v.particle_spacing(), "volume: " + name + " settles to the expected level (" + num(top) + " vs " + num(level) + " m)");
+    }
+    Simulation3D sim;
+    FluidWorld3D world;
+    FluidVolumeDef full = flip_tank(FluidSolver3D::flip, RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 2.0_r, 1.0_r, 1.0_r }, 0.04_r, 0.6_r);
+    full.particles.narrow_band = false;
+    FluidVolume3D& a = world.add_volume(full);
+    FluidVolumeDef band = full;
+    band.bounds = AABB3D(RVec3{ 5.0_r, 0.0_r, 0.0_r }, RVec3{ 7.0_r, 1.0_r, 1.0_r });
+    band.particles.narrow_band = true;
+    FluidVolume3D& b = world.add_volume(band);
+    for (int f = 0; f < 30; ++f) world.step(sim, kDt);
+    check(b.particle_count() * 2 < a.particle_count() && b.deep_cells() > 0, "narrow band: deep water is grid only (" + std::to_string(b.particle_count()) + " vs " + std::to_string(a.particle_count()) + " particles, " + std::to_string(b.deep_cells()) + " deep cells)");
+    check(std::abs(a.total_volume() - b.total_volume()) < 0.03_r * a.total_volume(), "narrow band: same volume as full particles (" + num(b.total_volume()) + " vs " + num(a.total_volume()) + ")");
+    check(std::abs(a.surface_height(RVec3{ 1.0_r, 0.0_r, 0.5_r }) - b.surface_height(RVec3{ 6.0_r, 0.0_r, 0.5_r })) < 0.05_r, "narrow band: same surface height as full particles");
+    check(b.depth_at(RVec3{ 6.0_r, 0.1_r, 0.5_r }) > 0.35_r && b.depth_at(RVec3{ 6.0_r, 0.9_r, 0.5_r }) < 0.0_r, "narrow band: depth_at inside the deep region and above the surface");
+}
+
+void test_flip_floating() {
+    Simulation3D sim;
+    FluidWorld3D world;
+    const RVec3 lo{ 0.0_r, 0.0_r, 0.0_r }, hi{ 2.4_r, 1.2_r, 1.0_r };
+    FluidVolumeDef d = flip_tank(FluidSolver3D::flip, lo, hi, 0.04_r, 0.5_r);
+    FluidVolume3D& v = world.add_volume(d);
+    add_tank_walls(sim, lo, hi);
+    RigidBody3D& cork = add_box(sim, RVec3{ 0.4_r, 0.75_r, 0.5_r }, 0.12_r, 250.0_r);
+    RigidBody3D& wood = add_box(sim, RVec3{ 1.2_r, 0.75_r, 0.5_r }, 0.12_r, 700.0_r);
+    RigidBody3D& rock = add_box(sim, RVec3{ 2.0_r, 0.75_r, 0.5_r }, 0.12_r, 2500.0_r);
+    run(world, sim, 360);
+    const Real level = v.surface_height(RVec3{ 1.2_r, 0.0_r, 0.15_r });
+    check(level > 0.5_r && level < 0.7_r, "floating: water level with three bodies (" + num(level) + ")");
+    const Real dc = level - cork.position().y, dw = level - wood.position().y;
+    check(cork.position().y > wood.position().y && wood.position().y > rock.position().y, "floating: bodies layer by density (" + num(cork.position().y) + " > " + num(wood.position().y) + " > " + num(rock.position().y) + ")");
+    check(dc > -0.12_r && dc < 0.0_r && dw > -0.06_r && dw < 0.1_r, "floating: cork rides high, wood rides low (" + num(dc) + ", " + num(dw) + ")");
+    check(rock.position().y < 0.2_r, "floating: a rock sinks to the floor (" + num(rock.position().y) + ")");
+    check(speed(cork) < 0.3_r && speed(wood) < 0.3_r, "floating: floating bodies settle");
+    const FluidForces3D* fc = world.body_forces(cork);
+    check(fc && fc->submerged_fraction > 0.1_r && fc->submerged_fraction < 0.5_r, "floating: cork submerged fraction near its density ratio (" + num(fc ? fc->submerged_fraction : -1.0_r) + ")");
+    RigidBody3D& paddle = sim.add_body(RVec3{ 1.2_r, 0.6_r, 0.2_r }, PhysicsFlags::DefaultKinematic);
+    paddle.add_collider(Shape3D::make_box(0.5_r, 0.2_r, 0.05_r), Material3D(1000.0_r));
+    paddle.set_linear_velocity(RVec3{ 0.0_r, 0.0_r, 1.0_r });
+    const RVec3 before = v.velocity_at(RVec3{ 1.2_r, 0.5_r, 0.6_r });
+    for (int f = 0; f < 18; ++f) {
+        world.step(sim, kDt);
+        sim.step(kDt);
+    }
+    const RVec3 after = v.velocity_at(RVec3{ 1.2_r, 0.5_r, 0.6_r });
+    check(after.z > before.z + 0.05_r, "two-way: a moving paddle pushes the water (" + num(after.z) + " m/s)");
+}
+
+void test_flip_surface_mesh() {
+    Simulation3D sim;
+    FluidWorld3D world;
+    const RVec3 lo{ 0.0_r, 0.0_r, 0.0_r }, hi{ 2.0_r, 1.0_r, 1.0_r };
+    FluidVolume3D& v = world.add_volume(flip_tank(FluidSolver3D::flip, lo, hi, 0.04_r));
+    v.add_particle_box(AABB3D(RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 0.6_r, 0.8_r, 1.0_r }));
+    const AABB3D bounds(lo, hi);
+    bool closed = true, finite_ok = true, foam_ok = true, normals_ok = true, inside = true;
+    std::size_t inward = 0, faces = 0;
+    double worst = 0.0;
+    double build_ms = 0.0;
+    int builds = 0;
+    for (int f = 0; f < 240; ++f) {
+        world.step(sim, kDt);
+        if (f % 20 != 0) continue;
+        const FluidSurfaceMesh3D& m = v.surface_mesh();
+        const MeshReport r = inspect_mesh(m, bounds);
+        closed = closed && mesh_closed(r);
+        finite_ok = finite_ok && r.finite;
+        foam_ok = foam_ok && r.foam_ok;
+        normals_ok = normals_ok && r.bad_normals == 0;
+        inside = inside && r.in_bounds;
+        inward += r.inward;
+        faces += r.faces;
+        worst = std::max(worst, std::abs(r.volume / static_cast<double>(v.total_volume()) - 1.0));
+        build_ms += m.milliseconds;
+        ++builds;
+    }
+    check(closed, "surface mesh: closed and consistently oriented (every directed edge has its twin)");
+    check(finite_ok && inside, "surface mesh: finite and inside the volume");
+    check(normals_ok, "surface mesh: unit vertex normals");
+    check(inward * 20 < faces, "surface mesh: vertex normals point out of the liquid (" + std::to_string(inward) + "/" + std::to_string(faces) + " faces disagree)");
+    check(worst < 0.15, "surface mesh: enclosed volume matches the fluid volume (worst " + num(worst * 100.0) + "%)");
+    check(foam_ok, "surface mesh: foam in [0, 1] and speeds non-negative");
+    const FluidSurfaceMesh3D& a = v.surface_mesh();
+    const FluidSurfaceMesh3D& b = v.surface_mesh();
+    check(&a == &b && a.version == v.surface_version() && a.detail == 1, "surface mesh: cached until the fluid changes");
+    FluidSurfaceMesh3D mine;
+    v.build_surface_mesh(mine, 2);
+    const MeshReport fine = inspect_mesh(mine, bounds);
+    check(mesh_closed(fine) && mine.triangle_count() > a.triangle_count() && mine.cell < a.cell, "surface mesh: higher detail into a caller buffer (" + std::to_string(mine.triangle_count()) + " vs " + std::to_string(a.triangle_count()) + " triangles)");
+    FluidSurfaceMesh3D coarse;
+    v.build_surface_mesh(coarse, 0);
+    check(mesh_closed(inspect_mesh(coarse, bounds)) && coarse.triangle_count() < a.triangle_count(), "surface mesh: detail 0 is coarser");
+    const std::size_t cap = mine.positions.capacity();
+    v.build_surface_mesh(mine, 2);
+    check(mine.positions.capacity() == cap, "surface mesh: rebuilding reuses the caller's buffers");
+    std::printf("bench surface mesh %zu triangles      %8.3f ms/build (detail 1, %d builds)\n", a.triangle_count(), build_ms / std::max(builds, 1), builds);
+
+    FluidWorld3D cells;
+    FluidVolumeDef fd = FluidVolumeDef::box(FluidLevel::flowing, AABB3D(RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 4.0_r, 2.0_r, 2.0_r }), FluidMaterial::water(), 0.0_r);
+    fd.cell_size = 0.2_r;
+    FluidVolume3D& fv = cells.add_volume(fd);
+    fv.fill_box(AABB3D(RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 1.5_r, 1.5_r, 2.0_r }));
+    for (int f = 0; f < 120; ++f) cells.step(kDt);
+    const FluidSurfaceMesh3D& fm = fv.surface_mesh();
+    const MeshReport fr = inspect_mesh(fm, AABB3D(RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 4.0_r, 2.0_r, 2.0_r }));
+    check(mesh_closed(fr) && std::abs(fr.volume / static_cast<double>(fv.total_volume()) - 1.0) < 0.15, "surface mesh: smooth closed mesh for the flowing level (" + num(fr.volume) + " vs " + num(fv.total_volume()) + " m3)");
+    FluidWorld3D still;
+    FluidVolume3D& sv = still.add_volume(AABB3D(RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 2.0_r, 2.0_r, 2.0_r }), FluidLevel::still, FluidMaterial::water(), 0.5_r);
+    check(sv.surface_mesh().empty(), "surface mesh: empty for levels without one");
+
+    Simulation3D ps;
+    FluidWorld3D pw;
+    FluidVolumeDef pd = flip_tank(FluidSolver3D::pbf, RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 1.0_r, 1.0_r, 0.4_r }, 0.03_r);
+    FluidVolume3D& pv = pw.add_volume(pd);
+    pv.add_particle_box(AABB3D(RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 0.3_r, 0.5_r, 0.4_r }));
+    for (int f = 0; f < 60; ++f) pw.step(ps, kDt);
+    check(pv.solver() == FluidSolver3D::pbf && mesh_closed(inspect_mesh(pv.surface_mesh(), AABB3D(RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 1.0_r, 1.0_r, 0.4_r }))), "surface mesh: the old particle solver is still available and meshable");
+}
+
 void test_drag() {
     auto fall = [](const FluidMaterial& m, Real seconds, Real& v_mid) {
         Simulation3D sim;
@@ -677,6 +948,33 @@ void benchmark() {
         std::printf("bench waves     low quality %dx%d %8.3f ms/step\n", lowv.columns_x(), lowv.columns_z(), low);
     }
     {
+        for (int scene = 0; scene < 3; ++scene) {
+            Simulation3D sim;
+            FluidWorld3DConfig wc;
+            wc.threads = scene == 2 ? 2 : 1;
+            FluidWorld3D world(wc);
+            const RVec3 lo{ 0.0_r, 0.0_r, 0.0_r }, hi{ 2.0_r, 1.0_r, 1.0_r };
+            FluidVolumeDef d = FluidVolumeDef::box(FluidLevel::realistic, AABB3D(lo, hi), FluidMaterial::water(), 0.5_r);
+            if (scene == 1) d.particles.radius = 0.04_r;
+            FluidVolume3D& v = world.add_volume(d);
+            add_tank_walls(sim, lo, hi);
+            add_box(sim, RVec3{ 1.4_r, 0.9_r, 0.5_r }, 0.12_r, 500.0_r);
+            add_ball(sim, RVec3{ 0.6_r, 0.95_r, 0.5_r }, 0.1_r, 800.0_r);
+            double mesh = 0.0, worst = 0.0;
+            std::size_t tris = 0;
+            const double ms = time_ms(240, [&] {
+                const auto t0 = std::chrono::steady_clock::now();
+                world.step(sim, kDt);
+                worst = std::max(worst, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+                sim.step(kDt);
+                const auto m0 = std::chrono::steady_clock::now();
+                tris = v.surface_mesh().triangle_count();
+                mesh += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - m0).count();
+            });
+            std::printf("bench flip 2x1x1 half full r=%.2f%s %5zu particles %8.3f ms/frame incl. rigid+mesh (fluid %.3f ms last, worst %.3f), mesh %.3f ms %zu tris, %zu deep cells\n", static_cast<double>(v.particle_radius()), scene == 2 ? " 2 threads" : "", v.particle_count(), ms, world.stats().milliseconds, worst, mesh / 240.0, tris, v.deep_cells());
+        }
+    }
+    {
         Simulation3D sim;
         FluidWorld3D world;
         FluidVolumeDef d = FluidVolumeDef::box(FluidLevel::realistic, AABB3D(RVec3{ 0.0_r, 0.0_r, 0.0_r }, RVec3{ 3.0_r, 1.5_r, 1.0_r }));
@@ -721,6 +1019,10 @@ int main() {
     test_realistic_over_wall();
     test_realistic_viscosity();
     test_realistic_bounce_and_friction();
+    test_flip_stability();
+    test_flip_volume();
+    test_flip_floating();
+    test_flip_surface_mesh();
     test_drag();
     test_currents();
     test_lod_and_queries();

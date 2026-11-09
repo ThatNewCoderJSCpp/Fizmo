@@ -166,6 +166,11 @@ Real FluidVolume3D::kernel_grad(Real r) const noexcept {
 }
 
 void FluidVolume3D::init_particles() {
+    if (m_def.particles.solver != FluidSolver3D::pbf) {
+        init_flip();
+        return;
+    }
+    m_solver = FluidSolver3D::pbf;
     m_radius = std::max(1e-3_r, m_def.particles.radius * m_quality.resolution_scale);
     m_spacing = 2.0_r * m_radius;
     m_h = 2.0_r * m_spacing;
@@ -212,6 +217,23 @@ void FluidVolume3D::init_particles() {
 
 bool FluidVolume3D::add_particle(const V3& position, const V3& velocity) {
     if (m_def.level != FluidLevel::realistic || m_px.size() >= m_max_particles) return false;
+    if (flip_solver()) {
+        V3 l = to_local(position);
+        if (!std::isfinite(l.x) || !std::isfinite(l.y) || !std::isfinite(l.z)) return false;
+        const bool out = l.x < 0.0_r || l.y < 0.0_r || l.z < 0.0_r || l.x > m_size.x || l.y > m_size.y || l.z > m_size.z;
+        if (out && !m_def.particles.contain) return false;
+        l.x = std::clamp(l.x, m_pr, m_size.x - m_pr);
+        l.y = std::clamp(l.y, m_pr, m_size.y - m_pr);
+        l.z = std::clamp(l.z, m_pr, m_size.z - m_pr);
+        if (m_solid[static_cast<std::size_t>(flip_cell_of(l))]) return false;
+        flip_push(l, local_dir(velocity));
+        m_target_volume += 1.0;
+        m_flip_asleep = false;
+        m_calm_frames = 0;
+        m_awake_count = m_fx.size();
+        ++m_version;
+        return true;
+    }
     m_px.push_back(position);
     m_pv.push_back(velocity);
     m_pp.push_back(position);
@@ -234,6 +256,29 @@ bool FluidVolume3D::add_particle(const V3& position, const V3& velocity) {
 
 std::size_t FluidVolume3D::add_particle_box(const AABB3D& box, const V3& velocity) {
     if (m_def.level != FluidLevel::realistic) return 0;
+    if (flip_solver()) {
+        const V3 a = to_local(box.min), b = to_local(box.max);
+        const V3 lo = vec3::max(vec3::min(a, b), V3{}), hi = vec3::min(vec3::max(a, b), m_size);
+        const Real s = m_spacing;
+        const int cx = static_cast<int>(std::floor((hi.x - lo.x) / s + 1e-4_r));
+        const int cy = static_cast<int>(std::floor((hi.y - lo.y) / s + 1e-4_r));
+        const int cz = static_cast<int>(std::floor((hi.z - lo.z) / s + 1e-4_r));
+        std::size_t added = 0;
+        for (int y = 0; y < cy; ++y) {
+            for (int z = 0; z < cz; ++z) {
+                for (int x = 0; x < cx; ++x) {
+                    if (m_px.size() >= m_max_particles) return added;
+                    const std::uint32_t seed = static_cast<std::uint32_t>((y * 7919 + z) * 104729 + x) ^ static_cast<std::uint32_t>(m_px.size() * 2654435761u);
+                    const Real jx = static_cast<Real>((seed * 1103515245u + 12345u) >> 9 & 1023u) / 1023.0_r - 0.5_r;
+                    const Real jy = static_cast<Real>((seed * 22695477u + 1u) >> 9 & 1023u) / 1023.0_r - 0.5_r;
+                    const Real jz = static_cast<Real>((seed * 134775813u + 1u) >> 9 & 1023u) / 1023.0_r - 0.5_r;
+                    const V3 l{ lo.x + (static_cast<Real>(x) + 0.5_r + 0.08_r * jx) * s, lo.y + (static_cast<Real>(y) + 0.5_r + 0.08_r * jy) * s, lo.z + (static_cast<Real>(z) + 0.5_r + 0.08_r * jz) * s };
+                    if (add_particle(to_world(l), velocity)) ++added;
+                }
+            }
+        }
+        return added;
+    }
     const V3 a = to_local(box.min), b = to_local(box.max);
     V3 lo = vec3::min(a, b), hi = vec3::max(a, b);
     lo = vec3::max(lo, V3{ m_radius, m_radius, m_radius });
@@ -251,6 +296,24 @@ std::size_t FluidVolume3D::add_particle_box(const AABB3D& box, const V3& velocit
 }
 
 void FluidVolume3D::clear_particles() {
+    if (flip_solver()) {
+        m_fx.clear();
+        m_fv.clear();
+        m_fcu.clear();
+        m_fcv.clear();
+        m_fcw.clear();
+        std::fill(m_lphi.begin(), m_lphi.end(), 0.5_r);
+        std::fill(m_lphi_adv.begin(), m_lphi_adv.end(), 0.5_r);
+        std::fill(m_ltype.begin(), m_ltype.end(), std::uint8_t{ 0 });
+        std::fill(m_lcount.begin(), m_lcount.end(), std::uint16_t{ 0 });
+        std::fill(m_ldens.begin(), m_ldens.end(), 0.0_r);
+        std::fill(m_fill.begin(), m_fill.end(), 0.0_r);
+        m_deep_count = 0;
+        m_liquid_count = 0;
+        m_target_volume = 0.0;
+        m_target_valid = true;
+        ++m_version;
+    }
     m_px.clear();
     m_pv.clear();
     m_pp.clear();
@@ -710,6 +773,11 @@ void FluidVolume3D::particle_substep(detail::FluidTaskPool& pool, Simulation3D* 
 }
 
 void FluidVolume3D::step_particles(detail::FluidTaskPool& pool, Real dt, FluidStats3D& stats) {
+    if (flip_solver()) {
+        step_flip(pool, dt, stats);
+        return;
+    }
+    ++m_version;
     run_emitters(dt);
     m_contact_count = 0;
     const std::size_t n = m_px.size();
@@ -843,6 +911,11 @@ void FluidVolume3D::build_surface_grid(Real cell) {
 }
 
 Real FluidVolume3D::particle_density_at(const V3& point) const {
+    if (flip_solver()) {
+        if (m_ldens.empty()) return 0.0_r;
+        const V3 l = to_local(point);
+        return m_def.material.density * flip_sample_cell(l, m_ldens) / 8.0_r;
+    }
     if (m_px.empty() || m_bucket_count.empty() || m_sorted.size() != m_px.size()) return 0.0_r;
     Real rho = 0.0_r;
     visit_near(point, [&](std::uint32_t j) {
@@ -874,6 +947,13 @@ Real FluidVolume3D::particle_ambient(const RigidBody3D& body) const {
 }
 
 V3 FluidVolume3D::particle_velocity_at(const V3& point) const {
+    if (flip_solver()) {
+        if (m_gu.empty()) return V3{};
+        const V3 l = to_local(point);
+        if (l.x < 0.0_r || l.y < 0.0_r || l.z < 0.0_r || l.x > m_size.x || l.y > m_size.y || l.z > m_size.z) return V3{};
+        if (flip_sample_cell(l, m_lphi) > 0.25_r) return V3{};
+        return world_dir(flip_velocity_local(l));
+    }
     if (m_px.empty() || m_bucket_count.empty() || m_sorted.size() != m_px.size()) return V3{};
     V3 sum{};
     Real wsum = 0.0_r;

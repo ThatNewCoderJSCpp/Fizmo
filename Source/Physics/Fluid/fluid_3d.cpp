@@ -226,6 +226,7 @@ V3 FluidVolume3D::surface_normal(const V3& point) const {
 Real FluidVolume3D::depth_at(const V3& point) const {
     const V3 l = to_local(point);
     if (l.x < 0.0_r || l.z < 0.0_r || l.x > m_size.x || l.z > m_size.z || l.y < 0.0_r || l.y > m_size.y + m_size.y) return -std::numeric_limits<Real>::max();
+    if (m_def.level == FluidLevel::realistic && flip_solver()) return flip_depth(point);
     if (m_def.level == FluidLevel::realistic) {
         const Real rho = particle_density_at(point);
         if (rho < 0.3_r * m_def.material.density) return -m_h;
@@ -310,6 +311,7 @@ Real FluidVolume3D::total_volume() const {
         return static_cast<Real>(s * static_cast<double>(m_cs * m_cs * m_cs));
     }
     case FluidLevel::realistic:
+        if (flip_solver()) return flip_volume();
         return static_cast<Real>(m_px.size()) * m_spacing * m_spacing * m_spacing;
     }
     return 0.0_r;
@@ -317,6 +319,8 @@ Real FluidVolume3D::total_volume() const {
 
 void FluidVolume3D::wake() noexcept {
     m_all_dirty = true;
+    m_flip_asleep = false;
+    m_calm_frames = 0;
     m_heights_dirty = true;
     std::fill(m_asleep.begin(), m_asleep.end(), std::uint8_t{ 0 });
     std::fill(m_calm.begin(), m_calm.end(), std::uint16_t{ 0 });
@@ -354,6 +358,7 @@ std::size_t FluidVolume3D::total_regions() const noexcept {
 
 void FluidVolume3D::step_level(detail::FluidTaskPool& pool, Real dt, FluidStats3D& stats) {
     if (dt <= 0.0_r) return;
+    ++m_version;
     m_last_dt = dt;
     m_time += dt;
     switch (m_def.level) {

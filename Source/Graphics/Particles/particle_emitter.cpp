@@ -239,7 +239,7 @@ void Emitter::bake() {
         if (sub.trigger == SubEmitterTrigger::Birth) m_flags.birth_events = true;
     }
     m_flags.flipbook = s.frames() > 1;
-    m_flags.instanced_ok = s.render_mode == RenderMode::Billboard && !m_flags.rotation && !m_flags.flipbook;
+    m_flags.instanced_ok = s.render_mode == RenderMode::Billboard && !m_flags.rotation && !m_flags.flipbook && s.pivot_x == 0.0f && s.pivot_y == 0.0f;
 
     m_dir = normalized(s.direction, d2 ? Float3{ 0.0f, -1.0f, 0.0f } : Float3{ 0.0f, 1.0f, 0.0f });
     if (d2) {

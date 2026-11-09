@@ -12,7 +12,7 @@ A `FluidWorld3D` owns any number of `FluidVolume3D`s. Each volume has its own `F
 | `still` | Garry's Mod | A flat surface (optionally bobbing) with no flow at all. Only provides buoyancy, drag and queries. | Almost free. Also the LOD fallback |
 | `flowing` | Modded Minecraft ("Flowing Fluids") | Finite volume per cell (0..`max_mass`), mass is conserved exactly (face fluxes). Levels even out between neighbours, water drains down holes, and slight compression plus a confined-cell pressure solve lets it rise in U-bends. No infinite sources unless a cell is marked `set_source`. | Low; sleeping 16^3 chunks |
 | `waves` | Somewhat realistic | 2D shallow-water heightfield (virtual pipe model): depth plus 4 outflow fluxes per column, so it flows and carries ripples. Bodies push water (ripples, wakes). Optional wind swell (analytic, costs nothing to simulate). Boundary and `set_wall` columns never spill over. | Medium; 16x16 tiles sleep when calm |
-| `realistic` | Super realistic | Position Based Fluids particles on a dense uniform grid: XSPH viscosity, cohesion (surface tension), artificial pressure, optional vorticity confinement. Pours over walls and splashes. Two-way collisions with rigid bodies. | Highest; calm particles sleep |
+| `realistic` | Super realistic | Narrow-band FLIP/APIC: particles near the surface on a MAC grid with a PCG pressure solve; deep water is grid only. Pours over walls and splashes. Two-way coupling with rigid bodies. `surface_mesh()` gives a smooth watertight triangle mesh to draw. The old Position Based Fluids solver is still there as `particles.solver = FluidSolver3D::pbf`. | Highest; the whole volume sleeps when calm |
 
 ## Materials
 
@@ -22,16 +22,16 @@ A `FluidWorld3D` owns any number of `FluidVolume3D`s. Each volume has its own `F
 |---|---|
 | `density` | kg/m3; buoyancy, drag and particle mass |
 | `viscosity` | dynamic viscosity (Pa s); see below |
-| `surface_tension` | N/m; particle cohesion |
+| `surface_tension` | N/m; particle cohesion (FLIP: only above water's 0.072) |
 | `color` (`r,g,b,a`) | for renderers; `opacity()` returns `a` |
 | `linear_drag` | multiplier on viscous (Stokes) drag, 6 pi mu L v |
 | `quadratic_drag` | Cd in 0.5 rho Cd A v^2 |
 | `angular_drag` | 1/s spin damping, scaled by the viscosity factor |
 | `friction`, `restitution` | used for particle contacts (combined with the body collider: friction geometric mean, restitution max) |
-| `stiffness` | 0..1; PBF stiffness and flowing compression |
+| `stiffness` | 0..1; PBF stiffness and flowing compression (not used by FLIP) |
 | `temperature`, `emissive` | for gameplay and renderers (lava) |
 
-`viscosity_factor()` = 1 + log10(mu / mu_water) (water 1, honey about 5, lava about 6). It changes every level that flows: blocky ticks are that many times slower and spread fewer blocks, flowing flux rates are divided by it, waves are damped by 2 nu k^2 + 3 nu / depth^2, and particles get XSPH viscosity of 0.02 + 0.15 log10(mu / mu_water).
+`viscosity_factor()` = 1 + log10(mu / mu_water) (water 1, honey about 5, lava about 6). It changes every level that flows: blocky ticks are that many times slower and spread fewer blocks, flowing flux rates are divided by it, waves are damped by 2 nu k^2 + 3 nu / depth^2, FLIP gets grid viscosity (see below) and PBF particles get XSPH viscosity of 0.02 + 0.15 log10(mu / mu_water).
 
 ## Rigid-body coupling
 
@@ -41,7 +41,7 @@ A `FluidWorld3D` owns any number of `FluidVolume3D`s. Each volume has its own `F
 * Buoyancy `-gravity * rho * V_sub` is applied at the centre of buoyancy, so bodies right themselves.
 * Drag on the velocity relative to the local fluid (currents push things): linear (viscous) plus quadratic, plus `coupling.linear_damping` times the displaced fluid mass (this stands in for wave-radiation damping). Angular drag too. Drag is applied as an exact exponential impulse, so honey and lava can't overshoot.
 * Bodies push fluid: occupancy raises the heightfield (`waves`), displaces cell water (`flowing`), and particles collide (`realistic`). In `waves`, `flowing` and `realistic` the forces are measured against the ambient level around the body, so a body's own displacement doesn't feed back into its buoyancy.
-* `realistic`: particles collide with every collider type (sphere, capsule, hull, cylinder/cone/rounded box via GJK, plane, heightfield, mesh). The response uses the restitution and friction described above. The body gets the reaction impulse (impacts, friction, weight of particles on top). Buoyancy and drag come from the particle surface.
+* `realistic`: particles collide with every collider type (sphere, capsule, hull, cylinder/cone/rounded box via GJK, plane, heightfield, mesh). The response uses the restitution and friction described above. The body gets the reaction impulse (impacts, friction, weight of particles on top), limited so a light body can't be kicked faster than the particles hitting it. With FLIP, bodies are also drawn into the grid as moving solids (cell centres inside a collider), so they push water aside, and the grid flow drags them along. Buoyancy and drag come from the surface around the body.
 
 `world.forces_on(body)` computes the forces without applying them, and `world.body_forces(body)` returns what the last step applied. Both give a `FluidForces3D` with submerged volume and fraction, centre of buoyancy, buoyancy, drag, angular drag and fluid velocity. `coupling.layers` filters bodies. `require_buoyancy_flag` limits coupling to bodies with `PhysicsFlags::Buoyancy`.
 
@@ -51,18 +51,68 @@ All volumes: `surface_height(point)` / `surface_height(a, b)` (the two horizonta
 
 * Cells: `cell_fill()` (0..1+ per cell; blocky level/8), `cell_levels()` (blocky 0..8), `cell_solids()`, `cell_velocities()`. Index with `cell_index(i, j, k)`, where j is the up axis.
 * Heightfield: `heights()` (ground + depth + body displacement + swell), `normals()`, `depths()`, `column_velocity_u/w()`.
-* Particles: `positions()`, `velocities()`, `densities()`, `particle_radius()`, and the coarse `surface_grid()` (`surface_columns_x/z`, `surface_cell`). Particle order can change between steps because arrays are re-sorted for cache locality.
+* Particles: `positions()`, `velocities()`, `densities()`, `particle_radius()`, and the coarse `surface_grid()` (`surface_columns_x/z`, `surface_cell`). Particle order can change between steps because arrays are re-sorted for cache locality. With FLIP these are the band particles only (see below), in world space.
+* Surface mesh: `surface_mesh(detail)` for `realistic`, `flowing` and `blocky` (see below).
+
+## Realistic (narrow-band FLIP / APIC)
+
+`particles.solver` picks `FluidSolver3D::flip` (default), `apic` or `pbf` (the old particle solver; everything in this section is about `flip` and `apic`).
+
+Grid: cubic MAC cells of `2 * particles.radius * resolution_scale` (grown if the volume would need more than 4M cells), at least 2 per axis. `cell_size()`, `cells_x/y/z()`, `cell_index()`, `cell_center()`, `set_solid()` and `voxelize()` work on this grid. Particles sit 8 per cell (`particle_spacing()` = half a cell, `particle_radius()` is still `particles.radius`).
+
+Narrow band (`narrow_band`, on by default): only water within `band_cells` (3) cells of the air keeps particles. Deeper cells are "deep": grid only, with velocity advected semi-Lagrangian and the liquid region tracked by an advected level set (`level_set()`, in cells, negative inside). Particles that drift into the deep region are absorbed; a deep cell that comes near the surface again is refilled with 8 particles. The volume is kept to an explicit target (added particles minus killed ones), and any drift is put back or taken out in under or over full cells below the surface. A half-full 2 x 1 x 1 m tank needs about a third of the particles of full FLIP. `narrow_band = false` gives classic full FLIP.
+
+Each step: emitters, body voxelization (once per frame), then per substep: particle advection with a swept test against walls and bodies, body and wall collisions (friction and restitution), active box update, semi-Lagrangian advection of the level set and of deep velocities, counting sort, band absorb/refill, cell classification (air, liquid, deep, solid, surface), particle-to-grid (trilinear, or APIC affine), redistancing (chamfer distance), moving-solid face velocities, gravity, wall friction, implicit viscosity, pressure (MIC(0) PCG in double, warm-started, relative tolerance 1e-3 or `pressure_tolerance`, at most `pressure_iterations` or `20 * solver_iterations` (20..400) iterations), with a ghost-fluid free surface (the surface position inside a cell comes from the particle density) and density correction (over-full cells push out, thin interior cells pull in), and grid-to-particle (FLIP blend `flip_ratio`, or APIC).
+
+* Spray: a particle with at most `spray_neighbours` (2) others in its cell and the 6 neighbours is ballistic (gravity and collisions only), so droplets fly and bounce on their own.
+* Viscosity: as in 2D, `viscosity_scale * (1.8 (f - 1)^3 + nu / dx^2)` per second with an implicit Gauss-Seidel solve, and a lower FLIP blend for viscous fluids, so honey is slow and smooth.
+* Surface tension: an inward pull on surface particles, `0.6 * surface_tension_scale * max(0, surface_tension / 0.072 - 1)` (or `10 * particles.cohesion` when that is set). Water gets none at this scale; mercury and lava hold together.
+* Wall friction: faces next to walls lose speed quadratically (`wall_friction`, scaled by the material friction), like a boundary layer. Shallow water calms down instead of sloshing for a minute.
+* Settling and sleep: when 90% of particles are under `settle_speed` (0.25 m/s, divided by the viscosity factor) and no body or emitter is active, velocities are damped at `settle_rate` (3/s) and the transfer blends towards PIC, which removes the last surface jitter. After `sleep_frames` frames with at most 3% of particles over `sleep_speed`, the volume sleeps: no work at all, `awake_particles() == 0`, the mesh is not rebuilt. Moving bodies, emitters, `add_particle` and `wake()` wake it.
+* Substeps: from the 99.5th-percentile particle speed and body speeds with `cfl` cells per substep (default `4 * quality.cfl`, 2 cells at medium), at most `max_substeps`. Faster particles are clamped to the cap.
+* Active box: every grid pass only covers the box around the particles and deep cells (plus 3 cells), so a mostly empty tank or a single droplet is cheap.
+* `total_volume()` is (particles / 8 + deep cells) * cell^3. `depth_at`, `velocity_at` and `inside` use the grid. `cell_fill()` is the liquid fraction per cell and `cell_velocities()` the cell-centred grid velocity (local axes).
+* Extra read access: `local_positions()`, `local_velocities()`, `level_set()`, `cell_types()` (bits: 3 = type 0 air, 1 liquid, 2 solid; 4 deep; 8 surface; 16 lonely), `cell_densities()` (particles per cell, 8 at rest), `grid_velocity_u/v/w()` (MAC faces: u is `(cells_x + 1) * cells_y * cells_z`, index `(j * cells_z + k) * (cells_x + 1) + i`; v and w the same with the extra face on their own axis), `pressure()`, `liquid_cells()`, `deep_cells()`, `last_substeps()`, `last_iterations()`, `max_speed()`.
+
+## Surface mesh
+
+```cpp
+const FluidSurfaceMesh3D& surface_mesh(int detail = 1) const;
+void build_surface_mesh(FluidSurfaceMesh3D& out, int detail = 1) const;
+Real surface_mesh_cell(int detail = 1) const noexcept;
+std::uint64_t surface_version() const noexcept;
+```
+
+`FluidSurfaceMesh3D` holds plain arrays in world space: `positions`, `normals` (unit, pointing out of the liquid), `indices` (triangles, counter-clockwise seen from outside), and per vertex `speeds` (m/s) and `foam` (0..1, from `smoothstep`-like ramp `(speed - foam_speed) / foam_range`, for shading splashes white). `spray` lists the positions of particles that are not inside the mesh (droplets), to draw as small sprites. `cell`, `detail`, `version` and `milliseconds` describe the build.
+
+* `realistic`: particles are splatted onto a node grid (trilinear) with deep cells filled in, blurred `surface.smoothing` times (1-2-1 per axis), and contoured at `surface.iso` (0.5 of rest density) with marching tetrahedra (6 tetrahedra per cube). The mesh is always closed and consistently oriented: every edge is shared by exactly two triangles in opposite directions. Particles and cells are mirrored at the tank walls, so water lies flat against the walls and the floor, and `surface.close_walls` closes the mesh there. Its enclosed volume matches `total_volume()` within a few percent. Normals come from the field gradient, so they are smooth.
+* `flowing` and `blocky`: the same, over the cell fill.
+* Other levels give an empty mesh; draw `heights()` (`waves`) or a flat plane (`still`).
+* `detail`: mesh cell = sim cell / `detail` (1 to 4), or 2 sim cells for `detail = 0`. `surface_mesh_cell(detail)` gives the size.
+* `surface_mesh()` keeps the last mesh and only rebuilds when `surface_version()` changed (each step, `add_particle`, cell edits) or `detail` changed, so a sleeping pool costs nothing. `build_surface_mesh(out)` writes into your own buffers and reuses their capacity. Only the active box is meshed.
 
 ## Performance
 
-* Sleeping: chunks and tiles only step when they or a neighbour changed. Particles sleep after `sleep_frames` frames under `sleep_speed` and wake from fast neighbours or moving bodies. Fully asleep neighbourhoods skip all work.
+* Sleeping: chunks and tiles only step when they or a neighbour changed. FLIP volumes sleep as a whole (see above). PBF particles sleep after `sleep_frames` frames under `sleep_speed` and wake from fast neighbours or moving bodies. Fully asleep neighbourhoods skip all work.
 * Adaptive substeps: waves are CFL-limited by sqrt(g h), particles by their maximum speed. Both are capped by `max_substeps`; beyond the cap the step slows down rather than going unstable. Cell levels run at a fixed tick with `max_ticks_per_frame`. `particle_work_budget` caps particles x iterations x substeps.
 * `FluidQuality` presets (`low/medium/high/ultra`) set `resolution_scale` (waves column size and particle radius), substeps, solver iterations, buoyancy samples, max particles and budgets. Use `world.set_quality(q)` before adding volumes.
-* Threads: `config.threads` (0 = hardware). Work is split over chunks, tiles and particle blocks with a fixed decomposition, so results are bit-identical for any thread count.
-* No per-step allocations in steady state: SoA arrays, an in-place counting sort into a dense grid, and preallocated neighbour lists (64 per particle).
+* Threads: `config.threads` (0 = hardware). Work is split over chunks, tiles and particle blocks with a fixed decomposition, so results are bit-identical for any thread count. FLIP runs advection, collisions, grid-to-particle and the level-set advection on the pool and splits particle-to-grid into one task per grid; the pressure solve is single-threaded. With one thread particle-to-grid is a single fused pass.
+* No per-step allocations in steady state: SoA arrays, an in-place counting sort into a dense grid (box-local for FLIP), preallocated neighbour lists (64 per particle, PBF) and reused grid, solver and mesh buffers.
 * LOD: `set_focus(point)` with `lod_distance` steps far volumes every `lod_interval` frames, using the accumulated dt. Beyond `freeze_distance` a volume is frozen and keeps answering queries. `set_visible(false)` counts as far. `set_frozen(true)` freezes a volume by hand. For the cheapest fallback, swap a distant `waves` or `realistic` body of water for a `still` volume.
 
 Benchmarks: `Testing/fluid_tests.cpp` prints ms/step for each level at a typical size.
+
+Measured on a 2-core VM (float, `-O2`, medium quality, one thread unless noted, ms per 1/60 s frame):
+
+| Case | Before (PBF) | Now (narrow-band FLIP) |
+|---|---|---|
+| 3 x 1.5 x 1 m dam break, r = 0.03 (`bench realistic`) | 12.3 (3.3k coarse particles) | 4.9 (19k particles, 8x finer) |
+| 2 x 1 x 1 m tank half full with a floating box and ball, default r = 0.05 | 1.4 (855 particles) | 1.4 fluid, 2.0 incl. rigid bodies and mesh (4.8k particles) |
+| same, r = 0.04 (Orchard's default for a 2 m tank) | 3.2 (1.7k particles) | 2.2 fluid, 3.1 incl. rigid bodies and mesh (6.5k particles) |
+| same, r = 0.03 | 9.5 (4.1k particles) | about 5 |
+| surface mesh, 2 x 1 x 1 m, r = 0.04, detail 1 | | 0.6 to 0.8 per build (about 8k to 10k triangles) |
+
+A sleeping FLIP volume costs nothing and its mesh is not rebuilt.
 
 ## Example
 
@@ -83,11 +133,19 @@ FluidVolume3D& pool = fluids.add_volume(AABB3D(RVec3{ 40, 0, 0 }, RVec3{ 44, 2, 
 RigidBody3D& crate = sim.add_body(RVec3{ 0, 2, 0 });
 crate.add_collider(Shape3D::make_box(0.5_r, 0.5_r, 0.5_r), Material3D(600.0_r));
 
+FluidVolume3D& tank = fluids.add_volume(AABB3D(RVec3{ 50, 0, 0 }, RVec3{ 52, 1, 1 }), FluidLevel::realistic, FluidMaterial::water(), 0.5_r);
+
 for (;;) {
     fluids.set_focus(camera_position);
     fluids.step(sim, 1.0_r / 60.0_r);
     sim.step(1.0_r / 60.0_r);
     upload_heightfield(water.heights(), water.columns_x(), water.columns_z());
+    const FluidSurfaceMesh3D& mesh = tank.surface_mesh();
+    if (mesh.version != uploaded_version) {
+        upload_mesh(mesh.positions, mesh.normals, mesh.foam, mesh.indices);
+        uploaded_version = mesh.version;
+    }
+    draw_sprites(mesh.spray, tank.particle_radius());
 }
 ```
 

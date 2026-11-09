@@ -193,6 +193,8 @@ public:
 
     static bool load_obj(const std::filesystem::path& path, Model3D& out, std::string* error = nullptr, const ModelImportOptions& options = {});
 
+    static bool load_fbx(const std::filesystem::path& path, Model3D& out, std::string* error = nullptr, const ModelImportOptions& options = {});
+
     static bool load(const std::filesystem::path& path, Model3D& out, std::string* error = nullptr, const ModelImportOptions& options = {});
 
     const Texture* texture_of(int material) const noexcept;
@@ -271,6 +273,9 @@ public:
     const std::vector<NodePose>& pose() const noexcept { return m_pose; }
     std::vector<NodePose>& pose() noexcept { return m_pose; }
     const std::vector<model_math::Mat4>& world() const noexcept { return m_world; }
+    const Mesh3D* skinned_mesh(std::size_t mesh, std::size_t primitive) const noexcept {
+        return mesh < m_skinned.size() && primitive < m_skinned[mesh].size() ? &m_skinned[mesh][primitive] : nullptr;
+    }
 
     linalg::vector3d node_position(int node) const noexcept;
 

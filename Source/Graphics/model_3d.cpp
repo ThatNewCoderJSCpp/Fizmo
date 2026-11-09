@@ -715,6 +715,7 @@ bool Model3D::load(const std::filesystem::path& path, Model3D& out, std::string*
     const std::string ext = lower(path.extension().string());
     if (ext == ".obj") return load_obj(path, out, error, options);
     if (ext == ".gltf" || ext == ".glb") return load_gltf(path, out, error, options);
+    if (ext == ".fbx") return load_fbx(path, out, error, options);
     if (error) *error = "unsupported model format: " + ext;
     return false;
 }

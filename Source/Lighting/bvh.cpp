@@ -288,6 +288,130 @@ bool Bvh::any(const std::vector<Tri>& tris, const Ray& ray, std::uint32_t requir
     return false;
 }
 
+void Bvh::build_boxes(const std::vector<Vec3f>& lo, const std::vector<Vec3f>& hi, std::vector<std::uint32_t>& order) {
+    m_nodes.clear();
+    order.clear();
+    const std::size_t n = std::min(lo.size(), hi.size());
+    if (n == 0) return;
+    std::vector<Item> items(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        items[i].box.lo = lo[i];
+        items[i].box.hi = hi[i];
+        items[i].centroid = (lo[i] + hi[i]) * 0.5f;
+    }
+    order.resize(n);
+    std::iota(order.begin(), order.end(), 0u);
+    m_nodes.reserve(n * 2);
+    m_nodes.emplace_back();
+    Builder builder{ items, order, m_nodes };
+    builder.build(0, 0, static_cast<std::uint32_t>(n), 0);
+}
+
+void Bvh::refit_boxes(const std::vector<Vec3f>& lo, const std::vector<Vec3f>& hi) {
+    for (std::size_t k = m_nodes.size(); k-- > 0;) {
+        BvhNode& n = m_nodes[k];
+        Box b;
+        if (n.count > 0) {
+            for (std::uint32_t i = n.first; i < n.first + n.count && i < lo.size() && i < hi.size(); ++i) {
+                b.grow(lo[i]);
+                b.grow(hi[i]);
+            }
+        } else if (n.first + 1 < m_nodes.size()) {
+            const BvhNode& l = m_nodes[n.first];
+            const BvhNode& r = m_nodes[n.first + 1];
+            b.lo = vmin(l.lo, r.lo);
+            b.hi = vmax(l.hi, r.hi);
+        }
+        n.lo = b.lo;
+        n.hi = b.hi;
+    }
+}
+
+bool intersect_instances(const Compiled& c, const Ray& ray, Hit& hit, std::uint32_t require) {
+    const std::vector<BvhNode>& nodes = c.tlas_bvh.nodes();
+    if (nodes.empty() || c.tlas.empty()) return false;
+    const Vec3f inv = inverse_dir(ray.d);
+    std::uint32_t stack[128];
+    int sp = 0;
+    stack[sp++] = 0;
+    bool found = false;
+    float best = std::min(ray.tmax, hit.t);
+    while (sp > 0) {
+        const BvhNode& n = nodes[stack[--sp]];
+        float tn;
+        if (!slab(n, ray.o, inv, best, tn)) continue;
+        if (n.count > 0) {
+            for (std::uint32_t i = n.first; i < n.first + n.count && i < c.tlas.size(); ++i) {
+                const TlasInstance& ti = c.tlas[i];
+                if ((ti.flags & require) != require) continue;
+                if (ti.mesh >= c.mesh_blas.size() || !c.mesh_blas[ti.mesh]) continue;
+                const Blas& b = *c.mesh_blas[ti.mesh];
+                Ray local{ ti.to_object.point(ray.o), ti.to_object.vector(ray.d), best };
+                Hit lh;
+                lh.t = best;
+                if (b.bvh.intersect(b.tris, local, lh, 0) && lh.t < best) {
+                    best = lh.t;
+                    hit.t = lh.t;
+                    hit.u = lh.u;
+                    hit.v = lh.v;
+                    hit.tri = kInstancedTri;
+                    hit.inst = i;
+                    hit.blas_tri = lh.tri;
+                    found = true;
+                }
+            }
+        } else {
+            const BvhNode& a = nodes[n.first];
+            const BvhNode& b = nodes[n.first + 1];
+            float ta, tb;
+            const bool ha = slab(a, ray.o, inv, best, ta);
+            const bool hb = slab(b, ray.o, inv, best, tb);
+            if (ha && hb && sp < 126) {
+                if (ta < tb) {
+                    stack[sp++] = n.first + 1;
+                    stack[sp++] = n.first;
+                } else {
+                    stack[sp++] = n.first;
+                    stack[sp++] = n.first + 1;
+                }
+            } else if (ha && sp < 127) {
+                stack[sp++] = n.first;
+            } else if (hb && sp < 127) {
+                stack[sp++] = n.first + 1;
+            }
+        }
+    }
+    return found;
+}
+
+bool any_instance(const Compiled& c, const Ray& ray, std::uint32_t require) {
+    const std::vector<BvhNode>& nodes = c.tlas_bvh.nodes();
+    if (nodes.empty() || c.tlas.empty()) return false;
+    const Vec3f inv = inverse_dir(ray.d);
+    std::uint32_t stack[128];
+    int sp = 0;
+    stack[sp++] = 0;
+    while (sp > 0) {
+        const BvhNode& n = nodes[stack[--sp]];
+        float tn;
+        if (!slab(n, ray.o, inv, ray.tmax, tn)) continue;
+        if (n.count > 0) {
+            for (std::uint32_t i = n.first; i < n.first + n.count && i < c.tlas.size(); ++i) {
+                const TlasInstance& ti = c.tlas[i];
+                if ((ti.flags & require) != require) continue;
+                if (ti.mesh >= c.mesh_blas.size() || !c.mesh_blas[ti.mesh]) continue;
+                const Blas& b = *c.mesh_blas[ti.mesh];
+                Ray local{ ti.to_object.point(ray.o), ti.to_object.vector(ray.d), ray.tmax };
+                if (b.bvh.any(b.tris, local, 0)) return true;
+            }
+        } else if (sp < 126) {
+            stack[sp++] = n.first;
+            stack[sp++] = n.first + 1;
+        }
+    }
+    return false;
+}
+
 } // namespace detail
 } // namespace lighting
 } // namespace fizmo

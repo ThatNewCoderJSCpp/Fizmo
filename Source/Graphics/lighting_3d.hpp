@@ -292,6 +292,17 @@ struct ToneMap3D {
     float saturation = 1.0f;
 };
 
+struct AmbientOcclusion3D {
+    bool  enabled         = false;
+    float radius          = 0.75f;
+    float strength        = 1.0f;
+    int   samples         = 12;
+    bool  half_resolution = true;
+
+    static AmbientOcclusion3D soft() noexcept { AmbientOcclusion3D a; a.enabled = true; return a; }
+    static AmbientOcclusion3D strong() noexcept { AmbientOcclusion3D a; a.enabled = true; a.radius = 1.25f; a.strength = 1.4f; a.samples = 16; return a; }
+};
+
 struct SceneLighting3D {
     static constexpr std::size_t MAX_POINT_LIGHTS = 64;
 
@@ -323,6 +334,7 @@ struct SceneLighting3D {
     Surfaces3D     surfaces;
     Medium3D       medium;
     ToneMap3D      tone_map;
+    AmbientOcclusion3D ambient_occlusion;
     double         time = 0.0;
 
     std::vector<PointLight3D> point_lights;

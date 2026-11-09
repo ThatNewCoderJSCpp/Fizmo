@@ -5,6 +5,7 @@
 #include "sh.hpp"
 
 #include <array>
+#include <memory>
 #include <cstdint>
 #include <vector>
 
@@ -36,12 +37,21 @@ struct Tri {
     Vec2f tex1;
     Vec2f tex2;
     std::uint32_t tangents = 0xFFFFFFFFu;
+    std::uint32_t colors = 0xFFFFFFFFu;
 };
 
 struct TriTangents {
     Vec3f t[3];
     float sign[3] = { 1.0f, 1.0f, 1.0f };
 };
+
+struct TriColors {
+    Vec4f c[3];
+};
+
+constexpr std::uint32_t kNoInstance = 0xFFFFFFFFu;
+constexpr std::uint32_t kInstancedTri = 0xFFFFFFF0u;
+constexpr std::uint32_t kHitTangents = 0xFFFFFFFEu;
 
 enum TriFlag : std::uint32_t {
     tri_casts_shadows = 1u << 0,
@@ -57,6 +67,10 @@ struct Hit {
     std::uint32_t tri = 0;
     float u = 0.0f;
     float v = 0.0f;
+    std::uint32_t inst = kNoInstance;
+    std::uint32_t blas_tri = 0;
+    Tri world;
+    TriTangents world_tangents;
 };
 
 struct BvhNode {
@@ -77,8 +91,38 @@ public:
     Vec3f hi() const noexcept { return m_nodes.empty() ? Vec3f{} : m_nodes[0].hi; }
     const std::vector<BvhNode>& nodes() const noexcept { return m_nodes; }
 
+    void build_boxes(const std::vector<Vec3f>& lo, const std::vector<Vec3f>& hi, std::vector<std::uint32_t>& order);
+    void refit_boxes(const std::vector<Vec3f>& lo, const std::vector<Vec3f>& hi);
+
 private:
     std::vector<BvhNode> m_nodes;
+};
+
+struct Blas {
+    std::vector<Tri> tris;
+    Bvh bvh;
+    std::vector<TriTangents> tangents;
+    std::vector<TriColors> colors;
+    Vec3f lo;
+    Vec3f hi;
+    std::size_t index_count = 0;
+    std::size_t vertex_count = 0;
+    std::uint64_t version = 0;
+    std::uint64_t hash = 0;
+    std::uint64_t index_hash = 0;
+    std::uint32_t refits = 0;
+};
+
+struct TlasInstance {
+    Transform to_world;
+    Transform to_object;
+    Vec3f lo;
+    Vec3f hi;
+    std::uint32_t instance = 0;
+    std::uint32_t mesh = 0;
+    std::uint32_t material = 0;
+    std::uint32_t flags = 0;
+    std::uint32_t channels = 1u;
 };
 
 enum class LightKind : std::uint8_t {
@@ -181,10 +225,40 @@ struct Compiled {
     float built_area = 0.0f;
     std::uint32_t refits = 0;
     std::vector<TriTangents> tangents;
+    std::vector<TriColors> colors;
+    std::vector<std::shared_ptr<const Blas>> mesh_blas;
+    std::vector<std::uint64_t> blas_versions;
+    std::vector<TlasInstance> tlas;
+    Bvh tlas_bvh;
+    std::vector<std::uint32_t> instance_slot;
+    Vec3f flat_lo;
+    Vec3f flat_hi;
+    std::uint32_t tlas_refits = 0;
+    float tlas_built_area = 0.0f;
+    std::uint64_t blas_built = 0;
+    std::uint64_t blas_refit = 0;
+    std::uint64_t flat_epoch = 0;
+    std::uint64_t blas_epoch = 0;
+    std::uint64_t tlas_epoch = 0;
+    std::uint64_t light_epoch = 0;
 };
 
 Compiled compile(const Scene& scene);
+Compiled compile(const Scene& scene, const Compiled* previous);
 bool refit_moved(Compiled& c, const Scene& scene, const std::vector<std::uint32_t>& moved);
+bool update_compiled(Compiled& c, const Scene& scene, const std::vector<std::uint32_t>& moved, const std::vector<std::uint32_t>& reshaped);
+std::shared_ptr<const Blas> build_blas(const Mesh& mesh, std::uint64_t version);
+Transform inverse_transform(const Transform& t) noexcept;
+void resolve_instance_hit(const Compiled& c, Hit& hit);
+const Tri& tri_of(const Compiled& c, const Hit& hit) noexcept;
+const TriTangents* tangents_of(const Compiled& c, const Tri& tri, const Hit& hit) noexcept;
+const TriColors* colors_of(const Compiled& c, const Tri& tri, const Hit& hit) noexcept;
+bool intersect_instances(const Compiled& c, const Ray& ray, Hit& hit, std::uint32_t require);
+bool any_instance(const Compiled& c, const Ray& ray, std::uint32_t require);
+std::shared_ptr<const Blas> refit_blas(const Blas& old, const Mesh& mesh, std::uint64_t version);
+std::uint64_t mesh_hash(const Mesh& mesh) noexcept;
+std::uint64_t next_epoch() noexcept;
+void build_tlas(Compiled& c, const Scene& scene);
 void compile_lights(Compiled& c, const Scene& scene);
 
 bool intersect(const Compiled& c, const Ray& ray, Hit& hit, std::uint32_t require = tri_visible);

@@ -25,6 +25,7 @@ struct Instance {
     bool is_static = false;
     std::uint32_t channels = 1u;
     float lightmap_density = 8.0f;
+    bool instanced = false;
 };
 
 enum class SkyKind : std::uint8_t {
@@ -93,7 +94,7 @@ public:
     std::size_t add_object(const Mesh& mesh, const Material& material, const Transform& transform = Transform());
     void clear();
 
-    std::vector<Mesh>& meshes() { m_dirty = true; return m_meshes; }
+    std::vector<Mesh>& meshes() { m_dirty = true; m_meshes_stale = true; return m_meshes; }
     const std::vector<Mesh>& meshes() const { return m_meshes; }
     std::vector<Material>& materials() { m_dirty = true; return m_materials; }
     const std::vector<Material>& materials() const { return m_materials; }
@@ -107,6 +108,15 @@ public:
     const Environment& environment() const { return m_environment; }
 
     void mark_geometry_changed() { m_dirty = true; }
+    bool replace_mesh(std::size_t index, Mesh mesh);
+    bool replace_material(std::size_t index, Material material);
+    std::size_t reshaped_meshes() const noexcept { return m_reshaped.size(); }
+    std::uint64_t mesh_version(std::size_t index) const noexcept { return index < m_mesh_versions.size() ? m_mesh_versions[index] : 0; }
+    std::size_t instanced_count() const;
+    std::size_t blas_count() const;
+    std::size_t traced_triangle_count() const;
+    std::uint64_t full_builds() const noexcept { return m_full_builds; }
+    std::uint64_t blas_builds() const noexcept { return m_blas_builds; }
     bool move_instance(std::size_t index, const Transform& transform);
     std::size_t moved_instances() const noexcept { return m_moved.size(); }
     void mark_lights_changed() { m_lights_dirty = true; }
@@ -135,6 +145,14 @@ private:
     std::vector<std::uint32_t> m_moved;
     std::vector<std::uint8_t> m_moved_mark;
     std::uint64_t m_refit_count = 0;
+    std::vector<std::uint64_t> m_mesh_versions;
+    std::uint64_t m_mesh_counter = 0;
+    bool m_meshes_stale = false;
+    std::vector<std::uint32_t> m_reshaped;
+    std::uint64_t m_full_builds = 0;
+    std::uint64_t m_blas_builds = 0;
+    std::shared_ptr<detail::Compiled> m_previous;
+    void stamp_meshes();
     std::uint64_t m_geometry_version = 0;
     std::uint64_t m_lighting_version = 0;
 };

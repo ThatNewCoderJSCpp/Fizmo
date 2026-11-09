@@ -418,6 +418,8 @@ void visit_fields(EmitterSettings& s, V& v) {
     v("soft", s.soft);
     v("soft_distance", s.soft_distance);
     v("near_fade", s.near_fade);
+    v("pivot_x", s.pivot_x);
+    v("pivot_y", s.pivot_y);
     v("sort", s.sort);
     v("frames_x", s.frames_x);
     v("frames_y", s.frames_y);

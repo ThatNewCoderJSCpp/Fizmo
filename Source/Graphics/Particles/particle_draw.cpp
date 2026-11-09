@@ -254,6 +254,7 @@ void append_one(const Emitter& e, const CameraView& view, DrawList3D& out, const
     batch.lit = s.lit;
     batch.soft = s.soft;
     batch.soft_distance = s.soft_distance;
+    batch.near_fade = s.near_fade;
     batch.texture_id = s.texture_id;
     batch.texture_name = &s.texture;
     batch.texture = e.texture();
@@ -285,6 +286,7 @@ void append_one(const Emitter& e, const CameraView& view, DrawList3D& out, const
 
     const bool rot = e.flags().rotation && !simple;
     const bool frames = e.flags().flipbook && !simple;
+    const bool pivot = s.pivot_x != 0.0f || s.pivot_y != 0.0f;
     float fu0 = 0.0f, fv0 = 0.0f, fu1 = 1.0f, fv1 = 1.0f;
     if (batch.path == DrawPath::Sprites) batch.first = out.sprites.size(), out.sprites.resize(batch.first + m);
     else batch.first = out.vertices.size(), out.vertices.resize(batch.first + m * 6);
@@ -293,7 +295,7 @@ void append_one(const Emitter& e, const CameraView& view, DrawList3D& out, const
         const std::uint32_t ek = order ? order[k] : static_cast<std::uint32_t>(k);
         const StagedParticle& sp = stage[ek];
         const std::size_t i = sp.index;
-        const float x = sp.x, y = sp.y, z = sp.z;
+        float x = sp.x, y = sp.y, z = sp.z;
         const float h = 0.5f * sp.size;
         const std::uint32_t rgba = sp.rgba;
         float u0 = fu0, v0 = fv0, u1 = fu1, v1 = fv1;
@@ -348,6 +350,15 @@ void append_one(const Emitter& e, const CameraView& view, DrawList3D& out, const
                     bx = cam.ux; by = cam.uy; bz = cam.uz;
                 }
                 break;
+            }
+        }
+
+        if (pivot) {
+            const float ox = s.pivot_x * sp.size, oy = s.pivot_y * sp.size;
+            if (s.render_mode == RenderMode::Billboard) {
+                x += cam.rx * ox + cam.ux * oy; y += cam.ry * ox + cam.uy * oy; z += cam.rz * ox + cam.uz * oy;
+            } else {
+                x += ax * ox + bx * oy; y += ay * ox + by * oy; z += az * ox + bz * oy;
             }
         }
 
@@ -419,6 +430,8 @@ void append_one_2d(const Emitter& e, const CameraView& view, DrawList2D& out, co
         if (size <= 0.0f) continue;
         float x, y, z, vx, vy, vz;
         cx.position(i, x, y, z, vx, vy, vz);
+        x += s.pivot_x * size;
+        y += s.pivot_y * size;
         const float h = 0.5f * size;
         float ax = 1.0f, ay = 0.0f, bx = 0.0f, by = 1.0f, ha = h, hb = h;
         if (s.render_mode == RenderMode::Stretched) {
@@ -514,6 +527,12 @@ graphics::Material3D particle_material(const DrawBatch3D& batch) {
     m.lit = batch.lit;
     m.shadow = graphics::Shadow3D::None;
     m.fog = true;
+    if (batch.soft) {
+        m.soft = true;
+        m.soft_distance = (std::max)(batch.soft_distance, 0.0f);
+        m.soft_near = 0.05f;
+        m.soft_near_fade = batch.near_fade > 0.0f ? batch.near_fade : (std::max)(0.25f, m.soft_distance);
+    }
     return m;
 }
 

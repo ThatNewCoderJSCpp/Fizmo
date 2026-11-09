@@ -136,10 +136,13 @@ private:
 
     void blend(std::size_t idx, const float c[4], graphics::Blend3D mode) noexcept;
 
+    static void splat_color(const graphics::Material3D& mat, int count, float u, float v, float out[3]) noexcept;
+
     Scene3D            m_scene;
     int                m_w = 0, m_h = 0;
     std::vector<float> m_color;   
     std::vector<float> m_depth;
+    std::vector<float> m_view_w;
     std::vector<graphics::Vertex3D> m_quad_scratch;
     std::vector<double> m_breaks_s, m_breaks_t;
     float              m_light[3] = { 0.0f, -1.0f, 0.0f };

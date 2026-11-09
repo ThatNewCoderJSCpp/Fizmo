@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 1.2.1
+    VERSION 1.3.0
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -406,6 +406,20 @@ if(FIZMO_BUILD_TEXTURE_TESTS)
     endif()
     enable_testing()
     add_test(NAME fizmo-texture COMMAND fizmo-texture-tests)
+endif()
+
+option(FIZMO_BUILD_MODEL_FBX_TESTS "Build Testing/model_fbx_tests.cpp (FBX import tests, no GPU needed) as fizmo-model-fbx-tests" OFF)
+if(FIZMO_BUILD_MODEL_FBX_TESTS)
+    add_executable(fizmo-model-fbx-tests Testing/model_fbx_tests.cpp)
+    target_compile_features(fizmo-model-fbx-tests PRIVATE cxx_std_17)
+    target_include_directories(fizmo-model-fbx-tests SYSTEM PRIVATE ${FIZMO_VULKAN_INCLUDE_DIR})
+    if(TARGET fizmo::graphics)
+        target_link_libraries(fizmo-model-fbx-tests PRIVATE fizmo::graphics)
+    else()
+        target_link_libraries(fizmo-model-fbx-tests PRIVATE fizmo::fizmo)
+    endif()
+    enable_testing()
+    add_test(NAME fizmo-model-fbx COMMAND fizmo-model-fbx-tests)
 endif()
 
 option(FIZMO_BUILD_PARTICLE_TESTS "Build Testing/particle_tests.cpp (particle system tests and benchmark) as fizmo-particle-tests" OFF)

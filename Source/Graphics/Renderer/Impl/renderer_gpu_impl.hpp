@@ -14,6 +14,7 @@
 #include "gpu_shaders_extra.hpp"
 #include "gpu_shaders_video.hpp"
 #include "../raster_3d.hpp"
+#include "splat_atlas.hpp"
 
 #include "../../../Basic/constants.hpp"
 
@@ -68,14 +69,33 @@ private:
     static constexpr std::uint32_t kMapOcclusion   = 32u;
     static constexpr std::uint32_t kMapAlbedoUv    = 64u;
     static constexpr std::uint32_t kMapCutout      = 128u;
+    static constexpr std::uint32_t kMapSoft        = 256u;
+    static constexpr std::uint32_t kMapSplat       = 512u;
+    static constexpr std::uint32_t kMapSplatB      = 1024u;
+    static constexpr std::uint32_t kMapSplatNormals = 2048u;
+    static constexpr std::uint32_t kMapSplatTriplanar = 4096u;
+    static constexpr std::size_t   kSplatMaps      = 4;
+    static constexpr int           kSplatLayers    = graphics::Material3D::MAX_SPLAT_LAYERS;
 
     struct MaterialMapsGpu {
         float         rows[10][4];
         float         params[4];
         std::uint32_t flags[4];
+        float         soft[4];
+        float         splat[4];
+        float         atlas[4];
+        float         tiling[2][4];
+        float         tints[kSplatLayers][4];
+        float         splat_uv[2][4];
     };
 
-    static_assert(sizeof(MaterialMapsGpu) == 192, "MaterialMapsGpu must match the std140 MaterialMaps block in mesh3d.frag");
+    static_assert(sizeof(MaterialMapsGpu) == 432, "MaterialMapsGpu must match the std140 MaterialMaps block in mesh3d.frag");
+
+    struct SplatAtlasEntry {
+        std::vector<std::uint64_t> key;
+        SplatAtlas                 atlas;
+        std::uint64_t              last_used = 0;
+    };
 
     struct Brush {
         std::uint32_t color   = 0;     
@@ -327,6 +347,9 @@ private:
         const gpu::Texture*      maps[kMeshMaps] = {};
         std::uint8_t             map_samplers[kMeshMaps] = {};
         std::uint32_t            material_slot  = 0;
+        const gpu::Texture*      splat[kSplatMaps] = {};
+        std::uint8_t             splat_samplers[kSplatMaps] = {};
+        bool                     soft           = false;
         float                    push[32]       = {};
         bool                     quads          = false;
         std::uint32_t            page           = 0;
@@ -374,6 +397,9 @@ private:
     static constexpr std::int32_t        kReflectionPass          = 2048;
     static constexpr std::int32_t        kPlanarReflections       = 4096;
     static constexpr std::int32_t        kVolumeGrid              = 8192;
+    static constexpr std::int32_t        kAmbientOut              = 16384;
+    static constexpr int                 kMinAoSamples            = 4;
+    static constexpr int                 kMaxAoSamples            = 32;
     static constexpr std::uint32_t       kVolumeGroup             = 8;
     static constexpr std::uint32_t       kReflectionVolumeDivisor = 4;
     static constexpr std::uint32_t       kMaxVolumeSlices         = 256;
@@ -463,9 +489,11 @@ private:
         float        point_shape[kMaxPointLights][4] = {};
         float        point_size[kMaxPointLights][4]  = {};
         float        point_normal[kMaxPointLights][4] = {};
+        float        ao[4]                           = {};
+        float        ao_target[4]                    = { 1, 1, 2, 0 };
     };
 
-    static_assert(sizeof(SceneUniforms) == 7328, "scene uniforms must match the std140 block in the shaders");
+    static_assert(sizeof(SceneUniforms) == 7360, "scene uniforms must match the std140 block in the shaders");
     
     struct Caster {
         enum class Kind : std::uint8_t { Mesh = 0, Instanced, Quads };
@@ -521,6 +549,9 @@ private:
         std::uint32_t                                copy_at                    = 0;
         bool                                         volume                     = false;
         std::uint32_t                                volume_size[3]             = {};
+        bool                                         wants_ao                   = false;
+        bool                                         ao                         = false;
+        std::uint32_t                                ao_scale                   = 2;
     };
 
     struct ShadowMap {
@@ -577,6 +608,7 @@ private:
     std::unordered_map<std::uint64_t, CachedTexture>             m_map_textures;
     std::vector<const gpu::Texture*>                             m_mip_uploads;
     std::vector<MaterialMapsGpu>                                 m_material_records;
+    std::vector<SplatAtlasEntry>                                 m_splat_atlases;
     std::vector<std::uint8_t>                                    m_material_bytes;
     std::uint64_t                                                m_material_stride = 256;
     gpu::Texture                                                 m_white;
@@ -695,6 +727,21 @@ private:
     gpu::RenderPipeline                                      m_sky_pipeline;
     gpu::ShaderModule                                        m_rays_fs;
     gpu::RenderPipeline                                      m_rays_pipeline;
+    gpu::ShaderModule                                        m_ssao_fs;
+    gpu::ShaderModule                                        m_ssao_blur_h_fs;
+    gpu::ShaderModule                                        m_ssao_blur_v_fs;
+    gpu::ShaderModule                                        m_ssao_apply_fs;
+    gpu::ShaderModule                                        m_ssao_finish_fs;
+    gpu::RenderPipeline                                      m_ssao_pipeline;
+    gpu::RenderPipeline                                      m_ssao_blur_h_pipeline;
+    gpu::RenderPipeline                                      m_ssao_blur_v_pipeline;
+    gpu::RenderPipeline                                      m_ssao_apply_pipeline;
+    gpu::RenderPipeline                                      m_ssao_finish_pipeline;
+    bool                                                     m_ssao_failed = false;
+    std::unique_ptr<gpu::Texture>                            m_ao_a;
+    std::unique_ptr<gpu::Texture>                            m_ao_b;
+    std::uint32_t                                            m_ao_width  = 0;
+    std::uint32_t                                            m_ao_height = 0;
     gpu::ShaderModule                                        m_volume_cs;
     gpu::BindGroupLayout                                     m_volume_set_layout;
     gpu::PipelineLayout                                      m_volume_layout;
@@ -827,6 +874,7 @@ public:
         m_dummy_cube.reset();
         m_shadow_sampler.destroy();
         m_rays_pipeline.destroy(); 
+        destroy_ssao();
         m_volume_pipeline.destroy(); 
         m_volume_layout.destroy(); 
         m_volume_set_layout.destroy(); 
@@ -866,6 +914,7 @@ public:
         m_sprite_entries.clear();
         m_textures.clear();
         m_map_textures.clear();
+        m_splat_atlases.clear();
         m_mip_uploads.clear();
         m_texture_bytes = 0;
 
@@ -2435,6 +2484,12 @@ private:
         rec.wants_rays = l.shafts.enabled && l.shafts.samples > 0 && l.shafts.strength > 0.0f && l.sun_intensity > 0.0f && !l.medium.active;
         rec.wants_copy = rec.wants_rays || l.surfaces.refraction || (l.surfaces.screen_reflections && l.surfaces.reflection_steps > 0);
         if (rec.wants_rays) u.counts[1] |= kLightShafts;
+        const graphics::AmbientOcclusion3D& ao = l.ambient_occlusion;
+        rec.wants_ao = ao.enabled && ao.radius > 0.0f && ao.strength > 0.0f && ao.samples > 0 && !l.medium.active;
+        rec.ao_scale = ao.half_resolution ? 2u : 1u;
+        u.ao[0] = ao.radius;
+        u.ao[1] = ao.strength;
+        u.ao[2] = static_cast<float>(std::clamp(ao.samples, kMinAoSamples, kMaxAoSamples));
         rec.sky = (flags & kAtmosphere) != 0;
         plan_volume(rec, l, scene);
         return rec;
@@ -2945,13 +3000,102 @@ private:
         r.params[0] = 1.0f;
         r.params[2] = 1.0f;
         r.params[3] = 4.0f;
+        for (int i = 0; i < kSplatLayers; ++i) {
+            r.tiling[i / 4][i % 4] = 1.0f;
+            for (int k = 0; k < 4; ++k) r.tints[i][k] = 1.0f;
+        }
+        r.splat_uv[0][0] = 1.0f;
+        r.splat_uv[1][1] = 1.0f;
         return r;
+    }
+
+    const SplatAtlas* splat_atlas_for(const graphics::Material3D& m, int count) {
+        std::vector<std::uint64_t> key;
+        key.reserve(static_cast<std::size_t>(count) * 4 + 1);
+        key.push_back(static_cast<std::uint64_t>(count));
+        for (int i = 0; i < count; ++i) {
+            const graphics::Texture* t = m.layers[i] && m.layers[i]->valid() ? m.layers[i] : nullptr;
+            const graphics::Texture* n = m.layer_normals[i] && m.layer_normals[i]->valid() ? m.layer_normals[i] : nullptr;
+            key.push_back(t ? static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(t->image())) : 0u);
+            key.push_back(t ? t->image()->version() : 0u);
+            key.push_back(n ? static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(n->image())) : 0u);
+            key.push_back(n ? n->image()->version() : 0u);
+        }
+        for (SplatAtlasEntry& e : m_splat_atlases) {
+            if (e.key != key) continue;
+            e.last_used = m_frame_serial;
+            return &e.atlas;
+        }
+        SplatAtlasEntry e;
+        e.key = std::move(key);
+        e.last_used = m_frame_serial;
+        build_splat_atlas(m.layers, m.layer_normals, count, e.atlas);
+        m_splat_atlases.push_back(std::move(e));
+        return &m_splat_atlases.back().atlas;
+    }
+
+    std::uint32_t splat_maps(Draw3D& d, const graphics::Material3D& m, MaterialMapsGpu& r) {
+        const int count = m.splat_layers();
+        if (count <= 0) return 0u;
+        const SplatAtlas* atlas = splat_atlas_for(m, count);
+        if (!atlas || !atlas->albedo.valid()) return 0u;
+        const gpu::Texture* albedo = map_view(atlas->albedo, false);
+        const gpu::Texture* weights = map_view(*m.splat_map, false);
+        if (!albedo || !weights) return 0u;
+        std::uint32_t flags = kMapSplat;
+        d.splat[0] = albedo;
+        d.splat_samplers[0] = static_cast<std::uint8_t>(LinearClamp + kMipSampler);
+        d.splat[2] = weights;
+        d.splat_samplers[2] = LinearClamp;
+
+        if (atlas->has_normals && atlas->normals.valid()) {
+            if (const gpu::Texture* n = map_view(atlas->normals, false)) {
+                d.splat[1] = n;
+                d.splat_samplers[1] = static_cast<std::uint8_t>(LinearClamp + kMipSampler);
+                flags |= kMapSplatNormals;
+            }
+        }
+
+        if (count > 4 && m.splat_map_b && m.splat_map_b->valid()) {
+            if (const gpu::Texture* b = map_view(*m.splat_map_b, false)) {
+                d.splat[3] = b;
+                d.splat_samplers[3] = LinearClamp;
+                flags |= kMapSplatB;
+            }
+        }
+
+        if (m.splat_triplanar) flags |= kMapSplatTriplanar;
+        put_rows(r.splat_uv[0], r.splat_uv[1], m.splat_uv, graphics::UvTransform());
+        const SplatAtlasLayout& l = atlas->layout;
+        r.splat[0] = static_cast<float>(count);
+        r.splat[1] = std::max(0.0f, m.splat_height_blend);
+        r.splat[2] = static_cast<float>(l.cols);
+        r.splat[3] = static_cast<float>(l.max_lod());
+        r.atlas[0] = static_cast<float>(l.cell()) / static_cast<float>(l.width);
+        r.atlas[1] = static_cast<float>(l.cell()) / static_cast<float>(l.height);
+        r.atlas[2] = static_cast<float>(l.gutter) / static_cast<float>(l.width);
+        r.atlas[3] = static_cast<float>(l.gutter) / static_cast<float>(l.height);
+
+        for (int i = 0; i < kSplatLayers; ++i) {
+            r.tiling[i / 4][i % 4] = i < count ? m.layer_tiling[i] : 1.0f;
+            const graphics::Color& c = m.layer_tint[i];
+            r.tints[i][0] = c.red() / 255.0f;
+            r.tints[i][1] = c.green() / 255.0f;
+            r.tints[i][2] = c.blue() / 255.0f;
+            r.tints[i][3] = c.alpha() / 255.0f;
+        }
+
+        return flags;
     }
 
     void material_maps(Draw3D& d, const graphics::Material3D& m) {
         for (std::size_t i = 0; i < kMeshMaps; ++i) { d.maps[i] = nullptr; d.map_samplers[i] = NearestClamp; }
+        for (std::size_t i = 0; i < kSplatMaps; ++i) { d.splat[i] = nullptr; d.splat_samplers[i] = NearestClamp; }
         d.material_slot = 0;
-        if (!m.has_maps() || !m_mesh_set_layout.valid()) return;
+        d.soft = false;
+        const bool soft = m.has_soft();
+        const bool splat = m.has_splat();
+        if ((!m.has_maps() && !soft && !splat) || !m_mesh_set_layout.valid()) return;
         if (m_material_records.empty()) m_material_records.push_back(default_material_record());
         MaterialMapsGpu r = default_material_record();
         const graphics::Texture* maps[kMeshMaps] = { m.normal_map, m.orm_map, m.emissive_map, m.opacity_map };
@@ -2974,6 +3118,16 @@ private:
         if (m.triplanar) flags |= kMapTriplanar;
         if (m.orm_occlusion) flags |= kMapOcclusion;
         if (m.alpha_cutoff > 0.0f) flags |= kMapCutout;
+
+        if (soft) {
+            flags |= kMapSoft;
+            d.soft = m.soft_distance > 0.0f;
+            r.soft[0] = m.soft_distance > 0.0f ? 1.0f / m.soft_distance : 0.0f;
+            r.soft[1] = std::max(0.0f, m.soft_near);
+            r.soft[2] = m.soft_near_fade > 0.0f ? 1.0f / m.soft_near_fade : 0.0f;
+        }
+
+        if (splat) flags |= splat_maps(d, m, r);
         r.params[0] = m.normal_strength;
         r.params[1] = m.alpha_cutoff;
         r.params[2] = m.triplanar_scale;
@@ -3068,6 +3222,8 @@ private:
         key = gfx::hash_bytes(d.maps, sizeof(d.maps), key);
         key = gfx::hash_bytes(d.map_samplers, sizeof(d.map_samplers), key);
         key = gfx::hash_bytes(&d.material_slot, sizeof(d.material_slot), key);
+        key = gfx::hash_bytes(d.splat, sizeof(d.splat), key);
+        key = gfx::hash_bytes(d.splat_samplers, sizeof(d.splat_samplers), key);
         for (const auto& s : cache) if (s.first == key) return s.second;
         if (!pf.material_uniforms.valid()) return {};
         const std::uint64_t slot = d.material_slot < m_material_records.size() ? d.material_slot : 0u;
@@ -3079,6 +3235,10 @@ private:
             gpu::BindGroupEntry::sampled(3, d.maps[1] ? *d.maps[1] : m_white, sampler_at(d.maps[1] ? d.map_samplers[1] : static_cast<std::uint8_t>(NearestClamp))),
             gpu::BindGroupEntry::sampled(4, d.maps[2] ? *d.maps[2] : m_white, sampler_at(d.maps[2] ? d.map_samplers[2] : static_cast<std::uint8_t>(NearestClamp))),
             gpu::BindGroupEntry::sampled(5, d.maps[3] ? *d.maps[3] : m_white, sampler_at(d.maps[3] ? d.map_samplers[3] : static_cast<std::uint8_t>(NearestClamp))),
+            gpu::BindGroupEntry::sampled(6, d.splat[0] ? *d.splat[0] : m_white, sampler_at(d.splat[0] ? d.splat_samplers[0] : static_cast<std::uint8_t>(NearestClamp))),
+            gpu::BindGroupEntry::sampled(7, d.splat[1] ? *d.splat[1] : m_white, sampler_at(d.splat[1] ? d.splat_samplers[1] : static_cast<std::uint8_t>(NearestClamp))),
+            gpu::BindGroupEntry::sampled(8, d.splat[2] ? *d.splat[2] : m_white, sampler_at(d.splat[2] ? d.splat_samplers[2] : static_cast<std::uint8_t>(NearestClamp))),
+            gpu::BindGroupEntry::sampled(9, d.splat[3] ? *d.splat[3] : m_white, sampler_at(d.splat[3] ? d.splat_samplers[3] : static_cast<std::uint8_t>(NearestClamp))),
         };
 
         const gpu::BindGroup set = frame_group(m_mesh_set_layout, entries);
@@ -3496,6 +3656,10 @@ private:
             { 3, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
             { 4, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
             { 5, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+            { 6, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+            { 7, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+            { 8, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
+            { 9, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
         };
 
         if (failed(m_mesh_set_layout.create(m_device, { mesh_entries, "fizmo mesh material set" }))) return false;
@@ -3659,6 +3823,153 @@ private:
         return slot.get();
     }
 
+    bool create_ssao_pipeline(gpu::RenderPipeline& p, const gpu::ShaderModule& fs, bool in_scene, const gpu::BlendState& blend, const char* name) {
+        gpu::RenderPipelineDesc d;
+        d.vertex        = &m_sky_vs;
+        d.fragment      = &fs;
+        d.layout        = &m_mesh_layout;
+        d.cull_mode     = gpu::CullMode::None;
+        d.samples       = in_scene ? m_samples : 1u;
+        d.color_formats = { gpu::Format::RGBA8Unorm };
+        d.depth_format  = in_scene ? m_depth_format : gpu::Format::Undefined;
+        d.depth.test    = false;
+        d.depth.write   = false;
+        d.blend         = blend;
+        d.name          = name;
+        return succeeded(p.create(m_device, d));
+    }
+
+    bool ssao_ready() {
+        if (m_ssao_failed) return false;
+        if (m_ssao_pipeline.valid() && m_ssao_blur_h_pipeline.valid() && m_ssao_blur_v_pipeline.valid() && m_ssao_apply_pipeline.valid() && m_ssao_finish_pipeline.valid()) return true;
+        const bool ok = m_sky_vs.valid() && m_mesh_layout.valid()
+            && succeeded(m_ssao_fs.create(m_device, glsl::ssao_frag()))
+            && succeeded(m_ssao_blur_h_fs.create(m_device, glsl::ssao_blur_h_frag()))
+            && succeeded(m_ssao_blur_v_fs.create(m_device, glsl::ssao_blur_v_frag()))
+            && succeeded(m_ssao_apply_fs.create(m_device, glsl::ssao_apply_frag()))
+            && succeeded(m_ssao_finish_fs.create(m_device, glsl::ssao_finish_frag()))
+            && create_ssao_pipeline(m_ssao_pipeline, m_ssao_fs, false, gpu::BlendState::opaque(), "fizmo ssao")
+            && create_ssao_pipeline(m_ssao_blur_h_pipeline, m_ssao_blur_h_fs, false, gpu::BlendState::opaque(), "fizmo ssao blur h")
+            && create_ssao_pipeline(m_ssao_blur_v_pipeline, m_ssao_blur_v_fs, false, gpu::BlendState::opaque(), "fizmo ssao blur v")
+            && create_ssao_pipeline(m_ssao_apply_pipeline, m_ssao_apply_fs, true,
+                   gpu::BlendState::make(gpu::BlendFactor::Zero, gpu::BlendFactor::One, gpu::BlendFactor::Zero, gpu::BlendFactor::SrcAlpha), "fizmo ssao apply")
+            && create_ssao_pipeline(m_ssao_finish_pipeline, m_ssao_finish_fs, true,
+                   gpu::BlendState::make(gpu::BlendFactor::Zero, gpu::BlendFactor::OneMinusDstAlpha, gpu::BlendFactor::One, gpu::BlendFactor::Zero), "fizmo ssao finish");
+        if (!ok) {
+            destroy_ssao();
+            m_ssao_failed = true;
+        }
+        return ok;
+    }
+
+    void destroy_ssao() noexcept {
+        m_ssao_pipeline.destroy();
+        m_ssao_blur_h_pipeline.destroy();
+        m_ssao_blur_v_pipeline.destroy();
+        m_ssao_apply_pipeline.destroy();
+        m_ssao_finish_pipeline.destroy();
+        m_ssao_fs.destroy();
+        m_ssao_blur_h_fs.destroy();
+        m_ssao_blur_v_fs.destroy();
+        m_ssao_apply_fs.destroy();
+        m_ssao_finish_fs.destroy();
+        m_ao_a.reset();
+        m_ao_b.reset();
+        m_ao_width = m_ao_height = 0;
+    }
+
+    bool ensure_ao_targets(std::uint32_t scale) {
+        scale = std::max(scale, 1u);
+        const std::uint32_t w = std::max(1u, (m_width + scale - 1) / scale), h = std::max(1u, (m_height + scale - 1) / scale);
+        if (m_ao_a && m_ao_b && m_ao_width == w && m_ao_height == h) return true;
+        if (m_ao_a) m_retired.push_back({ m_frame_serial, std::move(m_ao_a) });
+        if (m_ao_b) m_retired.push_back({ m_frame_serial, std::move(m_ao_b) });
+        m_ao_width = m_ao_height = 0;
+        gpu::TextureDesc d;
+        d.extent = { w, h, 1 };
+        d.format = gpu::Format::RGBA8Unorm;
+        d.usage  = gpu::TextureUsage::RenderTarget | gpu::TextureUsage::Sampled;
+        d.name   = "fizmo ambient occlusion";
+        auto a = std::make_unique<gpu::Texture>(), b = std::make_unique<gpu::Texture>();
+        if (failed(a->create(m_device, d)) || failed(b->create(m_device, d))) return false;
+        m_ao_a = std::move(a);
+        m_ao_b = std::move(b);
+        m_ao_width = w;
+        m_ao_height = h;
+        return true;
+    }
+
+    gpu::BindGroup ao_input(PerFrame& pf, const gpu::Texture& src) {
+        if (!pf.material_uniforms.valid()) return {};
+        const gpu::Sampler& nearest = m_samplers[NearestClamp];
+        const gpu::BindGroupEntry entries[] = {
+            gpu::BindGroupEntry::sampled(0, src, nearest),
+            gpu::BindGroupEntry::uniform(1, pf.material_uniforms, 0, sizeof(MaterialMapsGpu)),
+            gpu::BindGroupEntry::sampled(2, m_white, nearest),
+            gpu::BindGroupEntry::sampled(3, m_white, nearest),
+            gpu::BindGroupEntry::sampled(4, m_white, nearest),
+            gpu::BindGroupEntry::sampled(5, m_white, nearest),
+            gpu::BindGroupEntry::sampled(6, m_white, nearest),
+            gpu::BindGroupEntry::sampled(7, m_white, nearest),
+            gpu::BindGroupEntry::sampled(8, m_white, nearest),
+            gpu::BindGroupEntry::sampled(9, m_white, nearest),
+        };
+        return frame_group(m_mesh_set_layout, entries);
+    }
+
+    void record_ao(gpu::CommandList& cmd, PerFrame& pf, const SceneRec& sc, std::size_t scene) {
+        const SceneLightRec& sl = m_scene_lights[scene];
+        if (!m_ao_a || !m_ao_b) return;
+        const gpu::BindGroup lighting = scene_descriptor(pf, scene, true);
+        const gpu::BindGroup from_a = ao_input(pf, *m_ao_a), from_b = ao_input(pf, *m_ao_b), none = ao_input(pf, m_white);
+        if (!lighting.valid() || !from_a.valid() || !from_b.valid() || !none.valid()) return;
+        const float k = static_cast<float>(std::max(sl.ao_scale, 1u));
+        const float fx0 = std::floor(static_cast<float>(std::max(sc.scene.x, 0)) / k), fy0 = std::floor(static_cast<float>(std::max(sc.scene.y, 0)) / k);
+        const float fx1 = std::ceil(static_cast<float>(std::min(sc.scene.x + static_cast<int>(sc.scene.width), static_cast<int>(m_width))) / k);
+        const float fy1 = std::ceil(static_cast<float>(std::min(sc.scene.y + static_cast<int>(sc.scene.height), static_cast<int>(m_height))) / k);
+        const int x0 = static_cast<int>(fx0), y0 = static_cast<int>(fy0);
+        const int x1 = std::min(static_cast<int>(fx1), static_cast<int>(m_ao_width)), y1 = std::min(static_cast<int>(fy1), static_cast<int>(m_ao_height));
+        if (x1 <= x0 || y1 <= y0) return;
+        const gpu::Rect2D area{ { x0, y0 }, { static_cast<std::uint32_t>(x1 - x0), static_cast<std::uint32_t>(y1 - y0) } };
+        cmd.push_label("fizmo ambient occlusion");
+
+        auto pass = [&](const gpu::Texture& target, const gpu::RenderPipeline& p, const gpu::BindGroup& input) {
+            gpu::ColorTarget color;
+            color.texture = &target;
+            color.load    = gpu::LoadOp::Clear;
+            color.store   = gpu::StoreOp::Store;
+            color.clear   = gpu::ClearColor{ 1, 1, 1, 1 };
+            gpu::RenderPassDesc rd;
+            rd.area   = { { 0, 0 }, { m_ao_width, m_ao_height } };
+            rd.colors = color;
+            cmd.begin_render_pass(rd);
+            cmd.set_viewport({ static_cast<float>(x0), static_cast<float>(y0), static_cast<float>(x1 - x0), static_cast<float>(y1 - y0), 0.0f, 1.0f });
+            cmd.set_scissor(area);
+            cmd.set_pipeline(p);
+            cmd.set_bind_group(0, input);
+            cmd.set_bind_group(1, lighting);
+            cmd.draw(kSkyVertices);
+            cmd.end_render_pass();
+        };
+
+        pass(*m_ao_a, m_ssao_pipeline, none);
+        pass(*m_ao_b, m_ssao_blur_h_pipeline, from_a);
+        pass(*m_ao_a, m_ssao_blur_v_pipeline, from_b);
+        cmd.pop_label();
+    }
+
+    void apply_ao(gpu::CommandList& cmd, PerFrame& pf, const gpu::BindGroup& lighting) {
+        if (!m_ao_a || !lighting.valid()) return;
+        const gpu::BindGroup input = ao_input(pf, *m_ao_a);
+        if (!input.valid()) return;
+        cmd.set_pipeline(m_ssao_apply_pipeline);
+        cmd.set_bind_group(0, input);
+        cmd.set_bind_group(1, lighting);
+        cmd.draw(kSkyVertices);
+        cmd.set_pipeline(m_ssao_finish_pipeline);
+        cmd.draw(kSkyVertices);
+    }
+
     void create_scene_copies() noexcept {
         gpu::TextureDesc cd;
         cd.extent = { m_width, m_height, 1 };
@@ -3736,9 +4047,13 @@ private:
             }
 
             sl.copy = false;
+            sl.ao = false;
             u.counts[1] &= ~(kSceneCopy | kScreenReflections);
-            if (!sl.wants_copy || !possible) continue;
             const std::size_t end = si + 1 < m_scenes.size() ? m_scenes[si + 1].first_draw : m_draws3d.size();
+            bool soft = false;
+            for (std::size_t i = sc.first_draw; i < end && !soft && !sl.wants_copy; ++i) soft = m_draws3d[i].soft && m_draws3d[i].on_camera && m_draws3d[i].count != 0;
+            const bool ao = sl.wants_ao && end > sc.first_draw && ssao_ready() && ensure_ao_targets(sl.ao_scale);
+            if ((!sl.wants_copy && !soft && !ao) || !possible) continue;
 
             for (std::size_t i = sc.first_draw; i < end; ++i) {
                 const Draw3D& d = m_draws3d[i];
@@ -3748,9 +4063,16 @@ private:
                 break;
             }
 
-            if (!sl.copy && sl.wants_rays) {
+            if (!sl.copy && (sl.wants_rays || ao)) {
                 sl.copy = true;
                 sl.copy_at = static_cast<std::uint32_t>(end);
+            }
+
+            if (sl.copy && ao) {
+                sl.ao = true;
+                u.ao_target[0] = 1.0f / static_cast<float>(m_ao_width);
+                u.ao_target[1] = 1.0f / static_cast<float>(m_ao_height);
+                u.ao_target[2] = static_cast<float>(sl.ao_scale);
             }
 
             if (sl.copy) u.counts[1] |= kSceneCopy | (sl.uniforms.target[3] > 0.0f ? kScreenReflections : 0);
@@ -4454,6 +4776,10 @@ private:
             }
         }
 
+        m_splat_atlases.erase(
+            std::remove_if(m_splat_atlases.begin(), m_splat_atlases.end(), [now](const SplatAtlasEntry& a) { return a.last_used + kEvictAfterFrames <= now; }),
+            m_splat_atlases.end());
+
         for (auto it = m_map_textures.begin(); it != m_map_textures.end();) {
             if (it->second.last_used + kEvictAfterFrames <= now) {
                 m_texture_bytes -= std::min<std::uint64_t>(m_texture_bytes, static_cast<std::uint64_t>(it->second.width) * it->second.height * 4);
@@ -5050,13 +5376,17 @@ private:
         return m_scene_lights.size() + scene * static_cast<std::size_t>(kMaxPlanes) + static_cast<std::size_t>(plane);
     }
 
+    std::size_t ao_slot(std::size_t scene) const noexcept {
+        return m_scene_lights.size() * static_cast<std::size_t>(1 + kMaxPlanes) + scene;
+    }
+
     gpu::BindGroup scene_descriptor(PerFrame& pf, std::size_t scene, bool copies = false, int reflection_plane = -1, bool volume = true) {
         const std::uint64_t key = (static_cast<std::uint64_t>(scene) << kSceneSetShift) | (static_cast<std::uint64_t>(reflection_plane + 1) << 2) | (copies ? 2u : 0u) | (volume ? 1u : 0u);
         for (const auto& cached : pf.scene_sets) if (cached.first == key) return cached.second;
         const SceneLightRec& sl = m_scene_lights[scene];
         const ShadowMap& sun = sl.sun_shadow && m_sun_map ? *m_sun_map : *m_dummy_sun;
         const ShadowMap& sun_b = sl.sun_blend && m_sun_map_b ? *m_sun_map_b : sun;
-        const std::size_t slot = reflection_plane >= 0 ? reflection_slot(scene, reflection_plane) : scene;
+        const std::size_t slot = reflection_plane >= 0 ? reflection_slot(scene, reflection_plane) : (!copies && sl.ao ? ao_slot(scene) : scene);
         const bool have = copies && m_scene_color.valid() && m_scene_depth.valid();
         const bool grid = volume && sl.volume && m_volume;
         std::vector<gpu::BindGroupEntry>& e = m_scene_entries;
@@ -5636,10 +5966,12 @@ private:
                 if (splits && i == sl.copy_at) {
                     cmd.end_render_pass();
                     copy_scene(cmd, drawn);
+                    if (sl.ao) record_ao(cmd, pf, sc, scene);
                     open(false);
                     bound = nullptr;
                     lighting = scene_descriptor(pf, scene, true);
                     if (lighting.valid()) lighting_bound = false;
+                    if (sl.ao) apply_ao(cmd, pf, lighting);
                 }
 
                 if (d.count == 0 || !d.on_camera) continue;
@@ -5658,7 +5990,7 @@ private:
                 if (!set.valid()) continue;
 
                 if (!lighting.valid()) {
-                    lighting = scene_descriptor(pf, scene);
+                    lighting = scene_descriptor(pf, scene, sl.ao && from > sl.copy_at);
                     if (!lighting.valid()) continue;
                     lighting_bound = false;
                 }
@@ -5676,8 +6008,10 @@ private:
             if (splits && sl.copy_at == to) {
                 cmd.end_render_pass();
                 copy_scene(cmd, drawn);
+                if (sl.ao) record_ao(cmd, pf, sc, scene);
                 open(false);
                 lighting = scene_descriptor(pf, scene, true);
+                if (sl.ao) apply_ao(cmd, pf, lighting);
             }
 
             const gpu::RenderPipeline* rays = splits && sl.wants_rays ? rays_pipeline() : nullptr;
@@ -5794,10 +6128,16 @@ private:
             prepare_reflections();
             prepare_volumes();
             const std::size_t scenes = m_scene_lights.size();
-            m_uniform_bytes.assign(static_cast<std::size_t>(m_uniform_stride * scenes * (1 + kMaxPlanes)), 0);
+            m_uniform_bytes.assign(static_cast<std::size_t>(m_uniform_stride * scenes * (2 + kMaxPlanes)), 0);
 
             for (std::size_t i = 0; i < scenes; ++i) {
                 std::memcpy(m_uniform_bytes.data() + i * m_uniform_stride, &m_scene_lights[i].uniforms, sizeof(SceneUniforms));
+
+                if (m_scene_lights[i].ao) {
+                    SceneUniforms u = m_scene_lights[i].uniforms;
+                    u.counts[1] |= kAmbientOut;
+                    std::memcpy(m_uniform_bytes.data() + ao_slot(i) * m_uniform_stride, &u, sizeof(SceneUniforms));
+                }
 
                 for (std::uint32_t k = 0; k < m_scene_lights[i].plane_count; ++k) {
                     const SceneUniforms u = reflection_uniforms(i, k);

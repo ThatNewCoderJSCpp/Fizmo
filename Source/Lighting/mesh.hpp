@@ -28,12 +28,14 @@ struct Mesh {
     std::vector<std::uint32_t> indices;
     std::vector<Vec2f> uvs;
     std::vector<Vec4f> tangents;
+    std::vector<Vec4f> colors;
 
     std::size_t triangle_count() const noexcept { return indices.size() / 3; }
     bool has_normals() const noexcept { return normals.size() == positions.size(); }
     bool has_lightmap_uvs() const noexcept { return lightmap_uvs.size() == positions.size(); }
     bool has_uvs() const noexcept { return !positions.empty() && uvs.size() == positions.size(); }
     bool has_tangents() const noexcept { return !positions.empty() && tangents.size() == positions.size(); }
+    bool has_colors() const noexcept { return !positions.empty() && colors.size() == positions.size(); }
     void compute_tangents();
     void compute_normals();
     void append(const Mesh& other, const Transform& xf);

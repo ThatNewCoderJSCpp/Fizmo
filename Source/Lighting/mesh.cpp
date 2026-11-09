@@ -67,6 +67,7 @@ void Mesh::compute_tangents() {
 void Mesh::append(const Mesh& other, const Transform& xf) {
     const std::uint32_t base = static_cast<std::uint32_t>(positions.size());
     const bool keep_normals = has_normals() || positions.empty();
+    const bool had_colors = base > 0 && colors.size() == base;
     for (const auto& p : other.positions) positions.push_back(xf.point(p));
     if (keep_normals && other.has_normals()) {
         for (const auto& n : other.normals) normals.push_back(xf.normal(n));
@@ -90,6 +91,13 @@ void Mesh::append(const Mesh& other, const Transform& xf) {
         }
     } else {
         tangents.clear();
+    }
+    if (had_colors || other.has_colors()) {
+        colors.resize(base, Vec4f{ 1.0f, 1.0f, 1.0f, 1.0f });
+        if (other.has_colors()) colors.insert(colors.end(), other.colors.begin(), other.colors.end());
+        else colors.resize(positions.size(), Vec4f{ 1.0f, 1.0f, 1.0f, 1.0f });
+    } else {
+        colors.clear();
     }
     for (auto i : other.indices) indices.push_back(base + i);
 }

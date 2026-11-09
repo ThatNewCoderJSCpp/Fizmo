@@ -75,6 +75,7 @@ std::size_t FluidVolume3D::chunk_of(int i, int j, int k) const noexcept {
 }
 
 void FluidVolume3D::mark_cell_dirty(int i, int j, int k) noexcept {
+    ++m_version;
     if (m_chunk_changed.empty() || !valid_cell(i, j, k)) return;
     m_chunk_changed[chunk_of(i, j, k)] = 1;
 }

@@ -41,6 +41,14 @@ struct FluidWaveSettings {
     Real ripple_strength = 1.0_r;
 };
 
+enum class FluidSolver3D : std::uint8_t {
+    flip = 0,
+    apic,
+    pbf
+};
+
+const char* to_string(FluidSolver3D solver) noexcept;
+
 struct FluidParticleSettings {
     Real radius = 0.05_r;
     std::size_t max_particles = 0;
@@ -57,6 +65,58 @@ struct FluidParticleSettings {
     int sleep_frames = 30;
     int max_substeps = 0;
     Real surface_cell = 0.0_r;
+    FluidSolver3D solver = FluidSolver3D::flip;
+    Real flip_ratio = 0.95_r;
+    bool narrow_band = true;
+    Real band_cells = 3.0_r;
+    int pressure_iterations = 0;
+    Real pressure_tolerance = 0.0_r;
+    Real drift_correction = 1.0_r;
+    Real viscosity_scale = 1.0_r;
+    int viscosity_iterations = 0;
+    Real surface_tension_scale = 1.0_r;
+    Real settle_speed = 0.25_r;
+    Real settle_rate = 3.0_r;
+    Real damping = 0.0_r;
+    Real cfl = 0.0_r;
+    bool reseed = true;
+    int spray_neighbours = 2;
+    Real wall_friction = 0.4_r;
+};
+
+struct FluidSurfaceSettings3D {
+    Real iso = 0.5_r;
+    int smoothing = 1;
+    bool foam = true;
+    Real foam_speed = 1.2_r;
+    Real foam_range = 1.5_r;
+    bool spray = true;
+    bool close_walls = true;
+};
+
+struct FluidSurfaceMesh3D {
+    std::vector<RVec3> positions;
+    std::vector<RVec3> normals;
+    std::vector<std::uint32_t> indices;
+    std::vector<Real> foam;
+    std::vector<Real> speeds;
+    std::vector<RVec3> spray;
+    Real cell = 0.0_r;
+    int detail = -1;
+    std::uint64_t version = 0;
+    double milliseconds = 0.0;
+
+    std::size_t vertex_count() const noexcept { return positions.size(); }
+    std::size_t triangle_count() const noexcept { return indices.size() / 3; }
+    bool empty() const noexcept { return indices.empty(); }
+    void clear() noexcept {
+        positions.clear();
+        normals.clear();
+        indices.clear();
+        foam.clear();
+        speeds.clear();
+        spray.clear();
+    }
 };
 
 struct FluidVolumeDef {
@@ -75,6 +135,7 @@ struct FluidVolumeDef {
     FluidWaveSettings waves{};
     FluidParticleSettings particles{};
     FluidCouplingSettings coupling{};
+    FluidSurfaceSettings3D surface{};
 
     static FluidVolumeDef box(FluidLevel level, const AABB3D& bounds, const FluidMaterial& material = FluidMaterial::water(), Real fill = 0.0_r);
 };
@@ -114,6 +175,8 @@ struct FluidStats3D {
     int substeps = 0;
     int iterations = 0;
     double milliseconds = 0.0;
+    std::size_t fluid_cells = 0;
+    std::size_t deep_cells = 0;
 };
 
 class FluidWorld3D;
@@ -231,6 +294,27 @@ public:
     const std::vector<Real>& surface_grid() const noexcept { return m_sgrid; }
     std::size_t particle_contacts() const noexcept { return m_contact_count; }
 
+    FluidSolver3D solver() const noexcept { return m_solver; }
+    Real particle_spacing() const noexcept { return m_spacing; }
+    const std::vector<RVec3>& local_positions() const noexcept { return m_fx; }
+    const std::vector<RVec3>& local_velocities() const noexcept { return m_fv; }
+    const std::vector<Real>& level_set() const noexcept { return m_lphi; }
+    const std::vector<std::uint8_t>& cell_types() const noexcept { return m_ltype; }
+    const std::vector<Real>& cell_densities() const noexcept { return m_ldens; }
+    const std::vector<Real>& grid_velocity_u() const noexcept { return m_gu; }
+    const std::vector<Real>& grid_velocity_v() const noexcept { return m_gv; }
+    const std::vector<Real>& grid_velocity_w() const noexcept { return m_gw; }
+    const std::vector<Real>& pressure() const noexcept { return m_lpress; }
+    std::size_t liquid_cells() const noexcept { return m_liquid_count; }
+    std::size_t deep_cells() const noexcept { return m_deep_count; }
+    int last_substeps() const noexcept { return m_last_substeps; }
+    int last_iterations() const noexcept { return m_last_iterations; }
+    Real max_speed() const noexcept { return m_max_speed; }
+    std::uint64_t surface_version() const noexcept { return m_version; }
+    const FluidSurfaceMesh3D& surface_mesh(int detail = 1) const;
+    void build_surface_mesh(FluidSurfaceMesh3D& out, int detail = 1) const;
+    Real surface_mesh_cell(int detail = 1) const noexcept;
+
 private:
     struct SamplePoint {
         RVec3 local{};
@@ -262,6 +346,15 @@ private:
         RVec3 angular{};
         RVec3 point{};
         Real weight = 0.0_r;
+        RVec3 local_lo{};
+        RVec3 local_hi{};
+        Real max_rel = 0.0_r;
+    };
+
+    struct CellBox {
+        int lo[3] = { 0, 0, 0 };
+        int hi[3] = { -1, -1, -1 };
+        bool empty() const noexcept { return hi[0] < lo[0] || hi[1] < lo[1] || hi[2] < lo[2]; }
     };
 
     void build_frame(const RVec3& gravity);
@@ -311,6 +404,50 @@ private:
     Real kernel_grad(Real r) const noexcept;
     Real particle_density_at(const RVec3& world) const;
     void gather_bodies(Simulation3D& sim);
+
+    bool flip_solver() const noexcept { return m_solver != FluidSolver3D::pbf; }
+    void init_flip();
+    void flip_resize_particles(std::size_t n);
+    void flip_push(const RVec3& local, const RVec3& local_velocity);
+    void step_flip(detail::FluidTaskPool& pool, Real dt, FluidStats3D& stats);
+    void flip_substep(detail::FluidTaskPool& pool, Real h, int iterations);
+    void flip_rasterize_bodies();
+    void flip_active_box();
+    void flip_advect_particles(detail::FluidTaskPool& pool, Real h);
+    void flip_advect_grid(detail::FluidTaskPool& pool, Real h);
+    void flip_sort();
+    bool flip_band(Real h);
+    void flip_mark_spray();
+    void flip_p2g(detail::FluidTaskPool& pool);
+    void flip_lerps(detail::FluidTaskPool& pool);
+    void flip_classify();
+    void flip_redistance();
+    void flip_forces(Real h);
+    void flip_viscosity(Real h);
+    int flip_pressure(Real h, int max_iterations);
+    void flip_g2p(detail::FluidTaskPool& pool, Real h);
+    void flip_body_impulses();
+    void flip_finish_frame();
+    double flip_count_volume() const;
+    void flip_correct_volume();
+    void flip_refresh_materials();
+    Real flip_sample_u(const RVec3& l, const std::vector<Real>& f) const noexcept;
+    Real flip_sample_v(const RVec3& l, const std::vector<Real>& f) const noexcept;
+    Real flip_sample_w(const RVec3& l, const std::vector<Real>& f) const noexcept;
+    Real flip_sample_cell(const RVec3& l, const std::vector<Real>& f) const noexcept;
+    RVec3 flip_velocity_local(const RVec3& l) const noexcept;
+    Real flip_depth(const RVec3& world) const;
+    Real flip_volume() const;
+    std::size_t ucell(int i, int j, int k) const noexcept { return (static_cast<std::size_t>(j) * static_cast<std::size_t>(m_nz) + static_cast<std::size_t>(k)) * static_cast<std::size_t>(m_nx + 1) + static_cast<std::size_t>(i); }
+    std::size_t vcell(int i, int j, int k) const noexcept { return (static_cast<std::size_t>(j) * static_cast<std::size_t>(m_nz) + static_cast<std::size_t>(k)) * static_cast<std::size_t>(m_nx) + static_cast<std::size_t>(i); }
+    std::size_t wcell(int i, int j, int k) const noexcept { return (static_cast<std::size_t>(j) * static_cast<std::size_t>(m_nz + 1) + static_cast<std::size_t>(k)) * static_cast<std::size_t>(m_nx) + static_cast<std::size_t>(i); }
+    int flip_cell_of(const RVec3& l) const noexcept;
+    bool flip_static_solid(int i, int j, int k) const noexcept;
+
+    void mesh_field_particles(const std::vector<RVec3>& local, const std::vector<RVec3>* vel, Real inv_rest, bool deep) const;
+    void mesh_field_cells() const;
+    void mesh_blur(int passes) const;
+    void mesh_extract(FluidSurfaceMesh3D& out) const;
 
     const BodyCache& body_cache(const RigidBody3D& body, int samples);
     FluidForces3D measure(const RigidBody3D& body, const BodyCache& cache, const RVec3& gravity, Real ambient = -1.0e30_r, const RVec3* flow = nullptr) const;
@@ -425,6 +562,90 @@ private:
 
     std::unordered_map<std::uint64_t, BodyCache> m_cache;
     std::uint64_t m_frame = 0;
+
+    FluidSolver3D m_solver = FluidSolver3D::pbf;
+    Real m_pr = 0.025_r;
+    std::uint64_t m_version = 1;
+    std::size_t m_liquid_count = 0;
+    std::size_t m_deep_count = 0;
+    int m_last_substeps = 0;
+    int m_last_iterations = 0;
+    Real m_max_speed = 0.0_r;
+    bool m_flip_asleep = false;
+    int m_calm_frames = 0;
+    Real m_last_h = 0.0_r;
+    Real m_vlim_cells = 2.0_r;
+    Real m_flip_mix = 0.95_r;
+    Real m_drift_scale = 1.0_r;
+    Real m_calm_scale = 1.0_r;
+    double m_target_volume = 0.0;
+    bool m_target_valid = false;
+    Real m_visc_coef = 0.0_r;
+    Real m_cohesion = 0.0_r;
+    std::size_t m_solid_count = 0;
+    std::uint32_t m_seed = 1;
+    int m_flim[3] = { 0, 0, 0 };
+    CellBox m_box{};
+    CellBox m_box_prev{};
+    CellBox m_work{};
+    std::vector<RVec3> m_fx;
+    std::vector<RVec3> m_fv;
+    std::vector<RVec3> m_fcu;
+    std::vector<RVec3> m_fcv;
+    std::vector<RVec3> m_fcw;
+    std::vector<RVec3> m_fprev;
+    std::vector<RVec3> m_fdv;
+    std::vector<std::int32_t> m_fcontact;
+    std::vector<std::uint32_t> m_fkey;
+    std::vector<std::uint8_t> m_fspray;
+    std::vector<RVec3> m_ftmp_a;
+    std::vector<RVec3> m_ftmp_b;
+    std::vector<RVec3> m_ftmp_c;
+    std::vector<RVec3> m_ftmp_d;
+    std::vector<RVec3> m_ftmp_e;
+    std::vector<std::uint32_t> m_cstart;
+    std::vector<std::uint32_t> m_cfill;
+    std::vector<std::uint16_t> m_lcount;
+    std::vector<Real> m_gu, m_gv, m_gw;
+    std::vector<Real> m_gu0, m_gv0, m_gw0;
+    std::vector<Real> m_guw, m_gvw, m_gww;
+    std::vector<Real> m_gua, m_gva, m_gwa;
+    std::vector<Real> m_gscratch;
+    std::vector<std::uint8_t> m_fvalid_u, m_fvalid_v, m_fvalid_w;
+    std::vector<std::int32_t> m_lerp_i;
+    std::vector<Real> m_lerp_t;
+    std::vector<std::uint8_t> m_lsolid_nbr;
+    mutable std::vector<std::uint8_t> m_minside;
+    std::vector<Real> m_lphi;
+    std::vector<Real> m_lphi_adv;
+    std::vector<std::uint8_t> m_ltype;
+    std::vector<Real> m_ldens;
+    std::vector<Real> m_lpress;
+    std::vector<std::uint8_t> m_locc;
+    std::vector<RVec3> m_locc_vel;
+    std::vector<std::uint32_t> m_locc_list;
+    std::vector<std::int32_t> m_lidx;
+    std::vector<std::uint32_t> m_llist;
+    std::vector<double> m_pcg_b, m_pcg_x, m_pcg_r, m_pcg_z, m_pcg_s, m_pcg_q;
+    std::vector<double> m_pcg_diag, m_pcg_ax, m_pcg_ay, m_pcg_az, m_pcg_pre;
+    std::vector<std::int32_t> m_pcg_nb;
+    std::vector<std::uint32_t> m_visc_faces;
+    std::vector<std::int32_t> m_visc_nb;
+    std::vector<Real> m_visc_d;
+
+    mutable FluidSurfaceMesh3D m_mesh;
+    mutable std::vector<RVec3> m_mlocal;
+    mutable std::vector<float> m_mfield;
+    mutable std::vector<float> m_mscratch;
+    mutable std::vector<float> m_mspeed;
+    mutable std::vector<float> m_mweight;
+    mutable std::vector<std::int32_t> m_mvid;
+    mutable std::vector<std::uint32_t> m_mtouched;
+    mutable int m_mlo[3] = { 0, 0, 0 };
+    mutable int m_mdim[3] = { 0, 0, 0 };
+    mutable int m_mnodes[3] = { 0, 0, 0 };
+    mutable Real m_mh = 0.0_r;
+    mutable Real m_miso = 0.5_r;
 };
 
 struct FluidWorld3DConfig {

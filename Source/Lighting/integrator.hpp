@@ -25,6 +25,7 @@ struct Surface {
     const Material* m = nullptr;
     std::uint32_t tri = 0;
     std::uint32_t instance = 0;
+    std::uint32_t local = 0;
     float u = 0.0f;
     float v = 0.0f;
     Vec2f uv;

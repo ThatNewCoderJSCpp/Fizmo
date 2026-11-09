@@ -229,6 +229,8 @@ struct EmitterSettings {
     bool          soft = false;
     float         soft_distance = 0.5f;
     float         near_fade = 0.0f;
+    float         pivot_x = 0.0f;
+    float         pivot_y = 0.0f;
     SortMode      sort = SortMode::Auto;
     int           frames_x = 1;
     int           frames_y = 1;

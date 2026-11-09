@@ -82,8 +82,8 @@ Vec3f mapped_normal(const Context& ctx, const Tri& tri, const Hit& hit, const Ma
     const Vec2f uv = interpolate_uv(tri, hit);
     const Vec3f ts = decode_normal(m.normal_map.sample(uv, m.uv), m.normal_map.strength);
     Vec3f t, up;
-    if (tri.tangents < ctx.c->tangents.size()) {
-        const TriTangents& tt = ctx.c->tangents[tri.tangents];
+    if (const TriTangents* found = tangents_of(*ctx.c, tri, hit)) {
+        const TriTangents& tt = *found;
         const float w = 1.0f - hit.u - hit.v;
         t = tt.t[0] * w + tt.t[1] * hit.u + tt.t[2] * hit.v;
         t = t - ns * dot(ns, t);
@@ -119,12 +119,20 @@ void apply_material_maps(const Context& ctx, const Tri& tri, const Hit& hit, Sur
     s.transmission = m.transmission;
     s.emission = m.emitted();
     s.mapped = false;
+    if (const TriColors* vc = colors_of(*ctx.c, tri, hit)) {
+        const float w = 1.0f - hit.u - hit.v;
+        const Vec4f a = vc->c[0], b = vc->c[1], c = vc->c[2];
+        s.base_color = s.base_color * Rgb(a.x * w + b.x * hit.u + c.x * hit.v, a.y * w + b.y * hit.u + c.y * hit.v, a.z * w + b.z * hit.u + c.z * hit.v);
+        s.opacity *= a.w * w + b.w * hit.u + c.w * hit.v;
+        s.mapped = true;
+    }
     if (!m.has_maps()) return;
+    const float vertex_alpha = m.opacity > 0.0f ? s.opacity / m.opacity : 1.0f;
     s.mapped = true;
     const MapPoint mp = map_point(ctx, tri, hit, m, s.p, s.ns);
     s.texcoord = mp.uv;
     if (m.base_color_map.valid()) s.base_color = s.base_color * sample_map(m.base_color_map, m, mp).rgb();
-    s.opacity = mapped_opacity(m, mp);
+    s.opacity = mapped_opacity(m, mp) * vertex_alpha;
     if (m.roughness_map.valid()) s.roughness *= map_value(m.roughness_map, m, mp);
     if (m.metallic_map.valid()) s.metallic *= map_value(m.metallic_map, m, mp);
     if (m.transmission_map.valid()) s.transmission *= map_value(m.transmission_map, m, mp);
@@ -191,9 +199,10 @@ void build_tri_light_map(Context& ctx) {
 }
 
 Surface make_surface(const Context& ctx, const Ray& ray, const Hit& hit) {
-    const Tri& tri = ctx.c->tris[hit.tri];
+    const Tri& tri = tri_of(*ctx.c, hit);
     Surface s;
     s.tri = hit.tri;
+    s.local = tri.local;
     s.instance = tri.instance;
     s.u = hit.u;
     s.v = hit.v;
@@ -261,8 +270,8 @@ Rgb transmittance(const Context& ctx, const Vec3f& from, const Vec3f& dir, float
         for (int i = 0; i < 16 && left > 1e-5f; ++i) {
             Ray r{ o, dir, left };
             Hit h;
-            if (!ctx.c->bvh.intersect(ctx.c->tris, r, h, tri_casts_shadows)) return Rgb(1.0f);
-            const Tri& tri = ctx.c->tris[h.tri];
+            if (!intersect(*ctx.c, r, h, tri_casts_shadows)) return Rgb(1.0f);
+            const Tri& tri = tri_of(*ctx.c, h);
             const Material& m = ctx.material(tri.material);
             if (!m.has_opacity_maps() || hit_opacity(ctx, tri, h, m) >= 0.5f) return Rgb();
             const float step = h.t + 1e-4f;
@@ -277,16 +286,17 @@ Rgb transmittance(const Context& ctx, const Vec3f& from, const Vec3f& dir, float
     for (int i = 0; i < 16 && left > 1e-5f; ++i) {
         Ray r{ o, dir, left };
         Hit h;
-        if (!ctx.c->bvh.intersect(ctx.c->tris, r, h, tri_casts_shadows)) return t;
-        const Material& m = ctx.material(ctx.c->tris[h.tri].material);
+        if (!intersect(*ctx.c, r, h, tri_casts_shadows)) return t;
+        const Tri& hit_tri = tri_of(*ctx.c, h);
+        const Material& m = ctx.material(hit_tri.material);
         const bool cut = m.has_opacity_maps();
-        const float alpha = cut ? hit_opacity(ctx, ctx.c->tris[h.tri], h, m) : m.opacity;
+        const float alpha = cut ? hit_opacity(ctx, hit_tri, h, m) : m.opacity;
         if (cut && alpha <= 0.0f) {
             t *= Rgb(1.0f);
         } else if (m.is_transmissive()) {
             const float pass = clamp01(m.transmission) * (1.0f - clamp01(m.metallic));
             Rgb tint = w.lift(m.base_color);
-            const float cos_t = std::fabs(dot(dir, normalize(cross(ctx.c->tris[h.tri].e1, ctx.c->tris[h.tri].e2))));
+            const float cos_t = std::fabs(dot(dir, normalize(cross(hit_tri.e1, hit_tri.e2))));
             const float f = fresnel_dielectric(cos_t, 1.0f / std::max(m.ior, 1.0001f));
             t *= tint * (pass * (1.0f - f) + (1.0f - pass) * 0.0f);
         } else if (alpha < 1.0f) {
@@ -504,7 +514,7 @@ Rgb baked_irradiance(const Context& ctx, const Surface& s) {
             const Instance& inst = insts[s.instance];
             if (inst.mesh < ctx.scene->meshes().size()) {
                 const Mesh& m = ctx.scene->meshes()[inst.mesh];
-                const std::size_t t = static_cast<std::size_t>(ctx.c->tris[s.tri].local) * 3;
+                const std::size_t t = static_cast<std::size_t>(s.local) * 3;
                 const auto& vx = b->vertex[s.instance];
                 if (t + 2 < m.indices.size() && m.indices[t + 2] < vx.size() && m.indices[t] < vx.size() && m.indices[t + 1] < vx.size()) {
                     const float w = 1.0f - s.u - s.v;

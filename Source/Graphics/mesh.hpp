@@ -206,6 +206,25 @@ struct Material3D {
     float          triplanar_scale = 1.0f;
     float          triplanar_sharpness = 4.0f;
 
+    static constexpr int MAX_SPLAT_LAYERS = 8;
+
+    bool           soft            = false;
+    float          soft_distance   = 0.5f;
+    float          soft_near       = 0.05f;
+    float          soft_near_fade  = 0.0f;
+
+    int            layer_count     = 0;
+    const Texture* layers[MAX_SPLAT_LAYERS]        = {};
+    const Texture* layer_normals[MAX_SPLAT_LAYERS] = {};
+    float          layer_tiling[MAX_SPLAT_LAYERS]  = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+    Color          layer_tint[MAX_SPLAT_LAYERS]    = { Color(255, 255, 255, 255), Color(255, 255, 255, 255), Color(255, 255, 255, 255), Color(255, 255, 255, 255),
+                                                       Color(255, 255, 255, 255), Color(255, 255, 255, 255), Color(255, 255, 255, 255), Color(255, 255, 255, 255) };
+    const Texture* splat_map       = nullptr;
+    const Texture* splat_map_b     = nullptr;
+    float          splat_height_blend = 0.2f;
+    bool           splat_triplanar = false;
+    UvTransform    splat_uv;
+
     static Material3D opaque() noexcept { return {}; }
     static Material3D double_sided() noexcept { Material3D m; m.cull = Cull3D::None; return m; }
     static Material3D transparent() noexcept;
@@ -251,6 +270,25 @@ struct Material3D {
     Material3D& with_uv(const UvTransform& t) noexcept { uv = t; return *this; }
     Material3D& with_tiling(float u, float v) noexcept { uv.scale_u = u; uv.scale_v = v; return *this; }
     Material3D& with_triplanar(float scale = 1.0f, float sharpness = 4.0f) noexcept { triplanar = true; triplanar_scale = scale; triplanar_sharpness = sharpness; return *this; }
+
+    Material3D& with_soft(float distance = 0.5f, float near_fade = 0.0f) noexcept { soft = true; soft_distance = distance; soft_near_fade = near_fade; return *this; }
+    Material3D& with_splat_map(const Texture& weights_0_3, const Texture* weights_4_7 = nullptr) noexcept { splat_map = &weights_0_3; splat_map_b = weights_4_7; return *this; }
+    Material3D& with_layer(int index, const Texture* tex, float tiling = 1.0f, const Color& tint = Color(255, 255, 255, 255), const Texture* normal = nullptr) noexcept {
+        if (index < 0 || index >= MAX_SPLAT_LAYERS) return *this;
+        layers[index] = tex;
+        layer_tiling[index] = tiling;
+        layer_tint[index] = tint;
+        layer_normals[index] = normal;
+        if (layer_count <= index) layer_count = index + 1;
+        return *this;
+    }
+    Material3D& with_height_blend(float depth) noexcept { splat_height_blend = depth; return *this; }
+    Material3D& with_splat_uv(const UvTransform& t) noexcept { splat_uv = t; return *this; }
+    Material3D& with_splat_triplanar(float scale = 1.0f, float sharpness = 4.0f) noexcept { splat_triplanar = true; triplanar_scale = scale; triplanar_sharpness = sharpness; return *this; }
+
+    int splat_layers() const noexcept { return splat_map && splat_map->valid() ? (std::min)((std::max)(layer_count, 0), splat_map_b && splat_map_b->valid() ? MAX_SPLAT_LAYERS : MAX_SPLAT_LAYERS / 2) : 0; }
+    bool has_splat() const noexcept { return splat_layers() > 0; }
+    bool has_soft() const noexcept { return soft && blend != Blend3D::Opaque && (soft_distance > 0.0f || soft_near_fade > 0.0f); }
 
     bool has_maps() const noexcept {
         return normal_map || orm_map || emissive_map || opacity_map || alpha_cutoff > 0.0f || triplanar || !uv.is_identity();

@@ -32,9 +32,10 @@ struct alignas(16) Params {
     float tone[4];
     float balance[4];
     float misc[4];
+    std::uint32_t inst[4];
 };
 
-static_assert(sizeof(Params) == 272, "Params must match the std140 block in path_tracer.comp");
+static_assert(sizeof(Params) == 288, "Params must match the std140 block in path_tracer.comp");
 
 struct Push {
     std::uint32_t mode = 0;
@@ -252,6 +253,23 @@ struct GpuPathTracer::State {
     bool env_lights = true;
     bool env_any = false;
 
+    struct BlasSlot {
+        std::shared_ptr<const lighting::detail::Blas> blas;
+        std::uint32_t tri_base = 0;
+        std::uint32_t node_base = 0;
+    };
+    bool uploaded = false;
+    std::uint64_t up_flat = 0;
+    std::uint64_t up_blas = 0;
+    std::uint64_t up_tlas = 0;
+    std::uint64_t up_light = 0;
+    std::vector<float> tri_data;
+    std::vector<float> node_data;
+    std::size_t geo_node_floats = 0;
+    std::vector<BlasSlot> blas_slots;
+    std::uint64_t partial_updates = 0;
+    std::uint64_t full_uploads = 0;
+
     void fail(const std::string& message) {
         failed = true;
         error = message;
@@ -383,10 +401,152 @@ struct GpuPathTracer::State {
         return true;
     }
 
+    static void pack_tri(std::vector<float>& t, std::size_t at, const lighting::detail::Tri& tri, std::uint32_t material, std::uint32_t flags, std::uint32_t channels, std::int32_t light, float uv_slot, float color_slot) {
+        if (t.size() < at + 24) t.resize(at + 24);
+        float* d = t.data() + at;
+        std::uint32_t lu;
+        std::memcpy(&lu, &light, sizeof(lu));
+        const lighting::Vec3f* v[6] = { &tri.v0, &tri.e1, &tri.e2, &tri.n0, &tri.n1, &tri.n2 };
+        const float w[6] = { as_float(material), as_float(flags), as_float(channels), as_float(lu), uv_slot, color_slot };
+        for (int k = 0; k < 6; ++k) {
+            d[k * 4 + 0] = v[k]->x;
+            d[k * 4 + 1] = v[k]->y;
+            d[k * 4 + 2] = v[k]->z;
+            d[k * 4 + 3] = w[k];
+        }
+    }
+
+    static void pack_node(std::vector<float>& n, std::size_t at, const lighting::detail::BvhNode& node, std::uint32_t first) {
+        if (n.size() < at + 8) n.resize(at + 8);
+        float* d = n.data() + at;
+        d[0] = node.lo.x;
+        d[1] = node.lo.y;
+        d[2] = node.lo.z;
+        d[3] = as_float(first);
+        d[4] = node.hi.x;
+        d[5] = node.hi.y;
+        d[6] = node.hi.z;
+        d[7] = as_float(node.count);
+    }
+
+    bool write_region(gpu::Buffer& b, const std::vector<float>& data, std::size_t first_float, std::size_t count, const char* name) {
+        if (count == 0) return true;
+        const std::uint64_t offset = static_cast<std::uint64_t>(first_float) * sizeof(float);
+        const std::uint64_t bytes = static_cast<std::uint64_t>(count) * sizeof(float);
+        if (!b.valid() || b.size() < offset + bytes) return false;
+        if (gpu::failed(b.write(data.data() + first_float, bytes, offset))) {
+            fail(std::string("could not update ") + name);
+            return false;
+        }
+        return true;
+    }
+
+    bool upload_slack(gpu::Buffer& b, const std::vector<float>& data, std::size_t slack_floats, const char* name) {
+        const std::uint64_t bytes = static_cast<std::uint64_t>(data.size()) * sizeof(float);
+        if (!b.valid() || b.size() < bytes) {
+            b.destroy();
+            if (!storage(b, bytes + static_cast<std::uint64_t>(slack_floats) * sizeof(float), name)) return false;
+        }
+        if (bytes == 0) return true;
+        if (gpu::failed(b.write(data.data(), bytes, 0))) {
+            fail(std::string("could not upload ") + name);
+            return false;
+        }
+        return true;
+    }
+
+    void pack_tlas(const lighting::detail::Compiled& c) {
+        node_data.resize(geo_node_floats);
+        const auto& tn = c.tlas_bvh.nodes();
+        if (c.tlas.empty() || tn.empty()) {
+            set4(p.inst, 0u, 0u, 0u, 0u);
+            return;
+        }
+        const std::uint32_t root = static_cast<std::uint32_t>(geo_node_floats / 8);
+        for (const auto& node : tn) pack_node(node_data, node_data.size(), node, node.count > 0 ? node.first : node.first + root);
+        const std::uint32_t inst_base = static_cast<std::uint32_t>(node_data.size() / 4);
+        for (const auto& ti : c.tlas) {
+            const std::uint32_t blas_root = ti.mesh < blas_slots.size() ? blas_slots[ti.mesh].node_base : 0u;
+            for (int r = 0; r < 3; ++r) put(node_data, ti.to_object.m[r * 4 + 0], ti.to_object.m[r * 4 + 1], ti.to_object.m[r * 4 + 2], ti.to_object.m[r * 4 + 3]);
+            const bool live = ti.mesh < blas_slots.size() && blas_slots[ti.mesh].blas;
+            put(node_data, as_float(blas_root), as_float(ti.material), as_float(live ? ti.flags : 0u), as_float(ti.channels));
+        }
+        set4(p.inst, root, inst_base, static_cast<std::uint32_t>(c.tlas.size()), 0u);
+    }
+
+    bool update_tlas(const lighting::detail::Compiled& c) {
+        pack_tlas(c);
+        const std::size_t tail = node_data.size() - geo_node_floats;
+        if (!write_region(nodes, node_data, geo_node_floats, tail, "fizmo path tracer instances")) {
+            if (failed) return false;
+            if (!upload_slack(nodes, node_data, tail / 2 + 1024, "fizmo path tracer bvh")) return false;
+        }
+        return true;
+    }
+
+    bool refit_blases(const lighting::detail::Compiled& c) {
+        if (c.mesh_blas.size() != blas_slots.size()) return false;
+        for (std::size_t mi = 0; mi < c.mesh_blas.size(); ++mi) {
+            BlasSlot& slot = blas_slots[mi];
+            const auto& now = c.mesh_blas[mi];
+            if (now == slot.blas) continue;
+            if (!slot.blas) {
+                bool referenced = false;
+                for (const auto& ti : c.tlas) referenced = referenced || ti.mesh == mi;
+                if (referenced) return false;
+                continue;
+            }
+            if (!now || now->refits == 0 || now->tris.size() != slot.blas->tris.size() || now->bvh.nodes().size() != slot.blas->bvh.nodes().size()) return false;
+        }
+        for (std::size_t mi = 0; mi < c.mesh_blas.size(); ++mi) {
+            BlasSlot& slot = blas_slots[mi];
+            const auto& now = c.mesh_blas[mi];
+            if (now == slot.blas || !slot.blas) continue;
+            const std::size_t tri_at = static_cast<std::size_t>(slot.tri_base) * 24;
+            for (std::size_t k = 0; k < now->tris.size(); ++k) {
+                const std::size_t at = tri_at + k * 24;
+                const float uv = tri_data[at + 19];
+                const float col = tri_data[at + 23];
+                const auto& tri = now->tris[k];
+                pack_tri(tri_data, at, tri, 0u, tri.flags, 0u, -1, uv, col);
+            }
+            const auto& bn = now->bvh.nodes();
+            const std::size_t node_at = static_cast<std::size_t>(slot.node_base) * 8;
+            for (std::size_t k = 0; k < bn.size(); ++k) pack_node(node_data, node_at + k * 8, bn[k], bn[k].count > 0 ? bn[k].first + slot.tri_base : bn[k].first + slot.node_base);
+            if (!write_region(tris, tri_data, tri_at, now->tris.size() * 24, "fizmo path tracer triangles")) return false;
+            if (!write_region(nodes, node_data, node_at, bn.size() * 8, "fizmo path tracer bvh")) return false;
+            slot.blas = now;
+        }
+        return true;
+    }
+
+    bool partial_update(lighting::Scene& sc, const lighting::detail::Compiled& c) {
+        if (!uploaded || c.light_epoch != up_light || c.flat_epoch != up_flat) return false;
+        const bool blas_changed = c.blas_epoch != up_blas;
+        if (blas_changed && !refit_blases(c)) return false;
+        if (failed) return false;
+        if (blas_changed || c.tlas_epoch != up_tlas) {
+            if (!update_tlas(c)) return false;
+        }
+        up_blas = c.blas_epoch;
+        up_tlas = c.tlas_epoch;
+        geometry_version = sc.geometry_version();
+        lighting_version = sc.lighting_version();
+        center = c.center;
+        radius = c.radius;
+        ++partial_updates;
+        scene_dirty = false;
+        params_dirty = true;
+        samples = 0;
+        return true;
+    }
+
     void build_scene() {
         lighting::Scene& sc = *scene;
         sc.commit();
         const lighting::detail::Compiled& c = sc.compiled();
+        if (partial_update(sc, c)) return;
+        if (failed) return;
         geometry_version = sc.geometry_version();
         lighting_version = sc.lighting_version();
 
@@ -400,30 +560,49 @@ struct GpuPathTracer::State {
         const auto& scene_materials = static_cast<const lighting::Scene&>(sc).materials();
         std::vector<float> extra;
         std::vector<std::pair<std::size_t, std::uint32_t>> patches;
+        auto color_patch = [&](const lighting::detail::TriColors* tc) {
+            if (!tc) return;
+            patches.emplace_back(t.size() - 1, static_cast<std::uint32_t>(extra.size()));
+            for (int k = 0; k < 3; ++k) extra.insert(extra.end(), { tc->c[k].x, tc->c[k].y, tc->c[k].z, tc->c[k].w });
+        };
         for (std::size_t i = 0; i < c.tris.size(); ++i) {
             const auto& tri = c.tris[i];
             const std::uint32_t channels = tri.instance < c.instance_channels.size() ? c.instance_channels[tri.instance] : 1u;
-            put(t, tri.v0, as_float(tri.material));
-            put(t, tri.e1, as_float(tri.flags));
-            put(t, tri.e2, as_float(channels));
-            std::int32_t li = tri_light[i];
-            std::uint32_t lu;
-            std::memcpy(&lu, &li, sizeof(lu));
-            put(t, tri.n0, as_float(lu));
             const bool uv = (tri.flags & lighting::detail::tri_texcoords) && tri.material < scene_materials.size() && gpu_base_map(scene_materials[tri.material]);
-            put(t, tri.n1, as_float(kNoUv));
+            pack_tri(t, t.size(), tri, tri.material, tri.flags, channels, tri_light[i], as_float(kNoUv), as_float(kNoUv));
             if (uv) {
-                patches.emplace_back(t.size() - 1, static_cast<std::uint32_t>(extra.size()));
+                patches.emplace_back(t.size() - 5, static_cast<std::uint32_t>(extra.size()));
                 extra.insert(extra.end(), { tri.tex0.x, tri.tex0.y, tri.tex1.x, tri.tex1.y, tri.tex2.x, tri.tex2.y });
             }
-            put(t, tri.n2, 0.0f);
+            color_patch(tri.colors < c.colors.size() ? &c.colors[tri.colors] : nullptr);
+        }
+        blas_slots.assign(c.mesh_blas.size(), BlasSlot{});
+        std::vector<std::uint8_t> referenced(c.mesh_blas.size(), 0);
+        for (const auto& ti : c.tlas)
+            if (ti.mesh < referenced.size()) referenced[ti.mesh] = 1;
+        for (std::size_t mi = 0; mi < c.mesh_blas.size(); ++mi) {
+            const auto& b = c.mesh_blas[mi];
+            if (!referenced[mi] || !b || b->tris.empty()) continue;
+            blas_slots[mi].blas = b;
+            blas_slots[mi].tri_base = static_cast<std::uint32_t>(t.size() / 24);
+            for (const auto& tri : b->tris) {
+                pack_tri(t, t.size(), tri, 0u, tri.flags, 0u, -1, as_float(kNoUv), as_float(kNoUv));
+                if (tri.flags & lighting::detail::tri_texcoords) {
+                    patches.emplace_back(t.size() - 5, static_cast<std::uint32_t>(extra.size()));
+                    extra.insert(extra.end(), { tri.tex0.x, tri.tex0.y, tri.tex1.x, tri.tex1.y, tri.tex2.x, tri.tex2.y });
+                }
+                color_patch(tri.colors < b->colors.size() ? &b->colors[tri.colors] : nullptr);
+            }
         }
         std::vector<float> n;
         const auto& bvh_nodes = c.bvh.nodes();
         n.reserve(bvh_nodes.size() * 8);
-        for (const auto& node : bvh_nodes) {
-            put(n, node.lo, as_float(node.first));
-            put(n, node.hi, as_float(node.count));
+        for (const auto& node : bvh_nodes) pack_node(n, n.size(), node, node.first);
+        for (std::size_t mi = 0; mi < blas_slots.size(); ++mi) {
+            BlasSlot& slot = blas_slots[mi];
+            if (!slot.blas) continue;
+            slot.node_base = static_cast<std::uint32_t>(n.size() / 8);
+            for (const auto& node : slot.blas->bvh.nodes()) pack_node(n, n.size(), node, node.count > 0 ? node.first + slot.tri_base : node.first + slot.node_base);
         }
         std::vector<float> m;
         const auto& materials = static_cast<const lighting::Scene&>(sc).materials();
@@ -550,19 +729,29 @@ struct GpuPathTracer::State {
 
         center = c.center;
         radius = c.radius;
-        tri_count = c.tris.size();
+        tri_count = t.size() / 24;
         light_count = c.lights.size();
-        if (!upload(tris, t, "fizmo path tracer triangles")) return;
-        if (!upload(nodes, n, "fizmo path tracer bvh")) return;
+        geo_node_floats = n.size();
+        node_data = std::move(n);
+        pack_tlas(c);
+        tri_data = std::move(t);
+        if (!upload(tris, tri_data, "fizmo path tracer triangles")) return;
+        if (!upload_slack(nodes, node_data, (node_data.size() - geo_node_floats) / 2 + 1024, "fizmo path tracer bvh")) return;
         if (!upload(mats, m, "fizmo path tracer materials")) return;
         if (!upload(lights, l, "fizmo path tracer lights")) return;
         if (!upload(tables, tab, "fizmo path tracer tables")) return;
-        p.counts[0] = static_cast<std::uint32_t>(c.tris.size());
+        p.counts[0] = static_cast<std::uint32_t>(tri_count);
         p.counts[1] = static_cast<std::uint32_t>(bvh_nodes.size());
         p.counts[2] = static_cast<std::uint32_t>(materials.size());
         p.counts[3] = static_cast<std::uint32_t>(c.lights.size() - na);
         p.size[2] = static_cast<std::uint32_t>(c.lights.size());
         p.size[3] = static_cast<std::uint32_t>(na);
+        uploaded = true;
+        up_flat = c.flat_epoch;
+        up_blas = c.blas_epoch;
+        up_tlas = c.tlas_epoch;
+        up_light = c.light_epoch;
+        ++full_uploads;
         scene_dirty = false;
         params_dirty = true;
         samples = 0;
@@ -764,6 +953,7 @@ void GpuPathTracer::detach() {
     s.device = nullptr;
     s.scene_dirty = true;
     s.group_dirty = true;
+    s.uploaded = false;
     s.samples = 0;
 }
 
