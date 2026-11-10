@@ -115,6 +115,7 @@ struct FluidCouplingSettings {
     Real buoyancy_scale = 1.0_r;
     Real drag_scale = 1.0_r;
     Real push_scale = 1.0_r;
+    Real splash = 1.0_r;
     Real linear_damping = 0.8_r;
     Real angular_damping = 0.8_r;
     std::uint64_t layers = ~0ULL;

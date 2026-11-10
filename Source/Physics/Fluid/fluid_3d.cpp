@@ -385,11 +385,13 @@ const FluidVolume3D::BodyCache& FluidVolume3D::body_cache(const RigidBody3D& bod
     cache.signature = sig;
     cache.points.clear();
     cache.collider_start.clear();
+    cache.collider_half.clear();
     cache.volume = 0.0_r;
     cache.spacing = std::numeric_limits<Real>::max();
     const int n = std::max(2, samples);
     for (const Collider3D& c : body.colliders()) {
         cache.collider_start.push_back(static_cast<std::uint32_t>(cache.points.size()));
+        cache.collider_half.push_back(V3{});
         const Shape3D& s = c.shape;
         if (c.is_sensor || s.is_static_only()) continue;
         if (s.type == ShapeType3D::Sphere) {
@@ -405,6 +407,7 @@ const FluidVolume3D::BodyCache& FluidVolume3D::body_cache(const RigidBody3D& bod
         const int cy = std::max(1, static_cast<int>(std::ceil(ext.y / step - 1e-3_r)));
         const int cz = std::max(1, static_cast<int>(std::ceil(ext.z / step - 1e-3_r)));
         const V3 cell{ ext.x / static_cast<Real>(cx), ext.y / static_cast<Real>(cy), ext.z / static_cast<Real>(cz) };
+        cache.collider_half.back() = cell * 0.5_r;
         const Real w = cell.x * cell.y * cell.z;
         const std::size_t first = cache.points.size();
         for (int z = 0; z < cz; ++z) {
@@ -416,7 +419,10 @@ const FluidVolume3D::BodyCache& FluidVolume3D::body_cache(const RigidBody3D& bod
                 }
             }
         }
-        if (cache.points.size() == first) cache.points.push_back(SamplePoint{ c.local_offset.apply(box.center()), std::max(w, ext.x * ext.y * ext.z) });
+        if (cache.points.size() == first) {
+            cache.points.push_back(SamplePoint{ c.local_offset.apply(box.center()), std::max(w, ext.x * ext.y * ext.z) });
+            cache.collider_half.back() = ext * 0.5_r;
+        }
         Real total = 0.0_r;
         for (std::size_t q = first; q < cache.points.size(); ++q) total += cache.points[q].weight;
         const Real exact = analytic_volume(s);
@@ -526,8 +532,20 @@ Real FluidVolume3D::ambient_level(const RigidBody3D& body, RVec3* flow) const {
     switch (m_def.level) {
     case FluidLevel::realistic: return particle_ambient(body);
     case FluidLevel::flowing: return cell_ambient(body, flow);
+    case FluidLevel::waves: {
+        V3 lo, hi;
+        if (m_cx == 0 || !local_footprint(body, lo, hi)) return -1.0e30_r;
+        if (hi.x < 0.0_r || hi.z < 0.0_r || lo.x > m_size.x || lo.z > m_size.z) return -1.0e30_r;
+        const Real level = wave_ambient(lo.x, lo.z, hi.x, hi.z);
+        return level > 0.0_r ? level : -1.0e30_r;
+    }
     default: return -1.0e30_r;
     }
+}
+
+void FluidVolume3D::ignore_body(const RigidBody3D& body, bool ignore) {
+    if (ignore) m_ignored.insert(body.id());
+    else m_ignored.erase(body.id());
 }
 
 void FluidWorld3D::couple(Simulation3D& sim, Real dt) {
@@ -542,7 +560,7 @@ void FluidWorld3D::couple(Simulation3D& sim, Real dt) {
         f.layers = v.m_def.coupling.layers;
         m_bodies = sim.query_aabb(v.m_world_bounds.fatten(0.05_r), f);
         for (RigidBody3D* b : m_bodies) {
-            if (!b || b->inv_mass() <= 0.0_r) continue;
+            if (!b || b->inv_mass() <= 0.0_r || (!particles && v.ignores(*b))) continue;
             if (m_cfg.require_buoyancy_flag && !b->has(PhysicsFlags::Buoyancy)) continue;
             V3 ring_flow{};
             bool has_flow = false;
@@ -551,8 +569,27 @@ void FluidWorld3D::couple(Simulation3D& sim, Real dt) {
             has_flow = v.m_def.level == FluidLevel::flowing && ambient > -1.0e29_r;
             const FluidVolume3D::BodyCache& cache = v.body_cache(*b, m_quality.buoyancy_samples);
             const FluidForces3D fo = v.measure(*b, cache, g, ambient, has_flow ? &ring_flow : nullptr);
-            if (!fo.touching) continue;
+            if (!fo.touching) {
+                v.m_entry.erase(b->id());
+                continue;
+            }
             ++m_stats.bodies;
+            if (v.m_def.level == FluidLevel::waves && v.m_def.coupling.splash > 0.0_r) {
+                Real& was = v.m_entry[b->id()];
+                const Real entered = fo.submerged_fraction - was;
+                was = fo.submerged_fraction;
+                const V3 vel = b->linear_velocity();
+                const Real vn = vec3::dot(vel, v.m_up);
+                if (entered > 0.0_r && vn < 0.0_r) {
+                    const Real size = std::cbrt(std::max(fo.body_volume, 1e-6_r));
+                    const Real energy = 0.5_r * (1.0_r / b->inv_mass()) * vn * vn * entered * 0.06_r * v.m_def.coupling.splash;
+                    const Real radius = std::max(2.0_r * v.m_dx, 1.25_r * size);
+                    const Real rho = std::max(v.m_def.material.density, 1.0_r);
+                    Real amp = std::sqrt(2.0_r * energy / (rho * v.m_g * kPi * radius * radius * 0.0647_r));
+                    amp = std::min(amp, 0.45_r * v.m_size.y);
+                    if (amp > 1e-5_r) v.disturb(fo.center_of_buoyancy, -amp, radius);
+                }
+            }
             FluidForces3D& acc = m_body_forces[b->id()];
             acc.touching = true;
             acc.body_volume = std::max(acc.body_volume, fo.body_volume);
@@ -574,6 +611,21 @@ void FluidWorld3D::couple(Simulation3D& sim, Real dt) {
                 const Real c = norm(fo.drag) / speed;
                 const Real keep = 1.0_r - std::exp(-c * dt / mass);
                 b->apply_impulse_at(rel * (-mass * keep), fo.center_of_buoyancy);
+                if (v.m_def.level == FluidLevel::waves && v.m_def.coupling.splash > 0.0_r) {
+                    const Real lost = 0.5_r * mass * speed * speed * (1.0_r - (1.0_r - keep) * (1.0_r - keep));
+                    const Real size = std::cbrt(std::max(fo.body_volume, 1e-6_r));
+                    const Real below = ambient > -1.0e29_r ? std::max(0.0_r, ambient - v.to_local(fo.center_of_buoyancy).y) : 0.0_r;
+                    const Real near_surface = std::exp(-below / (1.5_r * size));
+                    const Real energy = lost * near_surface * 0.25_r * v.m_def.coupling.splash;
+                    const Real radius = std::max(2.0_r * v.m_dx, 0.75_r * size);
+                    const Real rho = std::max(v.m_def.material.density, 1.0_r);
+                    Real amp = std::sqrt(2.0_r * energy / (rho * v.m_g * kPi * radius * radius * 0.0647_r));
+                    amp = std::min(amp, 0.45_r * v.m_size.y);
+                    if (amp > 1e-5_r) {
+                        const Real along = vec3::dot(rel, v.m_up);
+                        v.disturb(fo.center_of_buoyancy, along < 0.0_r ? -amp : amp, radius);
+                    }
+                }
             }
             const V3 w = b->angular_velocity();
             const Real wl = norm(w);
@@ -670,7 +722,7 @@ void FluidWorld3D::step(Simulation3D& sim, Real dt) {
         f.layers = v.m_def.coupling.layers;
         m_bodies = sim.query_aabb(v.m_world_bounds.fatten(0.05_r), f);
         for (RigidBody3D* b : m_bodies) {
-            if (!b) continue;
+            if (!b || v.ignores(*b)) continue;
             const FluidVolume3D::BodyCache& cache = v.body_cache(*b, m_quality.buoyancy_samples);
             v.push_fluid(*b, cache, dt);
         }

@@ -33,9 +33,15 @@ struct alignas(16) Params {
     float balance[4];
     float misc[4];
     std::uint32_t inst[4];
+    float prev_pos[4];
+    float prev_forward[4];
+    float prev_right[4];
+    float prev_up[4];
+    std::uint32_t rt[4];
+    float filter_strength[4];
 };
 
-static_assert(sizeof(Params) == 288, "Params must match the std140 block in path_tracer.comp");
+static_assert(sizeof(Params) == 384, "Params must match the std140 block in path_tracer.comp");
 
 struct Push {
     std::uint32_t mode = 0;
@@ -216,6 +222,14 @@ struct GpuPathTracer::State {
     int samples_per_frame = 1;
     bool paused = false;
     bool flip = false;
+    bool temporal = true;
+    bool have_history = false;
+    bool moved = false;
+    std::uint32_t parity = 0;
+    std::uint64_t total_frames = 0;
+    std::uint32_t history_cap = 24;
+    float prev_cam[16] = {};
+    bool have_prev_cam = false;
 
     gpu::Device* device = nullptr;
     gpu::ShaderModule shader;
@@ -231,6 +245,8 @@ struct GpuPathTracer::State {
     gpu::Buffer accum;
     gpu::Buffer cells;
     gpu::Buffer photons;
+    gpu::Buffer guide;
+    gpu::Buffer filter;
     gpu::Texture output;
     gpu::BindGroup group;
     bool group_dirty = true;
@@ -325,8 +341,8 @@ struct GpuPathTracer::State {
             fail("could not compile the path tracer shader: " + device->last_error());
             return false;
         }
-        gpu::BindGroupLayoutEntry entries[10];
-        for (std::uint32_t i = 0; i < 10; ++i) {
+        gpu::BindGroupLayoutEntry entries[12];
+        for (std::uint32_t i = 0; i < 12; ++i) {
             entries[i].binding = i;
             entries[i].stages = gpu::ShaderStage::Compute;
             entries[i].type = gpu::BindingType::StorageBuffer;
@@ -339,8 +355,10 @@ struct GpuPathTracer::State {
         entries[9].type = gpu::BindingType::StorageTexture;
         entries[9].storage_format = gpu::Format::RGBA8Unorm;
         entries[9].access = gpu::StorageAccess::WriteOnly;
+        entries[10].access = gpu::StorageAccess::ReadWrite;
+        entries[11].access = gpu::StorageAccess::ReadWrite;
         gpu::BindGroupLayoutDesc ld;
-        ld.entries = { entries, 10 };
+        ld.entries = { entries, 12 };
         ld.name = "fizmo path tracer";
         if (gpu::failed(layout.create(*device, ld))) {
             fail("could not create the path tracer bind layout");
@@ -393,10 +411,20 @@ struct GpuPathTracer::State {
             group_dirty = true;
         }
         const std::uint64_t bytes = static_cast<std::uint64_t>(width) * height * 16u;
-        if (!accum.valid() || accum.size() < bytes) {
+        if (!accum.valid() || accum.size() < bytes * 2u) {
             accum.destroy();
-            if (!storage(accum, bytes, "fizmo path tracer accumulation")) return false;
+            if (!storage(accum, bytes * 2u, "fizmo path tracer accumulation")) return false;
             samples = 0;
+            have_history = false;
+        }
+        if (!guide.valid() || guide.size() < bytes * 6u) {
+            guide.destroy();
+            if (!storage(guide, bytes * 6u, "fizmo path tracer guide")) return false;
+            have_history = false;
+        }
+        if (!filter.valid() || filter.size() < bytes * 2u) {
+            filter.destroy();
+            if (!storage(filter, bytes * 2u, "fizmo path tracer denoiser")) return false;
         }
         return true;
     }
@@ -538,6 +566,7 @@ struct GpuPathTracer::State {
         scene_dirty = false;
         params_dirty = true;
         samples = 0;
+        moved = true;
         return true;
     }
 
@@ -755,6 +784,7 @@ struct GpuPathTracer::State {
         scene_dirty = false;
         params_dirty = true;
         samples = 0;
+        moved = true;
     }
 
     void build_params(float photon_radius) {
@@ -804,12 +834,37 @@ struct GpuPathTracer::State {
         set4(p.balance, wb.r, wb.g, wb.b, s.shadow_bias);
         const std::uint32_t budget = photon_budget();
         set4(p.misc, env_total, budget > 0 ? 1.0f / static_cast<float>(budget) : 0.0f, s.gamma, as_float(mix_seed(s.seed, 0x5EED)));
+        if (have_prev_cam) {
+            std::memcpy(p.prev_pos, prev_cam, sizeof(float) * 4);
+            std::memcpy(p.prev_forward, prev_cam + 4, sizeof(float) * 4);
+            std::memcpy(p.prev_right, prev_cam + 8, sizeof(float) * 4);
+            std::memcpy(p.prev_up, prev_cam + 12, sizeof(float) * 4);
+        } else {
+            std::memcpy(p.prev_pos, p.cam_pos, sizeof(float) * 4);
+            std::memcpy(p.prev_forward, p.cam_forward, sizeof(float) * 4);
+            std::memcpy(p.prev_right, p.cam_right, sizeof(float) * 4);
+            std::memcpy(p.prev_up, p.cam_up, sizeof(float) * 4);
+        }
+        const std::uint32_t passes = s.denoise ? static_cast<std::uint32_t>(std::clamp(s.denoise_passes, 1, 6)) : 0u;
+        std::uint32_t history = 0;
+        if (have_history) history = moved ? (temporal ? 1u : 0u) : 2u;
+        if (samples == 0 && !temporal) history = 0;
+        set4(p.rt, history, passes, history_cap, parity);
+        set4(p.filter_strength, 4.0f, 512.0f, 0.0f, 0.0f);
+    }
+
+    void remember_camera() {
+        std::memcpy(prev_cam, p.cam_pos, sizeof(float) * 4);
+        std::memcpy(prev_cam + 4, p.cam_forward, sizeof(float) * 4);
+        std::memcpy(prev_cam + 8, p.cam_right, sizeof(float) * 4);
+        std::memcpy(prev_cam + 12, p.cam_up, sizeof(float) * 4);
+        have_prev_cam = true;
     }
 
     bool ensure_group() {
         if (!group_dirty && group.valid()) return true;
         group.destroy();
-        gpu::BindGroupEntry e[10] = {
+        gpu::BindGroupEntry e[12] = {
             gpu::BindGroupEntry::uniform(0, params),
             gpu::BindGroupEntry::storage(1, tris),
             gpu::BindGroupEntry::storage(2, nodes),
@@ -820,10 +875,12 @@ struct GpuPathTracer::State {
             gpu::BindGroupEntry::storage(7, cells),
             gpu::BindGroupEntry::storage(8, photons),
             gpu::BindGroupEntry::storage_texture(9, output),
+            gpu::BindGroupEntry::storage(10, guide),
+            gpu::BindGroupEntry::storage(11, filter),
         };
         gpu::BindGroupDesc d;
         d.layout = &layout;
-        d.entries = { e, 10 };
+        d.entries = { e, 12 };
         d.name = "fizmo path tracer";
         if (gpu::failed(group.create(*device, d))) {
             fail("could not create the path tracer bind group");
@@ -857,6 +914,7 @@ struct GpuPathTracer::State {
         }
         if (samples == 0) photon_frames = 0;
         const float shrink = std::pow(static_cast<float>(photon_frames + 1), -1.0f / 6.0f);
+        if (tracing) parity ^= 1u;
         build_params(settings.photon_radius * shrink);
         if (gpu::failed(params.write(&p, sizeof(Params), 0))) {
             fail("could not upload the path tracer parameters");
@@ -869,7 +927,7 @@ struct GpuPathTracer::State {
         Push push;
         push.frame = frames;
         push.first_sample = samples;
-        push.seed = mix_seed(settings.seed, static_cast<std::uint64_t>(samples) * 7919u + frames);
+        push.seed = mix_seed(settings.seed, static_cast<std::uint64_t>(samples) * 7919u + frames + total_frames * 104729u);
         const std::uint32_t gx = (width + 7u) / 8u, gy = (height + 7u) / 8u;
         if (tracing) {
             const std::uint32_t budget = (p.opts[2] & f_caustics) ? photon_budget() : 0u;
@@ -887,6 +945,16 @@ struct GpuPathTracer::State {
             cmd.dispatch(gx, gy);
             samples += static_cast<std::uint32_t>(std::clamp(samples_per_frame, 1, 64));
             ++frames;
+            ++total_frames;
+            have_history = true;
+            moved = false;
+            remember_camera();
+        }
+        for (std::uint32_t k = 0; k < p.rt[1]; ++k) {
+            push.mode = 4;
+            push.first_sample = k;
+            cmd.push_constants(push);
+            cmd.dispatch(gx, gy);
         }
         push.mode = 3;
         cmd.push_constants(push);
@@ -940,6 +1008,10 @@ void GpuPathTracer::detach() {
     s.accum.destroy();
     s.cells.destroy();
     s.photons.destroy();
+    s.guide.destroy();
+    s.filter.destroy();
+    s.have_history = false;
+    s.have_prev_cam = false;
     s.tris.destroy();
     s.nodes.destroy();
     s.mats.destroy();
@@ -966,6 +1038,7 @@ const std::string& GpuPathTracer::error() const noexcept { return m_state->error
 void GpuPathTracer::set_settings(const lighting::LightingSettings& settings) {
     m_state->settings = settings;
     m_state->params_dirty = true;
+    m_state->have_history = false;
     reset();
 }
 
@@ -1008,14 +1081,30 @@ void GpuPathTracer::resize(unsigned width, unsigned height) {
     else s.target = RenderTarget(width, height);
     s.target_texture = nullptr;
     s.params_dirty = true;
+    s.have_history = false;
+    s.have_prev_cam = false;
     reset();
 }
 
 void GpuPathTracer::reset() {
     m_state->samples = 0;
     m_state->frames = 0;
+    m_state->moved = true;
     m_state->output_dirty = true;
 }
+
+void GpuPathTracer::clear_history() {
+    m_state->have_history = false;
+    reset();
+}
+
+void GpuPathTracer::set_temporal(bool on, std::uint32_t history_cap) {
+    m_state->temporal = on;
+    m_state->history_cap = std::max(1u, history_cap);
+    m_state->params_dirty = true;
+}
+
+bool GpuPathTracer::temporal() const noexcept { return m_state->temporal; }
 
 void GpuPathTracer::set_photons_per_frame(std::uint32_t photons) {
     m_state->photons_per_frame = photons;
@@ -1072,7 +1161,7 @@ bool GpuPathTracer::read_hdr(lighting::Image& out) {
     State& s = *m_state;
     if (!s.device || !s.accum.valid() || s.width == 0 || s.height == 0) return false;
     std::vector<float> data(static_cast<std::size_t>(s.width) * s.height * 4u);
-    if (gpu::failed(s.accum.read(data.data(), data.size() * sizeof(float), 0))) return false;
+    if (gpu::failed(s.accum.read(data.data(), data.size() * sizeof(float), static_cast<std::uint64_t>(s.parity & 1u) * data.size() * sizeof(float)))) return false;
     out = lighting::Image(s.width, s.height);
     for (std::size_t i = 0; i < out.pixels().size(); ++i) {
         const float w = data[i * 4 + 3];

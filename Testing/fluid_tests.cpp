@@ -1006,7 +1006,122 @@ void benchmark() {
 
 } // namespace
 
+Real wave_spread(const FluidVolume3D& v, Real& lo, Real& hi) {
+    const std::vector<Real>& h = v.heights();
+    double mean = 0.0;
+    int n = 0;
+    lo = 1e9_r;
+    hi = -1e9_r;
+    for (int k = 0; k < v.columns_z(); ++k) {
+        for (int i = 0; i < v.columns_x(); ++i) {
+            if (v.wall(i, k)) continue;
+            const Real x = h[v.column_index(i, k)];
+            mean += static_cast<double>(x);
+            lo = std::min(lo, x);
+            hi = std::max(hi, x);
+            ++n;
+        }
+    }
+    return static_cast<Real>(mean / std::max(n, 1));
+}
+
+void test_waves_bodies() {
+    for (int kind = 0; kind < 2; ++kind) {
+        Simulation3D sim;
+        FluidWorld3D world;
+        FluidVolumeDef d = FluidVolumeDef::box(FluidLevel::waves, AABB3D(RVec3{ -3.0_r, 0.1_r, -3.0_r }, RVec3{ 3.0_r, 2.1_r, 3.0_r }), FluidMaterial::water(), 0.6_r);
+        FluidVolume3D& v = world.add_volume(d);
+        RigidBody3D& tank = sim.add_body(RVec3{ 0.0_r, 1.1_r, 0.0_r }, kind == 0 ? PhysicsFlags::DefaultKinematic : PhysicsFlags::DefaultDynamic);
+        tank.add_collider(Shape3D::make_box(3.2_r, 0.1_r, 3.2_r), Material3D(1000.0_r), Transform3D(RVec3{ 0.0_r, -1.1_r, 0.0_r }, RQuat{ 1.0_r, 0.0_r, 0.0_r, 0.0_r }));
+        tank.add_collider(Shape3D::make_box(0.1_r, 1.0_r, 3.0_r), Material3D(1000.0_r), Transform3D(RVec3{ 3.1_r, 0.0_r, 0.0_r }, RQuat{ 1.0_r, 0.0_r, 0.0_r, 0.0_r }));
+        tank.add_collider(Shape3D::make_box(0.1_r, 1.0_r, 3.0_r), Material3D(1000.0_r), Transform3D(RVec3{ -3.1_r, 0.0_r, 0.0_r }, RQuat{ 1.0_r, 0.0_r, 0.0_r, 0.0_r }));
+        if (kind == 1) {
+            RigidBody3D& ground = sim.add_body(RVec3{ 0.0_r, -0.5_r, 0.0_r }, PhysicsFlags::DefaultStatic);
+            ground.add_collider(Shape3D::make_box(20.0_r, 0.5_r, 20.0_r));
+        }
+        v.ignore_body(tank);
+        Real top = 0.0_r;
+        for (int f = 0; f < 240; ++f) {
+            world.step(sim, kDt);
+            sim.step(kDt);
+            Real lo, hi;
+            wave_spread(v, lo, hi);
+            top = std::max(top, hi);
+        }
+        check(top < 1.4_r, std::string("waves: the tank's own ") + (kind == 0 ? "kinematic" : "dynamic") + " walls and floor don't push the water up (highest " + num(top) + " m, still level 1.3)");
+    }
+    {
+        Simulation3D sim;
+        FluidWorld3D world;
+        FluidVolumeDef d = FluidVolumeDef::box(FluidLevel::waves, AABB3D(RVec3{ -3.0_r, 0.0_r, -3.0_r }, RVec3{ 3.0_r, 2.0_r, 3.0_r }), FluidMaterial::water(), 0.6_r);
+        FluidVolume3D& v = world.add_volume(d);
+        RigidBody3D& floor_body = sim.add_body(RVec3{ 0.0_r, 0.6_r, 0.0_r }, PhysicsFlags::DefaultKinematic);
+        floor_body.add_collider(Shape3D::make_box(2.0_r, 0.05_r, 2.0_r));
+        Real top = 0.0_r;
+        for (int f = 0; f < 120; ++f) {
+            world.step(sim, kDt);
+            sim.step(kDt);
+            Real lo, hi;
+            wave_spread(v, lo, hi);
+            top = std::max(top, hi);
+        }
+        check(top < 1.4_r, "waves: a big thin plate under the water doesn't make spikes (highest " + num(top) + " m)");
+    }
+    Real peaks[2] = { 0.0_r, 0.0_r };
+    for (int heavy = 0; heavy < 2; ++heavy) {
+        Simulation3D sim;
+        FluidWorld3D world;
+        FluidVolumeDef d = FluidVolumeDef::box(FluidLevel::waves, AABB3D(RVec3{ -6.0_r, 0.0_r, -6.0_r }, RVec3{ 6.0_r, 3.0_r, 6.0_r }), FluidMaterial::water(), 0.6_r);
+        d.cell_size = 0.2_r;
+        FluidVolume3D& v = world.add_volume(d);
+        add_ball(sim, RVec3{ 0.0_r, 3.5_r, 0.0_r }, 0.5_r, heavy ? 1910.0_r : 955.0_r);
+        for (int f = 0; f < 150; ++f) {
+            world.step(sim, kDt);
+            sim.step(kDt);
+            const std::vector<Real>& h = v.heights();
+            for (int k = 0; k < v.columns_z(); ++k) {
+                for (int i = 0; i < v.columns_x(); ++i) {
+                    const Real du = (static_cast<Real>(i) + 0.5_r) * v.column_size() - 6.0_r, dw = (static_cast<Real>(k) + 0.5_r) * v.column_size() - 6.0_r;
+                    const Real r2 = du * du + dw * dw;
+                    if (r2 < 4.0_r || r2 > 9.0_r) continue;
+                    peaks[heavy] = std::max(peaks[heavy], std::abs(h[v.column_index(i, k)] - 1.8_r));
+                }
+            }
+        }
+    }
+    check(peaks[1] > 1.2_r * peaks[0], "waves: a 1000 kg ball makes a bigger wave than a 500 kg one of the same size (" + num(peaks[1]) + " m vs " + num(peaks[0]) + " m)");
+    {
+        Simulation3D sim;
+        sim.config().gravity = RVec3{ 0.0_r, -9.81_r, 0.0_r };
+        FluidWorld3D world;
+        FluidVolumeDef d = FluidVolumeDef::box(FluidLevel::waves, AABB3D(RVec3{ -3.0_r, 0.0_r, -3.0_r }, RVec3{ 3.0_r, 2.0_r, 3.0_r }), FluidMaterial::water(), 0.6_r);
+        FluidVolume3D& v = world.add_volume(d);
+        add_box(sim, RVec3{ 0.5_r, 2.5_r, 0.0_r }, 0.3_r, 980.0_r);
+        add_box(sim, RVec3{ -0.8_r, 3.0_r, 0.6_r }, 0.25_r, 1200.0_r);
+        add_ball(sim, RVec3{ 0.0_r, 3.5_r, -1.0_r }, 0.4_r, 990.0_r);
+        RigidBody3D& doll = sim.add_body(RVec3{ 1.2_r, 2.5_r, 1.0_r }, PhysicsFlags::DefaultDynamic);
+        for (int p = 0; p < 6; ++p) doll.add_collider(Shape3D::make_box(0.08_r, 0.15_r, 0.08_r), Material3D(985.0_r), Transform3D(RVec3{ 0.0_r, static_cast<Real>(p) * 0.3_r, 0.0_r }, RQuat{ 1.0_r, 0.0_r, 0.0_r, 0.0_r }));
+        std::vector<Real> last;
+        Real late = 0.0_r;
+        for (int f = 0; f < 60 * 40; ++f) {
+            world.step(sim, kDt);
+            sim.step(kDt);
+            if (f >= 60 * 35) {
+                const std::vector<Real>& h = v.heights();
+                if (last.size() == h.size()) {
+                    Real change = 0.0_r;
+                    for (std::size_t q = 0; q < h.size(); ++q) change = std::max(change, std::abs(h[q] - last[q]));
+                    late = std::max(late, change);
+                }
+                last = h;
+            }
+        }
+        check(late < 0.004_r, "waves: water with floating and sunk bodies in it settles (largest change per frame after 35 s: " + num(late) + " m)");
+    }
+}
+
 int main() {
+    test_waves_bodies();
     test_materials_and_quality();
     test_blocky();
     test_flowing();

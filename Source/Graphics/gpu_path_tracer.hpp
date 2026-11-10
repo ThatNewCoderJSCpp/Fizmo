@@ -46,6 +46,9 @@ public:
     const lighting::Camera& camera() const noexcept;
     void resize(unsigned width, unsigned height);
     void reset();
+    void clear_history();
+    void set_temporal(bool on, std::uint32_t history_cap = 24);
+    bool temporal() const noexcept;
 
     void set_photons_per_frame(std::uint32_t photons);
     void set_samples_per_frame(int samples);

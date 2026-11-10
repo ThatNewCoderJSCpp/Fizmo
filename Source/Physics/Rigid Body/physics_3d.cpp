@@ -113,7 +113,7 @@ auto HullShape::from_points(const RVec3* pts, std::size_t n) -> HullShape {
                 bool dup = false;
 
                 for (const auto& pl : planes) {
-                    if (vec3::dot(pl.n, nrm) > 1.0_r - 1e-9_r && std::abs(pl.d - d) <= tol) { dup = true; break; }
+                    if (vec3::dot(pl.n, nrm) > 1.0_r - std::max(1e-9_r, 64.0_r * std::numeric_limits<Real>::epsilon()) && std::abs(pl.d - d) <= tol) { dup = true; break; }
                 }
 
                 if (!dup) planes.push_back({ nrm, d });
@@ -186,7 +186,7 @@ void HullShape::finalize() {
     for (const auto& e : edges) {
         RVec3 d = vec3::normalize(vertices[e[1]] - vertices[e[0]]);
         bool dup = false;
-        for (const auto& q : edge_directions) { if (std::abs(vec3::dot(q, d)) > 1.0_r - 1e-9_r) { dup = true; break; } }
+        for (const auto& q : edge_directions) { if (std::abs(vec3::dot(q, d)) > 1.0_r - std::max(1e-9_r, 64.0_r * std::numeric_limits<Real>::epsilon())) { dup = true; break; } }
         if (!dup) edge_directions.push_back(d);
     }
 
@@ -556,8 +556,8 @@ auto Shape3D::compute_aabb(const Transform3D& xf) const noexcept -> AABB3D {
             const Real nn[3] = { n.x, n.y, n.z };
 
             for (int i = 0; i < 3; ++i) {
-                if (nn[i] >  1.0_r - 1e-12_r) hi[i] =  d;
-                if (nn[i] < -1.0_r + 1e-12_r) lo[i] = -d;
+                if (nn[i] >  1.0_r - std::max(1e-12_r, 4.0_r * std::numeric_limits<Real>::epsilon())) hi[i] =  d;
+                if (nn[i] < -1.0_r + std::max(1e-12_r, 4.0_r * std::numeric_limits<Real>::epsilon())) lo[i] = -d;
             }
 
             return { { lo[0], lo[1], lo[2] }, { hi[0], hi[1], hi[2] } };

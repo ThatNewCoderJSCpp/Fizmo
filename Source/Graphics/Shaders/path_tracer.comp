@@ -21,6 +21,12 @@ layout(std140, set = 0, binding = 0) uniform Params {
     vec4 balance;
     vec4 misc;
     uvec4 inst;
+    vec4 prev_pos;
+    vec4 prev_forward;
+    vec4 prev_right;
+    vec4 prev_up;
+    uvec4 rt;
+    vec4 filter_strength;
 } P;
 
 layout(std430, set = 0, binding = 1) readonly buffer Tris { vec4 tris[]; };
@@ -32,6 +38,8 @@ layout(std430, set = 0, binding = 6) buffer Accum { vec4 accum[]; };
 layout(std430, set = 0, binding = 7) buffer Cells { uint cells[]; };
 layout(std430, set = 0, binding = 8) buffer Photons { vec4 photons[]; };
 layout(set = 0, binding = 9, rgba8) uniform writeonly image2D out_image;
+layout(std430, set = 0, binding = 10) buffer Guide { vec4 guide[]; };
+layout(std430, set = 0, binding = 11) buffer Filter { vec4 filt[]; };
 
 layout(push_constant) uniform Push {
     uvec4 pc;
@@ -73,6 +81,11 @@ const uint L_TUBE = 5u;
 const uint L_TRIANGLE = 6u;
 
 uint rng_state;
+
+bool g_hit;
+vec3 g_pos;
+vec3 g_nrm;
+vec3 g_alb;
 
 uint pcg(inout uint s) {
     s = s * 747796405u + 2891336453u;
@@ -1748,6 +1761,12 @@ vec3 path(vec3 ro, vec3 rd, inout Wave w) {
                 continue;
             }
         }
+        if (depth == 0 && guard == 0 && !g_hit && light_hit >= 0) {
+            g_hit = true;
+            g_pos = lp;
+            g_nrm = ln;
+            g_alb = vec3(1.0);
+        }
         if (!hit_tri_any && light_hit < 0) {
             if (depth == 0 && !has(F_ENV_VISIBLE)) break;
             vec3 Le = lift(w, env_lookup(rd));
@@ -1777,6 +1796,13 @@ vec3 path(vec3 ro, vec3 rd, inout Wave w) {
             --depth;
             ro = s.p + rd * surface_eps(s) * 4.0;
             continue;
+        }
+        if (depth == 0 && !g_hit) {
+            g_hit = true;
+            g_pos = s.p;
+            g_nrm = s.ns;
+            g_alb = transmissive(m) ? vec3(1.0) : clamp(m.base, vec3(0.04), vec3(1.0));
+            if (emits(m)) g_alb = vec3(1.0);
         }
         if (emits(m) && (m.double_sided || s.front)) {
             vec3 Le = lift(w, m.emit);
@@ -2047,6 +2073,56 @@ float to_srgb(float v) {
     return v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1.0 / 2.4) - 0.055;
 }
 
+vec3 demodulated(uint at, uint npx, uint cur) {
+    vec4 a = accum[cur * npx + at];
+    vec3 c = a.w > 0.0 ? a.xyz / a.w : vec3(0.0);
+    vec3 alb = max(guide[(cur * npx + at) * 3u + 2u].xyz, vec3(0.02));
+    return c / alb;
+}
+
+void filter_pass(uvec2 id, uint pi, uint npx, uint cur, uint pass) {
+    uint width = P.size.x;
+    uint height = P.size.y;
+    uint gi = (cur * npx + pi) * 3u;
+    vec4 c0 = guide[gi + 0u];
+    vec4 c1 = guide[gi + 1u];
+    uint dst = (pass & 1u) * npx + pi;
+    uint src_base = ((pass + 1u) & 1u) * npx;
+    vec3 center = pass == 0u ? demodulated(pi, npx, cur) : filt[src_base + pi].xyz;
+    if (c1.w < 0.5) {
+        filt[dst] = vec4(center, 1.0);
+        return;
+    }
+    float count = max(accum[cur * npx + pi].w, 1.0);
+    float lc = lum(center);
+    float sigma_l = P.filter_strength.x * max(lc, 0.05) / sqrt(count) + 1e-3;
+    int step = 1 << int(pass);
+    const float kern[3] = float[3](0.375, 0.25, 0.0625);
+    vec3 total = vec3(0.0);
+    float weight = 0.0;
+    for (int dy = -2; dy <= 2; ++dy) {
+        for (int dx = -2; dx <= 2; ++dx) {
+            ivec2 q = ivec2(id) + ivec2(dx, dy) * step;
+            if (q.x < 0 || q.y < 0 || q.x >= int(width) || q.y >= int(height)) continue;
+            uint qi = uint(q.y) * width + uint(q.x);
+            uint qg = (cur * npx + qi) * 3u;
+            vec4 q1 = guide[qg + 1u];
+            if (q1.w < 0.5) continue;
+            vec4 q0 = guide[qg + 0u];
+            vec3 col = pass == 0u ? demodulated(qi, npx, cur) : filt[src_base + qi].xyz;
+            float k = kern[abs(dx)] * kern[abs(dy)];
+            float wn = pow(max(dot(c1.xyz, q1.xyz), 0.0), 32.0);
+            float plane = abs(dot(c1.xyz, q0.xyz - c0.xyz));
+            float wz = exp(-plane / (0.02 + 0.01 * c0.w * float(step)));
+            float wl = exp(-abs(lum(col) - lc) / sigma_l);
+            float wgt = k * wn * wz * wl;
+            total += col * wgt;
+            weight += wgt;
+        }
+    }
+    filt[dst] = vec4(weight > 1e-6 ? total / weight : center, 1.0);
+}
+
 void main() {
     uint mode = K.pc.x;
     uvec2 id = gl_GlobalInvocationID.xy;
@@ -2066,9 +2142,24 @@ void main() {
     }
     if (id.x >= width || id.y >= height) return;
     uint pi = id.y * width + id.x;
+    uint npx = width * height;
+    uint cur = P.rt.w & 1u;
+    if (mode == 4u) {
+        filter_pass(id, pi, npx, cur, K.pc.z);
+        return;
+    }
     if (mode == 3u) {
-        vec4 a = accum[pi];
+        vec4 a = accum[cur * npx + pi];
         vec3 c = a.w > 0.0 ? a.xyz / a.w : vec3(0.0);
+        if (P.rt.y > 0u) {
+            vec4 g1 = guide[(cur * npx + pi) * 3u + 1u];
+            if (g1.w > 0.5) {
+                vec3 alb = guide[(cur * npx + pi) * 3u + 2u].xyz;
+                vec3 f = filt[((P.rt.y - 1u) & 1u) * npx + pi].xyz * alb;
+                float keep = clamp(a.w / max(P.filter_strength.y, 1.0), 0.0, 1.0);
+                c = mix(f, c, keep * keep);
+            }
+        }
         vec3 o = tone_map(c);
         if (has(F_SRGB)) o = vec3(to_srgb(o.x), to_srgb(o.y), to_srgb(o.z));
         else o = pow(o, vec3(1.0 / max(P.misc.z, 0.1)));
@@ -2086,6 +2177,14 @@ void main() {
     float tan_half = P.cam_pos.w;
     float aspect = P.cam_forward.w;
     vec3 sum = vec3(0.0);
+    g_hit = false;
+    g_pos = vec3(0.0);
+    g_nrm = vec3(0.0, 1.0, 0.0);
+    g_alb = vec3(1.0);
+    bool g_have = false;
+    vec3 k_pos = vec3(0.0);
+    vec3 k_nrm = vec3(0.0, 1.0, 0.0);
+    vec3 k_alb = vec3(1.0);
     for (uint s = 0u; s < spp; ++s) {
         bool center = first_sample == 0u && s == 0u;
         float jx = center ? 0.5 : rnd();
@@ -2110,11 +2209,70 @@ void main() {
             u -= floor(u);
             w.nm = sample_wavelength(min(u, 0.9999999), pdf);
         }
+        g_hit = false;
         vec3 L = path(origin, dir, w);
+        if (s == 0u) {
+            g_have = g_hit;
+            k_pos = g_pos;
+            k_nrm = g_nrm;
+            k_alb = g_alb;
+        } else if (g_hit && g_have) {
+            k_alb += g_alb;
+        }
         vec3 v = w.spectral ? wavelength_weight(w.nm) * (L.y / pdf) : L;
         if (any(isnan(v)) || any(isinf(v))) v = vec3(0.0);
         sum += v;
     }
-    vec4 prev = first_sample == 0u ? vec4(0.0) : accum[pi];
-    accum[pi] = prev + vec4(sum, float(spp));
+    if (g_have) k_alb /= float(spp);
+    uint gi = (cur * npx + pi) * 3u;
+    float dist = g_have ? length(k_pos - P.cam_pos.xyz) : -1.0;
+    guide[gi + 0u] = vec4(k_pos, dist);
+    guide[gi + 1u] = vec4(normalize(k_nrm), g_have ? 1.0 : 0.0);
+    guide[gi + 2u] = vec4(k_alb, 0.0);
+    vec4 prev = vec4(0.0);
+    uint other = 1u - cur;
+    if (P.rt.x == 2u) {
+        prev = accum[other * npx + pi];
+    } else if (P.rt.x == 1u) {
+        int px = -1;
+        int py = -1;
+        if (g_have) {
+            vec3 d = k_pos - P.prev_pos.xyz;
+            float z = dot(d, P.prev_forward.xyz);
+            if (z > 1e-4) {
+                float sx = dot(d, P.prev_right.xyz) / (z * P.prev_pos.w * P.prev_forward.w);
+                float sy = dot(d, P.prev_up.xyz) / (z * P.prev_pos.w);
+                px = int(floor((sx + 1.0) * 0.5 * float(width)));
+                py = int(floor((1.0 - sy) * 0.5 * float(height)));
+            }
+        } else {
+            vec3 d = normalize(fwd * 1.0 + right * ((2.0 * (float(id.x) + 0.5) / float(width) - 1.0) * tan_half * aspect) + up * ((1.0 - 2.0 * (float(id.y) + 0.5) / float(height)) * tan_half));
+            float z = dot(d, P.prev_forward.xyz);
+            if (z > 1e-4) {
+                float sx = dot(d, P.prev_right.xyz) / (z * P.prev_pos.w * P.prev_forward.w);
+                float sy = dot(d, P.prev_up.xyz) / (z * P.prev_pos.w);
+                px = int(floor((sx + 1.0) * 0.5 * float(width)));
+                py = int(floor((1.0 - sy) * 0.5 * float(height)));
+            }
+        }
+        if (px >= 0 && py >= 0 && px < int(width) && py < int(height)) {
+            uint qi = uint(py) * width + uint(px);
+            uint qg = (other * npx + qi) * 3u;
+            vec4 q0 = guide[qg + 0u];
+            vec4 q1 = guide[qg + 1u];
+            bool ok;
+            if (g_have) {
+                float tol = 0.02 + 0.03 * dist;
+                ok = q1.w > 0.5 && length(q0.xyz - k_pos) < tol && dot(q1.xyz, normalize(k_nrm)) > 0.8;
+            } else {
+                ok = q1.w < 0.5;
+            }
+            if (ok) {
+                prev = accum[other * npx + qi];
+                float cap = float(max(P.rt.z, 1u));
+                if (prev.w > cap) prev *= cap / prev.w;
+            }
+        }
+    }
+    accum[cur * npx + pi] = prev + vec4(sum, float(spp));
 }

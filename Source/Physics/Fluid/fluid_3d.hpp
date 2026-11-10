@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace fizmo {
@@ -225,6 +226,9 @@ public:
     void set_frozen(bool f) noexcept { m_frozen = f; }
     bool frozen() const noexcept { return m_frozen; }
 
+    void ignore_body(const RigidBody3D& body, bool ignore = true);
+    bool ignores(const RigidBody3D& body) const noexcept { return m_ignored.count(body.id()) != 0; }
+
     void set_still_level(Real height_along_up);
     Real still_level() const noexcept { return m_still_level; }
 
@@ -325,6 +329,7 @@ private:
         std::uint64_t signature = 0;
         std::vector<SamplePoint> points;
         std::vector<std::uint32_t> collider_start;
+        std::vector<RVec3> collider_half;
         Real volume = 0.0_r;
         Real spacing = 0.1_r;
         std::uint64_t seen = 0;
@@ -383,6 +388,8 @@ private:
     void waves_substep(detail::FluidTaskPool& pool, Real h);
     void refresh_tiles();
     void mark_column_dirty(int i, int k) noexcept;
+    Real wave_ambient(Real u0, Real w0, Real u1, Real w1) const noexcept;
+    void add_occupancy(std::size_t c, int i, int k, Real amount) noexcept;
     std::size_t tile_of(int i, int k) const noexcept;
     Real column_head(std::size_t c) const noexcept { return m_ground[c] + m_depth[c] + m_occ_col[c]; }
     Real sample_waves(Real lu, Real lw, const std::vector<Real>& field) const noexcept;
@@ -561,6 +568,8 @@ private:
     static constexpr std::size_t kMaxNeighbours = 64;
 
     std::unordered_map<std::uint64_t, BodyCache> m_cache;
+    std::unordered_set<std::uint64_t> m_ignored;
+    std::unordered_map<std::uint64_t, Real> m_entry;
     std::uint64_t m_frame = 0;
 
     FluidSolver3D m_solver = FluidSolver3D::pbf;

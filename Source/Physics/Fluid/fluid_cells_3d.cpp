@@ -851,45 +851,6 @@ void FluidVolume3D::push_fluid(const RigidBody3D& body, const BodyCache& cache, 
     }
     if (m_def.level != FluidLevel::waves) return;
     const Real inv_area = scale / (m_dx * m_dx);
-    auto ambient = [&](Real u0, Real w0, Real u1, Real w1) {
-        const int i0 = std::max(0, static_cast<int>(std::floor(u0 / m_dx)) - 1);
-        const int i1 = std::min(m_cx - 1, static_cast<int>(std::floor(u1 / m_dx)) + 1);
-        const int k0 = std::max(0, static_cast<int>(std::floor(w0 / m_dx)) - 1);
-        const int k1 = std::min(m_cz - 1, static_cast<int>(std::floor(w1 / m_dx)) + 1);
-        Real sum = 0.0_r;
-        int count = 0;
-        auto take = [&](int i, int k) {
-            const std::size_t c = column_index(i, k);
-            if (m_wall[c]) return;
-            sum += m_ground[c] + m_depth[c] + m_occ_prev[c];
-            ++count;
-        };
-        for (int i = i0; i <= i1; ++i) {
-            take(i, k0);
-            if (k1 != k0) take(i, k1);
-        }
-        for (int k = k0 + 1; k < k1; ++k) {
-            take(i0, k);
-            if (i1 != i0) take(i1, k);
-        }
-        return count > 0 ? sum / static_cast<Real>(count) : 0.0_r;
-    };
-    auto splat = [&](Real lu, Real lw, Real amount) {
-        const Real fu = lu / m_dx - 0.5_r, fw = lw / m_dx - 0.5_r;
-        const int i0 = static_cast<int>(std::floor(fu)), k0 = static_cast<int>(std::floor(fw));
-        const Real tu = fu - static_cast<Real>(i0), tw = fw - static_cast<Real>(k0);
-        const Real wts[4] = { (1.0_r - tu) * (1.0_r - tw), tu * (1.0_r - tw), (1.0_r - tu) * tw, tu * tw };
-        const int ii[4] = { i0, i0 + 1, i0, i0 + 1 };
-        const int kk[4] = { k0, k0, k0 + 1, k0 + 1 };
-        for (int q = 0; q < 4; ++q) {
-            const int i = std::clamp(ii[q], 0, m_cx - 1), k = std::clamp(kk[q], 0, m_cz - 1);
-            const std::size_t c = column_index(i, k);
-            if (m_wall[c]) continue;
-            if (m_occ_col[c] == 0.0_r) m_col_touched.push_back(static_cast<std::uint32_t>(c));
-            m_occ_col[c] += amount * wts[q];
-            mark_column_dirty(i, k);
-        }
-    };
     for (std::size_t ci = 0; ci < colliders.size() && ci + 1 < cache.collider_start.size(); ++ci) {
         const Collider3D& c = colliders[ci];
         if (c.is_sensor || c.shape.is_static_only()) continue;
@@ -898,7 +859,7 @@ void FluidVolume3D::push_fluid(const RigidBody3D& body, const BodyCache& cache, 
             const V3 lc = to_local(cx.apply(c.shape.sphere.center));
             const Real r = c.shape.sphere.radius;
             if (lc.x + r < 0.0_r || lc.z + r < 0.0_r || lc.x - r > m_size.x || lc.z - r > m_size.z) continue;
-            const Real head = ambient(lc.x - r, lc.z - r, lc.x + r, lc.z + r);
+            const Real head = wave_ambient(lc.x - r, lc.z - r, lc.x + r, lc.z + r);
             if (lc.y - r >= head) continue;
             const int i0 = std::max(0, static_cast<int>(std::floor((lc.x - r) / m_dx)));
             const int i1 = std::min(m_cx - 1, static_cast<int>(std::floor((lc.x + r) / m_dx)));
@@ -916,34 +877,89 @@ void FluidVolume3D::push_fluid(const RigidBody3D& body, const BodyCache& cache, 
                     const Real lo = std::max(lc.y - half, m_ground[col]);
                     const Real hi = std::min(lc.y + half, head);
                     if (hi <= lo) continue;
-                    if (m_occ_col[col] == 0.0_r) m_col_touched.push_back(static_cast<std::uint32_t>(col));
-                    m_occ_col[col] += (hi - lo) * scale;
-                    mark_column_dirty(i, k);
+                    add_occupancy(col, i, k, (hi - lo) * scale);
                 }
             }
             continue;
         }
         const std::uint32_t q0 = cache.collider_start[ci], q1 = cache.collider_start[ci + 1];
         if (q0 == q1) continue;
+        const Transform3D cx = xf.compose(c.local_offset);
+        const V3 cell = ci < cache.collider_half.size() ? cache.collider_half[ci] : V3{ cache.spacing, cache.spacing, cache.spacing } * 0.5_r;
+        const V3 ax = local_dir(cx.rotate(V3{ 1.0_r, 0.0_r, 0.0_r }));
+        const V3 ay = local_dir(cx.rotate(V3{ 0.0_r, 1.0_r, 0.0_r }));
+        const V3 az = local_dir(cx.rotate(V3{ 0.0_r, 0.0_r, 1.0_r }));
+        const V3 half{
+            std::abs(ax.x) * cell.x + std::abs(ay.x) * cell.y + std::abs(az.x) * cell.z,
+            std::abs(ax.y) * cell.x + std::abs(ay.y) * cell.y + std::abs(az.y) * cell.z,
+            std::abs(ax.z) * cell.x + std::abs(ay.z) * cell.y + std::abs(az.z) * cell.z
+        };
+        const Real box = 8.0_r * std::max(half.x * half.y * half.z, 1e-12_r);
         Real u0 = std::numeric_limits<Real>::max(), w0 = u0, u1 = -u0, w1 = -u0;
         for (std::uint32_t q = q0; q < q1; ++q) {
             const V3 l = to_local(xf.apply(cache.points[q].local));
-            u0 = std::min(u0, l.x);
-            u1 = std::max(u1, l.x);
-            w0 = std::min(w0, l.z);
-            w1 = std::max(w1, l.z);
+            u0 = std::min(u0, l.x - half.x);
+            u1 = std::max(u1, l.x + half.x);
+            w0 = std::min(w0, l.z - half.z);
+            w1 = std::max(w1, l.z + half.z);
         }
-        const Real s = cache.spacing;
         if (u1 < 0.0_r || w1 < 0.0_r || u0 > m_size.x || w0 > m_size.z) continue;
-        const Real head = ambient(u0 - 0.5_r * s, w0 - 0.5_r * s, u1 + 0.5_r * s, w1 + 0.5_r * s);
+        const Real head = wave_ambient(u0, w0, u1, w1);
         for (std::uint32_t q = q0; q < q1; ++q) {
             const V3 l = to_local(xf.apply(cache.points[q].local));
-            if (l.x < 0.0_r || l.z < 0.0_r || l.x > m_size.x || l.z > m_size.z) continue;
-            const Real frac = std::clamp((head - l.y) / s + 0.5_r, 0.0_r, 1.0_r);
-            if (frac <= 0.0_r) continue;
-            splat(l.x, l.z, cache.points[q].weight * frac * inv_area);
+            if (l.y - half.y >= head) continue;
+            const Real fill = cache.points[q].weight / box;
+            const Real x0 = l.x - half.x, x1 = l.x + half.x, z0 = l.z - half.z, z1 = l.z + half.z;
+            const int i0 = std::max(0, static_cast<int>(std::floor(x0 / m_dx)));
+            const int i1 = std::min(m_cx - 1, static_cast<int>(std::floor(x1 / m_dx)));
+            const int k0 = std::max(0, static_cast<int>(std::floor(z0 / m_dx)));
+            const int k1 = std::min(m_cz - 1, static_cast<int>(std::floor(z1 / m_dx)));
+            for (int k = k0; k <= k1; ++k) {
+                const Real oz = std::min(z1, (static_cast<Real>(k) + 1.0_r) * m_dx) - std::max(z0, static_cast<Real>(k) * m_dx);
+                if (oz <= 0.0_r) continue;
+                for (int i = i0; i <= i1; ++i) {
+                    const Real ox = std::min(x1, (static_cast<Real>(i) + 1.0_r) * m_dx) - std::max(x0, static_cast<Real>(i) * m_dx);
+                    if (ox <= 0.0_r) continue;
+                    const std::size_t col = column_index(i, k);
+                    if (m_wall[col]) continue;
+                    const Real vert = std::min(l.y + half.y, head) - std::max(l.y - half.y, m_ground[col]);
+                    if (vert <= 0.0_r) continue;
+                    add_occupancy(col, i, k, vert * ox * oz * fill * inv_area);
+                }
+            }
         }
     }
+}
+
+Real FluidVolume3D::wave_ambient(Real u0, Real w0, Real u1, Real w1) const noexcept {
+    const int i0 = std::max(0, static_cast<int>(std::floor(u0 / m_dx)) - 1);
+    const int i1 = std::min(m_cx - 1, static_cast<int>(std::floor(u1 / m_dx)) + 1);
+    const int k0 = std::max(0, static_cast<int>(std::floor(w0 / m_dx)) - 1);
+    const int k1 = std::min(m_cz - 1, static_cast<int>(std::floor(w1 / m_dx)) + 1);
+    Real sum = 0.0_r;
+    int count = 0;
+    auto take = [&](int i, int k) {
+        const std::size_t c = column_index(i, k);
+        if (m_wall[c]) return;
+        sum += m_ground[c] + m_depth[c] + m_occ_prev[c];
+        ++count;
+    };
+    for (int i = i0; i <= i1; ++i) {
+        take(i, k0);
+        if (k1 != k0) take(i, k1);
+    }
+    for (int k = k0 + 1; k < k1; ++k) {
+        take(i0, k);
+        if (i1 != i0) take(i1, k);
+    }
+    return count > 0 ? sum / static_cast<Real>(count) : 0.0_r;
+}
+
+void FluidVolume3D::add_occupancy(std::size_t c, int i, int k, Real amount) noexcept {
+    if (amount <= 0.0_r) return;
+    if (m_occ_col[c] == 0.0_r) m_col_touched.push_back(static_cast<std::uint32_t>(c));
+    m_occ_col[c] = std::min(m_occ_col[c] + amount, m_size.y * 2.0_r);
+    mark_column_dirty(i, k);
 }
 
 } // namespace physics
