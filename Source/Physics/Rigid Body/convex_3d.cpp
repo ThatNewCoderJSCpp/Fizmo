@@ -165,6 +165,30 @@ V3 closest_tetrahedron(GjkSimplex3D& s, Barycentric& bc, bool& inside) noexcept 
     return best_point;
 }
 
+V3 closest_flat_tetrahedron(GjkSimplex3D& s, Barycentric& bc) noexcept {
+    const int faces[4][3] = { { 0, 1, 2 }, { 0, 1, 3 }, { 0, 2, 3 }, { 1, 2, 3 } };
+    Real best = std::numeric_limits<Real>::max();
+    V3 best_point{};
+    GjkSimplex3D best_simplex = s;
+    Barycentric best_bc;
+    for (const auto& f : faces) {
+        GjkSimplex3D t = s;
+        keep(t, f, 3);
+        Barycentric b;
+        const V3 q = closest_triangle(t, b);
+        const Real d = vec3::dot(q, q);
+        if (d < best) {
+            best = d;
+            best_point = q;
+            best_simplex = t;
+            best_bc = b;
+        }
+    }
+    s = best_simplex;
+    bc = best_bc;
+    return best_point;
+}
+
 void witness(const GjkSimplex3D& s, const Barycentric& bc, V3& pa, V3& pb) noexcept {
     pa = V3{};
     pb = V3{};
@@ -477,6 +501,15 @@ GjkOutput3D gjk_distance(const ConvexProxy3D& a, const ConvexProxy3D& b, int max
             v = closest_triangle(s, bc);
             break;
         default: {
+            const V3 e1 = s.w[1] - s.w[0];
+            const V3 e2 = s.w[2] - s.w[0];
+            const V3 e3 = s.w[3] - s.w[0];
+            const Real volume = std::abs(vec3::dot(e3, vec3::cross(e1, e2)));
+            const Real extent = std::sqrt(vec3::length_squared(e1) * vec3::length_squared(e2) * vec3::length_squared(e3));
+            if (volume <= at_least(1e-9_r, 256.0_r * kEps) * extent) {
+                v = closest_flat_tetrahedron(s, bc);
+                break;
+            }
             bool inside = false;
             v = closest_tetrahedron(s, bc, inside);
             if (inside) {
@@ -735,10 +768,32 @@ void clip_by_polygon(std::vector<V3>& subject, const V3* ref, int count, const V
 bool collide_convex(const ConvexProxy3D& a, const ConvexProxy3D& b, ContactManifold3D& m, Real margin) {
     const ConvexSeparation3D sep = convex_separation(a, b);
     if (!sep.valid || sep.separation > margin) return false;
-    const V3 n = sep.normal;
+    V3 n = sep.normal;
     V3 fa[8], fb[8];
     const int na = a.feature(n, fa, 8);
     const int nb = b.feature(n * -1.0_r, fb, 8);
+    auto face_normal = [](const V3* f, int count, const V3& toward) {
+        V3 best{};
+        Real best_len = 0.0_r;
+        for (int i = 1; i + 1 < count; ++i) {
+            const V3 c = vec3::cross(f[i] - f[0], f[i + 1] - f[0]);
+            const Real len = vec3::length_squared(c);
+            if (len > best_len) {
+                best_len = len;
+                best = c;
+            }
+        }
+        if (best_len <= 1e-30_r) return V3{};
+        best = best * (1.0_r / std::sqrt(best_len));
+        return vec3::dot(best, toward) < 0.0_r ? best * -1.0_r : best;
+    };
+    if (na >= 3) {
+        const V3 fn = face_normal(fa, na, n);
+        if (vec3::dot(fn, n) > 0.995_r) n = fn;
+    } else if (nb >= 3) {
+        const V3 fn = face_normal(fb, nb, n * -1.0_r) * -1.0_r;
+        if (vec3::dot(fn, n) > 0.995_r) n = fn;
+    }
     std::vector<narrowphase3d::Candidate> cands;
     Real top_a = -std::numeric_limits<Real>::max();
     for (int i = 0; i < na; ++i) top_a = std::max(top_a, vec3::dot(n, fa[i]));

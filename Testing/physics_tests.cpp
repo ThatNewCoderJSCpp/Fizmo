@@ -941,7 +941,59 @@ void test_sphere_sections() {
 
 } // namespace
 
+void test_contact_regressions() {
+    for (int big = 0; big < 2; ++big) {
+        for (int reuse = 0; reuse < 2; ++reuse) {
+            Simulation3D::Config cfg = ground_cfg();
+            cfg.reuse_contacts = reuse != 0;
+            Simulation3D sim(cfg);
+            RigidBody3D& g = sim.add_body({0.0, -0.5, 0.0}, PhysicsFlags::DefaultStatic);
+            const Real half = big ? 200.0 : 20.0;
+            g.add_collider(Shape3D::make_box(half, 0.5, half));
+            RigidBody3D& b = sim.add_body({0.0, 2.0, 0.0}, PhysicsFlags::DefaultDynamic);
+            b.add_collider(Shape3D::make_rounded_box(0.3, 0.3, 0.3, 0.1));
+            double low = 10.0;
+            for (int i = 0; i < 300; ++i) {
+                sim.step();
+                if (i > 60) low = std::min(low, static_cast<double>(b.position().y));
+            }
+            check(near(low, 0.3, 0.01) && near(b.position().y, 0.3, 0.01), std::string("contacts: rounded box stays on a ") + (big ? "400 m" : "40 m") + " floor" + (reuse ? "" : " without contact reuse"));
+        }
+    }
+    {
+        Shape3D ground = Shape3D::make_box(200.0, 0.5, 200.0);
+        Shape3D cube = Shape3D::make_rounded_box(0.3, 0.3, 0.3, 0.1);
+        std::vector<ContactManifold3D> out;
+        const Transform3D xg({0.0, -0.5, 0.0}, RQuat{1.0, 0.0, 0.0, 0.0});
+        const Transform3D xc({0.013, 0.3, -0.021}, RQuat{1.0, 0.0, 0.0, 0.0});
+        const bool hit = collide_shapes_multi(ground, xg, cube, xc, 0.02, out);
+        bool flat = hit && !out.empty() && out[0].point_count > 0;
+        for (int i = 0; flat && i < out[0].point_count; ++i) flat = std::abs(out[0].points[i].separation) < 0.001;
+        check(flat, "contacts: face contact against a big box measures the gap from the face");
+    }
+    {
+        Simulation3D::Config cfg = ground_cfg();
+        Simulation3D sim(cfg);
+        RigidBody3D& g = sim.add_body({0.0, -0.5, 0.0}, PhysicsFlags::DefaultStatic);
+        g.add_collider(Shape3D::make_box(200.0, 0.5, 200.0));
+        RigidBody3D& ball = sim.add_body({0.0, 0.6, 0.0}, PhysicsFlags::DefaultDynamic);
+        ball.add_collider(Shape3D::make_sphere({0.0, 0.0, 0.0}, 0.5));
+        ball.set_linear_velocity({0.02, 0.0, 0.01});
+        ball.set_angular_velocity({0.02, 0.0, -0.04});
+        double fastest_late = 0.0;
+        for (int i = 0; i < 60 * 120; ++i) {
+            sim.step();
+            if (i > 60 * 90) {
+                const RVec3 v = ball.linear_velocity();
+                fastest_late = std::max(fastest_late, static_cast<double>(std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z)));
+            }
+        }
+        check(fastest_late < 0.0235, "contacts: reused contacts don't speed up a slow rolling ball (" + std::to_string(fastest_late) + " m/s after 90 s, started at 0.022)");
+    }
+}
+
 int main() {
+    test_contact_regressions();
     test_2d_rotation_locks();
     test_2d_lock_after_mass();
     test_3d_angles();

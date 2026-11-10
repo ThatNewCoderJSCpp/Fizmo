@@ -407,8 +407,8 @@ struct Simulation3DConfig {
     bool     simd              = false;
     bool     deterministic     = false;
     bool     reuse_contacts    = true;
-    Real   reuse_distance    = 0.0005_r;
-    Real   reuse_angle       = 0.002_r;
+    Real   reuse_distance    = 0.00002_r;
+    Real   reuse_angle       = 0.0001_r;
     bool     event_callbacks   = true;
     bool     rotation_aware_ccd = true;
     std::size_t parallel_threshold = 32;

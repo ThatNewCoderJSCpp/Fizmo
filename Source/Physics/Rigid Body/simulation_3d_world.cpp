@@ -611,6 +611,14 @@ bool Simulation3D::try_reuse(RigidBody3D* a, RigidBody3D* b, PairResult& out) {
     const RQuat rq = fast::mul(xa.orientation.conjugate(), xb.orientation);
     if (vec3::length(rel - e.relative_position) > m_cfg.reuse_distance) return false;
     if (angle_between(rq, e.relative_orientation) > m_cfg.reuse_angle) return false;
+    for (std::size_t m = 0; m < e.manifolds.size(); ++m) {
+        const V3 n = xa.rotate(e.local_normals[m]);
+        for (int p = 0; p < e.manifolds[m].point_count; ++p) {
+            const ContactPoint3D& cp = e.manifolds[m].points[p];
+            const V3 d = xb.apply(cp.local_anchor_b) - xa.apply(cp.local_anchor_a);
+            if (vec3::length(d - n * vec3::dot(d, n)) > m_cfg.reuse_distance) return false;
+        }
+    }
     out.manifolds = e.manifolds;
     for (std::size_t m = 0; m < out.manifolds.size(); ++m) {
         ContactManifold3D& mf = out.manifolds[m];
@@ -628,8 +636,6 @@ bool Simulation3D::try_reuse(RigidBody3D* a, RigidBody3D* b, PairResult& out) {
     out.touches = e.touches;
     out.reused = true;
     e.step = m_step_count;
-    e.relative_position = rel;
-    e.relative_orientation = rq;
     return true;
 }
 
