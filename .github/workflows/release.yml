@@ -301,7 +301,7 @@ jobs:
       - name: Download llvm-mingw
         if: steps.llvm-mingw-cache.outputs.cache-hit != 'true'
         run: |
-          curl -fL --retry 5 --retry-delay 10 -o /tmp/llvm-mingw.tar.xz "https://github.com/mstorsjo/llvm-mingw/releases/download/$LLVM_MINGW_VERSION/$LLVM_MINGW.tar.xz"
+          curl -fL --retry 10 --retry-delay 20 --retry-all-errors -o /tmp/llvm-mingw.tar.xz "https://github.com/mstorsjo/llvm-mingw/releases/download/$LLVM_MINGW_VERSION/$LLVM_MINGW.tar.xz"
           mkdir -p ~/llvm-mingw
           tar -xf /tmp/llvm-mingw.tar.xz -C ~/llvm-mingw --strip-components=1
 

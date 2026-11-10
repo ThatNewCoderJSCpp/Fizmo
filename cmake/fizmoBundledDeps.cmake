@@ -20,6 +20,38 @@ set(FIZMO_BUNDLED_HARFBUZZ_SHA256 "972a60a8d274d49e70361da6920c3a73dfb0fb4387f6c
 set(FIZMO_BUNDLED_OPENSSL_VERSION "3.5.4")
 set(FIZMO_BUNDLED_OPENSSL_SHA256 "967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99")
 
+function(fizmo_bundled_prefetch url sha256)
+    get_filename_component(_name "${url}" NAME)
+    set(_file "${FIZMO_BUNDLED_DOWNLOADS}/${_name}")
+    if(EXISTS "${_file}")
+        file(SHA256 "${_file}" _have)
+        if(_have STREQUAL sha256)
+            return()
+        endif()
+        file(REMOVE "${_file}")
+    endif()
+    file(MAKE_DIRECTORY "${FIZMO_BUNDLED_DOWNLOADS}")
+    foreach(_attempt RANGE 1 6)
+        file(DOWNLOAD "${url}" "${_file}.part" EXPECTED_HASH SHA256=${sha256} TLS_VERIFY ON STATUS _status)
+        list(GET _status 0 _code)
+        if(_code EQUAL 0)
+            file(RENAME "${_file}.part" "${_file}")
+            return()
+        endif()
+        file(REMOVE "${_file}.part")
+        list(GET _status 1 _why)
+        math(EXPR _wait "${_attempt} * 15")
+        message(STATUS "fizmo: downloading ${_name} failed (${_why}), attempt ${_attempt} of 6; trying again in ${_wait}s")
+        if(_attempt LESS 6)
+            execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep ${_wait})
+        endif()
+    endforeach()
+    message(WARNING "fizmo: couldn't download ${_name}; the build will try once more")
+endfunction()
+
+fizmo_bundled_prefetch("https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/${FIZMO_BUNDLED_JPEG_VERSION}/libjpeg-turbo-${FIZMO_BUNDLED_JPEG_VERSION}.tar.gz" ${FIZMO_BUNDLED_JPEG_SHA256})
+fizmo_bundled_prefetch("https://github.com/harfbuzz/harfbuzz/releases/download/${FIZMO_BUNDLED_HARFBUZZ_VERSION}/harfbuzz-${FIZMO_BUNDLED_HARFBUZZ_VERSION}.tar.xz" ${FIZMO_BUNDLED_HARFBUZZ_SHA256})
+
 set(_fizmo_bundled_args
     -DCMAKE_BUILD_TYPE=Release
     -DCMAKE_INSTALL_PREFIX=${FIZMO_BUNDLED_PREFIX}
@@ -178,6 +210,7 @@ if(ANDROID)
         "ANDROID_NDK_HOME=${_fizmo_ndk_root}"
         "PATH=${_fizmo_path}")
 
+    fizmo_bundled_prefetch("https://github.com/openssl/openssl/releases/download/openssl-${FIZMO_BUNDLED_OPENSSL_VERSION}/openssl-${FIZMO_BUNDLED_OPENSSL_VERSION}.tar.gz" ${FIZMO_BUNDLED_OPENSSL_SHA256})
     ExternalProject_Add(fizmo_bundled_openssl_build
         URL "https://github.com/openssl/openssl/releases/download/openssl-${FIZMO_BUNDLED_OPENSSL_VERSION}/openssl-${FIZMO_BUNDLED_OPENSSL_VERSION}.tar.gz"
         URL_HASH SHA256=${FIZMO_BUNDLED_OPENSSL_SHA256}
