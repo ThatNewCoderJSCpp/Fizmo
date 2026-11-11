@@ -4,6 +4,7 @@
 #include "graph.hpp"
 #include "path.hpp"
 #include "search.hpp"
+#include "parallel_search.hpp"
 #include "cycles.hpp"
 #include "probability.hpp"
 

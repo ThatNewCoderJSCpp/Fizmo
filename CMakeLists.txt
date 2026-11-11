@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 1.4.2
+    VERSION 1.4.3
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -340,6 +340,15 @@ if(FIZMO_BUILD_NUMERICS_TESTS)
     endif()
     enable_testing()
     add_test(NAME fizmo-numerics COMMAND fizmo-numerics-tests)
+endif()
+
+option(FIZMO_BUILD_GRAPH_TESTS "Build Testing/graph_search_tests.cpp as fizmo-graph-search-tests" OFF)
+if(FIZMO_BUILD_GRAPH_TESTS)
+    find_package(Threads REQUIRED)
+    add_executable(fizmo-graph-search-tests Testing/graph_search_tests.cpp)
+    target_link_libraries(fizmo-graph-search-tests PRIVATE fizmo_headers Threads::Threads)
+    enable_testing()
+    add_test(NAME fizmo-graph-search COMMAND fizmo-graph-search-tests)
 endif()
 
 option(FIZMO_BUILD_AUDIO_TESTS "Build Testing/audio_tests.cpp as fizmo-audio-tests" OFF)
