@@ -140,6 +140,13 @@ struct KeyEvent {
     input::Key       key = input::Key::Unknown;
     input::Modifiers mods = input::Modifiers::None;
     bool             repeat = false;
+    input::Key       physical_key = input::Key::Unknown;
+    input::Key       logical_key = input::Key::Unknown;
+
+    input::Key key_of(input::KeyKind kind) const noexcept { return kind == input::KeyKind::Physical ? physical_key : kind == input::KeyKind::Logical ? logical_key : key; }
+    bool is(input::Key k) const noexcept { return k != input::Key::Unknown && (key == k || physical_key == k || logical_key == k); }
+    bool is(input::PhysicalKey k) const noexcept { return k.key != input::Key::Unknown && physical_key == k.key; }
+    bool is(input::LogicalKey k) const noexcept { return k.key != input::Key::Unknown && logical_key == k.key; }
 
     bool shift() const noexcept { return input::has(mods, input::Modifiers::Shift); }
     bool ctrl() const noexcept;

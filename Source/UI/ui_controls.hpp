@@ -611,14 +611,22 @@ struct Keybind {
     input::Modifiers     mods = input::Modifiers::None;
     input::MouseButton   mouse = input::MouseButton::None;
     input::GamepadButton pad = input::GamepadButton::South;
+    input::KeyKind       key_kind = input::KeyKind::Any;
 
     static constexpr input::Modifiers kModMask = static_cast<input::Modifiers>(0x0F);
 
     static Keybind from_key(input::Key k, input::Modifiers m = input::Modifiers::None) noexcept { Keybind b; b.kind = Kind::Key; b.key = k; b.mods = m & kModMask; return b; }
+    static Keybind from_key(input::Key k, input::KeyKind kk, input::Modifiers m = input::Modifiers::None) noexcept { Keybind b = from_key(k, m); b.key_kind = kk; return b; }
+    static Keybind from_key(input::PhysicalKey k, input::Modifiers m = input::Modifiers::None) noexcept { return from_key(k.key, input::KeyKind::Physical, m); }
+    static Keybind from_key(input::LogicalKey k, input::Modifiers m = input::Modifiers::None) noexcept { return from_key(k.key, input::KeyKind::Logical, m); }
+    static Keybind from_physical_key(input::Key k, input::Modifiers m = input::Modifiers::None) noexcept { return from_key(k, input::KeyKind::Physical, m); }
+    static Keybind from_logical_key(input::Key k, input::Modifiers m = input::Modifiers::None) noexcept { return from_key(k, input::KeyKind::Logical, m); }
     static Keybind from_mouse(input::MouseButton bt, input::Modifiers m = input::Modifiers::None) noexcept { Keybind b; b.kind = Kind::Mouse; b.mouse = bt; b.mods = m & kModMask; return b; }
     static Keybind from_gamepad(input::GamepadButton bt) noexcept { Keybind b; b.kind = Kind::Gamepad; b.pad = bt; return b; }
 
     bool empty() const noexcept { return kind == Kind::None; }
+    bool physical() const noexcept { return kind == Kind::Key && key_kind == input::KeyKind::Physical; }
+    bool logical() const noexcept { return kind == Kind::Key && key_kind == input::KeyKind::Logical; }
 
     bool operator==(const Keybind& o) const noexcept;
     bool operator!=(const Keybind& o) const noexcept { return !(*this == o); }
@@ -632,6 +640,8 @@ struct Keybind {
     static std::optional<Keybind> parse(const std::string& text);
 
     bool matches(const windows::WindowEvent& e) const noexcept;
+
+    bool matches(const KeyEvent& k) const noexcept;
 };
 
 class KeybindField : public Widget {
@@ -644,6 +654,7 @@ protected:
     bool                                    m_allow_gamepad = true;
     bool                                    m_allow_modifier_only = true;
     bool                                    m_escape_cancels = true;
+    input::KeyKind                          m_capture_kind = input::KeyKind::Any;
     bool                                    m_backspace_clears = true;
     bool                                    m_right_click_clears = true;
     std::string                             m_prompt = "Press a key...";
@@ -670,6 +681,8 @@ public:
     KeybindField& set_allow_gamepad(bool a) noexcept { m_allow_gamepad = a; return *this; }
     KeybindField& set_allow_modifier_only(bool a) noexcept { m_allow_modifier_only = a; return *this; }
     KeybindField& set_escape_cancels(bool e) noexcept { m_escape_cancels = e; return *this; }
+    KeybindField& set_capture_kind(input::KeyKind kind) noexcept { m_capture_kind = kind; return *this; }
+    input::KeyKind capture_kind() const noexcept { return m_capture_kind; }
     KeybindField& set_backspace_clears(bool c) noexcept { m_backspace_clears = c; return *this; }
     KeybindField& set_right_click_clears(bool c) noexcept { m_right_click_clears = c; return *this; }
     KeybindField& set_prompt(std::string p) { m_prompt = std::move(p); return *this; }

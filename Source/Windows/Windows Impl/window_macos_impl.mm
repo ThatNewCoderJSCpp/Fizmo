@@ -323,6 +323,15 @@ std::string key_label(NSEvent* ev, fizmo::input::Key key) {
     return name ? std::string(name) : std::string();
 }
 
+fizmo::input::Key logical_from_mac(NSEvent* ev, fizmo::input::Key physical) {
+    if (!fizmo::input::is_layout_dependent(physical)) return physical;
+    if ([ev type] != NSEventTypeKeyDown && [ev type] != NSEventTypeKeyUp) return physical;
+    NSString* chars = [ev charactersIgnoringModifiers];
+    if ([chars length] == 0) return physical;
+    const fizmo::input::Key k = fizmo::input::key_from_char(static_cast<char32_t>([chars characterAtIndex:0]));
+    return k != fizmo::input::Key::Unknown ? k : physical;
+}
+
 } // namespace
 
 @interface FizmoView : NSView <NSTextInputClient> {
@@ -558,7 +567,7 @@ static void apply_cursor(MacWindowState* s) {
     e.key = code;
     e.scancode = code;
     e.physical_key = key_from_mac(code);
-    e.logical_key = e.physical_key;
+    e.logical_key = logical_from_mac(event, e.physical_key);
     e.mods = modifiers_of([event modifierFlags]);
     e.key_name = key_label(event, e.physical_key);
     if (pressed) {

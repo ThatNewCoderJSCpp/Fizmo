@@ -1571,7 +1571,9 @@ private:
         e.scancode = ke.keycode;
         e.key_name = key_name(ks, buf, n);
         e.physical_key = input::key_from_x11_keycode(ke.keycode);
-        e.logical_key = input::key_from_x11_keysym(XkbKeycodeToKeysym(m_display, static_cast<KeyCode>(ke.keycode), 0, 0));
+        const unsigned int group = (ke.state >> 13) & 0x3u;
+        e.logical_key = input::key_from_x11_keysym(XkbKeycodeToKeysym(m_display, static_cast<KeyCode>(ke.keycode), group, 0));
+        if (e.logical_key == input::Key::Unknown && group != 0) e.logical_key = input::key_from_x11_keysym(XkbKeycodeToKeysym(m_display, static_cast<KeyCode>(ke.keycode), 0, 0));
         if (e.logical_key == input::Key::Unknown) e.logical_key = e.physical_key;
         e.mods = modifiers_of(ke.state);
         const unsigned int code = ke.keycode & 0xFFu;

@@ -985,7 +985,7 @@ void Ui::prompt(const std::string& title, const std::string& message, const std:
 bool Keybind::operator==(const Keybind& o) const noexcept {
     if (kind != o.kind) return false;
     switch (kind) {
-        case Kind::Key: return key == o.key && mods == o.mods;
+        case Kind::Key: return key == o.key && mods == o.mods && key_kind == o.key_kind;
         case Kind::Mouse: return mouse == o.mouse && mods == o.mods;
         case Kind::Gamepad: return pad == o.pad;
         default: return true;
@@ -1014,7 +1014,9 @@ std::string Keybind::mod_prefix() const {
 
 std::string Keybind::to_string() const {
     switch (kind) {
-        case Kind::Key: return mod_prefix() + input::key_name(key);
+        case Kind::Key:
+            if (key_kind == input::KeyKind::Any) return mod_prefix() + input::key_name(key);
+            return mod_prefix() + input::key_kind_name(key_kind) + ":" + input::key_name(key);
         case Kind::Mouse: return mod_prefix() + mouse_name(mouse);
         case Kind::Gamepad: return std::string("Gamepad ") + input::gamepad_button_name(pad);
         default: return std::string();
@@ -1047,11 +1049,15 @@ auto Keybind::parse(const std::string& text) -> std::optional<Keybind> {
         else return std::nullopt;
     }
     if (parts.empty()) return std::nullopt;
-    const std::string last = parts.back();
+    std::string last = parts.back();
     for (int b = 1; b <= 5; ++b) if (lower(last) == lower(mouse_name(static_cast<input::MouseButton>(b)))) return from_mouse(static_cast<input::MouseButton>(b), m);
+    input::KeyKind kk = input::KeyKind::Any;
+    const std::string ll = lower(last);
+    if (ll.size() > 9 && ll.rfind("physical:", 0) == 0) { kk = input::KeyKind::Physical; last = last.substr(9); }
+    else if (ll.size() > 8 && ll.rfind("logical:", 0) == 0) { kk = input::KeyKind::Logical; last = last.substr(8); }
     const input::Key k = input::key_from_name(last);
     if (k == input::Key::Unknown) return std::nullopt;
-    return from_key(k, m);
+    return from_key(k, kk, m);
 }
 
 bool Keybind::matches(const windows::WindowEvent& e) const noexcept {
@@ -1059,7 +1065,7 @@ bool Keybind::matches(const windows::WindowEvent& e) const noexcept {
     switch (kind) {
         case Kind::Key:
             if (e.type != T::KeyPress) return false;
-            return (e.logical_key == key || e.physical_key == key) && (e.mods & kModMask) == mods;
+            return e.is_key(key, key_kind) && (e.mods & kModMask) == mods;
         case Kind::Mouse:
             return e.type == T::MouseClick && static_cast<input::MouseButton>(e.button) == mouse && (e.mods & kModMask) == mods;
         case Kind::Gamepad:
@@ -1067,6 +1073,12 @@ bool Keybind::matches(const windows::WindowEvent& e) const noexcept {
         default:
             return false;
     }
+}
+
+bool Keybind::matches(const KeyEvent& k) const noexcept {
+    if (kind != Kind::Key || key == input::Key::Unknown) return false;
+    const bool hit = key_kind == input::KeyKind::Any ? k.is(key) : k.key_of(key_kind) == key;
+    return hit && (k.mods & kModMask) == mods;
 }
 
 auto KeybindField::mod_of(input::Key k) noexcept -> input::Modifiers {
@@ -1149,7 +1161,8 @@ bool KeybindField::on_key(const KeyEvent& k) {
     if (k.key == K::Escape && m_escape_cancels && held == input::Modifiers::None) { cancel(); return true; }
     if ((k.key == K::Backspace || k.key == K::Delete) && m_backspace_clears && held == input::Modifiers::None) { m_listening = false; clear(true); return true; }
     if (k.key == K::Unknown) return true;
-    commit(Keybind::from_key(k.key, held));
+    const input::Key captured = k.key_of(m_capture_kind) != K::Unknown ? k.key_of(m_capture_kind) : k.key;
+    commit(Keybind::from_key(captured, m_capture_kind, held));
     return true;
 }
 
@@ -1158,7 +1171,7 @@ bool KeybindField::on_key_up(const KeyEvent& k) {
     const input::Modifiers self = mod_of(k.key);
     if (self == input::Modifiers::None) return true;
     if (m_allow_modifier_only && m_last_mod == k.key) {
-        commit(Keybind::from_key(k.key, without(m_pending, self)));
+        commit(Keybind::from_key(k.key, m_capture_kind, without(m_pending, self)));
         return true;
     }
     m_pending = without(m_pending, self);

@@ -43,8 +43,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config rpm \
+          bash .github/scripts/apt-install.sh ninja-build pkg-config rpm \
             libx11-dev libxft-dev libxrender-dev libfontconfig1-dev libfreetype-dev \
             libssl-dev libharfbuzz-dev zlib1g-dev libjpeg-dev \
             libvulkan-dev libgl-dev
@@ -242,8 +241,8 @@ jobs:
       - name: Build and package in a 32-bit container
         run: |
           docker run --rm --platform linux/386 -v "$PWD:/src" -w /src i386/debian:bookworm bash -euo pipefail -c '
-            apt-get update
-            apt-get install -y --no-install-recommends ca-certificates g++ cmake ninja-build pkg-config file rpm dpkg-dev \
+            for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=5 update && break; sleep $((i * 20)); done
+            apt-get -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates g++ cmake ninja-build pkg-config file rpm dpkg-dev \
               libx11-dev libxft-dev libxrender-dev libfontconfig-dev libfreetype-dev \
               libssl-dev libharfbuzz-dev zlib1g-dev libjpeg-dev \
               libvulkan-dev libgl-dev
@@ -288,8 +287,7 @@ jobs:
 
       - name: Install build tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build nsis p7zip-full
+          bash .github/scripts/apt-install.sh ninja-build nsis p7zip-full
 
       - name: Cache llvm-mingw
         id: llvm-mingw-cache
@@ -421,8 +419,7 @@ jobs:
 
       - name: Install tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build
+          bash .github/scripts/apt-install.sh ninja-build || pipx install ninja
 
       - name: Configure
         run: |

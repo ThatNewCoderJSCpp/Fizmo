@@ -150,6 +150,8 @@ struct Event {
     float              scroll_y  = 0.0f;
 
     input::Key         key       = input::Key::Unknown;
+    input::Key         physical_key = input::Key::Unknown;
+    input::Key         logical_key  = input::Key::Unknown;
     int                key_code  = 0;
     int                scan_code = 0;
     input::Modifiers   mods      = input::Modifiers::None;

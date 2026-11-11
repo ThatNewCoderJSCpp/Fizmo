@@ -114,14 +114,42 @@ struct WindowEvent {
     int   window_y  = 0;
     float dpi_scale = 1.0f;
 
+    bool is_key_event() const noexcept { return type == WindowEventType::KeyPress || type == WindowEventType::KeyRelease; }
+
+    input::Key key_of(input::KeyKind kind) const noexcept {
+        switch (kind) {
+            case input::KeyKind::Physical: return physical_key;
+            case input::KeyKind::Logical:  return logical_key;
+            default:                       return logical_key != input::Key::Unknown ? logical_key : physical_key;
+        }
+    }
+
+    input::Key any_key() const noexcept { return key_of(input::KeyKind::Any); }
+
+    bool is_key(input::Key k) const noexcept { return k != input::Key::Unknown && (logical_key == k || physical_key == k); }
+    bool is_key(input::PhysicalKey k) const noexcept { return k.key != input::Key::Unknown && physical_key == k.key; }
+    bool is_key(input::LogicalKey k) const noexcept { return k.key != input::Key::Unknown && logical_key == k.key; }
+    bool is_key(input::Key k, input::KeyKind kind) const noexcept { return k != input::Key::Unknown && (kind == input::KeyKind::Any ? is_key(k) : key_of(kind) == k); }
+    bool is_physical_key(input::Key k) const noexcept { return is_key(input::PhysicalKey(k)); }
+    bool is_logical_key(input::Key k) const noexcept { return is_key(input::LogicalKey(k)); }
+
+    const char* physical_name() const noexcept { return input::key_name(physical_key); }
+    const char* logical_name() const noexcept { return input::key_name(logical_key); }
+
+    bool has_modifiers(input::Modifiers m) const noexcept { return input::has_all(mods, m); }
+    input::Modifiers chord_modifiers() const noexcept { return mods & input::kChordModifiers; }
+
     inline friend std::ostream& operator<<(std::ostream& os, const WindowEvent& e) {
         os << "WindowEvent[\n"
            << "    Type: " << e.type << "\n"
-           << "    x: " << e.x << "\n" 
+           << "    x: " << e.x << "\n"
            << "    y: " << e.y << "\n"
            << "    Button: " << e.button << "\n"
-           << "    Key Code: " << e.key << "\n" 
+           << "    Key Code: " << e.key << "\n"
            << "    Key Name: " << e.key_name << "\n"
+           << "    Physical Key: " << e.physical_key << "\n"
+           << "    Logical Key: " << e.logical_key << "\n"
+           << "    Modifiers: " << e.mods << "\n"
            << "    Scroll Delta: " << e.scroll_delta << "\n"
            << "    Mouse Delta: " << e.dx << ", " << e.dy << "\n"
            << "]";

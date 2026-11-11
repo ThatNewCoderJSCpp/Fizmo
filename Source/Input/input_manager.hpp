@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -53,6 +54,48 @@ public:
     bool is_logical_key_down(input::Key k) const noexcept { return test(m_logical_down, k); }
     bool is_logical_key_just_pressed(input::Key k) const noexcept { return test(m_logical_just_pressed, k); }
     bool is_logical_key_just_released(input::Key k) const noexcept { return test(m_logical_just_released, k); }
+    bool is_logical_key_double_pressed(input::Key k) const noexcept { return test(m_logical_double_pressed, k); }
+    double logical_key_hold_duration(input::Key k) const noexcept { return is_logical_key_down(k) ? seconds_since(m_logical_press_time[index(k)]) : 0.0; }
+    bool is_logical_key_held(input::Key k, double min_seconds) const noexcept { return is_logical_key_down(k) && logical_key_hold_duration(k) >= min_seconds; }
+
+    bool is_physical_key_down(input::Key k) const noexcept { return is_key_down(k); }
+    bool is_physical_key_just_pressed(input::Key k) const noexcept { return is_key_just_pressed(k); }
+    bool is_physical_key_just_released(input::Key k) const noexcept { return is_key_just_released(k); }
+    bool is_physical_key_double_pressed(input::Key k) const noexcept { return is_key_double_pressed(k); }
+    double physical_key_hold_duration(input::Key k) const noexcept { return key_hold_duration(k); }
+    bool is_physical_key_held(input::Key k, double min_seconds) const noexcept { return is_key_held(k, min_seconds); }
+
+    bool is_key_down(input::PhysicalKey k) const noexcept { return is_physical_key_down(k.key); }
+    bool is_key_just_pressed(input::PhysicalKey k) const noexcept { return is_physical_key_just_pressed(k.key); }
+    bool is_key_just_released(input::PhysicalKey k) const noexcept { return is_physical_key_just_released(k.key); }
+    bool is_key_double_pressed(input::PhysicalKey k) const noexcept { return is_physical_key_double_pressed(k.key); }
+    double key_hold_duration(input::PhysicalKey k) const noexcept { return physical_key_hold_duration(k.key); }
+    bool is_key_held(input::PhysicalKey k, double min_seconds) const noexcept { return is_physical_key_held(k.key, min_seconds); }
+
+    bool is_key_down(input::LogicalKey k) const noexcept { return is_logical_key_down(k.key); }
+    bool is_key_just_pressed(input::LogicalKey k) const noexcept { return is_logical_key_just_pressed(k.key); }
+    bool is_key_just_released(input::LogicalKey k) const noexcept { return is_logical_key_just_released(k.key); }
+    bool is_key_double_pressed(input::LogicalKey k) const noexcept { return is_logical_key_double_pressed(k.key); }
+    double key_hold_duration(input::LogicalKey k) const noexcept { return logical_key_hold_duration(k.key); }
+    bool is_key_held(input::LogicalKey k, double min_seconds) const noexcept { return is_logical_key_held(k.key, min_seconds); }
+
+    bool is_key_down(input::Key k, input::KeyKind kind) const noexcept;
+    bool is_key_just_pressed(input::Key k, input::KeyKind kind) const noexcept;
+    bool is_key_just_released(input::Key k, input::KeyKind kind) const noexcept;
+    bool is_key_double_pressed(input::Key k, input::KeyKind kind) const noexcept;
+    double key_hold_duration(input::Key k, input::KeyKind kind) const noexcept;
+    bool is_key_held(input::Key k, input::KeyKind kind, double min_seconds) const noexcept { return key_hold_duration(k, kind) >= min_seconds && is_key_down(k, kind); }
+
+    bool is_physical_key_down(std::string_view name) const noexcept { return is_physical_key_down(input::key_from_name(name)); }
+    bool is_physical_key_just_pressed(std::string_view name) const noexcept { return is_physical_key_just_pressed(input::key_from_name(name)); }
+    bool is_physical_key_just_released(std::string_view name) const noexcept { return is_physical_key_just_released(input::key_from_name(name)); }
+    bool is_physical_key_double_pressed(std::string_view name) const noexcept { return is_physical_key_double_pressed(input::key_from_name(name)); }
+    double physical_key_hold_duration(std::string_view name) const noexcept { return physical_key_hold_duration(input::key_from_name(name)); }
+    bool is_logical_key_down(std::string_view name) const noexcept { return is_logical_key_down(input::key_from_name(name)); }
+    bool is_logical_key_just_pressed(std::string_view name) const noexcept { return is_logical_key_just_pressed(input::key_from_name(name)); }
+    bool is_logical_key_just_released(std::string_view name) const noexcept { return is_logical_key_just_released(input::key_from_name(name)); }
+    bool is_logical_key_double_pressed(std::string_view name) const noexcept { return is_logical_key_double_pressed(input::key_from_name(name)); }
+    double logical_key_hold_duration(std::string_view name) const noexcept { return logical_key_hold_duration(input::key_from_name(name)); }
 
     bool is_key_down(const std::string& name) const noexcept { return is_logical_key_down(input::key_from_name(name)); }
     bool is_key_just_pressed(const std::string& name) const noexcept { return is_logical_key_just_pressed(input::key_from_name(name)); }
@@ -62,6 +105,8 @@ public:
     bool is_key_held(const std::string& name, double min_seconds) const noexcept { return is_key_down(name) && key_hold_duration(name) >= min_seconds; }
 
     input::Modifiers modifiers() const noexcept { return m_mods; }
+    input::Modifiers chord_modifiers() const noexcept { return m_mods & input::kChordModifiers; }
+    bool has_modifiers(input::Modifiers m) const noexcept { return input::has_all(m_mods, m); }
     bool shift_down() const noexcept { return is_key_down(input::Key::LeftShift) || is_key_down(input::Key::RightShift); }
     bool control_down() const noexcept { return is_key_down(input::Key::LeftControl) || is_key_down(input::Key::RightControl); }
     bool alt_down() const noexcept { return is_key_down(input::Key::LeftAlt) || is_key_down(input::Key::RightAlt); }
@@ -140,6 +185,9 @@ private:
     std::bitset<kKeys> m_logical_down;
     std::bitset<kKeys> m_logical_just_pressed;
     std::bitset<kKeys> m_logical_just_released;
+    std::bitset<kKeys> m_logical_double_pressed;
+    std::array<TimePoint, kKeys>     m_logical_press_time{};
+    std::array<TimePoint, kKeys>     m_logical_last_release{};
     std::array<input::Key, kKeys>    m_logical_of{};
     std::array<std::uint8_t, kKeys>  m_logical_count{};
     std::array<TimePoint, kKeys>     m_press_time{};

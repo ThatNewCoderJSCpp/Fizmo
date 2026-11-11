@@ -662,6 +662,8 @@ bool Ui::handle_event(const windows::WindowEvent& e) {
         case T::KeyPress: {
             KeyEvent k;
             k.key = e.logical_key != input::Key::Unknown ? e.logical_key : e.physical_key;
+            k.physical_key = e.physical_key != input::Key::Unknown ? e.physical_key : k.key;
+            k.logical_key = k.key;
             k.mods = e.mods;
             k.repeat = e.repeat;
             m_blink_start = m_time;
@@ -683,6 +685,8 @@ bool Ui::handle_event(const windows::WindowEvent& e) {
         case T::KeyRelease: {
             KeyEvent k;
             k.key = e.logical_key != input::Key::Unknown ? e.logical_key : e.physical_key;
+            k.physical_key = e.physical_key != input::Key::Unknown ? e.physical_key : k.key;
+            k.logical_key = k.key;
             k.mods = e.mods;
             if (m_focus) used = m_focus->on_key_up(k) || m_focus->captures_all_keys();
             break;

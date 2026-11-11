@@ -1,5 +1,6 @@
 #include "fizmo_library.hpp"
 #include "input_manager.hpp"
+#include <algorithm>
 
 namespace fizmo {
 namespace input {
@@ -41,6 +42,7 @@ void InputManager::end_frame() noexcept {
     m_double_pressed.reset();
     m_logical_just_pressed.reset();
     m_logical_just_released.reset();
+    m_logical_double_pressed.reset();
     m_mouse_just_pressed.reset();
     m_mouse_just_released.reset();
     m_mouse_double.reset();
@@ -64,12 +66,55 @@ double InputManager::key_hold_duration(const std::string& name) const noexcept {
 void InputManager::reset() noexcept {
     m_down.reset();
     m_logical_down.reset();
+    m_logical_of.fill(input::Key::Unknown);
+    m_logical_count.fill(0);
     m_mouse_down.reset();
     m_touches.clear();
     m_composition.clear();
     m_mods = input::Modifiers::None;
     m_last_release.fill(TimePoint{});
+    m_logical_last_release.fill(TimePoint{});
     end_frame();
+}
+
+bool InputManager::is_key_down(input::Key k, input::KeyKind kind) const noexcept {
+    switch (kind) {
+        case input::KeyKind::Physical: return is_physical_key_down(k);
+        case input::KeyKind::Logical:  return is_logical_key_down(k);
+        default:                       return is_physical_key_down(k) || is_logical_key_down(k);
+    }
+}
+
+bool InputManager::is_key_just_pressed(input::Key k, input::KeyKind kind) const noexcept {
+    switch (kind) {
+        case input::KeyKind::Physical: return is_physical_key_just_pressed(k);
+        case input::KeyKind::Logical:  return is_logical_key_just_pressed(k);
+        default:                       return is_physical_key_just_pressed(k) || is_logical_key_just_pressed(k);
+    }
+}
+
+bool InputManager::is_key_just_released(input::Key k, input::KeyKind kind) const noexcept {
+    switch (kind) {
+        case input::KeyKind::Physical: return is_physical_key_just_released(k);
+        case input::KeyKind::Logical:  return is_logical_key_just_released(k);
+        default:                       return is_physical_key_just_released(k) || is_logical_key_just_released(k);
+    }
+}
+
+bool InputManager::is_key_double_pressed(input::Key k, input::KeyKind kind) const noexcept {
+    switch (kind) {
+        case input::KeyKind::Physical: return is_physical_key_double_pressed(k);
+        case input::KeyKind::Logical:  return is_logical_key_double_pressed(k);
+        default:                       return is_physical_key_double_pressed(k) || is_logical_key_double_pressed(k);
+    }
+}
+
+double InputManager::key_hold_duration(input::Key k, input::KeyKind kind) const noexcept {
+    switch (kind) {
+        case input::KeyKind::Physical: return physical_key_hold_duration(k);
+        case input::KeyKind::Logical:  return logical_key_hold_duration(k);
+        default:                       return std::max(physical_key_hold_duration(k), logical_key_hold_duration(k));
+    }
 }
 
 bool InputManager::physical_of_name(const std::string& name, bool (InputManager::*query)(input::Key) const noexcept) const noexcept {
@@ -130,8 +175,14 @@ void InputManager::press_logical(input::Key logical, std::size_t physical) {
     const std::size_t l = index(logical);
     if (l == 0) return;
     if (m_logical_count[l]++ == 0) {
+        const TimePoint now = Clock::now();
         m_logical_down.set(l);
         m_logical_just_pressed.set(l);
+        m_logical_press_time[l] = now;
+        if (m_logical_last_release[l] != TimePoint{} && std::chrono::duration<double>(now - m_logical_last_release[l]).count() <= kDoubleTapWindow) {
+            m_logical_double_pressed.set(l);
+            m_logical_last_release[l] = TimePoint{};
+        }
     }
 }
 
@@ -141,6 +192,7 @@ void InputManager::release_logical(input::Key logical) {
     if (--m_logical_count[l] == 0) {
         m_logical_down.reset(l);
         m_logical_just_released.set(l);
+        m_logical_last_release[l] = Clock::now();
     }
 }
 

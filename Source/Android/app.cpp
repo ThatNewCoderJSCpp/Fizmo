@@ -374,6 +374,9 @@ struct AppState {
         Event e;
         e.type = down ? EventType::KeyDown : EventType::KeyUp;
         e.key = detail::key_from_android(code);
+        e.logical_key = e.key;
+        e.physical_key = scan > 0 ? input::key_from_evdev(static_cast<unsigned int>(scan)) : input::Key::Unknown;
+        if (e.physical_key == input::Key::Unknown) e.physical_key = e.key;
         e.key_code = code;
         e.scan_code = scan;
         e.mods = detail::mods_from_android(meta);
@@ -450,6 +453,9 @@ struct AppState {
             Event e;
             e.type = action == AKEY_EVENT_ACTION_UP ? EventType::KeyUp : EventType::KeyDown;
             e.key = detail::key_from_android(code);
+            e.logical_key = e.key;
+            e.physical_key = scan > 0 ? input::key_from_evdev(static_cast<unsigned int>(scan)) : e.key;
+            if (e.physical_key == input::Key::Unknown) e.physical_key = e.key;
             e.key_code = code;
             e.mods = detail::mods_from_android(meta);
             push(std::move(e));

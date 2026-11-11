@@ -5,7 +5,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <ostream>
 #include <string>
+#include <string_view>
 
 namespace fizmo {
 namespace input {
@@ -46,6 +48,56 @@ constexpr Modifiers operator|(Modifiers a, Modifiers b) noexcept { return static
 constexpr Modifiers operator&(Modifiers a, Modifiers b) noexcept { return static_cast<Modifiers>(static_cast<std::uint16_t>(a) & static_cast<std::uint16_t>(b)); }
 constexpr Modifiers& operator|=(Modifiers& a, Modifiers b) noexcept { a = a | b; return a; }
 constexpr bool has(Modifiers set, Modifiers flag) noexcept { return (static_cast<std::uint16_t>(set) & static_cast<std::uint16_t>(flag)) != 0; }
+constexpr Modifiers operator^(Modifiers a, Modifiers b) noexcept { return static_cast<Modifiers>(static_cast<std::uint16_t>(a) ^ static_cast<std::uint16_t>(b)); }
+constexpr Modifiers operator~(Modifiers a) noexcept { return static_cast<Modifiers>(static_cast<std::uint16_t>(~static_cast<std::uint16_t>(a))); }
+constexpr Modifiers& operator&=(Modifiers& a, Modifiers b) noexcept { a = a & b; return a; }
+constexpr Modifiers& operator^=(Modifiers& a, Modifiers b) noexcept { a = a ^ b; return a; }
+constexpr bool has_all(Modifiers set, Modifiers flags) noexcept { return (static_cast<std::uint16_t>(set) & static_cast<std::uint16_t>(flags)) == static_cast<std::uint16_t>(flags); }
+constexpr bool has_any(Modifiers set, Modifiers flags) noexcept { return has(set, flags); }
+constexpr Modifiers without(Modifiers set, Modifiers flags) noexcept { return static_cast<Modifiers>(static_cast<std::uint16_t>(set) & static_cast<std::uint16_t>(~static_cast<std::uint16_t>(flags))); }
+
+inline constexpr Modifiers kChordModifiers = Modifiers::Shift | Modifiers::Control | Modifiers::Alt | Modifiers::Meta;
+
+enum class KeyKind : std::uint8_t {
+    Any = 0,
+    Logical,
+    Physical
+};
+
+struct PhysicalKey {
+    Key key = Key::Unknown;
+
+    constexpr PhysicalKey() noexcept = default;
+    constexpr explicit PhysicalKey(Key k) noexcept : key(k) {}
+
+    constexpr bool operator==(PhysicalKey o) const noexcept { return key == o.key; }
+    constexpr bool operator!=(PhysicalKey o) const noexcept { return key != o.key; }
+    constexpr bool operator==(Key k) const noexcept { return key == k; }
+    constexpr bool operator!=(Key k) const noexcept { return key != k; }
+};
+
+struct LogicalKey {
+    Key key = Key::Unknown;
+
+    constexpr LogicalKey() noexcept = default;
+    constexpr explicit LogicalKey(Key k) noexcept : key(k) {}
+
+    constexpr bool operator==(LogicalKey o) const noexcept { return key == o.key; }
+    constexpr bool operator!=(LogicalKey o) const noexcept { return key != o.key; }
+    constexpr bool operator==(Key k) const noexcept { return key == k; }
+    constexpr bool operator!=(Key k) const noexcept { return key != k; }
+};
+
+constexpr PhysicalKey physical(Key k) noexcept { return PhysicalKey(k); }
+constexpr LogicalKey logical(Key k) noexcept { return LogicalKey(k); }
+
+constexpr const char* key_kind_name(KeyKind kind) noexcept {
+    switch (kind) {
+        case KeyKind::Logical:  return "Logical";
+        case KeyKind::Physical: return "Physical";
+        default:                return "Any";
+    }
+}
 
 namespace detail {
 
@@ -98,6 +150,57 @@ constexpr bool same_name(const char* a, const char* b, std::size_t len) noexcept
     return b[len] == '\0';
 }
 
+constexpr std::size_t name_length(const char* s) noexcept {
+    std::size_t n = 0;
+    while (s[n] != '\0') ++n;
+    return n;
+}
+
+constexpr std::uint32_t name_hash(const char* s, std::size_t len) noexcept {
+    std::uint32_t h = 2166136261u;
+    for (std::size_t i = 0; i < len; ++i) {
+        h ^= static_cast<std::uint8_t>(fold(s[i]));
+        h *= 16777619u;
+    }
+    return h;
+}
+
+struct NameSlot {
+    std::uint32_t hash = 0;
+    const char*   name = "";
+    Key           key  = Key::Unknown;
+};
+
+inline constexpr std::size_t kAliasCount     = sizeof(kKeyAliases) / sizeof(kKeyAliases[0]);
+inline constexpr std::size_t kNameTableSize  = 1024;
+inline constexpr std::size_t kNameTableMask  = kNameTableSize - 1;
+
+static_assert((kKeyCount - 1) + kAliasCount <= kNameTableSize / 2, "the key name table should stay at most half full");
+
+struct NameIndex {
+    NameSlot slots[kNameTableSize];
+};
+
+constexpr void insert_name(NameIndex& table, const char* name, Key key) noexcept {
+    const std::size_t len = name_length(name);
+    const std::uint32_t h = name_hash(name, len);
+    std::size_t i = h & kNameTableMask;
+    while (table.slots[i].key != Key::Unknown) {
+        if (table.slots[i].hash == h && same_name(name, table.slots[i].name, len)) return;
+        i = (i + 1) & kNameTableMask;
+    }
+    table.slots[i] = NameSlot{ h, name, key };
+}
+
+constexpr NameIndex build_name_index() noexcept {
+    NameIndex out{};
+    for (std::size_t i = 1; i < kKeyCount; ++i) insert_name(out, kKeyNames[i], static_cast<Key>(i));
+    for (std::size_t i = 0; i < kAliasCount; ++i) insert_name(out, kKeyAliases[i].name, kKeyAliases[i].key);
+    return out;
+}
+
+inline constexpr NameIndex kNameIndex = build_name_index();
+
 } // namespace detail
 
 constexpr const char* key_name(Key k) noexcept {
@@ -105,21 +208,67 @@ constexpr const char* key_name(Key k) noexcept {
     return i < kKeyCount ? detail::kKeyNames[i] : "Unknown";
 }
 
+constexpr std::string_view key_string(Key k) noexcept { return std::string_view(key_name(k)); }
+constexpr std::string_view key_string(PhysicalKey k) noexcept { return key_string(k.key); }
+constexpr std::string_view key_string(LogicalKey k) noexcept { return key_string(k.key); }
+
 constexpr Key key_from_name(const char* name, std::size_t len) noexcept {
     if (!name || len == 0) return Key::Unknown;
-    for (std::size_t i = 1; i < kKeyCount; ++i) if (detail::same_name(name, detail::kKeyNames[i], len)) return static_cast<Key>(i);
-    for (const detail::KeyName& a : detail::kKeyAliases) if (detail::same_name(name, a.name, len)) return a.key;
+    const std::uint32_t h = detail::name_hash(name, len);
+    std::size_t i = h & detail::kNameTableMask;
+
+    while (detail::kNameIndex.slots[i].key != Key::Unknown) {
+        const detail::NameSlot& slot = detail::kNameIndex.slots[i];
+        if (slot.hash == h && detail::same_name(name, slot.name, len)) return slot.key;
+        i = (i + 1) & detail::kNameTableMask;
+    }
+
     return Key::Unknown;
 }
 
 inline Key key_from_name(const std::string& name) noexcept { return key_from_name(name.data(), name.size()); }
-inline Key key_from_name(const char* name) noexcept { return name ? key_from_name(name, std::strlen(name)) : Key::Unknown; }
+constexpr Key key_from_name(const char* name) noexcept { return name ? key_from_name(name, detail::name_length(name)) : Key::Unknown; }
+constexpr Key key_from_name(std::string_view name) noexcept { return key_from_name(name.data(), name.size()); }
+
+constexpr Key key_from_string(std::string_view name) noexcept { return key_from_name(name); }
 
 constexpr bool is_modifier(Key k) noexcept { return k >= Key::LeftShift && k <= Key::RightMeta; }
 constexpr bool is_letter(Key k) noexcept { return k >= Key::A && k <= Key::Z; }
 constexpr bool is_digit(Key k) noexcept { return k >= Key::Num0 && k <= Key::Num9; }
 constexpr bool is_function(Key k) noexcept { return k >= Key::F1 && k <= Key::F24; }
 constexpr bool is_numpad(Key k) noexcept { return k >= Key::Numpad0 && k <= Key::NumpadEquals; }
+constexpr bool is_punctuation(Key k) noexcept { return k >= Key::Minus && k <= Key::NonUSBackslash; }
+constexpr bool is_layout_dependent(Key k) noexcept { return is_letter(k) || is_digit(k) || is_punctuation(k); }
+constexpr bool is_arrow(Key k) noexcept { return k >= Key::Left && k <= Key::Down; }
+
+constexpr Modifiers modifier_of(Key k) noexcept {
+    switch (k) {
+        case Key::LeftShift:   case Key::RightShift:   return Modifiers::Shift;
+        case Key::LeftControl: case Key::RightControl: return Modifiers::Control;
+        case Key::LeftAlt:     case Key::RightAlt:     return Modifiers::Alt;
+        case Key::LeftMeta:    case Key::RightMeta:    return Modifiers::Meta;
+        default:                                       return Modifiers::None;
+    }
+}
+
+inline std::string modifiers_string(Modifiers m, const char* separator = "+") {
+    std::string out;
+    auto add = [&](const char* name) { if (!out.empty()) out += separator; out += name; };
+    if (has(m, Modifiers::Control))  add("Ctrl");
+    if (has(m, Modifiers::Shift))    add("Shift");
+    if (has(m, Modifiers::Alt))      add("Alt");
+    if (has(m, Modifiers::AltGr))    add("AltGr");
+    if (has(m, Modifiers::Meta))     add("Meta");
+    if (has(m, Modifiers::CapsLock)) add("CapsLock");
+    if (has(m, Modifiers::NumLock))  add("NumLock");
+    return out;
+}
+
+inline std::ostream& operator<<(std::ostream& os, Key k) { return os << key_name(k); }
+inline std::ostream& operator<<(std::ostream& os, PhysicalKey k) { return os << "Physical:" << key_name(k.key); }
+inline std::ostream& operator<<(std::ostream& os, LogicalKey k) { return os << "Logical:" << key_name(k.key); }
+inline std::ostream& operator<<(std::ostream& os, KeyKind kind) { return os << key_kind_name(kind); }
+inline std::ostream& operator<<(std::ostream& os, Modifiers m) { const std::string s = modifiers_string(m); return os << (s.empty() ? "None" : s.c_str()); }
 
 constexpr Key key_from_char(char32_t c) noexcept {
     if (c >= 'a' && c <= 'z') return static_cast<Key>(static_cast<std::uint16_t>(Key::A) + (c - 'a'));

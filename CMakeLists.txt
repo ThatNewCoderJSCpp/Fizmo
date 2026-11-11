@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(fizmo
-    VERSION 1.4.3
+    VERSION 1.4.4
     DESCRIPTION "fizmo C++17 library"
     LANGUAGES CXX)
 
@@ -349,6 +349,18 @@ if(FIZMO_BUILD_GRAPH_TESTS)
     target_link_libraries(fizmo-graph-search-tests PRIVATE fizmo_headers Threads::Threads)
     enable_testing()
     add_test(NAME fizmo-graph-search COMMAND fizmo-graph-search-tests)
+endif()
+
+option(FIZMO_BUILD_INPUT_TESTS "Build Testing/input_tests.cpp (key names, physical and logical keys) as fizmo-input-tests" OFF)
+if(FIZMO_BUILD_INPUT_TESTS)
+    add_executable(fizmo-input-tests Testing/input_tests.cpp)
+    if(TARGET fizmo::graphics)
+        target_link_libraries(fizmo-input-tests PRIVATE fizmo::graphics)
+    else()
+        target_link_libraries(fizmo-input-tests PRIVATE fizmo::fizmo)
+    endif()
+    enable_testing()
+    add_test(NAME fizmo-input COMMAND fizmo-input-tests)
 endif()
 
 option(FIZMO_BUILD_AUDIO_TESTS "Build Testing/audio_tests.cpp as fizmo-audio-tests" OFF)

@@ -19,8 +19,7 @@ jobs:
 
       - name: Install tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build
+          bash .github/scripts/apt-install.sh ninja-build || pipx install ninja
 
       - name: Configure
         run: |
