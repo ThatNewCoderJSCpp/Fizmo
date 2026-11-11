@@ -950,6 +950,12 @@ struct GpuPathTracer::State {
             moved = false;
             remember_camera();
         }
+        if (p.rt[1] > 0u) {
+            push.mode = 5;
+            push.first_sample = 0;
+            cmd.push_constants(push);
+            cmd.dispatch(gx, gy);
+        }
         for (std::uint32_t k = 0; k < p.rt[1]; ++k) {
             push.mode = 4;
             push.first_sample = k;

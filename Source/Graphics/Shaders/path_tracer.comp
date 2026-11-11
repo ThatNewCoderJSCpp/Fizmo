@@ -2080,6 +2080,49 @@ vec3 demodulated(uint at, uint npx, uint cur) {
     return c / alb;
 }
 
+float pixel_variance(uint at, uint npx, uint cur) {
+    vec4 a = accum[cur * npx + at];
+    float n = max(a.w, 1.0);
+    vec4 g2 = guide[(cur * npx + at) * 3u + 2u];
+    float al = max(lum(g2.xyz), 0.02);
+    float mean = a.w > 0.0 ? lum(a.xyz / a.w) : 0.0;
+    return max(g2.w / n - mean * mean, 0.0) / (al * al * n);
+}
+
+void variance_pass(uvec2 id, uint pi, uint npx, uint cur) {
+    uint width = P.size.x;
+    uint height = P.size.y;
+    vec3 d = demodulated(pi, npx, cur);
+    float var = pixel_variance(pi, npx, cur);
+    vec4 c1 = guide[(cur * npx + pi) * 3u + 1u];
+    float n = accum[cur * npx + pi].w;
+    if (c1.w > 0.5 && n < 8.0) {
+        float s1 = 0.0;
+        float s2 = 0.0;
+        float wsum = 0.0;
+        for (int dy = -2; dy <= 2; ++dy) {
+            for (int dx = -2; dx <= 2; ++dx) {
+                ivec2 q = ivec2(id) + ivec2(dx, dy);
+                if (q.x < 0 || q.y < 0 || q.x >= int(width) || q.y >= int(height)) continue;
+                uint qi = uint(q.y) * width + uint(q.x);
+                vec4 q1 = guide[(cur * npx + qi) * 3u + 1u];
+                if (q1.w < 0.5 || dot(q1.xyz, c1.xyz) < 0.9) continue;
+                float l = lum(demodulated(qi, npx, cur));
+                s1 += l;
+                s2 += l * l;
+                wsum += 1.0;
+            }
+        }
+        if (wsum > 1.5) {
+            float m = s1 / wsum;
+            float spatial = max(s2 / wsum - m * m, 0.0);
+            float blend = clamp(n / 8.0, 0.0, 1.0);
+            var = mix(spatial, max(var, spatial * 0.25), blend);
+        }
+    }
+    filt[npx + pi] = vec4(d, var);
+}
+
 void filter_pass(uvec2 id, uint pi, uint npx, uint cur, uint pass) {
     uint width = P.size.x;
     uint height = P.size.y;
@@ -2088,17 +2131,30 @@ void filter_pass(uvec2 id, uint pi, uint npx, uint cur, uint pass) {
     vec4 c1 = guide[gi + 1u];
     uint dst = (pass & 1u) * npx + pi;
     uint src_base = ((pass + 1u) & 1u) * npx;
-    vec3 center = pass == 0u ? demodulated(pi, npx, cur) : filt[src_base + pi].xyz;
+    vec4 center = filt[src_base + pi];
     if (c1.w < 0.5) {
-        filt[dst] = vec4(center, 1.0);
+        filt[dst] = center;
         return;
     }
-    float count = max(accum[cur * npx + pi].w, 1.0);
-    float lc = lum(center);
-    float sigma_l = P.filter_strength.x * max(lc, 0.05) / sqrt(count) + 1e-3;
+    float blurred = 0.0;
+    float bw = 0.0;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            ivec2 q = ivec2(id) + ivec2(dx, dy);
+            if (q.x < 0 || q.y < 0 || q.x >= int(width) || q.y >= int(height)) continue;
+            uint qi = uint(q.y) * width + uint(q.x);
+            float k = (dx == 0 ? 0.5 : 0.25) * (dy == 0 ? 0.5 : 0.25);
+            blurred += filt[src_base + qi].w * k;
+            bw += k;
+        }
+    }
+    blurred /= max(bw, 1e-6);
+    float lc = lum(center.xyz);
+    float sigma_l = P.filter_strength.x * sqrt(max(blurred, 0.0)) + 0.01 * lc + 1e-4;
     int step = 1 << int(pass);
     const float kern[3] = float[3](0.375, 0.25, 0.0625);
     vec3 total = vec3(0.0);
+    float var_total = 0.0;
     float weight = 0.0;
     for (int dy = -2; dy <= 2; ++dy) {
         for (int dx = -2; dx <= 2; ++dx) {
@@ -2109,18 +2165,19 @@ void filter_pass(uvec2 id, uint pi, uint npx, uint cur, uint pass) {
             vec4 q1 = guide[qg + 1u];
             if (q1.w < 0.5) continue;
             vec4 q0 = guide[qg + 0u];
-            vec3 col = pass == 0u ? demodulated(qi, npx, cur) : filt[src_base + qi].xyz;
+            vec4 col = filt[src_base + qi];
             float k = kern[abs(dx)] * kern[abs(dy)];
-            float wn = pow(max(dot(c1.xyz, q1.xyz), 0.0), 32.0);
+            float wn = pow(max(dot(c1.xyz, q1.xyz), 0.0), 64.0);
             float plane = abs(dot(c1.xyz, q0.xyz - c0.xyz));
-            float wz = exp(-plane / (0.02 + 0.01 * c0.w * float(step)));
-            float wl = exp(-abs(lum(col) - lc) / sigma_l);
+            float wz = exp(-plane / (0.01 + 0.004 * c0.w * float(step)));
+            float wl = exp(-abs(lum(col.xyz) - lc) / sigma_l);
             float wgt = k * wn * wz * wl;
-            total += col * wgt;
+            total += col.xyz * wgt;
+            var_total += col.w * wgt * wgt;
             weight += wgt;
         }
     }
-    filt[dst] = vec4(weight > 1e-6 ? total / weight : center, 1.0);
+    filt[dst] = weight > 1e-6 ? vec4(total / weight, var_total / (weight * weight)) : center;
 }
 
 void main() {
@@ -2146,6 +2203,10 @@ void main() {
     uint cur = P.rt.w & 1u;
     if (mode == 4u) {
         filter_pass(id, pi, npx, cur, K.pc.z);
+        return;
+    }
+    if (mode == 5u) {
+        variance_pass(id, pi, npx, cur);
         return;
     }
     if (mode == 3u) {
@@ -2177,6 +2238,7 @@ void main() {
     float tan_half = P.cam_pos.w;
     float aspect = P.cam_forward.w;
     vec3 sum = vec3(0.0);
+    float moment = 0.0;
     g_hit = false;
     g_pos = vec3(0.0);
     g_nrm = vec3(0.0, 1.0, 0.0);
@@ -2222,17 +2284,20 @@ void main() {
         vec3 v = w.spectral ? wavelength_weight(w.nm) * (L.y / pdf) : L;
         if (any(isnan(v)) || any(isinf(v))) v = vec3(0.0);
         sum += v;
+        float lv = lum(v);
+        moment += lv * lv;
     }
     if (g_have) k_alb /= float(spp);
     uint gi = (cur * npx + pi) * 3u;
     float dist = g_have ? length(k_pos - P.cam_pos.xyz) : -1.0;
     guide[gi + 0u] = vec4(k_pos, dist);
     guide[gi + 1u] = vec4(normalize(k_nrm), g_have ? 1.0 : 0.0);
-    guide[gi + 2u] = vec4(k_alb, 0.0);
     vec4 prev = vec4(0.0);
+    float prev_moment = 0.0;
     uint other = 1u - cur;
     if (P.rt.x == 2u) {
         prev = accum[other * npx + pi];
+        prev_moment = guide[(other * npx + pi) * 3u + 2u].w;
     } else if (P.rt.x == 1u) {
         int px = -1;
         int py = -1;
@@ -2269,10 +2334,15 @@ void main() {
             }
             if (ok) {
                 prev = accum[other * npx + qi];
+                prev_moment = guide[qg + 2u].w;
                 float cap = float(max(P.rt.z, 1u));
-                if (prev.w > cap) prev *= cap / prev.w;
+                if (prev.w > cap) {
+                    prev_moment *= cap / prev.w;
+                    prev *= cap / prev.w;
+                }
             }
         }
     }
+    guide[gi + 2u] = vec4(k_alb, prev_moment + moment);
     accum[cur * npx + pi] = prev + vec4(sum, float(spp));
 }

@@ -220,6 +220,78 @@ void save_hdr(const lt::Image& img, const std::string& path) {
     img.write_ppm(path, s);
 }
 
+bool shown_frames(fizmo::windows::Window& win, gfx::Renderer& r, lt::Scene& sc, const lt::LightingSettings& s, const lt::Camera& cam, unsigned w, unsigned h, int frames, int spp, bool temporal, fizmo::images::BitmapImage& out) {
+    gfx::GpuPathTracer pt;
+    if (!pt.attach(r, w, h)) return false;
+    pt.set_settings(s);
+    pt.set_samples_per_frame(spp);
+    pt.set_temporal(temporal, 24);
+    pt.set_scene(sc);
+    pt.set_camera(cam);
+    if (!trace_frames(win, r, pt, frames)) return false;
+    bool ok = false;
+    for (int a = 0; a < 3 && !ok; ++a) {
+        win.poll_events();
+        r.begin_frame();
+        r.clear(Color(0, 0, 0, 255));
+        pt.draw(r, 0, 0);
+        r.present();
+        ok = r.capture(out) && out.width() >= w && out.height() >= h;
+    }
+    pt.detach();
+    return ok;
+}
+
+void run_denoiser(fizmo::windows::Window& win, gfx::Renderer& r, const std::string& tag) {
+    lt::Scene sc;
+    sc.environment() = lt::Environment::gradient(lt::Rgb(0.3f, 0.5f, 0.9f), lt::Rgb(0.8f), lt::Rgb(0.2f), 0.5f);
+    sc.add_object(lt::Mesh::plane(4.0f, 4.0f), lt::Material::diffuse(lt::Rgb(0.75f)));
+    sc.add_object(lt::Mesh::box({ 0.6f, 0.6f, 0.6f }), lt::Material::diffuse(lt::Rgb(0.75f, 0.12f, 0.1f)), lt::Transform::translate({ -0.8, 0.3, 0.0 }));
+    sc.add_object(lt::Mesh::sphere(0.5f, 32, 16), lt::Material::metal(lt::Rgb(0.9f, 0.7f, 0.3f), 0.2f), lt::Transform::translate({ 0.6, 0.5, 0.0 }));
+    sc.add_light(lt::Light::point_light({ 0.5, 2.5, 1.0 }, lt::Rgb(1.0f), 30.0f));
+    sc.add_light(lt::Light::sun({ 0.4, -1.0, -0.3 }, lt::Rgb(1.0f), 2.0f, 1.0f));
+    const lt::Camera cam = lt::Camera::look_at({ 0.0, 1.6, 4.5 }, { 0.0, 0.6, 0.0 }, { 0, 1, 0 }, 55.0f);
+    const unsigned W = 96, H = 72;
+    lt::LightingSettings base = lt::LightingSettings::preset(lt::LightingQuality::path_traced);
+    base.fog.enabled = false;
+    base.firefly_clamp = 8.0f;
+    lt::LightingSettings plain = base;
+    plain.denoise = false;
+    fizmo::images::BitmapImage ref, img;
+    if (!shown_frames(win, r, sc, plain, cam, W, H, 128, 8, false, ref)) {
+        check(false, tag + "the denoiser test renders");
+        return;
+    }
+    lt::LightingSettings den = base;
+    den.denoise = true;
+    den.denoise_passes = 5;
+    const bool ok = shown_frames(win, r, sc, den, cam, W, H, 40, 2, true, img);
+    double diff = 0.0;
+    int off = 0;
+    double shadow_ref = 0.0, shadow_img = 0.0, lit_ref = 0.0, lit_img = 0.0;
+    for (int y = 0; ok && y < static_cast<int>(H); ++y) {
+        for (int x = 0; x < static_cast<int>(W); ++x) {
+            const double a = luminance(img, x, y), b = luminance(ref, x, y);
+            diff += std::fabs(a - b);
+            if (std::fabs(a - b) > 40.0) ++off;
+        }
+    }
+    for (int y = 40; ok && y < 46; ++y) {
+        for (int x = 12; x < 20; ++x) {
+            shadow_ref += luminance(ref, x, y);
+            shadow_img += luminance(img, x, y);
+        }
+        for (int x = 70; x < 78; ++x) {
+            lit_ref += luminance(ref, x, y + 20);
+            lit_img += luminance(img, x, y + 20);
+        }
+    }
+    diff /= static_cast<double>(W * H);
+    std::printf("  denoised mean diff %.2f/255, %d pixels off, shadow %.0f vs %.0f (lit %.0f vs %.0f)\n", diff, off, shadow_img / 48.0, shadow_ref / 48.0, lit_img / 48.0, lit_ref / 48.0);
+    check(ok && diff < 1.5 && off < 6, tag + "the real-time denoiser matches a converged image without dots");
+    check(ok && std::fabs(shadow_img - shadow_ref) < 0.08 * shadow_ref && shadow_ref < lit_ref * 0.92, tag + "the denoiser keeps shadows");
+}
+
 void run_tracer(fizmo::windows::Window& win, bool created, gfx::RendererBackend backend, const char* name, const char* folder) {
     if (!created) {
         std::printf("SKIP %s tracer: no window\n", name);
@@ -409,6 +481,7 @@ void run_tracer(fizmo::windows::Window& win, bool created, gfx::RendererBackend 
             }
         }
     }
+    run_denoiser(win, r, tag);
     win.close();
 }
 

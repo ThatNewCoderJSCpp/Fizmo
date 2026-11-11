@@ -1025,6 +1025,43 @@ Real wave_spread(const FluidVolume3D& v, Real& lo, Real& hi) {
     return static_cast<Real>(mean / std::max(n, 1));
 }
 
+void test_waves_driven_body() {
+    Simulation3D sim;
+    FluidWorld3D world;
+    FluidVolumeDef d = FluidVolumeDef::box(FluidLevel::waves, AABB3D(RVec3{ -3.0_r, 0.0_r, -3.0_r }, RVec3{ 3.0_r, 2.0_r, 3.0_r }), FluidMaterial::water(), 0.6_r);
+    FluidVolume3D& v = world.add_volume(d);
+    RigidBody3D& ground = sim.add_body(RVec3{ 0.0_r, -0.5_r, 0.0_r }, PhysicsFlags::DefaultStatic);
+    ground.add_collider(Shape3D::make_box(20.0_r, 0.5_r, 20.0_r));
+    RigidBody3D& walker = sim.add_body(RVec3{ 0.0_r, 0.9_r, 0.0_r }, PhysicsFlags::DefaultDynamic);
+    walker.add_collider(Shape3D::make_capsule(RVec3{ 0.0_r, -0.6_r, 0.0_r }, RVec3{ 0.0_r, 0.6_r, 0.0_r }, 0.25_r), Material3D(985.0_r));
+    walker.set_gravity_scale(0.0_r);
+    Real top = 0.0_r;
+    Real late = 0.0_r;
+    std::vector<Real> last;
+    for (int f = 0; f < 60 * 30; ++f) {
+        const Real t = static_cast<Real>(f) * kDt;
+        const RVec3 p = walker.position();
+        if (t < 10.0_r) {
+            const Real a = t * 1.5_r;
+            walker.set_linear_velocity(RVec3{ std::cos(a) * 10.0_r - p.x * 4.0_r, (0.9_r - p.y) * 10.0_r, std::sin(a) * 10.0_r - p.z * 4.0_r });
+        } else {
+            walker.set_linear_velocity(RVec3{ 0.0_r, (0.9_r - p.y) * 10.0_r, 0.0_r });
+        }
+        walker.set_angular_velocity(RVec3{});
+        world.step(sim, kDt);
+        sim.step(kDt);
+        Real lo, hi;
+        wave_spread(v, lo, hi);
+        top = std::max(top, hi);
+        const std::vector<Real>& h = v.heights();
+        if (t > 27.0_r && last.size() == h.size())
+            for (std::size_t i = 0; i < h.size(); ++i) late = std::max(late, std::abs(h[i] - last[i]));
+        last = h;
+    }
+    check(top < 2.0_r, "waves: a body pushed through the water at 10 m/s doesn't throw it over the walls (highest " + num(top) + " m)");
+    check(late < 0.004_r, "waves: after the pushed body stops, the water settles (largest change per frame " + num(late) + " m)");
+}
+
 void test_waves_bodies() {
     for (int kind = 0; kind < 2; ++kind) {
         Simulation3D sim;
@@ -1121,6 +1158,7 @@ void test_waves_bodies() {
 }
 
 int main() {
+    test_waves_driven_body();
     test_waves_bodies();
     test_materials_and_quality();
     test_blocky();

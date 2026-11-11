@@ -612,7 +612,8 @@ void FluidWorld3D::couple(Simulation3D& sim, Real dt) {
                 const Real keep = 1.0_r - std::exp(-c * dt / mass);
                 b->apply_impulse_at(rel * (-mass * keep), fo.center_of_buoyancy);
                 if (v.m_def.level == FluidLevel::waves && v.m_def.coupling.splash > 0.0_r) {
-                    const Real lost = 0.5_r * mass * speed * speed * (1.0_r - (1.0_r - keep) * (1.0_r - keep));
+                    const Real own = std::min(std::abs(vec3::dot(b->linear_velocity(), v.m_up)), std::abs(vec3::dot(rel, v.m_up)));
+                    const Real lost = 0.5_r * mass * own * own * (1.0_r - (1.0_r - keep) * (1.0_r - keep));
                     const Real size = std::cbrt(std::max(fo.body_volume, 1e-6_r));
                     const Real below = ambient > -1.0e29_r ? std::max(0.0_r, ambient - v.to_local(fo.center_of_buoyancy).y) : 0.0_r;
                     const Real near_surface = std::exp(-below / (1.5_r * size));
