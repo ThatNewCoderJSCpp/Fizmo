@@ -419,8 +419,16 @@ void Simulation3D::sync_tree(bool for_query) {
             }
             continue;
         }
+        if (for_query && b.m_proxy >= 0 && b.m_query_step == m_step_count && b.m_query_colliders == b.m_colliders.size() &&
+            b.m_transform.position == b.m_query_position && b.m_transform.orientation == b.m_query_orientation) continue;
         b.ensure_mass_uptodate();
-        if (for_query) b.synchronize_colliders();
+        if (for_query) {
+            b.synchronize_colliders();
+            b.m_query_step = m_step_count;
+            b.m_query_colliders = b.m_colliders.size();
+            b.m_query_position = b.m_transform.position;
+            b.m_query_orientation = b.m_transform.orientation;
+        }
         const AABB3D tight = proxy_box(b);
         if (b.m_proxy < 0) b.m_proxy = m_dtree.insert(tight.fatten(m_cfg.broadphase_margin), &b);
         else if (!for_query && !b.is_awake() && is_dynamic(b)) continue;

@@ -477,6 +477,7 @@ void Simulation2D::step(Real dt) {
 }
 
 void Simulation2D::step_substep(Real dt) {
+    ++m_query_epoch;
     m_locked = true;
     m_last_begin.clear();
     m_last_end.clear();
@@ -1177,8 +1178,16 @@ void Simulation2D::sync_tree(bool for_query) {
             if (it != m_proxies.end()) drop_proxy(&b);
             continue;
         }
+        if (for_query && it != m_proxies.end() && b.m_query_step == m_query_epoch && b.m_query_colliders == b.m_colliders.size() &&
+            b.m_transform.position == b.m_query_position && b.m_transform.angle == b.m_query_angle) continue;
         b.ensure_mass_uptodate();
-        if (for_query) b.synchronize_colliders();
+        if (for_query) {
+            b.synchronize_colliders();
+            b.m_query_step = m_query_epoch;
+            b.m_query_colliders = b.m_colliders.size();
+            b.m_query_position = b.m_transform.position;
+            b.m_query_angle = b.m_transform.angle;
+        }
         const AABB tight = b.compute_body_aabb();
         if (it == m_proxies.end()) {
             m_proxies.emplace(&b, m_dtree.insert(tight.fatten(m_cfg.broadphase_margin), &b));

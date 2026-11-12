@@ -1033,6 +1033,10 @@ private:
     Real         m_angular_sleep_tolerance = ANGULAR_SLEEP_TOLERANCE;
     Real         m_sleep_time = SLEEP_TIME_THRESHOLD;
     std::int32_t   m_proxy = -1;
+    std::uint64_t  m_query_step = ~std::uint64_t{0};
+    RVec3          m_query_position{};
+    RQuat          m_query_orientation{};
+    std::size_t    m_query_colliders = 0;
     std::size_t    m_solver_index = 0;
     BodyHandle     m_handle{};
 };

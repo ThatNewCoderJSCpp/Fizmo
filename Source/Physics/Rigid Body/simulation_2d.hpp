@@ -435,6 +435,7 @@ private:
     std::vector<ContactEvent> m_last_end;
     DynamicTree<AABB, RigidBody2D*> m_dtree;
     std::unordered_map<const RigidBody2D*, std::int32_t> m_proxies;
+    std::uint64_t m_query_epoch = 0;
     std::vector<std::pair<std::int32_t, std::int32_t>> m_tree_pairs;
     std::unordered_map<std::uint64_t, std::size_t> m_tree_pair_index;
     Simulation2DStats m_stats;

@@ -780,6 +780,11 @@ private:
     Transform2D     m_transform;
     mutable Sweep2D m_sweep;
 
+    std::uint64_t  m_query_step = ~std::uint64_t{0};
+    RVec2          m_query_position{};
+    Real           m_query_angle = 0.0_r;
+    std::size_t    m_query_colliders = 0;
+
     RVec2 m_linear_velocity{};       // m/s
     Real   m_angular_velocity = 0.0_r;  // rad/s
     RVec2 m_force{};                 // N
