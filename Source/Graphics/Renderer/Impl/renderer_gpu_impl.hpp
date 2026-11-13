@@ -74,6 +74,8 @@ private:
     static constexpr std::uint32_t kMapSplatB      = 1024u;
     static constexpr std::uint32_t kMapSplatNormals = 2048u;
     static constexpr std::uint32_t kMapSplatTriplanar = 4096u;
+    static constexpr std::uint32_t kMapTranslucent = 8192u;
+    static constexpr std::uint32_t kMapWind        = 16384u;
     static constexpr std::size_t   kSplatMaps      = 4;
     static constexpr int           kSplatLayers    = graphics::Material3D::MAX_SPLAT_LAYERS;
 
@@ -87,9 +89,12 @@ private:
         float         tiling[2][4];
         float         tints[kSplatLayers][4];
         float         splat_uv[2][4];
+        float         wind[4];
+        float         wind_shape[4];
+        float         wind_air[4];
     };
 
-    static_assert(sizeof(MaterialMapsGpu) == 432, "MaterialMapsGpu must match the std140 MaterialMaps block in mesh3d.frag");
+    static_assert(sizeof(MaterialMapsGpu) == 480, "MaterialMapsGpu must match the std140 MaterialMaps block in mesh3d.frag");
 
     struct SplatAtlasEntry {
         std::vector<std::uint64_t> key;
@@ -511,6 +516,9 @@ private:
         float                 model[12]      = { 1,0,0,0, 0,1,0,0, 0,0,1,0 };
         float                 lo[3]          = { 0, 0, 0 };
         float                 hi[3]          = { 0, 0, 0 };
+        std::int32_t          material       = -1;
+        bool                  swaying        = false;
+        float                 sway           = 0.0f;
     };
 
     struct PointShadowRec {
@@ -750,6 +758,12 @@ private:
     gpu::Texture                                             m_dummy_volume;
     std::uint8_t                                             m_volume_sampler = LinearClamp;
     std::unordered_map<std::uint32_t, gpu::RenderPipeline>   m_shadow_pipelines;
+    gpu::PipelineLayout                                      m_shadow_mat_layout;
+    gpu::ShaderModule                                        m_shadow_mesh_mat_vs;
+    gpu::ShaderModule                                        m_shadow_instanced_mat_vs;
+    gpu::ShaderModule                                        m_shadow_cutout_fs;
+    gpu::ShaderModule                                        m_shadow_cutout_point_fs;
+    std::vector<Draw3D>                                      m_caster_mats;
     gpu::Sampler                                             m_shadow_sampler;
     gpu::Format                                              m_shadow_format = gpu::Format::D16Unorm;
     std::unique_ptr<ShadowMap>                               m_sun_map;
@@ -885,6 +899,11 @@ public:
         m_sky_pipeline.destroy(); 
         m_sky_fs.destroy(); 
         m_sky_vs.destroy();
+        m_shadow_cutout_point_fs.destroy();
+        m_shadow_cutout_fs.destroy();
+        m_shadow_instanced_mat_vs.destroy();
+        m_shadow_mesh_mat_vs.destroy();
+        m_shadow_mat_layout.destroy();
         m_shadow_point_fs.destroy(); 
         m_shadow_quad_vs.destroy(); 
         m_shadow_instanced_vs.destroy(); 
@@ -1768,7 +1787,7 @@ public:
         try {
             GpuMesh* g = mesh_for(mesh);
             if (!g) return;
-            if (mat.casts_shadow() && casting()) add_caster(mesh_caster(*g), model, g->bounds);
+            if (mat.casts_shadow() && casting()) add_caster(material_caster(mesh_caster(*g), mat), model, g->bounds);
             if (!mat.visible()) return;
             Draw3D d;
             d.kind  = DrawKind3D::Mesh;
@@ -1884,7 +1903,7 @@ public:
             }
 
             h->mesh.last_used = m_frame_serial;
-            if (cast) add_caster(mesh_caster(h->mesh), model, slot->bounds);
+            if (cast) add_caster(material_caster(mesh_caster(h->mesh), mat), model, slot->bounds);
             if (!mat.visible()) return;
             Draw3D d;
             d.kind  = DrawKind3D::Mesh;
@@ -2013,7 +2032,7 @@ public:
                 c.kind           = Caster::Kind::Instanced;
                 c.instance_first = first;
                 c.instance_count = static_cast<std::uint32_t>(count);
-                add_caster(c, model, instance_bounds(g->bounds, instances, count));
+                add_caster(material_caster(c, mat), model, instance_bounds(g->bounds, instances, count));
             }
 
             if (!mat.visible()) return;
@@ -2692,7 +2711,31 @@ private:
     void add_caster(Caster c, const float* model, const graphics::Bounds3D& local) {
         caster_model(c, model);
         caster_bounds(c, local);
+
+        if (c.sway > 0.0f) {
+            for (int a = 0; a < 3; ++a) { c.lo[a] -= c.sway; c.hi[a] += c.sway; }
+        }
+
         m_casters.push_back(c);
+    }
+
+    Caster material_caster(Caster c, const graphics::Material3D& mat) {
+        const bool cutout = mat.has_cutout();
+        const bool wind = mat.has_wind() && scene_lighting().wind.active();
+        if ((!cutout && !wind) || !m_mesh_set_layout.valid() || !m_shadow_mat_layout.valid()) return c;
+        Draw3D d;
+        d.kind = DrawKind3D::Mesh;
+        if (!material(d, mat) || d.material_slot == 0) return c;
+        c.material = static_cast<std::int32_t>(m_caster_mats.size());
+        m_caster_mats.push_back(d);
+        c.swaying = wind;
+
+        if (wind) {
+            const graphics::Wind3D& w = scene_lighting().wind;
+            c.sway = (mat.wind * (1.0f + w.gustiness) + mat.wind_flutter) * w.strength * 1.5f;
+        }
+
+        return c;
     }
 
     static graphics::FaceGroups whole_groups(std::uint32_t quads) noexcept {
@@ -3118,6 +3161,31 @@ private:
         if (m.triplanar) flags |= kMapTriplanar;
         if (m.orm_occlusion) flags |= kMapOcclusion;
         if (m.alpha_cutoff > 0.0f) flags |= kMapCutout;
+        if (m.translucency > 0.0f) {
+            flags |= kMapTranslucent;
+            r.soft[3] = m.translucency;
+        }
+
+        if (m.has_wind()) {
+            const graphics::SceneLighting3D& sl = scene_lighting();
+            const graphics::Wind3D& w = sl.wind;
+
+            if (w.active()) {
+                const double len = std::sqrt(w.direction.x * w.direction.x + w.direction.y * w.direction.y + w.direction.z * w.direction.z);
+                const double k = len > 1e-9 ? static_cast<double>(w.strength) / len : 0.0;
+                flags |= kMapWind;
+                r.wind[0] = static_cast<float>(w.direction.x * k);
+                r.wind[1] = static_cast<float>(w.direction.y * k);
+                r.wind[2] = static_cast<float>(w.direction.z * k);
+                r.wind[3] = static_cast<float>(std::fmod(sl.time, 3600.0));
+                r.wind_shape[0] = m.wind;
+                r.wind_shape[1] = m.wind_height > 0.0f ? m.wind_height : 1.0f;
+                r.wind_shape[2] = m.wind_flutter;
+                r.wind_shape[3] = m.wind_phase;
+                r.wind_air[0] = std::max(0.0f, w.gustiness);
+                r.wind_air[1] = std::max(0.01f, w.speed);
+            }
+        }
 
         if (soft) {
             flags |= kMapSoft;
@@ -3432,15 +3500,31 @@ private:
         return &m_rays_pipeline;
     }
 
-    gpu::RenderPipeline* shadow_pipeline(Caster::Kind kind, bool point) {
-        const std::uint32_t key = static_cast<std::uint32_t>(kind) | (point ? kShadowPointKey : 0u);
+    gpu::RenderPipeline* shadow_pipeline(Caster::Kind kind, bool point, bool with_material = false) {
+        with_material = with_material && kind != Caster::Kind::Quads && m_shadow_mat_layout.valid();
+        const std::uint32_t key = static_cast<std::uint32_t>(kind) | (point ? kShadowPointKey : 0u) | (with_material ? 0x100u : 0u);
         auto it = m_shadow_pipelines.find(key);
         if (it != m_shadow_pipelines.end()) return &it->second;
         gpu::RenderPipelineDesc d;
         d.layout   = &m_shadow_layout;
         d.fragment = point ? &m_shadow_point_fs : nullptr;
 
-        if (kind == Caster::Kind::Quads) {
+        if (with_material) {
+            d.layout            = &m_shadow_mat_layout;
+            d.fragment          = point ? &m_shadow_cutout_point_fs : &m_shadow_cutout_fs;
+            d.vertex            = kind == Caster::Kind::Instanced ? &m_shadow_instanced_mat_vs : &m_shadow_mesh_mat_vs;
+            d.vertex_bindings   = { { 0, sizeof(graphics::Vertex3D), gpu::VertexRate::PerVertex } };
+            d.vertex_attributes = {
+                { 0, 0, gpu::Format::RGB32Float, 0 },  { 1, 0, gpu::Format::RGB32Float, 12 },
+                { 2, 0, gpu::Format::RG32Float, 24 },  { 3, 0, gpu::Format::RGBA8Unorm, 32 },
+            };
+
+            if (kind == Caster::Kind::Instanced) {
+                d.vertex_bindings.push_back({ 1, sizeof(graphics::Instance3D), gpu::VertexRate::PerInstance });
+                d.vertex_attributes.push_back({ 4, 1, gpu::Format::RGBA32Float, 0 });
+                d.vertex_attributes.push_back({ 5, 1, gpu::Format::RGBA8Unorm, 16 });
+            }
+        } else if (kind == Caster::Kind::Quads) {
             d.vertex            = &m_shadow_quad_vs;
             d.vertex_bindings   = { { 0, sizeof(graphics::CompactVertex3D), gpu::VertexRate::PerVertex } };
             d.vertex_attributes = { { 0, 0, gpu::Format::RGB32Float, 0 }, { 2, 0, gpu::Format::R32Uint, 16 } };
@@ -3464,7 +3548,7 @@ private:
         d.depth.bias         = !point;
         d.depth.bias_constant = kShadowBiasConstant;
         d.depth.bias_slope    = kShadowBiasSlope;
-        d.name = point ? "fizmo point shadow" : "fizmo sun shadow";
+        d.name = with_material ? (point ? "fizmo point shadow (material)" : "fizmo sun shadow (material)") : (point ? "fizmo point shadow" : "fizmo sun shadow");
         gpu::RenderPipeline p;
         if (failed(p.create(m_device, d))) return nullptr;
         return &m_shadow_pipelines.emplace(key, std::move(p)).first->second;
@@ -3483,6 +3567,7 @@ private:
         m_scenes.clear();
         m_scene_lights.clear();
         m_casters.clear();
+        m_caster_mats.clear();
         m_draws3d.clear();
         m_vertices3d.clear();
         m_lines3d.clear();
@@ -3628,6 +3713,10 @@ private:
         if (failed(m_shadow_instanced_vs.create(m_device, glsl::shadow_instanced_vert()))) return false;
         if (failed(m_shadow_quad_vs.create(m_device, glsl::shadow_quad_vert()))) return false;
         if (failed(m_shadow_point_fs.create(m_device, glsl::shadow_point_frag()))) return false;
+        if (failed(m_shadow_mesh_mat_vs.create(m_device, glsl::shadow_mesh_mat_vert()))) return false;
+        if (failed(m_shadow_instanced_mat_vs.create(m_device, glsl::shadow_instanced_mat_vert()))) return false;
+        if (failed(m_shadow_cutout_fs.create(m_device, glsl::shadow_cutout_frag()))) return false;
+        if (failed(m_shadow_cutout_point_fs.create(m_device, glsl::shadow_cutout_point_frag()))) return false;
         if (failed(m_sky_vs.create(m_device, glsl::sky_vert()))) return false;
         if (failed(m_sky_fs.create(m_device, glsl::sky_frag()))) return false;
         if (failed(m_rays_fs.create(m_device, glsl::rays_frag()))) return false;
@@ -3651,7 +3740,7 @@ private:
 
         const gpu::BindGroupLayoutEntry mesh_entries[] = {
             { 0, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
-            { 1, gpu::BindingType::UniformBuffer,  gpu::ShaderStage::Fragment },
+            { 1, gpu::BindingType::UniformBuffer,  gpu::ShaderStage::Vertex | gpu::ShaderStage::Fragment },
             { 2, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
             { 3, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
             { 4, gpu::BindingType::SampledTexture, gpu::ShaderStage::Fragment },
@@ -3672,6 +3761,11 @@ private:
         sl.push_constant_size   = 128;
         sl.push_constant_stages = gpu::ShaderStage::Vertex | gpu::ShaderStage::Fragment;
         if (failed(m_shadow_layout.create(m_device, sl))) return false;
+        gpu::PipelineLayoutDesc sml;
+        sml.groups               = { &m_mesh_set_layout };
+        sml.push_constant_size   = 128;
+        sml.push_constant_stages = gpu::ShaderStage::Vertex | gpu::ShaderStage::Fragment;
+        if (failed(m_shadow_mat_layout.create(m_device, sml))) return false;
         gpu::PipelineLayoutDesc ll;
         ll.push_constant_size   = 80;
         ll.push_constant_stages = gpu::ShaderStage::Vertex;
@@ -4153,6 +4247,7 @@ private:
         m_uploads.clear();
         m_mip_uploads.clear();
         m_material_records.clear();
+        m_caster_mats.clear();
         m_staging.clear();
         m_ramp_rows.clear();
         m_ramp_used = 0;
@@ -5534,6 +5629,15 @@ private:
         mix_hash(h, c.faces);
         for (const graphics::QuadRange& r : c.groups) { mix_hash(h, r.first); mix_hash(h, r.count); }
 
+        if (c.material >= 0 && static_cast<std::size_t>(c.material) < m_caster_mats.size()) {
+            const Draw3D& md = m_caster_mats[static_cast<std::size_t>(c.material)];
+            mix_hash(h, reinterpret_cast<std::uintptr_t>(md.view));
+            mix_hash(h, reinterpret_cast<std::uintptr_t>(md.maps[3]));
+            if (md.material_slot < m_material_records.size()) mix_hash(h, float_key(m_material_records[md.material_slot].params[1]));
+        }
+
+        if (c.swaying) mix_hash(h, m_frame_serial);
+
         for (int r = 0; r < 3; ++r) {
             for (int k = 0; k < 3; ++k) mix_hash(h, float_key(c.model[r * 4 + k]));
             mix_hash(h, grid_key(static_cast<double>(c.model[r * 4 + 3]) + origin[r]));
@@ -5629,6 +5733,7 @@ private:
         cmd.set_scissor({ { 0, 0 }, { map.size, map.size } });
         const graphics::FaceMask toward_sun = point ? graphics::ALL_FACE_GROUPS : sun_faces(light);
         const gpu::RenderPipeline* bound = nullptr;
+        std::vector<std::pair<std::uint64_t, gpu::BindGroup>> shadow_sets;
         float push[32] = {};
         std::copy(light_vp, light_vp + 16, push);
         std::copy(light, light + 4, push + 28);
@@ -5650,9 +5755,16 @@ private:
                 if (faces == 0) continue;
             }
 
-            const gpu::RenderPipeline* p = shadow_pipeline(c.kind, point);
+            const bool with_material = c.material >= 0 && static_cast<std::size_t>(c.material) < m_caster_mats.size() && c.kind != Caster::Kind::Quads && m_shadow_mat_layout.valid();
+            const gpu::RenderPipeline* p = shadow_pipeline(c.kind, point, with_material);
             if (!p) continue;
             if (p != bound) { cmd.set_pipeline(*p); bound = p; }
+
+            if (with_material) {
+                const gpu::BindGroup set = mesh_descriptor_for(pf, m_caster_mats[static_cast<std::size_t>(c.material)], shadow_sets);
+                if (!set.valid()) continue;
+                cmd.set_bind_group(0, set);
+            }
             std::copy(c.model, c.model + 12, push + 16);
             cmd.push_constants(push, sizeof(push));
             cmd.set_vertex_buffer(0, *c.vertices);
@@ -6148,7 +6260,7 @@ private:
             if (!stream(pf.scene_uniforms, m_uniform_bytes.data(), m_uniform_bytes.size(), gpu::BufferUsage::Uniform, "fizmo scene lighting")) return false;
         }
 
-        if (!m_draws3d.empty()) {
+        if (!m_draws3d.empty() || !m_caster_mats.empty()) {
             if (m_material_records.empty()) m_material_records.push_back(default_material_record());
             m_material_bytes.assign(static_cast<std::size_t>(m_material_stride * m_material_records.size()), 0);
             for (std::size_t i = 0; i < m_material_records.size(); ++i)

@@ -319,7 +319,33 @@ inline ::fizmo::gpu::ShaderDesc upscale_frag() noexcept {
 inline constexpr int kMesh3DVertVersion = 410;
 
 inline constexpr const char* kMesh3DVert[] = {
-R"fizmo_glsl(layout(std140) uniform Push
+R"fizmo_glsl(layout(std140) uniform MaterialMaps
+{
+    vec4 albedo_u;
+    vec4 albedo_v;
+    vec4 normal_u;
+    vec4 normal_v;
+    vec4 orm_u;
+    vec4 orm_v;
+    vec4 emissive_u;
+    vec4 emissive_v;
+    vec4 opacity_u;
+    vec4 opacity_v;
+    vec4 params;
+    uvec4 flags;
+    vec4 soft;
+    vec4 splat;
+    vec4 atlas;
+    vec4 tiling[2];
+    vec4 tints[8];
+    vec4 splat_u;
+    vec4 splat_v;
+    vec4 wind;
+    vec4 wind_shape;
+    vec4 wind_air;
+} maps;
+
+layout(std140) uniform Push
 {
     layout(row_major) mat4 mvp;
     vec4 model_x;
@@ -329,9 +355,9 @@ R"fizmo_glsl(layout(std140) uniform Push
 } pc;
 
 layout(location = 0) in vec3 in_pos;
-layout(location = 0) out vec3 v_world;
 layout(location = 1) out vec3 v_normal;
 layout(location = 1) in vec3 in_normal;
+layout(location = 0) out vec3 v_world;
 layout(location = 2) out vec4 v_light;
 layout(location = 3) flat out uint v_flags;
 layout(location = 4) out vec4 v_color;
@@ -342,12 +368,62 @@ layout(location = 6) flat out uvec2 v_pbr;
 layout(location = 7) out vec3 v_object;
 layout(location = 8) out vec3 v_object_normal;
 
+vec3 wind_world(vec3 local, vec3 normal_world, vec3 anchor)
+{
+    vec4 w = maps.wind;
+    vec4 s = maps.wind_shape;
+    float strength = length(w.xyz);
+    if (strength < 9.9999997473787516355514526367188e-06)
+    {
+        return vec3(0.0);
+    }
+    vec3 dir = w.xyz / vec3(strength);
+    float h = clamp(local.y / max(s.y, 0.001000000047497451305389404296875), 0.0, 1.5);
+    float bend = h * h;
+    float t = w.w * maps.wind_air.y;
+    float ph = dot(anchor, vec3(0.071000002324581146240234375, 0.037000000476837158203125, 0.0529999993741512298583984375)) + s.w;
+    float gust = 1.0 + ((maps.wind_air.x * (0.5 + (0.5 * sin((t * 0.4099999964237213134765625) + (ph * 0.300000011920928955078125))))) * sin((t * 0.17000000178813934326171875) + (ph * 0.699999988079071044921875)));
+    float osc = (sin((t * 1.2999999523162841796875) + ph) * 0.60000002384185791015625) + (sin((t * 2.900000095367431640625) + (ph * 1.7000000476837158203125)) * 0.25);
+    vec3 side = normalize(cross(dir, vec3(0.0, 1.0, 0.0)) + vec3(9.9999997473787516355514526367188e-05, 0.0, 0.0));
+    vec3 off = dir * ((((s.x * strength) * bend) * (0.60000002384185791015625 + (0.4000000059604644775390625 * osc))) * gust);
+    off += (side * ((((s.x * strength) * bend) * 0.20000000298023223876953125) * sin((t * 1.89999997615814208984375) + (ph * 1.2999999523162841796875))));
+    float leaf = (((sin((t * 11.0) + dot(local, vec3(17.1000003814697265625, 13.69999980926513671875, 19.299999237060546875))) * s.z) * strength) * min(h, 1.0)) * (0.699999988079071044921875 + (0.300000011920928955078125 * gust));
+    off += (normal_world * leaf);
+    return off;
+}
+
+vec3 wind_local(vec3 local, vec3 normal_world, vec3 anchor, float size, vec4 mx, vec4 my, vec4 mz)
+{
+    if ((maps.flags.x & 16384u) == 0u)
+    {
+        return vec3(0.0);
+    }
+    vec3 param = local;
+    vec3 param_1 = normal_world;
+    vec3 param_2 = anchor;
+    vec3 off = wind_world(param, param_1, param_2) * size;
+    vec3 o = ((mx.xyz * off.x) + (my.xyz * off.y)) + (mz.xyz * off.z);
+    return o / vec3(max(dot(mx.xyz, mx.xyz), 9.9999999392252902907785028219223e-09));
+}
+
 void main()
 {
     vec4 p = vec4(in_pos, 1.0);
+    v_normal = vec3(dot(pc.model_x.xyz, in_normal), dot(pc.model_y.xyz, in_normal), dot(pc.model_z.xyz, in_normal));
+    vec3 param = in_pos;
+    vec3 param_1 = normalize(v_normal);
+    vec3 param_2 = vec3(pc.model_x.w, pc.model_y.w, pc.model_z.w);
+    float param_3 = 1.0;
+    vec4 param_4 = pc.model_x;
+    vec4 param_5 = pc.model_y;
+    vec4 param_6 = pc.model_z;
+    vec4 _333 = p;
+    vec3 _335 = _333.xyz + wind_local(param, param_1, param_2, param_3, param_4, param_5, param_6);
+    p.x = _335.x;
+    p.y = _335.y;
+    p.z = _335.z;
     gl_Position = pc.mvp * p;
     v_world = vec3(dot(pc.model_x, p), dot(pc.model_y, p), dot(pc.model_z, p));
-    v_normal = vec3(dot(pc.model_x.xyz, in_normal), dot(pc.model_y.xyz, in_normal), dot(pc.model_z.xyz, in_normal));
     v_light = unpackUnorm4x8(pc.extra.x);
     v_flags = pc.extra.y;
     v_color = in_color;
@@ -363,6 +439,7 @@ void main()
 };
 
 inline constexpr ::fizmo::gpu::GlslBinding kMesh3DVertBindings[] = {
+    { "MaterialMaps", ::fizmo::gpu::GlslResource::UniformBlock, 0, 1, 1 },
     { "Push", ::fizmo::gpu::GlslResource::PushBlock, 0, 0, 1 },
 };
 
@@ -373,7 +450,7 @@ inline ::fizmo::gpu::ShaderDesc mesh3d_vert() noexcept {
     d.glsl          = kMesh3DVert;
     d.glsl_pieces   = sizeof(kMesh3DVert) / sizeof(kMesh3DVert[0]);
     d.glsl_version  = kMesh3DVertVersion;
-    d.glsl_bindings = { kMesh3DVertBindings, 1 };
+    d.glsl_bindings = { kMesh3DVertBindings, 2 };
     d.name          = "mesh3d.vert";
     return d;
 }
@@ -381,7 +458,7 @@ inline ::fizmo::gpu::ShaderDesc mesh3d_vert() noexcept {
 inline constexpr int kMesh3DFragVersion = 410;
 
 inline constexpr const char* kMesh3DFrag[] = {
-R"fizmo_glsl(const vec3 _1494[8] = vec3[](vec3(1.0), vec3(-1.0, -1.0, 1.0), vec3(-1.0, 1.0, -1.0), vec3(1.0, -1.0, -1.0), vec3(1.0, 1.0, -1.0), vec3(-1.0), vec3(1.0, -1.0, 1.0), vec3(-1.0, 1.0, 1.0));
+R"fizmo_glsl(const vec3 _1495[8] = vec3[](vec3(1.0), vec3(-1.0, -1.0, 1.0), vec3(-1.0, 1.0, -1.0), vec3(1.0, -1.0, -1.0), vec3(1.0, 1.0, -1.0), vec3(-1.0), vec3(1.0, -1.0, 1.0), vec3(-1.0, 1.0, 1.0));
 
 layout(std140) uniform SceneLight
 {
@@ -458,6 +535,9 @@ layout(std140) uniform MaterialMaps
     vec4 tints[8];
     vec4 splat_u;
     vec4 splat_v;
+    vec4 wind;
+    vec4 wind_shape;
+    vec4 wind_air;
 } maps;
 
 uniform sampler2DShadow sun_map;
@@ -490,6 +570,7 @@ layout(location = 6) flat in uvec2 v_pbr;
 layout(location = 2) in vec4 v_light;
 layout(location = 0) out vec4 out_color;
 float g_ao_frac;
+float g_translucency;
 
 mat4 spvWorkaroundRowMajor(mat4 wrap) { return wrap; }
 
@@ -535,10 +616,10 @@ vec3 mapped_normal(vec3 normal)
     vec4 param_1 = maps.normal_v;
     vec2 uv = map_uv(param, param_1);
     vec3 ts = (texture(normal_map, uv).xyz * 2.0) - vec3(1.0);
-    vec3 _3255 = ts;
-    vec2 _3257 = _3255.xy * maps.params.x;
-    ts.x = _3257.x;
-    ts.y = _3257.y;
+    vec3 _3256 = ts;
+    vec2 _3258 = _3256.xy * maps.params.x;
+    ts.x = _3258.x;
+    ts.y = _3258.y;
     ts.z = max(ts.z, 0.001000000047497451305389404296875);
     vec3 dp1 = dFdx(v_world);
     vec3 dp2 = dFdy(v_world);
@@ -569,16 +650,16 @@ void splat_read(inout float w[8])
 {
     vec2 su = splat_coord();
     vec4 a = texture(splat_weights, su);
-    vec4 _3697;
+    vec4 _3698;
     if ((maps.flags.x & 1024u) != 0u)
     {
-        _3697 = texture(splat_weights_b, su);
+        _3698 = texture(splat_weights_b, su);
     }
     else
     {
-        _3697 = vec4(0.0);
+        _3698 = vec4(0.0);
     }
-    vec4 b = _3697;
+    vec4 b = _3698;
     w[0] = a.x;
     w[1] = a.y;
     w[2] = a.z;
@@ -737,17 +818,17 @@ vec3 splat_surface(vec3 normal, inout vec3 bent)
         tri = pow(an, vec3(max(maps.params.w, 1.0)));
         tri /= vec3(max((tri.x + tri.y) + tri.z, 9.9999999747524270787835121154785e-07));
     }
-    vec2 _3823;
+    vec2 _3824;
     if ((maps.flags.x & 4096u) != 0u)
     {
-        _3823 = q.xy + vec2(q.z);
+        _3824 = q.xy + vec2(q.z);
     }
     else
     {
-        _3823 = v_uv;
+        _3824 = v_uv;
     }
     int param_1 = 0;
-    vec2 macro_p = (_3823 * 0.0430000014603137969970703125) * max(splat_tiling(param_1), 1.0);
+    vec2 macro_p = (_3824 * 0.0430000014603137969970703125) * max(splat_tiling(param_1), 1.0);
     vec2 param_2 = macro_p * 3.099999904632568359375;
     float vary = clamp((splat_noise(param_2) * 1.2000000476837158203125) - 0.25, 0.0, 0.75);
     vec2 param_3 = (macro_p * 7.30000019073486328125) + vec2(11.0);
@@ -774,28 +855,28 @@ vec3 splat_surface(vec3 normal, inout vec3 bent)
         col[i_1] = vec4(0.0);
         score[i_1] = -1000000000.0;
         w[i_1] /= total;
-        bool _3917 = i_1 >= count;
-        bool _3926;
-        if (!_3917)
+        bool _3918 = i_1 >= count;
+        bool _3927;
+        if (!_3918)
         {
-            _3926 = w[i_1] <= 0.00200000009499490261077880859375;
+            _3927 = w[i_1] <= 0.00200000009499490261077880859375;
         }
         else
         {
-            _3926 = _3917;
+            _3927 = _3918;
         }
-        if (_3926)
+        if (_3927)
         {
             continue;
         }
         int param_4 = i_1;
         vec2 param_5 = v_uv;
         vec3 param_6 = q;
-        vec3 param_7 = tri;
+)fizmo_glsl",
+R"fizmo_glsl(        vec3 param_7 = tri;
         vec2 param_8[2] = gu;
         vec3 param_9[2] = gq;
-)fizmo_glsl",
-R"fizmo_glsl(        float param_10 = vary;
+        float param_10 = vary;
         col[i_1] = splat_layer(splat_albedo, param_4, param_5, param_6, param_7, param_8, param_9, param_10);
         score[i_1] = w[i_1] + ((col[i_1].w * w[i_1]) * 0.5);
         best = max(best, score[i_1]);
@@ -812,17 +893,17 @@ R"fizmo_glsl(        float param_10 = vary;
     }
     rgb = (rgb / vec3(max(sum, 9.9999997473787516355514526367188e-06))) * shade_k;
     bent = normal;
-    bool _4028 = (maps.flags.x & 2048u) != 0u;
-    bool _4034;
-    if (_4028)
+    bool _4029 = (maps.flags.x & 2048u) != 0u;
+    bool _4035;
+    if (_4029)
     {
-        _4034 = length(normal) > 9.9999999747524270787835121154785e-07;
+        _4035 = length(normal) > 9.9999999747524270787835121154785e-07;
     }
     else
     {
-        _4034 = _4028;
+        _4035 = _4029;
     }
-    if (_4034)
+    if (_4035)
     {
         vec3 ts = vec3(0.0);
         for (int i_3 = 0; i_3 < 8; i_3++)
@@ -845,8 +926,8 @@ R"fizmo_glsl(        float param_10 = vary;
         vec2 param_20 = v_uv;
         vec2 param_21 = gu[0];
         vec2 param_22 = gu[1];
-        vec3 _4096 = perturb_normal(param_18, param_19, param_20, param_21, param_22);
-        bent = _4096;
+        vec3 _4097 = perturb_normal(param_18, param_19, param_20, param_21, param_22);
+        bent = _4097;
     }
     return rgb;
 }
@@ -997,8 +1078,8 @@ float sun_soft(sampler2DShadow map, sampler2D depth, vec2 uv, float ref)
         int param_4 = i_1;
         int param_5 = taps;
         float param_6 = spin;
-        vec3 _617 = vec3(uv + (vogel(param_4, param_5, param_6) * radius), ref);
-        lit += texture(map, vec3(_617.xy, _617.z));
+        vec3 _618 = vec3(uv + (vogel(param_4, param_5, param_6) * radius), ref);
+        lit += texture(map, vec3(_618.xy, _618.z));
     }
     return lit / float(taps);
 }
@@ -1011,8 +1092,8 @@ float sun_grid(sampler2DShadow map, vec2 uv, float ref)
     {
         for (int x = 0; x < 4; x++)
         {
-            vec3 _476 = vec3(uv + ((vec2(float(x), float(y)) - vec2(1.5)) * texel), ref);
-            lit += texture(map, vec3(_476.xy, _476.z));
+            vec3 _477 = vec3(uv + ((vec2(float(x), float(y)) - vec2(1.5)) * texel), ref);
+            lit += texture(map, vec3(_477.xy, _477.z));
         }
     }
     return lit / 16.0;
@@ -1023,55 +1104,55 @@ float sun_sample(mat4 m, sampler2DShadow map, sampler2D depth, vec3 p)
     vec4 c = m * vec4(p, 1.0);
     vec2 edge = abs(c.xy);
     float reach = max(edge.x, edge.y);
-    bool _649 = reach >= 1.0;
-    bool _656;
-    if (!_649)
+    bool _650 = reach >= 1.0;
+    bool _657;
+    if (!_650)
     {
-        _656 = c.z <= 0.0;
+        _657 = c.z <= 0.0;
     }
     else
     {
-        _656 = _649;
+        _657 = _650;
     }
-    bool _663;
-    if (!_656)
+    bool _664;
+    if (!_657)
     {
-        _663 = c.z >= 1.0;
+        _664 = c.z >= 1.0;
     }
     else
     {
-        _663 = _656;
+        _664 = _657;
     }
-    if (_663)
+    if (_664)
     {
         return 1.0;
     }
     vec2 uv = (c.xy * 0.5) + vec2(0.5);
     float ref = c.z - scene.sun_shadow.x;
-    float _681;
+    float _682;
     if (reflection_pass())
     {
-        vec3 _689 = vec3(uv, ref);
-        _681 = texture(map, vec3(_689.xy, _689.z));
+        vec3 _690 = vec3(uv, ref);
+        _682 = texture(map, vec3(_690.xy, _690.z));
     }
     else
     {
-        float _698;
+        float _699;
         if ((scene.counts.y & 512) != 0)
         {
             vec2 param = uv;
             float param_1 = ref;
-            _698 = sun_soft(map, depth, param, param_1);
+            _699 = sun_soft(map, depth, param, param_1);
         }
         else
         {
             vec2 param_2 = uv;
             float param_3 = ref;
-            _698 = sun_grid(map, param_2, param_3);
+            _699 = sun_grid(map, param_2, param_3);
         }
-        _681 = _698;
+        _682 = _699;
     }
-    float lit = _681;
+    float lit = _682;
     return mix(lit, 1.0, smoothstep(0.85000002384185791015625, 1.0, reach));
 }
 
@@ -1081,9 +1162,9 @@ float capsule_lit(vec3 p, vec3 to_light, float reach, float spread, float source
     float lit = 1.0;
     vec3 ray = to_light * reach;
     float rr = dot(ray, ray);
-    float _776;
-    float _832;
-    float _850;
+    float _777;
+    float _833;
+    float _851;
     for (int i = 0; i < count; i++)
     {
         vec3 a = scene.capsule_a[i].xyz;
@@ -1093,25 +1174,25 @@ float capsule_lit(vec3 p, vec3 to_light, float reach, float spread, float source
         float aa = dot(axis, axis);
         if (aa > 9.9999997473787516355514526367188e-05)
         {
-            _776 = clamp(dot(w, axis) / aa, 0.0, 1.0);
+            _777 = clamp(dot(w, axis) / aa, 0.0, 1.0);
         }
         else
         {
-            _776 = 0.0;
+            _777 = 0.0;
         }
-        float own = _776;
+        float own = _777;
         vec3 out_dir = w - (axis * own);
-        bool _798 = length(out_dir) < (r + 0.0500000007450580596923828125);
-        bool _805;
-        if (_798)
+        bool _799 = length(out_dir) < (r + 0.0500000007450580596923828125);
+        bool _806;
+        if (_799)
         {
-            _805 = dot(out_dir, to_light) >= 0.0;
+            _806 = dot(out_dir, to_light) >= 0.0;
         }
         else
         {
-            _805 = _798;
+            _806 = _799;
         }
-        if (_805)
+        if (_806)
         {
             continue;
         }
@@ -1121,22 +1202,22 @@ float capsule_lit(vec3 p, vec3 to_light, float reach, float spread, float source
         float denom = (rr * aa) - (b * b);
         if (denom > 9.9999997473787516355514526367188e-05)
         {
-            _832 = clamp(((b * f) - (c * aa)) / denom, 0.0, 1.0);
+            _833 = clamp(((b * f) - (c * aa)) / denom, 0.0, 1.0);
         }
         else
         {
-            _832 = 0.0;
+            _833 = 0.0;
         }
-        float s = _832;
+        float s = _833;
         if (aa > 9.9999997473787516355514526367188e-05)
         {
-            _850 = ((b * s) + f) / aa;
+            _851 = ((b * s) + f) / aa;
         }
         else
         {
-            _850 = 0.0;
+            _851 = 0.0;
         }
-        float t = _850;
+        float t = _851;
         if (t < 0.0)
         {
             t = 0.0;
@@ -1205,14 +1286,14 @@ vec3 light_anchor(int i, vec3 world, vec3 r, bool use_ray)
     {
         return c;
     }
-    vec4 size = scene.point_size[i];
+)fizmo_glsl",
+R"fizmo_glsl(    vec4 size = scene.point_size[i];
     if (kind == 1)
     {
         if (!use_ray)
         {
             return c;
-)fizmo_glsl",
-R"fizmo_glsl(        }
+        }
         vec3 param = c - world;
         vec3 param_1 = r;
         float param_2 = size.x;
@@ -1261,16 +1342,16 @@ R"fizmo_glsl(        }
         return (c + (tangent * clamp(dot(local, tangent), -size.x, size.x))) + (bitangent * clamp(dot(local, bitangent), -size.y, size.y));
     }
     float len = length(local);
-    float _1290;
+    float _1291;
     if (len > size.x)
     {
-        _1290 = size.x / len;
+        _1291 = size.x / len;
     }
     else
     {
-        _1290 = 1.0;
+        _1291 = 1.0;
     }
-    return c + (local * _1290);
+    return c + (local * _1291);
 }
 
 float light_reach(int i, float dist, float radius)
@@ -1310,16 +1391,16 @@ float light_face(int i, vec3 dir)
         return 1.0;
     }
     float f = dot(scene.point_normal[i].xyz, dir);
-    float _1325;
+    float _1326;
     if (scene.point_size[i].z > 0.5)
     {
-        _1325 = abs(f);
+        _1326 = abs(f);
     }
     else
     {
-        _1325 = max(f, 0.0);
+        _1326 = max(f, 0.0);
     }
-    return _1325;
+    return _1326;
 }
 
 float point_tap(int slot, vec4 coord)
@@ -1376,7 +1457,7 @@ float point_visibility(int slot, vec3 light, vec3 d, float radius)
     for (int i = 0; i < 8; i++)
     {
         int param_7 = slot;
-        vec4 param_8 = vec4(d + (_1494[i] * spread), ref);
+        vec4 param_8 = vec4(d + (_1495[i] * spread), ref);
         lit += point_tap(param_7, param_8);
     }
     return mix(1.0, lit / 8.0, scene.point_shadow.y) * body;
@@ -1391,16 +1472,16 @@ vec3 pbr_shade(vec3 world, vec3 normal, vec4 baked, vec3 albedo, float metallic,
 {
     float len = length(normal);
     vec3 v = normalize(-world);
-    vec3 _4352;
+    vec3 _4353;
     if (len > 9.9999999747524270787835121154785e-07)
     {
-        _4352 = normal / vec3(len);
+        _4353 = normal / vec3(len);
     }
     else
     {
-        _4352 = v;
+        _4353 = v;
     }
-    vec3 n = _4352;
+    vec3 n = _4353;
     if (dot(n, v) < 0.0)
     {
         n = -n;
@@ -1420,18 +1501,18 @@ vec3 pbr_shade(vec3 world, vec3 normal, vec4 baked, vec3 albedo, float metallic,
     float ndv = max(dot(n, v), 0.0);
     vec3 fa = f0 + ((max(vec3(1.0 - r), f0) - f0) * pow(1.0 - ndv, 5.0));
     vec3 color = (diffuse * ambient) * (vec3(1.0) - fa);
-    vec3 _4472;
+    vec3 _4473;
     if ((scene.counts.y & 8) != 0)
     {
         vec3 param_4 = reflect(-v, n);
         bool param_5 = false;
-        _4472 = sky_radiance(param_4, param_5);
+        _4473 = sky_radiance(param_4, param_5);
     }
     else
     {
-        _4472 = scene.sky_color.xyz;
+        _4473 = scene.sky_color.xyz;
     }
-    vec3 env = _4472;
+    vec3 env = _4473;
     color += ((((env * fa) * sky) * (1.0 - (r * 0.75))) + (((fa * from_block) * r) * 0.25));
     vec3 ambient_rgb = color;
     if (dot(scene.sun_color.xyz, vec3(1.0)) > 0.0)
@@ -1453,15 +1534,30 @@ vec3 pbr_shade(vec3 world, vec3 normal, vec4 baked, vec3 albedo, float metallic,
                 color += (((pbr_direct(param_6, param_7, param_8, param_9, param_10, param_11) * scene.sun_color.xyz) * exposure) * sun_visibility(param_12, param_13));
             }
         }
+        else
+        {
+            if (g_translucency > 0.0)
+            {
+                float exposure_1 = pow(baked.w, scene.sun_color.w);
+                float back = max(dot(-n, l), 0.0);
+                if ((exposure_1 > 0.0) && (back > 0.0))
+                {
+                    float forward = pow(max(dot(-v, l), 0.0), 6.0);
+                    vec3 param_14 = world;
+                    vec3 param_15 = -n;
+                    color += (((((albedo * g_translucency) * ((back * 0.550000011920928955078125) + (forward * 1.60000002384185791015625))) * scene.sun_color.xyz) * exposure_1) * sun_visibility(param_14, param_15));
+                }
+            }
+        }
     }
     int count = min(scene.counts.x, 64);
     for (int i = 0; i < count; i++)
     {
-        int param_14 = i;
-        vec3 param_15 = world;
-        vec3 param_16 = reflect(-v, n);
-        bool param_17 = true;
-        vec3 d = world - light_anchor(param_14, param_15, param_16, param_17);
+        int param_16 = i;
+        vec3 param_17 = world;
+        vec3 param_18 = reflect(-v, n);
+        bool param_19 = true;
+        vec3 d = world - light_anchor(param_16, param_17, param_18, param_19);
         float radius = scene.point_pos[i].w;
         float dist2 = dot(d, d);
         if (dist2 >= (radius * radius))
@@ -1469,59 +1565,73 @@ vec3 pbr_shade(vec3 world, vec3 normal, vec4 baked, vec3 albedo, float metallic,
             continue;
         }
         float dist = sqrt(dist2);
-        int param_18 = i;
-        float param_19 = dist;
-        float param_20 = radius;
-        float fall = light_reach(param_18, param_19, param_20);
+        int param_20 = i;
+        float param_21 = dist;
+        float param_22 = radius;
+        float fall = light_reach(param_20, param_21, param_22);
         vec3 dir = d / vec3(max(dist, 9.9999997473787516355514526367188e-05));
-        int param_21 = i;
-        float param_22 = dot(n, -dir);
-        float wrapped = light_wrap(param_21, param_22);
+        int param_23 = i;
+        float param_24 = dot(n, -dir);
+        float wrapped = light_wrap(param_23, param_24);
+        if ((wrapped <= 0.0) && (g_translucency > 0.0))
+        {
+            float through = max(dot(n, dir), 0.0) * g_translucency;
+            vec4 param_25 = scene.point_spot[i];
+            vec3 param_26 = normalize((world - scene.point_pos[i].xyz) + vec3(9.9999999747524270787835121154785e-07));
+            int param_27 = i;
+            vec3 param_28 = dir;
+            float cone_t = spot_factor(param_25, param_26) * light_face(param_27, param_28);
+            if (cone_t > 0.0)
+            {
+                color += (((albedo * through) * scene.point_color[i].xyz) * ((fall * cone_t) * 0.800000011920928955078125));
+            }
+            continue;
+        }
         if (wrapped <= 0.0)
         {
             continue;
         }
-        vec4 param_23 = scene.point_spot[i];
-        vec3 param_24 = normalize((world - scene.point_pos[i].xyz) + vec3(9.9999999747524270787835121154785e-07));
-        int param_25 = i;
-        vec3 param_26 = dir;
-        float cone = spot_factor(param_23, param_24) * light_face(param_25, param_26);
+        vec4 param_29 = scene.point_spot[i];
+        vec3 param_30 = normalize((world - scene.point_pos[i].xyz) + vec3(9.9999999747524270787835121154785e-07));
+        int param_31 = i;
+        vec3 param_32 = dir;
+        float cone = spot_factor(param_29, param_30) * light_face(param_31, param_32);
         if (cone <= 0.0)
         {
             continue;
         }
         float vis = 1.0;
         int slot = int(scene.point_color[i].w);
-        bool _4670 = slot >= 0;
-        bool _4677;
-        if (_4670)
+        bool _4784 = slot >= 0;
+        bool _4791;
+        if (_4784)
         {
-            _4677 = (scene.counts.y & 4) != 0;
+            _4791 = (scene.counts.y & 4) != 0;
         }
         else
         {
-            _4677 = _4670;
+            _4791 = _4784;
         }
-        if (_4677)
+        if (_4791)
         {
             vec4 map = scene.point_map[slot];
-            int param_27 = slot;
-            vec3 param_28 = map.xyz;
-            vec3 param_29 = (world + (n * scene.point_shadow.z)) - map.xyz;
-            float param_30 = map.w;
-            vis = point_visibility(param_27, param_28, param_29, param_30);
+            int param_33 = slot;
+            vec3 param_34 = map.xyz;
+            vec3 param_35 = (world + (n * scene.point_shadow.z)) - map.xyz;
+            float param_36 = map.w;
+            vis = point_visibility(param_33, param_34, param_35, param_36);
         }
-        vec3 param_31 = n;
-        vec3 param_32 = v;
-        vec3 param_33 = -dir;
-        vec3 param_34 = diffuse;
-        vec3 param_35 = f0;
-        float param_36 = r;
-        color += (((pbr_direct(param_31, param_32, param_33, param_34, param_35, param_36) + (diffuse * max(wrapped - max(dot(n, -dir), 0.0), 0.0))) * scene.point_color[i].xyz) * ((fall * cone) * vis));
+        vec3 param_37 = n;
+        vec3 param_38 = v;
+        vec3 param_39 = -dir;
+        vec3 param_40 = diffuse;
+        vec3 param_41 = f0;
+        float param_42 = r;
+        color += (((pbr_direct(param_37, param_38, param_39, param_40, param_41, param_42) + (diffuse * max(wrapped - max(dot(n, -dir), 0.0), 0.0))) * scene.point_color[i].xyz) * ((fall * cone) * vis));
     }
-    vec3 param_37 = ambient_rgb;
-    vec3 param_38 = color;
-    g_ao_frac = clamp(ao_luma(param_37) / max(ao_luma(param_38), 9.9999997473787516355514526367188e-05), 0.0, 1.0);
+    vec3 param_43 = ambient_rgb;
+    vec3 param_44 = color;
+    g_ao_frac = clamp(ao_luma(param_43) / max(ao_luma(param_44), 9.9999997473787516355514526367188e-05), 0.0, 1.0);
     return min(color, vec3(scene.params.y * 4.0));
 }
 
@@ -1535,17 +1645,17 @@ vec2 project_uv(vec3 p, out float w)
 
 bool on_screen(vec2 uv)
 {
-    bool _2697 = all(greaterThanEqual(uv, scene.screen.xy));
-    bool _2710;
-    if (_2697)
+    bool _2698 = all(greaterThanEqual(uv, scene.screen.xy));
+    bool _2711;
+    if (_2698)
     {
-        _2710 = all(lessThanEqual(uv, scene.screen.xy + scene.screen.zw));
+        _2711 = all(lessThanEqual(uv, scene.screen.xy + scene.screen.zw));
     }
     else
     {
-        _2710 = _2697;
+        _2711 = _2698;
     }
-    return _2710;
+    return _2711;
 }
 
 vec3 scene_point(vec2 uv)
@@ -1562,7 +1672,8 @@ vec4 screen_reflection(vec3 world, vec3 r)
         return vec4(0.0);
     }
     float reach = scene.target.w;
-    float near_k = clamp(1.0 - (length(world) / max(reach * 3.0, 0.001000000047497451305389404296875)), 0.300000011920928955078125, 1.0);
+)fizmo_glsl",
+R"fizmo_glsl(    float near_k = clamp(1.0 - (length(world) / max(reach * 3.0, 0.001000000047497451305389404296875)), 0.300000011920928955078125, 1.0);
     int steps = max(int(scene.target.z * near_k), 4);
     float prev = 0.0;
     float param_1;
@@ -1573,38 +1684,38 @@ vec4 screen_reflection(vec3 world, vec3 r)
         float a = float(i + 1) / float(steps);
         float t = (reach * a) * a;
         vec3 param = world + (r * t);
-        vec2 _2810 = project_uv(param, param_1);
+        vec2 _2811 = project_uv(param, param_1);
         float w = param_1;
-        vec2 uv = _2810;
-        bool _2813 = w <= 0.0500000007450580596923828125;
-        bool _2821;
-        if (!_2813)
+        vec2 uv = _2811;
+        bool _2814 = w <= 0.0500000007450580596923828125;
+        bool _2822;
+        if (!_2814)
         {
             vec2 param_2 = uv;
-            _2821 = !on_screen(param_2);
+            _2822 = !on_screen(param_2);
         }
         else
         {
-            _2821 = _2813;
+            _2822 = _2814;
         }
-        if (_2821)
+        if (_2822)
         {
             break;
         }
         float ray = length(world + (r * t));
         vec2 param_3 = uv;
         float hit = length(scene_point(param_3));
-        bool _2839 = ray > hit;
-        bool _2851;
-        if (_2839)
+        bool _2840 = ray > hit;
+        bool _2852;
+        if (_2840)
         {
-            _2851 = (ray - hit) < (max(t - prev, 0.5) * 1.5);
+            _2852 = (ray - hit) < (max(t - prev, 0.5) * 1.5);
         }
         else
         {
-            _2851 = _2839;
+            _2852 = _2840;
         }
-        if (_2851)
+        if (_2852)
         {
             float lo = prev;
             float hi = t;
@@ -1612,10 +1723,9 @@ vec4 screen_reflection(vec3 world, vec3 r)
             {
                 float mid = 0.5 * (lo + hi);
                 vec3 param_4 = world + (r * mid);
-                vec2 _2879 = project_uv(param_4, param_5);
+                vec2 _2880 = project_uv(param_4, param_5);
                 w = param_5;
-)fizmo_glsl",
-R"fizmo_glsl(                vec2 m = _2879;
+                vec2 m = _2880;
                 vec2 param_6 = m;
                 if (length(world + (r * mid)) > length(scene_point(param_6)))
                 {
@@ -1627,9 +1737,9 @@ R"fizmo_glsl(                vec2 m = _2879;
                 }
             }
             vec3 param_7 = world + (r * hi);
-            vec2 _2906 = project_uv(param_7, param_8);
+            vec2 _2907 = project_uv(param_7, param_8);
             w = param_8;
-            uv = _2906;
+            uv = _2907;
             vec2 inner = min(uv - scene.screen.xy, (scene.screen.xy + scene.screen.zw) - uv) / scene.screen.zw;
             float edge = smoothstep(0.0, 0.07999999821186065673828125, min(inner.x, inner.y));
             float fade = edge * (1.0 - (a * a));
@@ -1666,40 +1776,40 @@ float screen_noise()
 float sun_tap(mat4 m, sampler2DShadow map, vec3 p)
 {
     vec4 c = m * vec4(p, 1.0);
-    bool _2169 = abs(c.x) >= 1.0;
-    bool _2177;
-    if (!_2169)
+    bool _2170 = abs(c.x) >= 1.0;
+    bool _2178;
+    if (!_2170)
     {
-        _2177 = abs(c.y) >= 1.0;
+        _2178 = abs(c.y) >= 1.0;
     }
     else
     {
-        _2177 = _2169;
+        _2178 = _2170;
     }
-    bool _2184;
-    if (!_2177)
+    bool _2185;
+    if (!_2178)
     {
-        _2184 = c.z <= 0.0;
+        _2185 = c.z <= 0.0;
     }
     else
     {
-        _2184 = _2177;
+        _2185 = _2178;
     }
-    bool _2191;
-    if (!_2184)
+    bool _2192;
+    if (!_2185)
     {
-        _2191 = c.z >= 1.0;
+        _2192 = c.z >= 1.0;
     }
     else
     {
-        _2191 = _2184;
+        _2192 = _2185;
     }
-    if (_2191)
+    if (_2192)
     {
         return 1.0;
     }
-    vec3 _2208 = vec3((c.xy * 0.5) + vec2(0.5), c.z - scene.sun_shadow.x);
-    return texture(map, vec3(_2208.xy, _2208.z));
+    vec3 _2209 = vec3((c.xy * 0.5) + vec2(0.5), c.z - scene.sun_shadow.x);
+    return texture(map, vec3(_2209.xy, _2209.z));
 }
 
 float sun_lit_at(vec3 p)
@@ -1761,20 +1871,20 @@ float phase_hg(float g, float cs)
 vec3 inscatter(vec3 dir, float dist)
 {
     float reach = min(dist, scene.volume.z);
-    float _2419;
+    float _2420;
     if ((scene.counts.y & 8192) != 0)
     {
         vec3 param = dir;
         float param_1 = reach;
-        _2419 = volume_lookup(param, param_1);
+        _2420 = volume_lookup(param, param_1);
     }
     else
     {
         vec3 param_2 = dir;
         float param_3 = reach;
-        _2419 = march_light(param_2, param_3);
+        _2420 = march_light(param_2, param_3);
     }
-    float lit = _2419;
+    float lit = _2420;
     float cs = dot(dir, -scene.sun_dir.xyz);
     float param_4 = 0.0;
     float param_5 = cs;
@@ -1814,23 +1924,23 @@ vec3 finish(vec3 rgb, vec3 world, uint flags)
     {
         return rgb;
     }
-    vec3 _2602;
+    vec3 _2603;
     if ((flags & 64u) != 0u)
     {
         vec3 param = rgb;
-        vec3 _2607 = tone(param);
-        _2602 = _2607;
+        vec3 _2608 = tone(param);
+        _2603 = _2608;
     }
     else
     {
         vec3 param_1 = rgb;
         vec3 param_2 = world;
-        vec3 _2613 = atmosphere(param_1, param_2);
-        vec3 param_3 = _2613;
-        vec3 _2615 = tone(param_3);
-        _2602 = _2615;
+        vec3 _2614 = atmosphere(param_1, param_2);
+        vec3 param_3 = _2614;
+        vec3 _2616 = tone(param_3);
+        _2603 = _2616;
     }
-    return _2602;
+    return _2603;
 }
 
 vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
@@ -1847,16 +1957,16 @@ vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
     vec3 ambient_part = total;
     if (dot(scene.sun_color.xyz, vec3(1.0)) > 0.0)
     {
-        float _1657;
+        float _1658;
         if (has_normal)
         {
-            _1657 = max(dot(n, -scene.sun_dir.xyz), 0.0);
+            _1658 = max(dot(n, -scene.sun_dir.xyz), 0.0);
         }
         else
         {
-            _1657 = 1.0;
+            _1658 = 1.0;
         }
-        float ndl = _1657;
+        float ndl = _1658;
         if (ndl > 0.0)
         {
             float exposure = pow(baked.w, scene.sun_color.w);
@@ -1869,7 +1979,7 @@ vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
         }
     }
     int count = min(scene.counts.x, 64);
-    float _1759;
+    float _1760;
     for (int i = 0; i < count; i++)
     {
         int param_6 = i;
@@ -1893,13 +2003,13 @@ vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
         {
             int param_13 = i;
             float param_14 = dot(n, -dir);
-            _1759 = light_wrap(param_13, param_14);
+            _1760 = light_wrap(param_13, param_14);
         }
         else
         {
-            _1759 = 1.0;
+            _1760 = 1.0;
         }
-        float ndl_1 = _1759;
+        float ndl_1 = _1760;
         if (ndl_1 <= 0.0)
         {
             continue;
@@ -1915,17 +2025,17 @@ vec3 scene_light(vec3 world, vec3 n, vec4 baked, bool has_normal)
         }
         float vis = 1.0;
         int slot = int(scene.point_color[i].w);
-        bool _1813 = slot >= 0;
-        bool _1820;
-        if (_1813)
+        bool _1814 = slot >= 0;
+        bool _1821;
+        if (_1814)
         {
-            _1820 = (scene.counts.y & 4) != 0;
+            _1821 = (scene.counts.y & 4) != 0;
         }
         else
         {
-            _1820 = _1813;
+            _1821 = _1814;
         }
-        if (_1820)
+        if (_1821)
         {
             vec4 map = scene.point_map[slot];
             int param_19 = slot;
@@ -1952,57 +2062,68 @@ vec3 shade(vec3 world, vec3 normal, vec4 baked, uint flags)
     }
     float len = length(normal);
     bool has_normal = len > 9.9999999747524270787835121154785e-07;
-    vec3 _1906;
+    vec3 _1907;
     if (has_normal)
     {
-        _1906 = normal / vec3(len);
+        _1907 = normal / vec3(len);
     }
     else
     {
-        _1906 = vec3(0.0);
+        _1907 = vec3(0.0);
     }
-    vec3 n = _1906;
+    vec3 n = _1907;
     if ((scene.counts.y & 1) == 0)
     {
-        bool _1923 = !has_normal;
-        bool _1930;
-        if (!_1923)
+        bool _1924 = !has_normal;
+        bool _1931;
+        if (!_1924)
         {
-            _1930 = (flags & 4u) == 0u;
+            _1931 = (flags & 4u) == 0u;
         }
         else
         {
-            _1930 = _1923;
+            _1931 = _1924;
         }
-        if (_1930)
+        if (_1931)
         {
             return vec3(1.0);
         }
         return vec3(scene.legacy.w + max(dot(n, -scene.legacy.xyz), 0.0));
     }
     vec3 param = world;
-    vec3 param_1 = n;
+)fizmo_glsl",
+R"fizmo_glsl(    vec3 param_1 = n;
     vec4 param_2 = baked;
     bool param_3 = has_normal;
-    vec3 _1954 = scene_light(param, param_1, param_2, param_3);
-    return _1954;
+    vec3 _1955 = scene_light(param, param_1, param_2, param_3);
+    return _1955;
 }
 
 void shade_main()
 {
     uint mf = maps.flags.x;
-    vec4 _4767;
+    float _4881;
+    if ((mf & 8192u) != 0u)
+    {
+        _4881 = maps.soft.w;
+    }
+    else
+    {
+        _4881 = 0.0;
+    }
+    g_translucency = _4881;
+    vec4 _4892;
     if ((mf & 64u) != 0u)
     {
         vec4 param = maps.albedo_u;
         vec4 param_1 = maps.albedo_v;
-        _4767 = map_sample(tex, param, param_1);
+        _4892 = map_sample(tex, param, param_1);
     }
     else
     {
-        _4767 = texture(tex, v_uv);
+        _4892 = texture(tex, v_uv);
     }
-    vec4 t = _4767;
+    vec4 t = _4892;
     if ((mf & 8u) != 0u)
     {
         vec4 param_2 = maps.opacity_u;
@@ -2017,40 +2138,39 @@ void shade_main()
         }
         t = vec4(t.xyz / vec3(max(t.w, 9.9999997473787516355514526367188e-05)), 1.0);
     }
-    vec3 _4832;
+    vec3 _4957;
     if ((mf & 1u) != 0u)
     {
         vec3 param_4 = v_normal;
-        _4832 = mapped_normal(param_4);
+        _4957 = mapped_normal(param_4);
     }
     else
     {
-        _4832 = v_normal;
+        _4957 = v_normal;
     }
-    vec3 normal = _4832;
+    vec3 normal = _4957;
     if ((mf & 512u) != 0u)
     {
         vec3 param_5 = normal;
         vec3 param_6;
-        vec3 _4852 = splat_surface(param_5, param_6);
+        vec3 _4977 = splat_surface(param_5, param_6);
         vec3 bent = param_6;
-        t = vec4(_4852, 1.0);
+        t = vec4(_4977, 1.0);
         normal = bent;
     }
-    bool _4863 = (v_flags & 2048u) != 0u;
-    bool _4870;
-    if (_4863)
+    bool _4988 = (v_flags & 2048u) != 0u;
+    bool _4995;
+    if (_4988)
     {
-        _4870 = (scene.counts.y & 1) != 0;
+        _4995 = (scene.counts.y & 1) != 0;
     }
     else
     {
-        _4870 = _4863;
+        _4995 = _4988;
     }
-    if (_4870)
+    if (_4995)
     {
-)fizmo_glsl",
-R"fizmo_glsl(        vec4 params = unpackUnorm4x8(v_pbr.x);
+        vec4 params = unpackUnorm4x8(v_pbr.x);
         vec3 emissive = (unpackUnorm4x8(v_pbr.y).xyz * params.z) * 16.0;
         if ((mf & 2u) != 0u)
         {
@@ -2076,37 +2196,37 @@ R"fizmo_glsl(        vec4 params = unpackUnorm4x8(v_pbr.x);
         vec3 param_14 = t.xyz * v_color.xyz;
         float param_15 = params.x;
         float param_16 = params.y;
-        vec3 _4964 = pbr_shade(param_11, param_12, param_13, param_14, param_15, param_16);
-        vec3 lit = (_4964 * params.w) + (emissive * t.w);
+        vec3 _5089 = pbr_shade(param_11, param_12, param_13, param_14, param_15, param_16);
+        vec3 lit = (_5089 * params.w) + (emissive * t.w);
         vec3 param_17 = lit;
-        float _4977;
+        float _5102;
         if (ao_luma(param_17) > 9.9999997473787516355514526367188e-05)
         {
             vec3 param_18 = lit - (emissive * t.w);
             vec3 param_19 = lit;
-            _4977 = clamp(ao_luma(param_18) / ao_luma(param_19), 0.0, 1.0);
+            _5102 = clamp(ao_luma(param_18) / ao_luma(param_19), 0.0, 1.0);
         }
         else
         {
-            _4977 = 0.0;
+            _5102 = 0.0;
         }
-        g_ao_frac *= _4977;
+        g_ao_frac *= _5102;
         float alpha = t.w * v_color.w;
         float mirror_k = unpackUnorm4x8(v_pbr.y).w;
         if (mirror_k > 0.0)
         {
             vec3 v = normalize(-v_world);
             float nl = length(normal);
-            vec3 _5022;
+            vec3 _5147;
             if (nl > 9.9999999747524270787835121154785e-07)
             {
-                _5022 = normal / vec3(nl);
+                _5147 = normal / vec3(nl);
             }
             else
             {
-                _5022 = v;
+                _5147 = v;
             }
-            vec3 n = _5022;
+            vec3 n = _5147;
             if (dot(n, v) < 0.0)
             {
                 n = -n;
@@ -2114,30 +2234,30 @@ R"fizmo_glsl(        vec4 params = unpackUnorm4x8(v_pbr.x);
             vec3 r = reflect(-v, n);
             float edge = pow(1.0 - max(dot(n, v), 0.0), 5.0);
             float k = clamp(mirror_k + (((1.0 - mirror_k) * edge) * mirror_k), 0.0, 1.0) * (1.0 - (params.y * 0.85000002384185791015625));
-            vec4 _5072;
+            vec4 _5197;
             if ((scene.counts.y & 128) != 0)
             {
                 vec3 param_20 = v_world;
                 vec3 param_21 = r;
-                _5072 = screen_reflection(param_20, param_21);
+                _5197 = screen_reflection(param_20, param_21);
             }
             else
             {
-                _5072 = vec4(0.0);
+                _5197 = vec4(0.0);
             }
-            vec4 hit = _5072;
-            vec3 _5087;
+            vec4 hit = _5197;
+            vec3 _5212;
             if ((scene.counts.y & 8) != 0)
             {
                 vec3 param_22 = r;
                 bool param_23 = false;
-                _5087 = sky_radiance(param_22, param_23);
+                _5212 = sky_radiance(param_22, param_23);
             }
             else
             {
-                _5087 = scene.sky_color.xyz;
+                _5212 = scene.sky_color.xyz;
             }
-            vec3 env = _5087;
+            vec3 env = _5212;
             vec3 seen = mix(env, hit.xyz, vec3(hit.w)) * mix(vec3(1.0), t.xyz * v_color.xyz, vec3(params.x));
             vec3 param_24 = lit;
             vec3 param_25 = v_world;
@@ -2155,8 +2275,8 @@ R"fizmo_glsl(        vec4 params = unpackUnorm4x8(v_pbr.x);
     vec3 param_31 = normal;
     vec4 param_32 = v_light;
     uint param_33 = v_flags;
-    vec3 _5170 = shade(param_30, param_31, param_32, param_33);
-    vec3 light = _5170;
+    vec3 _5295 = shade(param_30, param_31, param_32, param_33);
+    vec3 light = _5295;
     vec3 param_34 = (t.xyz * v_color.xyz) * light;
     vec3 param_35 = v_world;
     uint param_36 = v_flags;
@@ -2166,36 +2286,36 @@ R"fizmo_glsl(        vec4 params = unpackUnorm4x8(v_pbr.x);
 float soft_fade()
 {
     float d = length(v_world);
-    float _4107;
+    float _4108;
     if (maps.soft.z > 0.0)
     {
-        _4107 = clamp((d - maps.soft.y) * maps.soft.z, 0.0, 1.0);
+        _4108 = clamp((d - maps.soft.y) * maps.soft.z, 0.0, 1.0);
     }
     else
     {
-        _4107 = 1.0;
+        _4108 = 1.0;
     }
-    float k = _4107;
-    bool _4122 = maps.soft.x > 0.0;
-    bool _4130;
-    if (_4122)
+    float k = _4108;
+    bool _4123 = maps.soft.x > 0.0;
+    bool _4131;
+    if (_4123)
     {
-        _4130 = (scene.counts.y & 128) != 0;
+        _4131 = (scene.counts.y & 128) != 0;
     }
     else
     {
-        _4130 = _4122;
+        _4131 = _4123;
     }
-    bool _4135;
-    if (_4130)
+    bool _4136;
+    if (_4131)
     {
-        _4135 = !reflection_pass();
+        _4136 = !reflection_pass();
     }
     else
     {
-        _4135 = _4130;
+        _4136 = _4131;
     }
-    if (_4135)
+    if (_4136)
     {
         vec2 uv = gl_FragCoord.xy * scene.target.xy;
         float raw = texture(scene_depth, uv).x;
@@ -2230,6 +2350,7 @@ float veil(vec3 world)
 void main()
 {
     g_ao_frac = 0.0;
+    g_translucency = 0.0;
     g_ao_frac = 0.0;
     shade_main();
     if ((maps.flags.x & 256u) != 0u)
@@ -2238,17 +2359,17 @@ void main()
     }
     if ((scene.counts.y & 16384) != 0)
     {
-        float _5217;
+        float _5342;
         if ((v_flags & 64u) != 0u)
         {
-            _5217 = g_ao_frac;
+            _5342 = g_ao_frac;
         }
         else
         {
             vec3 param = v_world;
-            _5217 = g_ao_frac * veil(param);
+            _5342 = g_ao_frac * veil(param);
         }
-        out_color.w = _5217;
+        out_color.w = _5342;
     }
 }
 )fizmo_glsl",
@@ -4086,7 +4207,33 @@ inline ::fizmo::gpu::ShaderDesc batch3d_vert() noexcept {
 inline constexpr int kInstanced3DVertVersion = 410;
 
 inline constexpr const char* kInstanced3DVert[] = {
-R"fizmo_glsl(layout(std140) uniform Push
+R"fizmo_glsl(layout(std140) uniform MaterialMaps
+{
+    vec4 albedo_u;
+    vec4 albedo_v;
+    vec4 normal_u;
+    vec4 normal_v;
+    vec4 orm_u;
+    vec4 orm_v;
+    vec4 emissive_u;
+    vec4 emissive_v;
+    vec4 opacity_u;
+    vec4 opacity_v;
+    vec4 params;
+    uvec4 flags;
+    vec4 soft;
+    vec4 splat;
+    vec4 atlas;
+    vec4 tiling[2];
+    vec4 tints[8];
+    vec4 splat_u;
+    vec4 splat_v;
+    vec4 wind;
+    vec4 wind_shape;
+    vec4 wind_air;
+} maps;
+
+layout(std140) uniform Push
 {
     layout(row_major) mat4 mvp;
     vec4 model_x;
@@ -4097,9 +4244,9 @@ R"fizmo_glsl(layout(std140) uniform Push
 
 layout(location = 0) in vec3 in_pos;
 layout(location = 4) in vec4 in_offset_scale;
-layout(location = 0) out vec3 v_world;
 layout(location = 1) out vec3 v_normal;
 layout(location = 1) in vec3 in_normal;
+layout(location = 0) out vec3 v_world;
 layout(location = 2) out vec4 v_light;
 layout(location = 6) in vec4 in_light;
 layout(location = 3) flat out uint v_flags;
@@ -4112,18 +4259,69 @@ layout(location = 6) flat out uvec2 v_pbr;
 layout(location = 7) out vec3 v_object;
 layout(location = 8) out vec3 v_object_normal;
 
+vec3 wind_world(vec3 local, vec3 normal_world, vec3 anchor)
+{
+    vec4 w = maps.wind;
+    vec4 s = maps.wind_shape;
+    float strength = length(w.xyz);
+    if (strength < 9.9999997473787516355514526367188e-06)
+    {
+        return vec3(0.0);
+    }
+    vec3 dir = w.xyz / vec3(strength);
+    float h = clamp(local.y / max(s.y, 0.001000000047497451305389404296875), 0.0, 1.5);
+    float bend = h * h;
+    float t = w.w * maps.wind_air.y;
+    float ph = dot(anchor, vec3(0.071000002324581146240234375, 0.037000000476837158203125, 0.0529999993741512298583984375)) + s.w;
+    float gust = 1.0 + ((maps.wind_air.x * (0.5 + (0.5 * sin((t * 0.4099999964237213134765625) + (ph * 0.300000011920928955078125))))) * sin((t * 0.17000000178813934326171875) + (ph * 0.699999988079071044921875)));
+    float osc = (sin((t * 1.2999999523162841796875) + ph) * 0.60000002384185791015625) + (sin((t * 2.900000095367431640625) + (ph * 1.7000000476837158203125)) * 0.25);
+    vec3 side = normalize(cross(dir, vec3(0.0, 1.0, 0.0)) + vec3(9.9999997473787516355514526367188e-05, 0.0, 0.0));
+    vec3 off = dir * ((((s.x * strength) * bend) * (0.60000002384185791015625 + (0.4000000059604644775390625 * osc))) * gust);
+    off += (side * ((((s.x * strength) * bend) * 0.20000000298023223876953125) * sin((t * 1.89999997615814208984375) + (ph * 1.2999999523162841796875))));
+    float leaf = (((sin((t * 11.0) + dot(local, vec3(17.1000003814697265625, 13.69999980926513671875, 19.299999237060546875))) * s.z) * strength) * min(h, 1.0)) * (0.699999988079071044921875 + (0.300000011920928955078125 * gust));
+    off += (normal_world * leaf);
+    return off;
+}
+
+vec3 wind_local(vec3 local, vec3 normal_world, vec3 anchor, float size, vec4 mx, vec4 my, vec4 mz)
+{
+    if ((maps.flags.x & 16384u) == 0u)
+    {
+        return vec3(0.0);
+    }
+    vec3 param = local;
+    vec3 param_1 = normal_world;
+    vec3 param_2 = anchor;
+    vec3 off = wind_world(param, param_1, param_2) * size;
+    vec3 o = ((mx.xyz * off.x) + (my.xyz * off.y)) + (mz.xyz * off.z);
+    return o / vec3(max(dot(mx.xyz, mx.xyz), 9.9999999392252902907785028219223e-09));
+}
+
 void main()
 {
     vec4 p = vec4((in_pos * in_offset_scale.w) + in_offset_scale.xyz, 1.0);
+    v_normal = vec3(dot(pc.model_x.xyz, in_normal), dot(pc.model_y.xyz, in_normal), dot(pc.model_z.xyz, in_normal));
+    vec3 anchor = vec3(dot(pc.model_x, vec4(in_offset_scale.xyz, 1.0)), dot(pc.model_y, vec4(in_offset_scale.xyz, 1.0)), dot(pc.model_z, vec4(in_offset_scale.xyz, 1.0)));
+    vec3 param = in_pos;
+    vec3 param_1 = normalize(v_normal);
+    vec3 param_2 = anchor;
+    float param_3 = in_offset_scale.w;
+    vec4 param_4 = pc.model_x;
+    vec4 param_5 = pc.model_y;
+    vec4 param_6 = pc.model_z;
+    vec4 _366 = p;
+    vec3 _368 = _366.xyz + wind_local(param, param_1, param_2, param_3, param_4, param_5, param_6);
+    p.x = _368.x;
+    p.y = _368.y;
+    p.z = _368.z;
     gl_Position = pc.mvp * p;
     v_world = vec3(dot(pc.model_x, p), dot(pc.model_y, p), dot(pc.model_z, p));
-    v_normal = vec3(dot(pc.model_x.xyz, in_normal), dot(pc.model_y.xyz, in_normal), dot(pc.model_z.xyz, in_normal));
     v_light = in_light;
     v_flags = pc.extra.y;
     v_color = in_color * in_tint;
     v_uv = in_uv;
     v_pbr = pc.extra.zw;
-    v_object = p.xyz;
+    v_object = (in_pos * in_offset_scale.w) + in_offset_scale.xyz;
     v_object_normal = in_normal;
 #ifdef FIZMO_GL_DEPTH_FIXUP
     gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
@@ -4133,6 +4331,7 @@ void main()
 };
 
 inline constexpr ::fizmo::gpu::GlslBinding kInstanced3DVertBindings[] = {
+    { "MaterialMaps", ::fizmo::gpu::GlslResource::UniformBlock, 0, 1, 1 },
     { "Push", ::fizmo::gpu::GlslResource::PushBlock, 0, 0, 1 },
 };
 
@@ -4143,7 +4342,7 @@ inline ::fizmo::gpu::ShaderDesc instanced3d_vert() noexcept {
     d.glsl          = kInstanced3DVert;
     d.glsl_pieces   = sizeof(kInstanced3DVert) / sizeof(kInstanced3DVert[0]);
     d.glsl_version  = kInstanced3DVertVersion;
-    d.glsl_bindings = { kInstanced3DVertBindings, 1 };
+    d.glsl_bindings = { kInstanced3DVertBindings, 2 };
     d.name          = "instanced3d.vert";
     return d;
 }
@@ -4287,6 +4486,491 @@ inline ::fizmo::gpu::ShaderDesc shadow_quad_vert() noexcept {
     d.glsl_version  = kShadowQuad3DVertVersion;
     d.glsl_bindings = { kShadowQuad3DVertBindings, 1 };
     d.name          = "shadow_quad.vert";
+    return d;
+}
+
+inline constexpr int kShadowMeshMat3DVertVersion = 410;
+
+inline constexpr const char* kShadowMeshMat3DVert[] = {
+R"fizmo_glsl(layout(std140) uniform MaterialMaps
+{
+    vec4 albedo_u;
+    vec4 albedo_v;
+    vec4 normal_u;
+    vec4 normal_v;
+    vec4 orm_u;
+    vec4 orm_v;
+    vec4 emissive_u;
+    vec4 emissive_v;
+    vec4 opacity_u;
+    vec4 opacity_v;
+    vec4 params;
+    uvec4 flags;
+    vec4 soft;
+    vec4 splat;
+    vec4 atlas;
+    vec4 tiling[2];
+    vec4 tints[8];
+    vec4 splat_u;
+    vec4 splat_v;
+    vec4 wind;
+    vec4 wind_shape;
+    vec4 wind_air;
+} maps;
+
+layout(std140) uniform Push
+{
+    layout(row_major) mat4 light_vp;
+    vec4 model_x;
+    vec4 model_y;
+    vec4 model_z;
+    vec4 light;
+} pc;
+
+layout(location = 0) in vec3 in_pos;
+layout(location = 1) out vec3 v_normal;
+layout(location = 1) in vec3 in_normal;
+layout(location = 0) out vec3 v_world;
+layout(location = 2) out vec2 v_uv;
+layout(location = 2) in vec2 in_uv;
+layout(location = 3) out float v_alpha;
+layout(location = 3) in vec4 in_color;
+
+vec3 wind_world(vec3 local, vec3 normal_world, vec3 anchor)
+{
+    vec4 w = maps.wind;
+    vec4 s = maps.wind_shape;
+    float strength = length(w.xyz);
+    if (strength < 9.9999997473787516355514526367188e-06)
+    {
+        return vec3(0.0);
+    }
+    vec3 dir = w.xyz / vec3(strength);
+    float h = clamp(local.y / max(s.y, 0.001000000047497451305389404296875), 0.0, 1.5);
+    float bend = h * h;
+    float t = w.w * maps.wind_air.y;
+    float ph = dot(anchor, vec3(0.071000002324581146240234375, 0.037000000476837158203125, 0.0529999993741512298583984375)) + s.w;
+    float gust = 1.0 + ((maps.wind_air.x * (0.5 + (0.5 * sin((t * 0.4099999964237213134765625) + (ph * 0.300000011920928955078125))))) * sin((t * 0.17000000178813934326171875) + (ph * 0.699999988079071044921875)));
+    float osc = (sin((t * 1.2999999523162841796875) + ph) * 0.60000002384185791015625) + (sin((t * 2.900000095367431640625) + (ph * 1.7000000476837158203125)) * 0.25);
+    vec3 side = normalize(cross(dir, vec3(0.0, 1.0, 0.0)) + vec3(9.9999997473787516355514526367188e-05, 0.0, 0.0));
+    vec3 off = dir * ((((s.x * strength) * bend) * (0.60000002384185791015625 + (0.4000000059604644775390625 * osc))) * gust);
+    off += (side * ((((s.x * strength) * bend) * 0.20000000298023223876953125) * sin((t * 1.89999997615814208984375) + (ph * 1.2999999523162841796875))));
+    float leaf = (((sin((t * 11.0) + dot(local, vec3(17.1000003814697265625, 13.69999980926513671875, 19.299999237060546875))) * s.z) * strength) * min(h, 1.0)) * (0.699999988079071044921875 + (0.300000011920928955078125 * gust));
+    off += (normal_world * leaf);
+    return off;
+}
+
+vec3 wind_local(vec3 local, vec3 normal_world, vec3 anchor, float size, vec4 mx, vec4 my, vec4 mz)
+{
+    if ((maps.flags.x & 16384u) == 0u)
+    {
+        return vec3(0.0);
+    }
+    vec3 param = local;
+    vec3 param_1 = normal_world;
+    vec3 param_2 = anchor;
+    vec3 off = wind_world(param, param_1, param_2) * size;
+    vec3 o = ((mx.xyz * off.x) + (my.xyz * off.y)) + (mz.xyz * off.z);
+    return o / vec3(max(dot(mx.xyz, mx.xyz), 9.9999999392252902907785028219223e-09));
+}
+
+void main()
+{
+    vec4 p = vec4(in_pos, 1.0);
+    v_normal = vec3(dot(pc.model_x.xyz, in_normal), dot(pc.model_y.xyz, in_normal), dot(pc.model_z.xyz, in_normal));
+    vec3 param = in_pos;
+    vec3 param_1 = normalize(v_normal);
+    vec3 param_2 = vec3(pc.model_x.w, pc.model_y.w, pc.model_z.w);
+    float param_3 = 1.0;
+    vec4 param_4 = pc.model_x;
+    vec4 param_5 = pc.model_y;
+    vec4 param_6 = pc.model_z;
+    vec4 _333 = p;
+    vec3 _335 = _333.xyz + wind_local(param, param_1, param_2, param_3, param_4, param_5, param_6);
+    p.x = _335.x;
+    p.y = _335.y;
+    p.z = _335.z;
+    v_world = vec3(dot(pc.model_x, p), dot(pc.model_y, p), dot(pc.model_z, p));
+    v_uv = in_uv;
+    v_alpha = in_color.w;
+    gl_Position = pc.light_vp * vec4(v_world, 1.0);
+#ifdef FIZMO_GL_DEPTH_FIXUP
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+#endif
+}
+)fizmo_glsl",
+};
+
+inline constexpr ::fizmo::gpu::GlslBinding kShadowMeshMat3DVertBindings[] = {
+    { "MaterialMaps", ::fizmo::gpu::GlslResource::UniformBlock, 0, 1, 1 },
+    { "Push", ::fizmo::gpu::GlslResource::PushBlock, 0, 0, 1 },
+};
+
+inline ::fizmo::gpu::ShaderDesc shadow_mesh_mat_vert() noexcept {
+    ::fizmo::gpu::ShaderDesc d;
+    d.stage         = ::fizmo::gpu::ShaderStage::Vertex;
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kShadowMeshMat3DVert, sizeof(::fizmo::graphics::detail::gfx::kShadowMeshMat3DVert) / sizeof(std::uint32_t) };
+    d.glsl          = kShadowMeshMat3DVert;
+    d.glsl_pieces   = sizeof(kShadowMeshMat3DVert) / sizeof(kShadowMeshMat3DVert[0]);
+    d.glsl_version  = kShadowMeshMat3DVertVersion;
+    d.glsl_bindings = { kShadowMeshMat3DVertBindings, 2 };
+    d.name          = "shadow_mesh_mat.vert";
+    return d;
+}
+
+inline constexpr int kShadowInstancedMat3DVertVersion = 410;
+
+inline constexpr const char* kShadowInstancedMat3DVert[] = {
+R"fizmo_glsl(layout(std140) uniform MaterialMaps
+{
+    vec4 albedo_u;
+    vec4 albedo_v;
+    vec4 normal_u;
+    vec4 normal_v;
+    vec4 orm_u;
+    vec4 orm_v;
+    vec4 emissive_u;
+    vec4 emissive_v;
+    vec4 opacity_u;
+    vec4 opacity_v;
+    vec4 params;
+    uvec4 flags;
+    vec4 soft;
+    vec4 splat;
+    vec4 atlas;
+    vec4 tiling[2];
+    vec4 tints[8];
+    vec4 splat_u;
+    vec4 splat_v;
+    vec4 wind;
+    vec4 wind_shape;
+    vec4 wind_air;
+} maps;
+
+layout(std140) uniform Push
+{
+    layout(row_major) mat4 light_vp;
+    vec4 model_x;
+    vec4 model_y;
+    vec4 model_z;
+    vec4 light;
+} pc;
+
+layout(location = 0) in vec3 in_pos;
+layout(location = 4) in vec4 in_offset_scale;
+layout(location = 1) out vec3 v_normal;
+layout(location = 1) in vec3 in_normal;
+layout(location = 0) out vec3 v_world;
+layout(location = 2) out vec2 v_uv;
+layout(location = 2) in vec2 in_uv;
+layout(location = 3) out float v_alpha;
+layout(location = 3) in vec4 in_color;
+layout(location = 5) in vec4 in_tint;
+
+vec3 wind_world(vec3 local, vec3 normal_world, vec3 anchor)
+{
+    vec4 w = maps.wind;
+    vec4 s = maps.wind_shape;
+    float strength = length(w.xyz);
+    if (strength < 9.9999997473787516355514526367188e-06)
+    {
+        return vec3(0.0);
+    }
+    vec3 dir = w.xyz / vec3(strength);
+    float h = clamp(local.y / max(s.y, 0.001000000047497451305389404296875), 0.0, 1.5);
+    float bend = h * h;
+    float t = w.w * maps.wind_air.y;
+    float ph = dot(anchor, vec3(0.071000002324581146240234375, 0.037000000476837158203125, 0.0529999993741512298583984375)) + s.w;
+    float gust = 1.0 + ((maps.wind_air.x * (0.5 + (0.5 * sin((t * 0.4099999964237213134765625) + (ph * 0.300000011920928955078125))))) * sin((t * 0.17000000178813934326171875) + (ph * 0.699999988079071044921875)));
+    float osc = (sin((t * 1.2999999523162841796875) + ph) * 0.60000002384185791015625) + (sin((t * 2.900000095367431640625) + (ph * 1.7000000476837158203125)) * 0.25);
+    vec3 side = normalize(cross(dir, vec3(0.0, 1.0, 0.0)) + vec3(9.9999997473787516355514526367188e-05, 0.0, 0.0));
+    vec3 off = dir * ((((s.x * strength) * bend) * (0.60000002384185791015625 + (0.4000000059604644775390625 * osc))) * gust);
+    off += (side * ((((s.x * strength) * bend) * 0.20000000298023223876953125) * sin((t * 1.89999997615814208984375) + (ph * 1.2999999523162841796875))));
+    float leaf = (((sin((t * 11.0) + dot(local, vec3(17.1000003814697265625, 13.69999980926513671875, 19.299999237060546875))) * s.z) * strength) * min(h, 1.0)) * (0.699999988079071044921875 + (0.300000011920928955078125 * gust));
+    off += (normal_world * leaf);
+    return off;
+}
+
+vec3 wind_local(vec3 local, vec3 normal_world, vec3 anchor, float size, vec4 mx, vec4 my, vec4 mz)
+{
+    if ((maps.flags.x & 16384u) == 0u)
+    {
+        return vec3(0.0);
+    }
+    vec3 param = local;
+    vec3 param_1 = normal_world;
+    vec3 param_2 = anchor;
+    vec3 off = wind_world(param, param_1, param_2) * size;
+    vec3 o = ((mx.xyz * off.x) + (my.xyz * off.y)) + (mz.xyz * off.z);
+    return o / vec3(max(dot(mx.xyz, mx.xyz), 9.9999999392252902907785028219223e-09));
+}
+
+void main()
+{
+    vec4 p = vec4((in_pos * in_offset_scale.w) + in_offset_scale.xyz, 1.0);
+    v_normal = vec3(dot(pc.model_x.xyz, in_normal), dot(pc.model_y.xyz, in_normal), dot(pc.model_z.xyz, in_normal));
+    vec3 anchor = vec3(dot(pc.model_x, vec4(in_offset_scale.xyz, 1.0)), dot(pc.model_y, vec4(in_offset_scale.xyz, 1.0)), dot(pc.model_z, vec4(in_offset_scale.xyz, 1.0)));
+    vec3 param = in_pos;
+    vec3 param_1 = normalize(v_normal);
+    vec3 param_2 = anchor;
+    float param_3 = in_offset_scale.w;
+    vec4 param_4 = pc.model_x;
+    vec4 param_5 = pc.model_y;
+    vec4 param_6 = pc.model_z;
+    vec4 _366 = p;
+    vec3 _368 = _366.xyz + wind_local(param, param_1, param_2, param_3, param_4, param_5, param_6);
+    p.x = _368.x;
+    p.y = _368.y;
+    p.z = _368.z;
+    v_world = vec3(dot(pc.model_x, p), dot(pc.model_y, p), dot(pc.model_z, p));
+    v_uv = in_uv;
+    v_alpha = in_color.w * in_tint.w;
+    gl_Position = pc.light_vp * vec4(v_world, 1.0);
+#ifdef FIZMO_GL_DEPTH_FIXUP
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+#endif
+}
+)fizmo_glsl",
+};
+
+inline constexpr ::fizmo::gpu::GlslBinding kShadowInstancedMat3DVertBindings[] = {
+    { "MaterialMaps", ::fizmo::gpu::GlslResource::UniformBlock, 0, 1, 1 },
+    { "Push", ::fizmo::gpu::GlslResource::PushBlock, 0, 0, 1 },
+};
+
+inline ::fizmo::gpu::ShaderDesc shadow_instanced_mat_vert() noexcept {
+    ::fizmo::gpu::ShaderDesc d;
+    d.stage         = ::fizmo::gpu::ShaderStage::Vertex;
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kShadowInstancedMat3DVert, sizeof(::fizmo::graphics::detail::gfx::kShadowInstancedMat3DVert) / sizeof(std::uint32_t) };
+    d.glsl          = kShadowInstancedMat3DVert;
+    d.glsl_pieces   = sizeof(kShadowInstancedMat3DVert) / sizeof(kShadowInstancedMat3DVert[0]);
+    d.glsl_version  = kShadowInstancedMat3DVertVersion;
+    d.glsl_bindings = { kShadowInstancedMat3DVertBindings, 2 };
+    d.name          = "shadow_instanced_mat.vert";
+    return d;
+}
+
+inline constexpr int kShadowCutout3DFragVersion = 410;
+
+inline constexpr const char* kShadowCutout3DFrag[] = {
+R"fizmo_glsl(layout(std140) uniform MaterialMaps
+{
+    vec4 albedo_u;
+    vec4 albedo_v;
+    vec4 normal_u;
+    vec4 normal_v;
+    vec4 orm_u;
+    vec4 orm_v;
+    vec4 emissive_u;
+    vec4 emissive_v;
+    vec4 opacity_u;
+    vec4 opacity_v;
+    vec4 params;
+    uvec4 flags;
+    vec4 soft;
+    vec4 splat;
+    vec4 atlas;
+    vec4 tiling[2];
+    vec4 tints[8];
+    vec4 splat_u;
+    vec4 splat_v;
+    vec4 wind;
+    vec4 wind_shape;
+    vec4 wind_air;
+} maps;
+
+layout(std140) uniform Push
+{
+    layout(row_major) mat4 light_vp;
+    vec4 model_x;
+    vec4 model_y;
+    vec4 model_z;
+    vec4 light;
+} pc;
+
+uniform sampler2D tex;
+uniform sampler2D opacity_map;
+
+layout(location = 2) in vec2 v_uv;
+layout(location = 3) in float v_alpha;
+layout(location = 0) in vec3 v_world;
+layout(location = 1) in vec3 v_normal;
+
+vec2 map_uv(vec4 u, vec4 v)
+{
+    vec3 p = vec3(v_uv, 1.0);
+    return vec2(dot(u.xyz, p), dot(v.xyz, p));
+}
+
+void cutout()
+{
+    uint mf = maps.flags.x;
+    if ((mf & 128u) == 0u)
+    {
+        return;
+    }
+    vec4 _69;
+    if ((mf & 64u) != 0u)
+    {
+        vec4 param = maps.albedo_u;
+        vec4 param_1 = maps.albedo_v;
+        _69 = texture(tex, map_uv(param, param_1));
+    }
+    else
+    {
+        _69 = texture(tex, v_uv);
+    }
+    float a = _69.w;
+    if ((mf & 8u) != 0u)
+    {
+        vec4 param_2 = maps.opacity_u;
+        vec4 param_3 = maps.opacity_v;
+        a *= texture(opacity_map, map_uv(param_2, param_3)).x;
+    }
+    if ((a * v_alpha) < maps.params.y)
+    {
+        discard;
+    }
+}
+
+void main()
+{
+    cutout();
+}
+)fizmo_glsl",
+};
+
+inline constexpr ::fizmo::gpu::GlslBinding kShadowCutout3DFragBindings[] = {
+    { "tex", ::fizmo::gpu::GlslResource::Texture, 0, 0, 1 },
+    { "opacity_map", ::fizmo::gpu::GlslResource::Texture, 0, 5, 1 },
+    { "MaterialMaps", ::fizmo::gpu::GlslResource::UniformBlock, 0, 1, 1 },
+    { "Push", ::fizmo::gpu::GlslResource::PushBlock, 0, 0, 1 },
+};
+
+inline ::fizmo::gpu::ShaderDesc shadow_cutout_frag() noexcept {
+    ::fizmo::gpu::ShaderDesc d;
+    d.stage         = ::fizmo::gpu::ShaderStage::Fragment;
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kShadowCutout3DFrag, sizeof(::fizmo::graphics::detail::gfx::kShadowCutout3DFrag) / sizeof(std::uint32_t) };
+    d.glsl          = kShadowCutout3DFrag;
+    d.glsl_pieces   = sizeof(kShadowCutout3DFrag) / sizeof(kShadowCutout3DFrag[0]);
+    d.glsl_version  = kShadowCutout3DFragVersion;
+    d.glsl_bindings = { kShadowCutout3DFragBindings, 4 };
+    d.name          = "shadow_cutout.frag";
+    return d;
+}
+
+inline constexpr int kShadowCutoutPoint3DFragVersion = 410;
+
+inline constexpr const char* kShadowCutoutPoint3DFrag[] = {
+R"fizmo_glsl(layout(std140) uniform MaterialMaps
+{
+    vec4 albedo_u;
+    vec4 albedo_v;
+    vec4 normal_u;
+    vec4 normal_v;
+    vec4 orm_u;
+    vec4 orm_v;
+    vec4 emissive_u;
+    vec4 emissive_v;
+    vec4 opacity_u;
+    vec4 opacity_v;
+    vec4 params;
+    uvec4 flags;
+    vec4 soft;
+    vec4 splat;
+    vec4 atlas;
+    vec4 tiling[2];
+    vec4 tints[8];
+    vec4 splat_u;
+    vec4 splat_v;
+    vec4 wind;
+    vec4 wind_shape;
+    vec4 wind_air;
+} maps;
+
+layout(std140) uniform Push
+{
+    layout(row_major) mat4 light_vp;
+    vec4 model_x;
+    vec4 model_y;
+    vec4 model_z;
+    vec4 light;
+} pc;
+
+uniform sampler2D tex;
+uniform sampler2D opacity_map;
+
+layout(location = 2) in vec2 v_uv;
+layout(location = 3) in float v_alpha;
+layout(location = 0) in vec3 v_world;
+layout(location = 1) in vec3 v_normal;
+
+vec2 map_uv(vec4 u, vec4 v)
+{
+    vec3 p = vec3(v_uv, 1.0);
+    return vec2(dot(u.xyz, p), dot(v.xyz, p));
+}
+
+void cutout()
+{
+    uint mf = maps.flags.x;
+    if ((mf & 128u) == 0u)
+    {
+        return;
+    }
+    vec4 _69;
+    if ((mf & 64u) != 0u)
+    {
+        vec4 param = maps.albedo_u;
+        vec4 param_1 = maps.albedo_v;
+        _69 = texture(tex, map_uv(param, param_1));
+    }
+    else
+    {
+        _69 = texture(tex, v_uv);
+    }
+    float a = _69.w;
+    if ((mf & 8u) != 0u)
+    {
+        vec4 param_2 = maps.opacity_u;
+        vec4 param_3 = maps.opacity_v;
+        a *= texture(opacity_map, map_uv(param_2, param_3)).x;
+    }
+    if ((a * v_alpha) < maps.params.y)
+    {
+        discard;
+    }
+}
+
+void main()
+{
+    cutout();
+    vec3 d = v_world - pc.light.xyz;
+    if (dot(v_normal, d) > 0.0)
+    {
+        discard;
+    }
+    gl_FragDepth = clamp(length(d) / pc.light.w, 0.0, 1.0);
+}
+)fizmo_glsl",
+};
+
+inline constexpr ::fizmo::gpu::GlslBinding kShadowCutoutPoint3DFragBindings[] = {
+    { "tex", ::fizmo::gpu::GlslResource::Texture, 0, 0, 1 },
+    { "opacity_map", ::fizmo::gpu::GlslResource::Texture, 0, 5, 1 },
+    { "MaterialMaps", ::fizmo::gpu::GlslResource::UniformBlock, 0, 1, 1 },
+    { "Push", ::fizmo::gpu::GlslResource::PushBlock, 0, 0, 1 },
+};
+
+inline ::fizmo::gpu::ShaderDesc shadow_cutout_point_frag() noexcept {
+    ::fizmo::gpu::ShaderDesc d;
+    d.stage         = ::fizmo::gpu::ShaderStage::Fragment;
+    d.spirv         = { ::fizmo::graphics::detail::gfx::kShadowCutoutPoint3DFrag, sizeof(::fizmo::graphics::detail::gfx::kShadowCutoutPoint3DFrag) / sizeof(std::uint32_t) };
+    d.glsl          = kShadowCutoutPoint3DFrag;
+    d.glsl_pieces   = sizeof(kShadowCutoutPoint3DFrag) / sizeof(kShadowCutoutPoint3DFrag[0]);
+    d.glsl_version  = kShadowCutoutPoint3DFragVersion;
+    d.glsl_bindings = { kShadowCutoutPoint3DFragBindings, 4 };
+    d.name          = "shadow_cutout_point.frag";
     return d;
 }
 

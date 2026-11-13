@@ -303,6 +303,18 @@ struct AmbientOcclusion3D {
     static AmbientOcclusion3D strong() noexcept { AmbientOcclusion3D a; a.enabled = true; a.radius = 1.25f; a.strength = 1.4f; a.samples = 16; return a; }
 };
 
+struct Wind3D {
+    linalg::vector3d direction{ 1.0, 0.0, 0.0 };
+    float            strength = 0.0f;
+    float            gustiness = 0.5f;
+    float            speed = 1.0f;
+
+    static Wind3D calm() noexcept { return {}; }
+    static Wind3D breeze(const linalg::vector3d& dir = { 1.0, 0.0, 0.0 }) noexcept { Wind3D w; w.direction = dir; w.strength = 0.35f; return w; }
+    static Wind3D gale(const linalg::vector3d& dir = { 1.0, 0.0, 0.0 }) noexcept { Wind3D w; w.direction = dir; w.strength = 1.0f; w.gustiness = 0.8f; w.speed = 1.6f; return w; }
+    bool active() const noexcept { return strength > 0.0f; }
+};
+
 struct SceneLighting3D {
     static constexpr std::size_t MAX_POINT_LIGHTS = 64;
 
@@ -336,6 +348,7 @@ struct SceneLighting3D {
     ToneMap3D      tone_map;
     AmbientOcclusion3D ambient_occlusion;
     double         time = 0.0;
+    Wind3D         wind;
 
     std::vector<PointLight3D> point_lights;
 

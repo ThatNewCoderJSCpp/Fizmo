@@ -347,6 +347,12 @@ bool Model3D::load_gltf_doc(GltfContext& g, Model3D& m, const ModelImportOptions
         if (alpha == "MASK") mm.alpha_cutoff = mat["alphaCutoff"].as_float(0.5f);
         mm.double_sided = mat["doubleSided"].as_bool();
         mm.unlit = mat["extensions"].has("KHR_materials_unlit");
+        if (mat["extensions"].has("KHR_materials_diffuse_transmission")) mm.translucency = static_cast<float>(mat["extensions"]["KHR_materials_diffuse_transmission"]["diffuseTransmissionFactor"].as_number(0.0));
+        if (mat.has("extras") && mat["extras"].has("wind")) {
+            mm.wind = static_cast<float>(mat["extras"]["wind"].as_number(0.0));
+            mm.wind_height = static_cast<float>(mat["extras"]["windHeight"].as_number(0.0));
+            mm.wind_flutter = static_cast<float>(mat["extras"]["windFlutter"].as_number(0.0));
+        }
         m.materials.push_back(mm);
     }
 
@@ -731,7 +737,10 @@ auto Model3D::material3d(int material, const Material3D* override_material) cons
     if (material < 0 || static_cast<std::size_t>(material) >= materials.size()) { if (!override_material) out.pbr = true; return out; }
     const ModelMaterial& mm = materials[static_cast<std::size_t>(material)];
     if (!out.texture) out.texture = texture_of(material);
-    if (override_material) return out;
+    if (override_material) {
+        if (!out.has_wind() && (mm.wind > 0.0f || mm.wind_flutter > 0.0f)) out.with_wind(mm.wind, mm.wind_height, mm.wind_flutter);
+        return out;
+    }
     out.pbr = !mm.unlit;
     out.lit = !mm.unlit;
     out.metallic = mm.metallic;
@@ -755,6 +764,8 @@ auto Model3D::material3d(int material, const Material3D* override_material) cons
         }
     }
     if (mm.alpha_cutoff > 0.0f && !mm.transparent) out.alpha_cutoff = mm.alpha_cutoff;
+    if (mm.translucency > 0.0f) out.translucency = mm.translucency;
+    if (mm.wind > 0.0f || mm.wind_flutter > 0.0f) out.with_wind(mm.wind, mm.wind_height, mm.wind_flutter);
     return out;
 }
 

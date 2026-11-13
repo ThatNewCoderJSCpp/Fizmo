@@ -91,6 +91,10 @@ struct ModelMaterial {
     float       metallic_factor    = 1.0f;
     float       roughness_factor   = 1.0f;
     float       emissive_map_strength = 0.0f;
+    float       translucency = 0.0f;
+    float       wind = 0.0f;
+    float       wind_height = 0.0f;
+    float       wind_flutter = 0.0f;
 };
 
 struct ModelPrimitive {

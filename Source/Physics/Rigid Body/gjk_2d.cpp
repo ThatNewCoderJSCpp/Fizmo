@@ -1,12 +1,16 @@
 #include "fizmo_library.hpp"
 #include "gjk_2d.hpp"
 
+#include <limits>
+
 namespace fizmo {
 namespace physics {
 
 namespace {
 
 using V2 = RVec2;
+
+constexpr Real kGjkTolerance = std::numeric_limits<Real>::epsilon() * 32.0_r > 1e-12_r ? std::numeric_limits<Real>::epsilon() * 32.0_r : 1e-12_r;
 
 Real dot2(const V2& a, const V2& b) noexcept { return a.x * b.x + a.y * b.y; }
 Real cross2(const V2& a, const V2& b) noexcept { return a.x * b.y - a.y * b.x; }
@@ -226,9 +230,9 @@ DistanceOutput2D gjk_distance(const ConvexProxy2D& a, const ConvexProxy2D& b, in
         nv.w = nv.b - nv.a;
         bool duplicate = false;
         for (int i = 0; i < saved_count; ++i) {
-            if (len_sq(saved[i].w - nv.w) < 1e-24_r) duplicate = true;
+            if (len_sq(saved[i].w - nv.w) <= kGjkTolerance * kGjkTolerance * std::max(1.0_r, len_sq(nv.w))) duplicate = true;
         }
-        if (duplicate || dot2(p, p) - dot2(p, nv.w) <= 1e-12_r * std::max(1.0_r, dot2(p, p))) break;
+        if (duplicate || dot2(p, p) - dot2(p, nv.w) <= kGjkTolerance * std::max(1.0_r, dot2(p, p))) break;
         s.v[s.count++] = nv;
     }
     out.iterations = it;

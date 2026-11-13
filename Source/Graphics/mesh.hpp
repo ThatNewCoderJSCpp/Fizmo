@@ -205,6 +205,11 @@ struct Material3D {
     bool           triplanar     = false;
     float          triplanar_scale = 1.0f;
     float          triplanar_sharpness = 4.0f;
+    float          translucency  = 0.0f;
+    float          wind          = 0.0f;
+    float          wind_height   = 0.0f;
+    float          wind_flutter  = 0.0f;
+    float          wind_phase    = 0.0f;
 
     static constexpr int MAX_SPLAT_LAYERS = 8;
 
@@ -267,6 +272,11 @@ struct Material3D {
     Material3D& with_emissive_map(const Texture& t) noexcept { pbr = true; emissive_map = &t; return *this; }
     Material3D& with_opacity_map(const Texture& t) noexcept { opacity_map = &t; return *this; }
     Material3D& with_alpha_cutoff(float cutoff) noexcept { alpha_cutoff = cutoff; return *this; }
+    Material3D& with_translucency(float amount) noexcept { translucency = amount < 0.0f ? 0.0f : (amount > 1.0f ? 1.0f : amount); return *this; }
+    Material3D& with_wind(float sway, float height = 0.0f, float flutter = 0.0f) noexcept { wind = sway < 0.0f ? 0.0f : sway; wind_height = height < 0.0f ? 0.0f : height; wind_flutter = flutter < 0.0f ? 0.0f : flutter; return *this; }
+    Material3D& with_wind_phase(float phase) noexcept { wind_phase = phase; return *this; }
+    bool has_wind() const noexcept { return wind > 0.0f || wind_flutter > 0.0f; }
+    bool has_cutout() const noexcept { return alpha_cutoff > 0.0f && ((texture && texture->valid()) || (opacity_map && opacity_map->valid())); }
     Material3D& with_uv(const UvTransform& t) noexcept { uv = t; return *this; }
     Material3D& with_tiling(float u, float v) noexcept { uv.scale_u = u; uv.scale_v = v; return *this; }
     Material3D& with_triplanar(float scale = 1.0f, float sharpness = 4.0f) noexcept { triplanar = true; triplanar_scale = scale; triplanar_sharpness = sharpness; return *this; }
@@ -291,7 +301,7 @@ struct Material3D {
     bool has_soft() const noexcept { return soft && blend != Blend3D::Opaque && (soft_distance > 0.0f || soft_near_fade > 0.0f); }
 
     bool has_maps() const noexcept {
-        return normal_map || orm_map || emissive_map || opacity_map || alpha_cutoff > 0.0f || triplanar || !uv.is_identity();
+        return normal_map || orm_map || emissive_map || opacity_map || alpha_cutoff > 0.0f || triplanar || translucency > 0.0f || wind > 0.0f || wind_flutter > 0.0f || !uv.is_identity();
     }
 
     bool visible()        const noexcept { return shadow != Shadow3D::CastOnly; }
