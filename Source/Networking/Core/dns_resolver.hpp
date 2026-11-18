@@ -25,8 +25,8 @@ public:
         AddressFamily family;
         unsigned int port;
 
-        AddressInfo(const std::string& addr, AddressFamily fam, const unsigned int p = 0)
-            : address(addr), family(fam), port(p) {}
+        AddressInfo(std::string addr, AddressFamily fam, const unsigned int p = 0)
+            : address(std::move(addr)), family(fam), port(p) {}
     };
 
 private:
@@ -39,9 +39,9 @@ private:
 public:
     DNSResult() : m_error(ErrorCode::Success), m_duration(0) {}
 
-    DNSResult(const std::string& hostname, const std::vector<AddressInfo>& addresses);
+    DNSResult(std::string hostname, std::vector<AddressInfo> addresses);
 
-    DNSResult(const std::string& hostname, const SocketError& error);
+    DNSResult(std::string hostname, const SocketError& error);
 
 public:
     bool is_success() const noexcept { return m_error.is_success() && !m_addresses.empty(); }
@@ -137,9 +137,9 @@ public:
 
     void clear_cache();
 
-    void add_dns_server(const std::string& server) {
+    void add_dns_server(std::string server) {
         std::lock_guard<std::mutex> lock(m_resolver_mutex);
-        m_dns_servers.push_back(server);
+        m_dns_servers.push_back(std::move(server));
     }
 
     void clear_dns_servers() {

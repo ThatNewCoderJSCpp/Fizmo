@@ -512,9 +512,9 @@ public:
 
     std::string clipboard();
 
-    void set_clipboard(const std::string& s) {
-        m_clipboard = s;
-        if (m_window) m_window->set_clipboard_text(s);
+    void set_clipboard(std::string s) {
+        m_clipboard = std::move(s);
+        if (m_window) m_window->set_clipboard_text(m_clipboard);
     }
 
     void defer(std::function<void()> fn) { m_deferred.push_back(std::move(fn)); }

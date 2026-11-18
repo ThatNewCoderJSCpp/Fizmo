@@ -65,7 +65,7 @@ private:
     static unsigned char paeth_predictor(int a, int b, int c);
 
 public:
-    PNGtoBMPConverter(const std::string& png_path) : m_input_path(png_path) {}
+    PNGtoBMPConverter(std::string png_path) : m_input_path(std::move(png_path)) {}
     
     bool convert_to_bmp(const std::string& output_path);
 

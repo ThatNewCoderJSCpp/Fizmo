@@ -10,7 +10,7 @@ auto NetworkAddress::detect_family(const std::string& host) -> AddressFamily {
     return AddressFamily::IPv4;
 }
 
-NetworkAddress::NetworkAddress(const std::string& host, std::uint16_t port, AddressFamily family) : m_host(host), m_port(port), m_family(family == AddressFamily::Any ? detect_family(host) : family) {}
+NetworkAddress::NetworkAddress(std::string host, std::uint16_t port, AddressFamily family) : m_host(std::move(host)), m_port(port), m_family(family == AddressFamily::Any ? detect_family(m_host) : family) {}
 
 auto NetworkAddress::operator=(const NetworkAddress& other) -> NetworkAddress& {
     if (this != &other) {

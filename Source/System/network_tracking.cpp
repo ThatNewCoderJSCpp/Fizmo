@@ -355,9 +355,9 @@ void NetworkTracking::probe(NetworkSample& s) {
     s.latency_failed = m_last_failed;
 }
 
-void NetworkTracking::set_latency_target(const std::string& host, std::uint16_t port, std::chrono::milliseconds every, std::chrono::milliseconds timeout) {
+void NetworkTracking::set_latency_target(std::string host, std::uint16_t port, std::chrono::milliseconds every, std::chrono::milliseconds timeout) {
     std::lock_guard<std::mutex> lk(m_target_mutex);
-    m_host = host;
+    m_host = std::move(host);
     m_port = std::to_string(port);
     m_probe_every = every;
     m_probe_timeout = timeout;

@@ -64,7 +64,7 @@ public:
 
     void register_type(const std::string& type, Lookup lookup);
     void add_rule(const std::string& type, Rule rule);
-    void set_admin_role(const std::string& role);
+    void set_admin_role(std::string role);
     void on_deny(DenyCallback cb);
 
     AccessDecision check(const Principal& who, const std::string& type, const std::string& id, Action action) const;

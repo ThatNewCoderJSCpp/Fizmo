@@ -29,7 +29,7 @@ private:
     void feed_gestures(const WindowEvent& e) noexcept;
 
 public:
-    Window(unsigned int w, unsigned int h, const std::string& t, const colors::Color& background_color = colors::Color()) noexcept;
+    Window(unsigned int w, unsigned int h, std::string t, const colors::Color& background_color = colors::Color()) noexcept;
 
     ~Window() = default;
 
@@ -49,9 +49,9 @@ public:
     const fizmo::colors::Color& background_color() const noexcept { return m_color; }
     WindowEventHandler& event_handler() noexcept { return m_event_handler; }
 
-    void set_title(const std::string& title) noexcept {
-        m_title = title;
-        m_impl->set_title(title);
+    void set_title(std::string title) noexcept {
+        m_title = std::move(title);
+        m_impl->set_title(m_title);
     }
 
     void set_background_color(const fizmo::colors::Color& color) noexcept {

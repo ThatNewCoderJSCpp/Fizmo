@@ -61,8 +61,8 @@ std::string HandshakeResult::to_string() const {
     return s;
 }
 
-TLSHandshake::TLSHandshake(TLSContext& ctx, HandshakeRole role, const std::string& hostname) noexcept
-    : m_ctx(ctx), m_active(&ctx), m_role(role), m_hostname(hostname), m_state(HandshakeState::NotStarted), m_verify(VerifyResult::success()) {}
+TLSHandshake::TLSHandshake(TLSContext& ctx, HandshakeRole role, std::string hostname) noexcept
+    : m_ctx(ctx), m_active(&ctx), m_role(role), m_hostname(std::move(hostname)), m_state(HandshakeState::NotStarted), m_verify(VerifyResult::success()) {}
 
 bool TLSHandshake::open_session(TLSContext& ctx) noexcept {
     m_active = &ctx;

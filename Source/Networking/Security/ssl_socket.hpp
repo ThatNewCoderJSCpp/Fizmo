@@ -80,9 +80,9 @@ public:
         std::lock_guard<std::mutex> lock(m_mutex);
         m_events_handler = std::move(handler);
     }
-    void set_session_key(const std::string& key) {
+    void set_session_key(std::string key) {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_session_key = key;
+        m_session_key = std::move(key);
     }
 
     bool peer_certificate(Certificate& out) const noexcept;

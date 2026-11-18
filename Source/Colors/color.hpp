@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include "../Basic/fizmo_defines.hpp"
+#include "../Util Hpp/util_functions.hpp"
 #include "../Random/random_std_int.hpp"
 
 namespace fizmo {

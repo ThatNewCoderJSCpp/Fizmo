@@ -5,11 +5,11 @@ namespace fizmo {
 namespace networking {
 namespace core {
 
-DNSResult::DNSResult(const std::string& hostname, const std::vector<AddressInfo>& addresses) : m_addresses(addresses), m_hostname(hostname), m_error(ErrorCode::Success), m_duration(0) {
+DNSResult::DNSResult(std::string hostname, std::vector<AddressInfo> addresses) : m_addresses(std::move(addresses)), m_hostname(std::move(hostname)), m_error(ErrorCode::Success), m_duration(0) {
     m_resolve_time = std::chrono::steady_clock::now();
 }
 
-DNSResult::DNSResult(const std::string& hostname, const SocketError& error) : m_hostname(hostname), m_error(error), m_duration(0) {
+DNSResult::DNSResult(std::string hostname, const SocketError& error) : m_hostname(std::move(hostname)), m_error(error), m_duration(0) {
     m_resolve_time = std::chrono::steady_clock::now();
 }
 

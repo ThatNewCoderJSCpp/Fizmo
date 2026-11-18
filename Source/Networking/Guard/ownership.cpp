@@ -30,9 +30,9 @@ void OwnershipGuard::add_rule(const std::string& type, Rule rule) {
     m_types[type].rules.push_back(std::move(rule));
 }
 
-void OwnershipGuard::set_admin_role(const std::string& role) {
+void OwnershipGuard::set_admin_role(std::string role) {
     std::lock_guard<std::mutex> lk(m_mutex);
-    m_admin_role = role;
+    m_admin_role = std::move(role);
 }
 
 void OwnershipGuard::on_deny(DenyCallback cb) {

@@ -49,7 +49,7 @@ void Window::feed_gestures(const WindowEvent& e) noexcept {
     } catch (...) {}
 }
 
-Window::Window(unsigned int w, unsigned int h, const std::string& t, const colors::Color& background_color) noexcept : m_width(w), m_height(h), m_title(t), m_color(background_color) {
+Window::Window(unsigned int w, unsigned int h, std::string t, const colors::Color& background_color) noexcept : m_width(w), m_height(h), m_title(std::move(t)), m_color(background_color) {
     try { m_impl = detail::make_window_impl(this, background_color); } catch (...) {}
 }
 

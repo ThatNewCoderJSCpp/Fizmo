@@ -5,7 +5,7 @@ namespace fizmo {
 namespace networking {
 namespace core {
 
-SocketError::SocketError(ErrorCode code, const std::string& message, int native_error_code, const std::string& operation) noexcept : m_code(code), m_message(message), m_severity(get_severity_for_code(code)), m_native_error_code(native_error_code), m_operation(operation) {}
+SocketError::SocketError(ErrorCode code, std::string message, int native_error_code, std::string operation) noexcept : m_code(code), m_message(std::move(message)), m_severity(get_severity_for_code(code)), m_native_error_code(native_error_code), m_operation(std::move(operation)) {}
 
 auto SocketError::get_severity_for_code(ErrorCode code) -> ErrorSeverity {
     static const std::map<ErrorCode, ErrorSeverity> severity_map = {

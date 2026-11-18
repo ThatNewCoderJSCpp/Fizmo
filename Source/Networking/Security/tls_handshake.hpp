@@ -69,7 +69,7 @@ struct HandshakeResult {
 
 class TLSHandshake {
 public:
-    TLSHandshake(TLSContext& ctx, HandshakeRole role, const std::string& hostname = {}) noexcept;
+    TLSHandshake(TLSContext& ctx, HandshakeRole role, std::string hostname = {}) noexcept;
     ~TLSHandshake() noexcept { m_session.close_session(); }
 
     TLSHandshake(const TLSHandshake&)            = delete;
@@ -81,7 +81,7 @@ public:
     void set_on_complete(std::function<void()> cb) { m_on_complete = std::move(cb); }
     void set_on_failed(std::function<void(HandshakeError, const std::string&)> cb) { m_on_failed = std::move(cb); }
     void set_verifier(std::shared_ptr<CertificateVerifier> v) { m_verifier = std::move(v); }
-    void set_session_key(const std::string& key) { m_session_key = key; }
+    void set_session_key(std::string key) { m_session_key = std::move(key); }
 
     HandshakeState     state()    const noexcept { return m_state; }
     HandshakeRole      role()     const noexcept { return m_role; }

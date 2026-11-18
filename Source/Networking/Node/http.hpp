@@ -138,7 +138,7 @@ private:
     std::uint64_t m_remaining = 0;
     std::size_t   m_trailer_size = 0;
 
-    bool fail(int status, const std::string& message);
+    bool fail(int status, std::string message);
     bool take_line(const std::uint8_t* data, std::size_t len, std::size_t& i, std::string& out, bool& complete);
     bool parse_start_line(const std::string& line);
     bool parse_header_line(const std::string& line, Headers& into);

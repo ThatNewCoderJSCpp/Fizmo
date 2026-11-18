@@ -484,14 +484,34 @@ public:
     std::string to_string(unsigned base = 10) const {
         if (base < 2 || base > 36) return "";
         if (is_zero()) return "0";
-        umag tmp(*this);
         std::string s;
 
+        if (highest_bit() < 64) {
+            std::uint64_t small = get_lowest_bits();
+            while (small != 0) {
+                const unsigned d = static_cast<unsigned>(small % base);
+                s += (d < 10) ? char('0' + d) : char('a' + (d - 10));
+                small /= base;
+            }
+            for (std::size_t i = 0, j = s.size(); i < j; ++i, --j) { char t = s[i]; s[i] = s[j - 1]; s[j - 1] = t; }
+            return s;
+        }
+
+        std::uint32_t chunk = base;
+        unsigned per_chunk = 1;
+        while (static_cast<std::uint64_t>(chunk) * base <= 0xFFFFFFFFull) { chunk *= base; ++per_chunk; }
+
+        umag tmp(*this);
         while (!tmp.is_zero()) {
             umag q;
-            const unsigned d = static_cast<unsigned>(tmp.divmod_small(static_cast<std::uint32_t>(base), 0u, q));
-            s += (d < 10) ? char('0' + d) : char('a' + (d - 10));
+            std::uint32_t r = tmp.divmod_small(chunk, 0u, q);
             tmp = q;
+            const bool last = tmp.is_zero();
+            for (unsigned k = 0; k < per_chunk && (!last || r != 0); ++k) {
+                const unsigned d = static_cast<unsigned>(r % base);
+                s += (d < 10) ? char('0' + d) : char('a' + (d - 10));
+                r /= base;
+            }
         }
 
         for (std::size_t i = 0, j = s.size(); i < j; ++i, --j) { char t = s[i]; s[i] = s[j - 1]; s[j - 1] = t; }

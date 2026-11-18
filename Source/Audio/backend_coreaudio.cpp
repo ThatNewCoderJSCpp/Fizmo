@@ -472,9 +472,9 @@ private:
         return id != kAudioObjectUnknown && device_alive(id);
     }
 
-    void set_name(const std::string& name) {
+    void set_name(std::string name) {
         std::lock_guard<std::mutex> lock(m_name_mutex);
-        m_device_name = name;
+        m_device_name = std::move(name);
     }
 
     bool setup(std::string& error) {

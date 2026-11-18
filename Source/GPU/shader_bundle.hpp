@@ -127,7 +127,7 @@ private:
 public:
     ShaderCompiler() : m_tool(default_tool()) {}
 
-    void set_tool(const std::string& tool) { m_tool = tool; }
+    void set_tool(std::string tool) { m_tool = std::move(tool); }
     void set_versions(int gl_version, int compute_version) noexcept { m_gl_version = gl_version; m_compute_version = compute_version; }
     const std::string& tool() const noexcept { return m_tool; }
     bool available() const { return !m_tool.empty(); }

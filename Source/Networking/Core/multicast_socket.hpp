@@ -66,7 +66,7 @@ public:
 
     void set_loopback(bool enable) noexcept;
 
-    void set_interface(const std::string& local_interface) noexcept;
+    void set_interface(std::string local_interface) noexcept;
 
     void set_blocking(bool blocking) noexcept {
         std::lock_guard<std::mutex> lock(m_mutex);

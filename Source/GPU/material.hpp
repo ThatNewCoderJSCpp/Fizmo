@@ -108,8 +108,8 @@ private:
 
     static bool vertex_format(const ShaderInput& in, Format& out, std::uint32_t& size) noexcept;
 
-    Result fail(Result r, const std::string& why) {
-        m_error = why;
+    Result fail(Result r, std::string why) {
+        m_error = std::move(why);
         return r;
     }
 

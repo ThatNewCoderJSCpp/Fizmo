@@ -23,7 +23,7 @@ private:
     bool decompress_jpeg();
 
 public:
-    JPEGtoBMPConverter(const std::string& jpeg_path) : m_input_path(jpeg_path) {}
+    JPEGtoBMPConverter(std::string jpeg_path) : m_input_path(std::move(jpeg_path)) {}
 
     fizmo::images::BitmapImage convert_to_bmp();
 

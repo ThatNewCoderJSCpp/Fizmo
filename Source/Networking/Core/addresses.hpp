@@ -22,7 +22,7 @@ private:
     static AddressFamily detect_family(const std::string& host);
 
 public:
-    NetworkAddress(const std::string& host = "127.0.0.1", std::uint16_t port = 8080, AddressFamily family = AddressFamily::Any);
+    NetworkAddress(std::string host = "127.0.0.1", std::uint16_t port = 8080, AddressFamily family = AddressFamily::Any);
     NetworkAddress(const NetworkAddress& other) : m_host(other.m_host), m_port(other.m_port), m_family(other.m_family) {}
     NetworkAddress(NetworkAddress&& other) noexcept : m_host(std::move(other.m_host)), m_port(other.m_port), m_family(other.m_family) {}
 

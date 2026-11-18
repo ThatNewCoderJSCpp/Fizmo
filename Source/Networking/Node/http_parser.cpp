@@ -266,10 +266,10 @@ void Parser::reset() {
     m_trailer_size = 0;
 }
 
-bool Parser::fail(int status, const std::string& message) {
+bool Parser::fail(int status, std::string message) {
     m_state = State::Error;
     m_error_status = status;
-    m_error_message = message;
+    m_error_message = std::move(message);
     return false;
 }
 

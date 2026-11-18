@@ -64,7 +64,7 @@ private:
     std::string m_operation;
 
 public:
-    SocketError(ErrorCode code = ErrorCode::Success, const std::string& message = "", int native_error_code = 0, const std::string& operation = "") 
+    SocketError(ErrorCode code = ErrorCode::Success, std::string message = "", int native_error_code = 0, std::string operation = "") 
         noexcept;
 
 public:

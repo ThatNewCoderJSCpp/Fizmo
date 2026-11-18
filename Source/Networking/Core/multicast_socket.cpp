@@ -59,10 +59,10 @@ void MulticastSocket::set_loopback(bool enable) noexcept {
     m_socket.set_multicast_loopback(enable);
 }
 
-void MulticastSocket::set_interface(const std::string& local_interface) noexcept {
+void MulticastSocket::set_interface(std::string local_interface) noexcept {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_local_interface = local_interface;
-    m_socket.set_multicast_interface(local_interface);
+    m_local_interface = std::move(local_interface);
+    m_socket.set_multicast_interface(m_local_interface);
 }
 
 void MulticastSocket::leave_all_unlocked() noexcept {

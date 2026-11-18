@@ -23,7 +23,7 @@ public:
     CertificateVerifier& operator=(CertificateVerifier&&)      = default;
 
 public:
-    void set_ca_store_path(const std::string& path) { m_ca_store_path = path; }
+    void set_ca_store_path(std::string path) { m_ca_store_path = std::move(path); }
     const std::string& ca_store_path() const noexcept { return m_ca_store_path; }
 
     void set_check_revocation(bool enable) noexcept { m_check_revocation = enable; }

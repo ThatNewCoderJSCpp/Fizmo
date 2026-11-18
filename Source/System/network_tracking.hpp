@@ -192,7 +192,7 @@ public:
 
     ~NetworkTracking();
 
-    void set_latency_target(const std::string& host, std::uint16_t port = 443, std::chrono::milliseconds every = std::chrono::milliseconds(2000), std::chrono::milliseconds timeout = std::chrono::milliseconds(1000));
+    void set_latency_target(std::string host, std::uint16_t port = 443, std::chrono::milliseconds every = std::chrono::milliseconds(2000), std::chrono::milliseconds timeout = std::chrono::milliseconds(1000));
 
     void clear_latency_target() {
         std::lock_guard<std::mutex> lk(m_target_mutex);

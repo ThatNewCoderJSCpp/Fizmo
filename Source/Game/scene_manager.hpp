@@ -40,8 +40,8 @@ public:
 
 class Layer {
 public:
-    explicit Layer(const std::string& name = "", int z = 0) noexcept : m_name(name), m_z_order(z) {}
-    Layer(const std::string& name, int z, unsigned int vp_w, unsigned int vp_h) noexcept : m_name(name), m_z_order(z), m_camera(0.0, 0.0, vp_w, vp_h) {}
+    explicit Layer(std::string name = "", int z = 0) noexcept : m_name(std::move(name)), m_z_order(z) {}
+    Layer(std::string name, int z, unsigned int vp_w, unsigned int vp_h) noexcept : m_name(std::move(name)), m_z_order(z), m_camera(0.0, 0.0, vp_w, vp_h) {}
 
     const std::string& name()    const noexcept { return m_name; }
     void set_name(const std::string& n) noexcept { m_name = n; }
