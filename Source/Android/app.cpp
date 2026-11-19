@@ -16,6 +16,7 @@
 #include <android/window.h>
 #include <jni.h>
 
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <time.h>
@@ -1040,7 +1041,17 @@ void app_thread(AppState* s) {
         if (cache.empty()) cache = data;
         try { fizmo::system::paths::set_app_directories(data, cache, external); } catch (...) {}
     }
-    s->sensor_manager = ASensorManager_getInstanceForPackage(s->package.empty() ? nullptr : s->package.c_str());
+    {
+        using GetForPackage = ASensorManager* (*)(const char*);
+        auto for_package = reinterpret_cast<GetForPackage>(dlsym(RTLD_DEFAULT, "ASensorManager_getInstanceForPackage"));
+        if (for_package) {
+            s->sensor_manager = for_package(s->package.empty() ? nullptr : s->package.c_str());
+        } else {
+            using GetDefault = ASensorManager* (*)();
+            auto fallback = reinterpret_cast<GetDefault>(dlsym(RTLD_DEFAULT, "ASensorManager_getInstance"));
+            s->sensor_manager = fallback ? fallback() : nullptr;
+        }
+    }
     if (s->sensor_manager) s->sensor_queue = ASensorManager_createEventQueue(s->sensor_manager, s->looper, kLooperSensor, nullptr, nullptr);
     {
         std::lock_guard<std::mutex> lock(s->mutex);
