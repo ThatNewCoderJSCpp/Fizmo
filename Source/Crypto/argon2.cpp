@@ -377,13 +377,40 @@ bool argon2_decode(const std::string& encoded, Argon2Params& params, std::vector
     return true;
 }
 
-std::string hash_password(const std::string& password, const Argon2Params& params) {
-    std::vector<std::uint8_t> salt(params.salt_length < 8 ? 16 : params.salt_length);
+namespace {
+
+void check_pepper(const std::string& pepper) {
+    if (pepper.size() < min_pepper_length) throw std::invalid_argument("the pepper has to be at least 16 bytes; generate_key() makes a 32-byte one");
+}
+
+std::string hash_with(const std::string& password, const Argon2Params& params, const std::string& pepper) {
+    if (params.salt_length < min_salt_length || params.salt_length > max_salt_length) throw std::invalid_argument("the salt length has to be from 8 to 1024 bytes");
+    std::vector<std::uint8_t> salt(params.salt_length);
     random_bytes(salt.data(), salt.size());
-    std::vector<std::uint8_t> hash = argon2(params, password.data(), password.size(), salt.data(), salt.size());
+    std::vector<std::uint8_t> hash = argon2(params, password.data(), password.size(), salt.data(), salt.size(), pepper.data(), pepper.size());
     std::string out = argon2_encode(params, salt, hash);
     secure_zero(hash.data(), hash.size());
+    secure_zero(salt.data(), salt.size());
     return out;
+}
+
+bool verify_with(const std::string& password, const std::string& encoded, const std::string& pepper) {
+    Argon2Params p;
+    std::vector<std::uint8_t> salt;
+    std::vector<std::uint8_t> expected;
+    if (!argon2_decode(encoded, p, salt, expected)) return false;
+    if (salt.size() > max_salt_length || expected.size() > 1024) return false;
+    if (p.memory_kib > verify_memory_limit_kib || p.iterations > verify_iteration_limit || p.parallelism > verify_parallelism_limit) return false;
+    std::vector<std::uint8_t> got = argon2(p, password.data(), password.size(), salt.data(), salt.size(), pepper.data(), pepper.size());
+    const bool same = got.size() == expected.size() && secure_compare(got.data(), expected.data(), got.size());
+    secure_zero(got.data(), got.size());
+    return same;
+}
+
+} // namespace
+
+std::string hash_password(const std::string& password, const Argon2Params& params) {
+    return hash_with(password, params, std::string());
 }
 
 std::string hash_password(const std::string& password, PasswordStrength strength) {
@@ -391,14 +418,28 @@ std::string hash_password(const std::string& password, PasswordStrength strength
 }
 
 bool verify_password(const std::string& password, const std::string& encoded) {
-    Argon2Params p;
-    std::vector<std::uint8_t> salt;
-    std::vector<std::uint8_t> expected;
-    if (!argon2_decode(encoded, p, salt, expected)) return false;
-    std::vector<std::uint8_t> got = argon2(p, password.data(), password.size(), salt.data(), salt.size());
-    const bool same = got.size() == expected.size() && secure_compare(got.data(), expected.data(), got.size());
-    secure_zero(got.data(), got.size());
-    return same;
+    return verify_with(password, encoded, std::string());
+}
+
+std::string hash_password(const std::string& password, const Argon2Params& params, const std::string& pepper) {
+    check_pepper(pepper);
+    return hash_with(password, params, pepper);
+}
+
+std::string hash_password(const std::string& password, PasswordStrength strength, const std::string& pepper) {
+    return hash_password(password, Argon2Params::of(strength), pepper);
+}
+
+bool verify_password(const std::string& password, const std::string& encoded, const std::string& pepper) {
+    if (pepper.size() < min_pepper_length) return false;
+    return verify_with(password, encoded, pepper);
+}
+
+std::string generate_salt(std::size_t length) {
+    if (length < min_salt_length || length > max_salt_length) throw std::invalid_argument("the salt length has to be from 8 to 1024 bytes");
+    std::string salt(length, '\0');
+    random_bytes(&salt[0], salt.size());
+    return salt;
 }
 
 bool password_needs_rehash(const std::string& encoded, const Argon2Params& params) {

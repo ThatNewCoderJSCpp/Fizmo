@@ -31,6 +31,8 @@ bool ok = fizmo::crypto::verify_password(attempt, stored);
 
 `Argon2Params` has `type` (`Argon2Type::d`, `i` or `id`), `memory_kib`, `iterations`, `parallelism` (lanes, run on that many threads), `hash_length` and `salt_length`. `password_needs_rehash(stored, params)` says whether a stored hash used weaker settings. `argon2(params, password, salt, secret, associated)` is the raw function, and `argon2_encode` and `argon2_decode` convert to and from the encoded form. Bad settings throw `std::invalid_argument`.
 
+Every hash gets a fresh salt from the system's secure random source, so two users with the same password get different hashes. `salt_length` must be 8 to 1024 bytes (16 is the default); anything else throws instead of being quietly replaced. `generate_salt(length)` gives a random salt for `argon2` or `derive_key`. A pepper is a server-side secret kept outside the database: `hash_password(password, params or strength, pepper)` and `verify_password(password, encoded, pepper)` mix it in as Argon2's secret input, so a leaked database alone can't be cracked. The pepper must be at least 16 bytes and isn't stored in the hash, so the same pepper is needed to verify. `verify_password` also refuses stored hashes that ask for more than 16 GiB, 1024 passes or 255 lanes, so a tampered hash can't stall the server.
+
 ## Encryption
 
 ```cpp

@@ -358,7 +358,7 @@ bool decrypt_with_password(const std::string& password, const std::string& seale
     params.iterations = load_le32(p + 9);
     params.parallelism = load_le32(p + 13);
     if (params.iterations < 1 || params.parallelism < 1 || params.parallelism > 0xFFFFFFU || params.memory_kib < 8ULL * params.parallelism) return false;
-    if (params.memory_kib > 16u * 1024u * 1024u || params.iterations > 1024) return false;
+    if (params.memory_kib > verify_memory_limit_kib || params.iterations > verify_iteration_limit || params.parallelism > verify_parallelism_limit) return false;
     const std::string header = sealed.substr(0, password_header);
     const std::string salt = sealed.substr(password_header - 16, 16);
     std::string key = derive_key(password, salt, params);

@@ -51,6 +51,21 @@ bool password_needs_rehash(const std::string& encoded, const Argon2Params& param
 
 bool password_needs_rehash(const std::string& encoded, PasswordStrength strength);
 
+std::string hash_password(const std::string& password, const Argon2Params& params, const std::string& pepper);
+
+std::string hash_password(const std::string& password, PasswordStrength strength, const std::string& pepper);
+
+bool verify_password(const std::string& password, const std::string& encoded, const std::string& pepper);
+
+std::string generate_salt(std::size_t length = 16);
+
+constexpr std::size_t min_salt_length = 8;
+constexpr std::size_t max_salt_length = 1024;
+constexpr std::size_t min_pepper_length = 16;
+constexpr std::uint32_t verify_memory_limit_kib = 16U * 1024U * 1024U;
+constexpr std::uint32_t verify_iteration_limit = 1024;
+constexpr std::uint32_t verify_parallelism_limit = 255;
+
 } // namespace crypto
 } // namespace fizmo
 
